@@ -1,0 +1,385 @@
+import { index, integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import type {
+  AnnotationKind,
+  AnnotationTarget,
+  CampaignStatus,
+  CoverageType,
+  EdgeRelation,
+  ExamForm,
+  ExplanationTier,
+  MasterySource,
+  MessageRole,
+  NodeKind,
+  NodeStatus,
+  PlanDayStatus,
+  ReportSourceType,
+  RepoStatus,
+  SessionKind,
+  SourceProvider,
+  SpeechSourceType,
+  TaskKind,
+  TaskStatus,
+  ToolName,
+} from '../../shared/enums';
+import type { Citation, JdParsed, ResumeParsed } from '../../shared/entities';
+
+/**
+ * 全量 schema 一次到位——后续阶段只填数据不改结构，避免频繁迁移。
+ *
+ * 约定：
+ * - 时间统一 epoch 毫秒的 integer
+ * - 日期（无时间）用 'YYYY-MM-DD' 的 text
+ * - JSON 列用 text + mode:'json'，配 $type 保留类型
+ */
+
+// ---------------------------------------------------------------------------
+// Campaign 与输入
+// ---------------------------------------------------------------------------
+
+export const resume = sqliteTable('resume', {
+  id: text('id').primaryKey(),
+  label: text('label').notNull(),
+  rawText: text('raw_text').notNull(),
+  parsed: text('parsed', { mode: 'json' }).$type<ResumeParsed>(),
+  createdAt: integer('created_at').notNull(),
+});
+
+export const campaign = sqliteTable('campaign', {
+  id: text('id').primaryKey(),
+  company: text('company').notNull(),
+  roleTitle: text('role_title').notNull(),
+  jdRaw: text('jd_raw').notNull(),
+  jdParsed: text('jd_parsed', { mode: 'json' }).$type<JdParsed>(),
+  resumeId: text('resume_id').references(() => resume.id, { onDelete: 'set null' }),
+  interviewDate: text('interview_date'),
+  dailyMinutes: integer('daily_minutes'),
+  status: text('status').$type<CampaignStatus>().notNull().default('planning'),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+});
+
+// ---------------------------------------------------------------------------
+// 知识点
+// ---------------------------------------------------------------------------
+
+export const knowledgeNode = sqliteTable(
+  'knowledge_node',
+  {
+    id: text('id').primaryKey(),
+    campaignId: text('campaign_id')
+      .notNull()
+      .references(() => campaign.id, { onDelete: 'cascade' }),
+    // 自引用不加 references()，避免 drizzle 处理循环引用时的类型推断问题
+    parentId: text('parent_id'),
+    name: text('name').notNull(),
+    kind: text('kind').$type<NodeKind>().notNull(),
+    coverageType: text('coverage_type').$type<CoverageType>().notNull(),
+    examProb: real('exam_prob').notNull().default(0),
+    difficulty: integer('difficulty').notNull().default(3),
+    estMinutes: integer('est_minutes').notNull().default(30),
+    examForms: text('exam_forms', { mode: 'json' }).$type<ExamForm[]>().notNull().default([]),
+    mastery: real('mastery').notNull().default(0),
+    masterySource: text('mastery_source').$type<MasterySource>().notNull().default('self'),
+    priorityScore: real('priority_score').notNull().default(0),
+    status: text('status').$type<NodeStatus>().notNull().default('todo'),
+    /** Float32Array 序列化后的字节，用于细化去重与真题匹配 */
+    embedding: text('embedding', { mode: 'json' }).$type<number[]>(),
+    isUserAdded: integer('is_user_added', { mode: 'boolean' }).notNull().default(false),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => [
+    index('idx_node_campaign').on(t.campaignId),
+    index('idx_node_parent').on(t.parentId),
+    index('idx_node_priority').on(t.campaignId, t.priorityScore),
+  ],
+);
+
+export const nodeEdge = sqliteTable(
+  'node_edge',
+  {
+    id: text('id').primaryKey(),
+    fromNodeId: text('from_node_id')
+      .notNull()
+      .references(() => knowledgeNode.id, { onDelete: 'cascade' }),
+    toNodeId: text('to_node_id')
+      .notNull()
+      .references(() => knowledgeNode.id, { onDelete: 'cascade' }),
+    relation: text('relation').$type<EdgeRelation>().notNull(),
+  },
+  (t) => [index('idx_edge_from').on(t.fromNodeId), index('idx_edge_to').on(t.toNodeId)],
+);
+
+export const explanation = sqliteTable(
+  'explanation',
+  {
+    id: text('id').primaryKey(),
+    nodeId: text('node_id')
+      .notNull()
+      .references(() => knowledgeNode.id, { onDelete: 'cascade' }),
+    tier: text('tier').$type<ExplanationTier>().notNull(),
+    contentMd: text('content_md').notNull(),
+    modelUsed: text('model_used').notNull(),
+    sourceIds: text('source_ids', { mode: 'json' }).$type<string[]>().notNull().default([]),
+    createdAt: integer('created_at').notNull(),
+  },
+  // 三档分别缓存，同一节点同一档位只保留一条
+  (t) => [index('idx_explanation_node_tier').on(t.nodeId, t.tier)],
+);
+
+// ---------------------------------------------------------------------------
+// 外部来源与检索
+// ---------------------------------------------------------------------------
+
+export const source = sqliteTable(
+  'source',
+  {
+    id: text('id').primaryKey(),
+    url: text('url').notNull(),
+    domain: text('domain').notNull(),
+    title: text('title').notNull(),
+    provider: text('provider').$type<SourceProvider>().notNull(),
+    credibility: integer('credibility').notNull().default(3),
+    publishedAt: integer('published_at'),
+    fetchedAt: integer('fetched_at').notNull(),
+    contentMd: text('content_md'),
+  },
+  (t) => [index('idx_source_url').on(t.url), index('idx_source_domain').on(t.domain)],
+);
+
+export const searchCache = sqliteTable(
+  'search_cache',
+  {
+    id: text('id').primaryKey(),
+    queryHash: text('query_hash').notNull(),
+    provider: text('provider').notNull(),
+    paramsJson: text('params_json', { mode: 'json' }).$type<Record<string, unknown>>().notNull(),
+    resultsJson: text('results_json', { mode: 'json' }).$type<unknown[]>().notNull(),
+    fetchedAt: integer('fetched_at').notNull(),
+    ttlDays: integer('ttl_days').notNull(),
+  },
+  (t) => [index('idx_search_cache_hash').on(t.queryHash)],
+);
+
+export const companyIntel = sqliteTable('company_intel', {
+  id: text('id').primaryKey(),
+  campaignId: text('campaign_id')
+    .notNull()
+    .references(() => campaign.id, { onDelete: 'cascade' }),
+  techStackMd: text('tech_stack_md').notNull().default(''),
+  interviewProcessMd: text('interview_process_md').notNull().default(''),
+  hotTopicsMd: text('hot_topics_md').notNull().default(''),
+  talkingPointsMd: text('talking_points_md').notNull().default(''),
+  sourceIds: text('source_ids', { mode: 'json' }).$type<string[]>().notNull().default([]),
+  updatedAt: integer('updated_at').notNull(),
+});
+
+// ---------------------------------------------------------------------------
+// 面经摄入（三入口统一管道）
+// ---------------------------------------------------------------------------
+
+export const interviewReport = sqliteTable(
+  'interview_report',
+  {
+    id: text('id').primaryKey(),
+    campaignId: text('campaign_id').references(() => campaign.id, { onDelete: 'set null' }),
+    company: text('company').notNull(),
+    roleTitle: text('role_title').notNull(),
+    sourceType: text('source_type').$type<ReportSourceType>().notNull(),
+    sourceId: text('source_id').references(() => source.id, { onDelete: 'set null' }),
+    rawText: text('raw_text').notNull(),
+    reportedAt: integer('reported_at'),
+    /** selfDebrief 最高、web 最低，影响频率修正的权重 */
+    credibilityWeight: real('credibility_weight').notNull().default(1),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => [index('idx_report_company').on(t.company, t.roleTitle)],
+);
+
+export const interviewQuestion = sqliteTable(
+  'interview_question',
+  {
+    id: text('id').primaryKey(),
+    reportId: text('report_id')
+      .notNull()
+      .references(() => interviewReport.id, { onDelete: 'cascade' }),
+    questionText: text('question_text').notNull(),
+    roundNo: integer('round_no'),
+    matchedNodeId: text('matched_node_id').references(() => knowledgeNode.id, {
+      onDelete: 'set null',
+    }),
+    matchConfidence: real('match_confidence'),
+    /** 匹配不到节点 = 图谱预测失败，信息价值最高 */
+    isBlindSpot: integer('is_blind_spot', { mode: 'boolean' }).notNull().default(false),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => [
+    index('idx_question_report').on(t.reportId),
+    index('idx_question_node').on(t.matchedNodeId),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// 计划与执行
+// ---------------------------------------------------------------------------
+
+export const planDay = sqliteTable(
+  'plan_day',
+  {
+    id: text('id').primaryKey(),
+    campaignId: text('campaign_id')
+      .notNull()
+      .references(() => campaign.id, { onDelete: 'cascade' }),
+    date: text('date').notNull(),
+    plannedMinutes: integer('planned_minutes').notNull().default(0),
+    status: text('status').$type<PlanDayStatus>().notNull().default('pending'),
+  },
+  (t) => [index('idx_plan_day_campaign_date').on(t.campaignId, t.date)],
+);
+
+export const task = sqliteTable(
+  'task',
+  {
+    id: text('id').primaryKey(),
+    planDayId: text('plan_day_id')
+      .notNull()
+      .references(() => planDay.id, { onDelete: 'cascade' }),
+    nodeId: text('node_id').references(() => knowledgeNode.id, { onDelete: 'cascade' }),
+    repoId: text('repo_id'),
+    kind: text('kind').$type<TaskKind>().notNull(),
+    estMinutes: integer('est_minutes').notNull().default(20),
+    actualMinutes: integer('actual_minutes'),
+    status: text('status').$type<TaskStatus>().notNull().default('pending'),
+    orderIdx: integer('order_idx').notNull().default(0),
+  },
+  (t) => [index('idx_task_plan_day').on(t.planDayId, t.orderIdx)],
+);
+
+export const quizAttempt = sqliteTable(
+  'quiz_attempt',
+  {
+    id: text('id').primaryKey(),
+    nodeId: text('node_id')
+      .notNull()
+      .references(() => knowledgeNode.id, { onDelete: 'cascade' }),
+    question: text('question').notNull(),
+    userAnswer: text('user_answer').notNull(),
+    /** 1-5，掌握度的唯一客观来源 */
+    score: integer('score').notNull(),
+    feedbackMd: text('feedback_md').notNull().default(''),
+    improvedScriptMd: text('improved_script_md'),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => [index('idx_quiz_node').on(t.nodeId)],
+);
+
+// ---------------------------------------------------------------------------
+// 源码
+// ---------------------------------------------------------------------------
+
+export const repo = sqliteTable('repo', {
+  id: text('id').primaryKey(),
+  url: text('url').notNull(),
+  localPath: text('local_path').notNull(),
+  defaultBranch: text('default_branch'),
+  commitSha: text('commit_sha'),
+  languages: text('languages', { mode: 'json' }).$type<string[]>().notNull().default([]),
+  repoMapMd: text('repo_map_md'),
+  summaryMd: text('summary_md'),
+  indexedAt: integer('indexed_at'),
+  status: text('status').$type<RepoStatus>().notNull().default('pending'),
+});
+
+export const codeRef = sqliteTable(
+  'code_ref',
+  {
+    id: text('id').primaryKey(),
+    repoId: text('repo_id')
+      .notNull()
+      .references(() => repo.id, { onDelete: 'cascade' }),
+    filePath: text('file_path').notNull(),
+    startLine: integer('start_line').notNull(),
+    endLine: integer('end_line').notNull(),
+    commitSha: text('commit_sha'),
+    snippet: text('snippet'),
+  },
+  (t) => [index('idx_code_ref_repo').on(t.repoId)],
+);
+
+// ---------------------------------------------------------------------------
+// 标记与话术
+// ---------------------------------------------------------------------------
+
+/** 统一标记表：知识点、讲解片段、代码位置、真题、情报卡共用一张表 */
+export const annotation = sqliteTable(
+  'annotation',
+  {
+    id: text('id').primaryKey(),
+    targetType: text('target_type').$type<AnnotationTarget>().notNull(),
+    targetId: text('target_id').notNull(),
+    kind: text('kind').$type<AnnotationKind>().notNull(),
+    selectedText: text('selected_text'),
+    noteMd: text('note_md'),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => [index('idx_annotation_target').on(t.targetType, t.targetId)],
+);
+
+/** 所有链路的终点产出：面试时能说出口的话 */
+export const speechSnippet = sqliteTable(
+  'speech_snippet',
+  {
+    id: text('id').primaryKey(),
+    sourceType: text('source_type').$type<SpeechSourceType>().notNull(),
+    sourceId: text('source_id').notNull(),
+    tier: text('tier').$type<ExplanationTier>().notNull(),
+    contentMd: text('content_md').notNull(),
+    isUserEdited: integer('is_user_edited', { mode: 'boolean' }).notNull().default(false),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => [index('idx_speech_source').on(t.sourceType, t.sourceId)],
+);
+
+// ---------------------------------------------------------------------------
+// 会话与可观测性
+// ---------------------------------------------------------------------------
+
+export const session = sqliteTable('session', {
+  id: text('id').primaryKey(),
+  campaignId: text('campaign_id').references(() => campaign.id, { onDelete: 'cascade' }),
+  kind: text('kind').$type<SessionKind>().notNull(),
+  title: text('title').notNull().default(''),
+  createdAt: integer('created_at').notNull(),
+});
+
+export const message = sqliteTable(
+  'message',
+  {
+    id: text('id').primaryKey(),
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => session.id, { onDelete: 'cascade' }),
+    role: text('role').$type<MessageRole>().notNull(),
+    contentMd: text('content_md').notNull(),
+    citations: text('citations', { mode: 'json' }).$type<Citation[]>().notNull().default([]),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => [index('idx_message_session').on(t.sessionId, t.createdAt)],
+);
+
+/** 推理过程 trace：既建立信任，也是 Agent 后续的决策输入 */
+export const toolCall = sqliteTable(
+  'tool_call',
+  {
+    id: text('id').primaryKey(),
+    messageId: text('message_id')
+      .notNull()
+      .references(() => message.id, { onDelete: 'cascade' }),
+    toolName: text('tool_name').$type<ToolName>().notNull(),
+    args: text('args', { mode: 'json' }).$type<Record<string, unknown>>().notNull(),
+    resultSummary: text('result_summary').notNull().default(''),
+    durationMs: integer('duration_ms').notNull().default(0),
+    tokenCost: integer('token_cost'),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => [index('idx_tool_call_message').on(t.messageId)],
+);

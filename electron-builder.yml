@@ -1,0 +1,56 @@
+appId: com.openjob.app
+productName: openJob
+directories:
+  output: dist
+  buildResources: build
+
+files:
+  - out/**
+  - package.json
+
+# tree-sitter 的 .wasm 语法文件不参与打包，放在 resources 下按需读取；
+# Drizzle 迁移必须随包分发，首次启动要靠它建表
+extraResources:
+  - from: resources
+    to: .
+    filter:
+      - '**/*'
+  - from: src/main/db/migrations
+    to: migrations
+    filter:
+      - '**/*'
+
+# 原生模块（better-sqlite3）的 .node 必须解包，asar 内无法 dlopen
+asarUnpack:
+  - '**/*.node'
+
+# 让 electron-builder 按 Electron 的 ABI 重建原生依赖
+npmRebuild: true
+
+# 直接复用 devDependency 里已解压的 Electron，跳过「下载 → 解压 → 重命名」。
+# Windows 上 Defender 会在解压后立刻扫描 electron.exe 与各 dll，持有句柄导致
+# 目录重命名报 EPERM；复用现成目录可以绕开这个时间窗。
+electronDist: node_modules/electron/dist
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false
+
+mac:
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+  category: public.app-category.education
+
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Education

@@ -1,0 +1,17 @@
+node_modules/
+out/
+dist/
+.vite/
+
+# 本地配置与密钥绝不入库（运行时实际落在 userData，此处防止误放）
+config.json
+secrets.json
+*.db
+*.db-wal
+*.db-shm
+
+.DS_Store
+Thumbs.db
+*.log
+.env
+.env.*
