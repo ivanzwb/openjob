@@ -269,3 +269,4 @@ export async function diagnoseFetchIntel(campaignId: string, jobId: string): Pro
 
 export { ingestInterviewReport } from './ingest';
 export { ingestWebReports } from './webIngest';
+export { listReports } from './reports';

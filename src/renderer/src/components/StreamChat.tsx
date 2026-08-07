@@ -96,6 +96,8 @@ export function StreamChat({
       contentMd: text,
       citations: [],
       createdAt: Date.now(),
+      usage: null,
+      toolCalls: [],
     };
     setHistory((h) => {
       const next = [...h, userMsg];
@@ -175,7 +177,10 @@ export function StreamChat({
                     }`}
                   >
                     <div className="truncate font-medium">{s.title}</div>
-                    <div className="text-[10px] opacity-70">{s.messageCount} 条消息</div>
+                    <div className="text-[10px] opacity-70">
+                      {s.messageCount} 条消息
+                      {s.totalTokens > 0 && ` · ${(s.totalTokens / 1000).toFixed(1)}k tokens`}
+                    </div>
                   </button>
                   <button
                     type="button"
@@ -216,6 +221,7 @@ export function StreamChat({
                     {m.role === 'user' ? '你' : '助手'}
                   </span>
                   <div className="whitespace-pre-wrap">{m.contentMd}</div>
+                  <ToolTrace calls={m.toolCalls} usage={m.usage} />
                   {m.citations.length > 0 && <CitationList citations={m.citations} />}
                 </div>
               ))}
@@ -232,7 +238,7 @@ export function StreamChat({
                     )}
                   </div>
                   <div className="whitespace-pre-wrap text-sm">{state.text}</div>
-                  <ToolTrace calls={state.toolCalls} />
+                  <ToolTrace calls={state.toolCalls} usage={state.usage} />
                   <CitationList citations={state.citations} />
                 </div>
               )}

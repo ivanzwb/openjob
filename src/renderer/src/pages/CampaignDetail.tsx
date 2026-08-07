@@ -1,16 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
+  AnnotationView,
   CampaignDetail as CampaignDetailData,
+  InterviewReportView,
   NodeEdgeView,
   Nudge,
 } from '@shared/ipc';
 import type { Resume } from '@shared/entities';
 import type { EdgeRelation, NodeKind } from '@shared/enums';
+import { AnnotationDigest } from '../components/AnnotationDigest';
+import { AnnotationTools } from '../components/AnnotationTools';
 import { CompanyIntelCard } from '../components/CompanyIntelCard';
 import { EdgeEditor } from '../components/EdgeEditor';
 import { KnowledgeGraph } from '../components/KnowledgeGraph';
 import { KnowledgeTree, type NodePatch } from '../components/KnowledgeTree';
 import { NudgePanel } from '../components/NudgePanel';
+import { PlanDecisionLog } from '../components/PlanDecisionLog';
+import { ReportSourceList } from '../components/ReportSourceList';
 import { invoke } from '../ipc';
 import { useJobProgress } from '../ipc/useJobProgress';
 
@@ -36,6 +42,7 @@ export function CampaignDetail({
   const [interviewDate, setInterviewDate] = useState('');
   const [dailyMinutes, setDailyMinutes] = useState('90');
   const [planMsg, setPlanMsg] = useState<string | null>(null);
+  const [planLogKey, setPlanLogKey] = useState(0);
   const [bookmarkedIds, setBookmarkedIds] = useState<Set<string>>(new Set());
   const [noteCounts, setNoteCounts] = useState<Map<string, number>>(new Map());
   const [edges, setEdges] = useState<NodeEdgeView[]>([]);
@@ -43,6 +50,9 @@ export function CampaignDetail({
   const [nudges, setNudges] = useState<Nudge[]>([]);
   const [applyingHistory, setApplyingHistory] = useState(false);
   const [webIngesting, setWebIngesting] = useState(false);
+  const [reports, setReports] = useState<InterviewReportView[]>([]);
+  const [showReports, setShowReports] = useState(false);
+  const [annotations, setAnnotations] = useState<AnnotationView[]>([]);
   const { active: job, lastMessage } = useJobProgress();
 
   const refresh = useCallback(() => {
@@ -53,11 +63,14 @@ export function CampaignDetail({
     });
     void invoke('resume:list', undefined).then(setResumes);
     void invoke('annotation:listForCampaign', { campaignId: id }).then((anns) => {
+      setAnnotations(anns);
+      // 树上的角标只反映挂在知识点本身的标记，讲解/真题/情报卡的标记走「我的标记」
+      const onNodes = anns.filter((a) => a.targetType === 'node');
       setBookmarkedIds(
-        new Set(anns.filter((a) => a.kind === 'bookmark').map((a) => a.targetId)),
+        new Set(onNodes.filter((a) => a.kind === 'bookmark').map((a) => a.targetId)),
       );
       const counts = new Map<string, number>();
-      for (const a of anns) {
+      for (const a of onNodes) {
         if (a.kind !== 'note' && a.kind !== 'highlight') continue;
         counts.set(a.targetId, (counts.get(a.targetId) ?? 0) + 1);
       }
@@ -65,6 +78,7 @@ export function CampaignDetail({
     });
     void invoke('edge:list', { campaignId: id }).then(setEdges);
     void invoke('insight:nudges', { campaignId: id }).then(setNudges);
+    void invoke('diagnosis:listReports', { campaignId: id }).then(setReports);
   }, [id]);
 
   const autoRan = useRef(false);
@@ -246,6 +260,7 @@ export function CampaignDetail({
         `已生成 ${res.daysCreated} 天计划、${res.tasksCreated} 个任务` +
           (res.overflowFallbacks ? `（含 ${res.overflowFallbacks} 个兜底话术）` : ''),
       );
+      setPlanLogKey((k) => k + 1);
       refresh();
     } catch (err) {
       setPlanMsg(err instanceof Error ? err.message : String(err));
@@ -349,6 +364,7 @@ export function CampaignDetail({
             {planMsg}
           </p>
         )}
+        <PlanDecisionLog campaignId={id} reloadKey={planLogKey} />
       </section>
 
       <section className="grid gap-6 lg:grid-cols-3">
@@ -410,10 +426,18 @@ export function CampaignDetail({
               <p className="mt-1 text-xs text-[var(--color-muted)]">
                 图谱未能预测到的题目，信息价值最高，建议优先补学
               </p>
-              <ul className="mt-2 space-y-1 text-sm">
+              <ul className="mt-2 space-y-2 text-sm">
                 {detail.blindSpotQuestions.map((q) => (
-                  <li key={q.id} className="text-amber-100/90">
-                    · {q.questionText}
+                  <li key={q.id} className="space-y-1 text-amber-100/90">
+                    <div>· {q.questionText}</div>
+                    <div className="pl-3">
+                      <AnnotationTools
+                        targetType="question"
+                        targetId={q.id}
+                        notePlaceholder="记下你的答题思路"
+                        onChange={refresh}
+                      />
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -422,6 +446,11 @@ export function CampaignDetail({
         </div>
 
         <div className="space-y-6">
+          <div className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+            <h3 className="text-sm font-medium">我的标记</h3>
+            <AnnotationDigest annotations={annotations} onChange={refresh} />
+          </div>
+
           <div className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
             <h3 className="text-sm font-medium">该提醒你的事</h3>
             <NudgePanel
@@ -491,7 +520,7 @@ export function CampaignDetail({
           <div className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
             <h3 className="text-sm font-medium">公司情报</h3>
             {intel ? (
-              <CompanyIntelCard intel={intel} />
+              <CompanyIntelCard intel={intel} onAnnotationChange={refresh} />
             ) : (
               <p className="text-xs text-[var(--color-muted)]">点击「生成公司情报」联网检索</p>
             )}
@@ -526,8 +555,15 @@ export function CampaignDetail({
               摄入面经
             </button>
             {detail.reportCount > 0 && (
-              <p className="text-xs text-[var(--color-muted)]">已摄入 {detail.reportCount} 篇</p>
+              <button
+                type="button"
+                onClick={() => setShowReports((v) => !v)}
+                className="text-left text-xs text-[var(--color-muted)] hover:text-[var(--color-fg)]"
+              >
+                已摄入 {detail.reportCount} 篇 · {showReports ? '收起出处' : '查看出处'}
+              </button>
             )}
+            {showReports && <ReportSourceList reports={reports} />}
             {ingestMsg && (
               <p
                 className={`text-xs ${ingestMsg.includes('提取') ? 'text-emerald-400' : 'text-red-400'}`}

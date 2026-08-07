@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ChatRequest, StreamDone, StreamToolCall } from '@shared/ipc';
+import type { ChatRequest, StreamDone, StreamToolCall, TokenUsage } from '@shared/ipc';
 import type { Citation } from '@shared/entities';
 import type { EvidenceKind } from '@shared/enums';
 import { invoke, onEvent } from './index';
@@ -12,6 +12,7 @@ export interface StreamState {
   running: boolean;
   error: string | null;
   sessionId: string | null;
+  usage: TokenUsage | null;
 }
 
 const EMPTY: StreamState = {
@@ -22,6 +23,7 @@ const EMPTY: StreamState = {
   running: false,
   error: null,
   sessionId: null,
+  usage: null,
 };
 
 /**
@@ -69,6 +71,7 @@ export function useStream(
         evidenceKind: p.evidenceKind,
         running: false,
         sessionId: sid,
+        usage: p.usage,
       }));
       streamIdRef.current = null;
       onDone?.(p);

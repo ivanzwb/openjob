@@ -3,6 +3,9 @@ out/
 dist/
 .vite/
 
+# tree-sitter 语法文件由 scripts/sync-grammars.mjs 从 node_modules 复制而来，约 17MB，不入库
+resources/tree-sitter/*.wasm
+
 # 本地配置与密钥绝不入库（运行时实际落在 userData，此处防止误放）
 config.json
 secrets.json

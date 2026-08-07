@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type OpenAI from 'openai';
 import type { LlmRole } from '@shared/enums';
 import type { Citation } from '@shared/entities';
-import type { ChatRequest, ProviderTestResult, StreamStarted } from '@shared/ipc';
+import type { ChatRequest, ProviderTestResult, StreamStarted, TokenUsage } from '@shared/ipc';
 // 直接引 bridge 而非 ipc/index，避免与 handler 注册形成循环依赖
 import { emit } from '../ipc/bridge';
 import {
@@ -88,7 +88,12 @@ async function runChat(
     args: Record<string, unknown>;
     summary: string;
     durationMs: number;
+    /** 结果字符数，用于按比例摊分下一轮的 prompt 增量 */
+    resultChars: number;
+    tokenCost: number | null;
   }> = [];
+  /** 每轮产生的工具调用在 pendingToolRecords 中的下标 */
+  const toolIndexByRound: number[][] = [];
 
   let sessionId = req.sessionId ?? null;
 
@@ -150,7 +155,9 @@ async function runChat(
     let usedWeb = false;
     let usedCode = false;
     let finalText = '';
-    let usage: { promptTokens: number; completionTokens: number } | null = null;
+    let usage: TokenUsage | null = null;
+    const totals: TokenUsage = { promptTokens: 0, completionTokens: 0 };
+    let lastPromptTokens: number | null = null;
     const maxRounds = req.repoId ? MAX_REPO_TOOL_ROUNDS : MAX_TOOL_ROUNDS;
     const tools = req.repoId
       ? mergedCodeAgentTools(toolCtx)
@@ -170,11 +177,12 @@ async function runChat(
       });
 
       let roundText = '';
+      let roundUsage: TokenUsage | null = null;
       const pending = new Map<number, PendingToolCall>();
 
       for await (const chunk of stream) {
         if (chunk.usage) {
-          usage = {
+          roundUsage = {
             promptTokens: chunk.usage.prompt_tokens,
             completionTokens: chunk.usage.completion_tokens,
           };
@@ -200,7 +208,25 @@ async function runChat(
 
       finalText += roundText;
 
+      if (roundUsage) {
+        totals.promptTokens += roundUsage.promptTokens;
+        totals.completionTokens += roundUsage.completionTokens;
+        // 本轮 prompt 比上一轮多出来的部分，正是上一轮工具结果塞进上下文的代价
+        if (lastPromptTokens !== null) {
+          chargeTools(
+            pendingToolRecords,
+            toolIndexByRound[round - 1] ?? [],
+            roundUsage.promptTokens - lastPromptTokens,
+          );
+        }
+        lastPromptTokens = roundUsage.promptTokens;
+      }
+      usage = roundUsage ?? usage;
+
       if (pending.size === 0) break;
+
+      const roundToolIndexes: number[] = [];
+      toolIndexByRound[round] = roundToolIndexes;
 
       messages.push({
         role: 'assistant',
@@ -246,11 +272,14 @@ async function runChat(
           durationMs: Date.now() - startedAt,
         });
 
+        roundToolIndexes.push(pendingToolRecords.length);
         pendingToolRecords.push({
           name: call.name,
           args,
           summary: outcome.summary,
           durationMs: Date.now() - startedAt,
+          resultChars: outcome.content.length,
+          tokenCost: null,
         });
 
         messages.push({
@@ -261,11 +290,30 @@ async function runChat(
       }
     }
 
+    // 最后一轮之后没有再次请求，拿不到真实增量，按结果长度估一个
+    for (const tc of pendingToolRecords) {
+      tc.tokenCost ??= estimateTokens(tc.resultChars);
+    }
+
     const deduped = dedupeCitations(citations);
+    const totalUsage = totals.promptTokens > 0 ? totals : usage;
     if (sessionId) {
-      const assistantMsgId = appendMessage(sessionId, 'assistant', finalText, deduped);
+      const assistantMsgId = appendMessage(
+        sessionId,
+        'assistant',
+        finalText,
+        deduped,
+        totalUsage,
+      );
       for (const tc of pendingToolRecords) {
-        appendToolCall(assistantMsgId, tc.name, tc.args, tc.summary, tc.durationMs);
+        appendToolCall(
+          assistantMsgId,
+          tc.name,
+          tc.args,
+          tc.summary,
+          tc.durationMs,
+          tc.tokenCost,
+        );
       }
     }
 
@@ -275,7 +323,7 @@ async function runChat(
       contentMd: finalText,
       citations: deduped,
       evidenceKind: usedCode ? 'code' : usedWeb ? 'web' : 'model',
-      usage,
+      usage: totalUsage,
     });
   } catch (err) {
     if (controller.signal.aborted) {
@@ -293,6 +341,36 @@ async function runChat(
       streamId,
       message: err instanceof Error ? err.message : String(err),
     });
+  }
+}
+
+/** 中英混排下大约每 3 个字符一个 token，够用来做兜底估算 */
+function estimateTokens(chars: number): number {
+  return Math.ceil(chars / 3);
+}
+
+/**
+ * 把一轮 prompt 的实际增量按结果长度摊到该轮的各个工具上。
+ *
+ * 工具本身不消耗 token，真正的开销是它塞进上下文的结果；下一轮 prompt
+ * 比上一轮多出来的部分就是这笔账。摊分是近似的（增量里还含 assistant
+ * 的 tool_calls 本身），但比拍脑袋估算贴近真实计费。
+ */
+function chargeTools(
+  records: Array<{ resultChars: number; tokenCost: number | null }>,
+  indexes: number[],
+  promptDelta: number,
+): void {
+  if (indexes.length === 0 || promptDelta <= 0) return;
+
+  const totalChars = indexes.reduce((s, i) => s + (records[i]?.resultChars ?? 0), 0);
+  for (const i of indexes) {
+    const rec = records[i];
+    if (!rec) continue;
+    rec.tokenCost =
+      totalChars > 0
+        ? Math.round((promptDelta * rec.resultChars) / totalChars)
+        : Math.round(promptDelta / indexes.length);
   }
 }
 

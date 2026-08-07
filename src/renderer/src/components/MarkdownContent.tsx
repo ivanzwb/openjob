@@ -1,4 +1,5 @@
-import { useEffect, useId, useMemo, useRef } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { highlightToHtml } from '../lib/highlight';
 
 export interface CodeLocation {
   filePath: string;
@@ -6,7 +7,7 @@ export interface CodeLocation {
   endLine?: number;
 }
 
-const MERMAID_BLOCK = /```mermaid\n([\s\S]*?)```/g;
+const FENCED_BLOCK = /```(\w[\w+-]*)?\n([\s\S]*?)```/g;
 const FILE_REF =
   /(?<![/\w])((?:[\w.-]+\/)+[\w.-]+\.\w+|(?:[\w.-]+\.\w+)):(\d+)(?:-(\d+))?/g;
 
@@ -77,6 +78,54 @@ function MermaidBlock({ chart }: { chart: string }): React.JSX.Element {
   return <div ref={ref} className="my-3 overflow-x-auto rounded bg-black/20 p-3" />;
 }
 
+/** shiki 语言别名归一，模型写 `js` / `sh` 也能命中 */
+const LANG_ALIAS: Record<string, string> = {
+  js: 'javascript',
+  ts: 'typescript',
+  py: 'python',
+  rb: 'ruby',
+  sh: 'shellscript',
+  bash: 'shellscript',
+  zsh: 'shellscript',
+  yml: 'yaml',
+  'c++': 'cpp',
+  'c#': 'csharp',
+  cs: 'csharp',
+  golang: 'go',
+  rs: 'rust',
+  kt: 'kotlin',
+};
+
+function CodeBlock({ lang, code }: { lang: string | null; code: string }): React.JSX.Element {
+  const [html, setHtml] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const normalized = lang ? (LANG_ALIAS[lang.toLowerCase()] ?? lang.toLowerCase()) : null;
+    void highlightToHtml(code, normalized, 1).then((res) => {
+      if (!cancelled) setHtml(res);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [lang, code]);
+
+  if (html) {
+    return (
+      <div
+        className="shiki-host my-3 overflow-x-auto rounded bg-black/20 p-3 font-mono text-xs leading-5"
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    );
+  }
+
+  return (
+    <pre className="my-3 overflow-x-auto rounded bg-black/20 p-3 font-mono text-xs leading-5">
+      {code}
+    </pre>
+  );
+}
+
 export function MarkdownContent({
   text,
   onCodeClick,
@@ -85,16 +134,22 @@ export function MarkdownContent({
   onCodeClick?: (loc: CodeLocation) => void;
 }): React.JSX.Element {
   const parts = useMemo(() => {
-    const blocks: Array<{ type: 'text' | 'mermaid'; value: string }> = [];
+    const blocks: Array<{ type: 'text' | 'mermaid' | 'code'; value: string; lang?: string }> = [];
     let last = 0;
     let match: RegExpExecArray | null;
-    const re = new RegExp(MERMAID_BLOCK.source, 'g');
+    const re = new RegExp(FENCED_BLOCK.source, 'g');
 
     while ((match = re.exec(text)) !== null) {
       if (match.index > last) {
         blocks.push({ type: 'text', value: text.slice(last, match.index) });
       }
-      blocks.push({ type: 'mermaid', value: match[1]! });
+      const lang = match[1];
+      const body = match[2] ?? '';
+      if (lang === 'mermaid') {
+        blocks.push({ type: 'mermaid', value: body });
+      } else {
+        blocks.push({ type: 'code', value: body, ...(lang ? { lang } : {}) });
+      }
       last = match.index + match[0].length;
     }
     if (last < text.length) blocks.push({ type: 'text', value: text.slice(last) });
@@ -104,15 +159,17 @@ export function MarkdownContent({
 
   return (
     <div className="space-y-1 text-sm leading-relaxed">
-      {parts.map((part, i) =>
-        part.type === 'mermaid' ? (
-          <MermaidBlock key={`m-${i}`} chart={part.value} />
-        ) : (
+      {parts.map((part, i) => {
+        if (part.type === 'mermaid') return <MermaidBlock key={`m-${i}`} chart={part.value} />;
+        if (part.type === 'code') {
+          return <CodeBlock key={`c-${i}`} lang={part.lang ?? null} code={part.value} />;
+        }
+        return (
           <div key={`t-${i}`} className="whitespace-pre-wrap">
             {renderTextWithRefs(part.value, onCodeClick)}
           </div>
-        ),
-      )}
+        );
+      })}
     </div>
   );
 }

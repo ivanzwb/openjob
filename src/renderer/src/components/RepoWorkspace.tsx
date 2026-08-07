@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { Repo } from '@shared/entities';
+import type { AnnotationView } from '@shared/ipc';
 import { useStream } from '../ipc/useStream';
 import { invoke } from '../ipc';
 import { CodePanel } from './CodePanel';
@@ -21,6 +22,13 @@ export function RepoWorkspace({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [, setHistory] = useState<Array<{ role: 'user' | 'assistant'; text: string }>>([]);
+  const [codeMarks, setCodeMarks] = useState<AnnotationView[]>([]);
+
+  const loadCodeMarks = useCallback(() => {
+    void invoke('annotation:listForRepo', { repoId: repo.id }).then(setCodeMarks);
+  }, [repo.id]);
+
+  useEffect(loadCodeMarks, [loadCodeMarks]);
 
   const handleDone = (done: { contentMd: string }): void => {
     if (!done.contentMd) return;
@@ -68,6 +76,14 @@ export function RepoWorkspace({
   const openCitation = (filePath?: string, startLine?: number, endLine?: number): void => {
     if (!filePath || !startLine) return;
     setCodeLoc({ filePath, startLine, endLine });
+  };
+
+  /** 标记列表里的 label 形如 path/to/file.go:120 */
+  const openMark = (label: string): void => {
+    const at = label.lastIndexOf(':');
+    const line = Number(label.slice(at + 1));
+    if (at < 0 || !Number.isFinite(line)) return;
+    setCodeLoc({ filePath: label.slice(0, at), startLine: line });
   };
 
   return (
@@ -176,8 +192,36 @@ export function RepoWorkspace({
         </div>
       </div>
 
-      <div className="h-64 shrink-0 overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] lg:h-auto lg:w-96">
-        <CodePanel repoId={repo.id} location={codeLoc} />
+      <div className="flex shrink-0 flex-col gap-3 lg:w-96">
+        <div className="h-64 overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] lg:h-auto lg:flex-1">
+          <CodePanel repoId={repo.id} location={codeLoc} onAnnotationChange={loadCodeMarks} />
+        </div>
+
+        {codeMarks.length > 0 && (
+          <div className="max-h-56 shrink-0 space-y-2 overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+            <h4 className="text-xs font-medium text-[var(--color-muted)]">
+              代码标记（{codeMarks.length}）
+            </h4>
+            <ul className="space-y-1 text-xs">
+              {codeMarks.map((m) => (
+                <li key={m.id} className="space-y-0.5">
+                  <button
+                    type="button"
+                    onClick={() => openMark(m.targetLabel)}
+                    className="font-mono text-emerald-400 hover:underline"
+                  >
+                    {m.targetLabel}
+                  </button>
+                  {m.kind !== 'bookmark' && (
+                    <div className="break-words text-[var(--color-muted)]">
+                      {m.kind === 'highlight' ? `「${m.selectedText}」` : m.noteMd}
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     </div>
   );

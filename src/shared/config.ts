@@ -41,7 +41,16 @@ export interface SearchRoutingRule {
 export interface SearchConfig {
   providers: {
     bocha: { endpoint: string; apiKeyRef: string; enabled: boolean };
-    tavily: { apiKeyRef: string; enabled: boolean };
+    tavily: {
+      apiKeyRef: string;
+      enabled: boolean;
+      /**
+       * 地域偏好，小写英文国名如 china / united states。
+       * 面经和薪资这类内容强烈地域相关，同一个查询在不同地区该给不同结果。
+       * 留空表示不限，Tavily 按全球热度排。
+       */
+      country: string;
+    };
   };
   /** 按顺序匹配，命中即用；均未命中时落到 defaultProvider */
   routing: SearchRoutingRule[];
@@ -53,6 +62,12 @@ export interface SearchConfig {
     interviewReports: number;
     techDocs: number;
   };
+  /**
+   * 技术文档超过这个天数就标记为过时：结果往后排，并在进模型上下文时附带日期与警告。
+   * 默认 540 天（约一年半），跨过这个量级主流框架通常已有破坏性变更。
+   * 设为 0 关闭时效判定。
+   */
+  techDocStaleDays: number;
 }
 
 /**
@@ -76,12 +91,23 @@ export interface PriorityWeights {
   targetMastery: Record<CoverageType, number>;
 }
 
+/**
+ * 自动更新。项目不绑定固定的发布地址，更新源由用户填。
+ * feedUrl 为空即关闭自动更新，不会有任何网络请求。
+ */
+export interface UpdateConfig {
+  /** electron-builder generic provider 的目录 URL，里面应有 latest.yml */
+  feedUrl: string;
+  checkOnStartup: boolean;
+}
+
 export interface AppConfig {
   /** 配置结构版本，用于后续迁移 */
   version: number;
   llm: LlmConfig;
   search: SearchConfig;
   priority: PriorityWeights;
+  update: UpdateConfig;
 }
 
 export const CONFIG_VERSION = 1;
@@ -124,7 +150,7 @@ export const DEFAULT_CONFIG: AppConfig = {
         apiKeyRef: 'search.bocha',
         enabled: true,
       },
-      tavily: { apiKeyRef: 'search.tavily', enabled: true },
+      tavily: { apiKeyRef: 'search.tavily', enabled: true, country: '' },
     },
     // 中文走博查，英文文档域名走 Tavily
     routing: [
@@ -151,6 +177,11 @@ export const DEFAULT_CONFIG: AppConfig = {
       interviewReports: 3,
       techDocs: 30,
     },
+    techDocStaleDays: 540,
   },
   priority: DEFAULT_PRIORITY_WEIGHTS,
+  update: {
+    feedUrl: '',
+    checkOnStartup: true,
+  },
 };

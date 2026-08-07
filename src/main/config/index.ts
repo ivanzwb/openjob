@@ -33,6 +33,7 @@ function mergeDefaults(loaded: Partial<AppConfig>): AppConfig {
         ...loaded.search?.domainCredibility,
       },
       cacheTtlDays: { ...base.search.cacheTtlDays, ...loaded.search?.cacheTtlDays },
+      techDocStaleDays: loaded.search?.techDocStaleDays ?? base.search.techDocStaleDays,
     },
     priority: {
       ...base.priority,
@@ -40,6 +41,7 @@ function mergeDefaults(loaded: Partial<AppConfig>): AppConfig {
       coverageBoost: { ...base.priority.coverageBoost, ...loaded.priority?.coverageBoost },
       targetMastery: { ...base.priority.targetMastery, ...loaded.priority?.targetMastery },
     },
+    update: { ...base.update, ...loaded.update },
   };
 }
 

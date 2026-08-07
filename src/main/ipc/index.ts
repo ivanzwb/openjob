@@ -22,12 +22,14 @@ import {
   diagnoseFromJd,
   ingestInterviewReport,
   ingestWebReports,
+  listReports,
 } from '../diagnosis';
 import {
   createAnnotation,
   deleteAnnotation,
   listAnnotations,
   listAnnotationsForCampaign,
+  listCodeAnnotations,
   toggleBookmark,
 } from '../annotation';
 import { generateDesignCase, submitDesignAnswer } from '../design';
@@ -52,7 +54,7 @@ import {
   updateTaskMinutes,
 } from '../plan/edit';
 import { generateQuizQuestion, submitQuizAnswer } from '../quiz';
-import { cloneAndIndex, deleteRepo, getRepo, listRepos, readRepoFile } from '../repo';
+import { cloneAndIndex, deleteRepo, ensureCodeRef, getRepo, listRepos, readRepoFile } from '../repo';
 import { clearCache, fetchUrl, search } from '../search';
 import {
   deleteSpeechSnippet,
@@ -69,11 +71,16 @@ import {
   searchSessions,
 } from '../session';
 import { getAppPaths } from '../paths';
+import { checkForUpdates, getUpdateStatus, quitAndInstall } from '../updater';
 import { handle } from './bridge';
 
 export function registerIpcHandlers(): void {
   handle('app:getPaths', () => getAppPaths());
   handle('app:getVersion', () => app.getVersion());
+
+  handle('update:status', () => getUpdateStatus());
+  handle('update:check', () => checkForUpdates());
+  handle('update:install', () => quitAndInstall());
 
   handle('config:get', () => getConfig());
   handle('config:update', (next) => updateConfig(next));
@@ -135,6 +142,7 @@ export function registerIpcHandlers(): void {
       totalNodesUpdated: reports.reduce((s, r) => s + r.nodesUpdated, 0),
     };
   });
+  handle('diagnosis:listReports', ({ campaignId }) => listReports(campaignId));
 
   handle('node:update', (input) => updateNode(input));
   handle('node:delete', ({ id }) => {
@@ -219,6 +227,8 @@ export function registerIpcHandlers(): void {
   handle('annotation:listForCampaign', ({ campaignId }) =>
     listAnnotationsForCampaign(campaignId),
   );
+  handle('annotation:listForRepo', ({ repoId }) => listCodeAnnotations(repoId));
+  handle('codeRef:ensure', (input) => ({ id: ensureCodeRef(input) }));
   handle('annotation:create', (input) => createAnnotation(input));
   handle('annotation:delete', ({ id }) => {
     deleteAnnotation(id);

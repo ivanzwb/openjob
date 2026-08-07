@@ -175,11 +175,18 @@ function boostNode(nodeId: string, credibilityWeight: number, factor: number): v
     .run();
 }
 
-/** 面经摄入管道：拆题 → 匹配节点 → 修正概率 / 标记盲区 */
+/**
+ * 面经摄入管道：拆题 → 匹配节点 → 修正概率 / 标记盲区。
+ *
+ * sourceId 指向 source 表里的网页记录（含 URL、域名可信度、抓取时间）。
+ * 网络来源必须带上，否则用户在 UI 上没法回溯这条真题是从哪抓来的——
+ * 与代码结论强制 file:line 是同一条原则。
+ */
 export async function ingestInterviewReport(
   campaignId: string,
   rawText: string,
   sourceType: ReportSourceType = 'pasted',
+  sourceId: string | null = null,
 ): Promise<IngestReportResult> {
   const campaign = getCampaignRow(campaignId);
   const extracted = await completeJson<{ questions: string[] }>(
@@ -200,7 +207,7 @@ export async function ingestInterviewReport(
       company: campaign.company,
       roleTitle: campaign.roleTitle,
       sourceType,
-      sourceId: null,
+      sourceId,
       rawText,
       reportedAt: now,
       credibilityWeight,
@@ -290,7 +297,7 @@ export async function ingestInterviewReport(
     company: campaign.company,
     roleTitle: campaign.roleTitle,
     sourceType,
-    sourceId: null,
+    sourceId,
     rawText,
     reportedAt: now,
     credibilityWeight,

@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
-import type { AppConfig, PriorityWeights } from '@shared/config';
+import type { AppConfig, PriorityWeights, SearchConfig, UpdateConfig } from '@shared/config';
 import { DEFAULT_PRIORITY_WEIGHTS } from '@shared/config';
 import { LLM_ROLES, type CoverageType, type LlmRole } from '@shared/enums';
 import type { ProviderTestResult } from '@shared/ipc';
 import { invoke } from '../ipc';
 import { SecretField } from '../components/SecretField';
+import { SearchQualityPanel } from '../components/SearchQualityPanel';
+import { UpdatePanel } from '../components/UpdatePanel';
 
 const ROLE_HINTS: Record<LlmRole, string> = {
   outline: '生成知识图谱大纲，需要结构化能力，用量小',
@@ -86,6 +88,14 @@ export function Settings(): React.JSX.Element {
 
   const updatePriority = (patch: Partial<PriorityWeights>): void => {
     void persist({ ...config, priority: { ...config.priority, ...patch } });
+  };
+
+  const updateSearch = (patch: Partial<SearchConfig>): void => {
+    void persist({ ...config, search: { ...config.search, ...patch } });
+  };
+
+  const updateUpdater = (patch: Partial<UpdateConfig>): void => {
+    void persist({ ...config, update: { ...config.update, ...patch } });
   };
 
   const runTest = async (role: LlmRole): Promise<void> => {
@@ -204,6 +214,8 @@ export function Settings(): React.JSX.Element {
         </div>
       </section>
 
+      <SearchQualityPanel value={config.search} onChange={updateSearch} />
+
       <section className="space-y-4">
         <div>
           <h3 className="text-sm font-medium text-[var(--color-muted)]">优先级公式</h3>
@@ -288,6 +300,8 @@ export function Settings(): React.JSX.Element {
           </button>
         </div>
       </section>
+
+      <UpdatePanel value={config.update} onChange={updateUpdater} />
 
       <section className="space-y-2">
         <h3 className="text-sm font-medium text-[var(--color-muted)]">本地数据</h3>

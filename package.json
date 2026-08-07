@@ -8,8 +8,12 @@
   "main": "./out/main/index.js",
   "scripts": {
     "postinstall": "electron-builder install-app-deps",
+    "sync:grammars": "node scripts/sync-grammars.mjs",
+    "smoke:grammars": "node scripts/sync-grammars.mjs && node scripts/smoke-treesitter.mjs",
     "dev": "electron-vite dev",
     "build": "npm run typecheck && electron-vite build",
+    "prepackage": "npm run sync:grammars",
+    "predist": "npm run sync:grammars",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "lint": "eslint .",
     "start": "electron-vite preview",
@@ -39,11 +43,14 @@
     "eslint": "^10.8.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "tailwindcss": "^4.3.3",
+    "tree-sitter-wasms": "^0.1.13",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.66.0",
     "vite": "^7.3.6"
   },
   "dependencies": {
+    "@shikijs/langs": "4.4.2",
+    "@shikijs/themes": "4.4.2",
     "@xyflow/react": "^12.11.2",
     "better-sqlite3": "^13.0.3",
     "drizzle-orm": "^0.45.2",
@@ -52,7 +59,8 @@
     "openai": "^7.4.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "shiki": "^4.4.2",
     "simple-git": "^3.36.0",
-    "web-tree-sitter": "^0.26.11"
+    "web-tree-sitter": "^0.25.10"
   }
 }

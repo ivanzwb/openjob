@@ -1,6 +1,16 @@
+import { useRef } from 'react';
 import type { CompanyIntel } from '@shared/entities';
+import { AnnotationTools } from './AnnotationTools';
 
-export function CompanyIntelCard({ intel }: { intel: CompanyIntel }): React.JSX.Element {
+export function CompanyIntelCard({
+  intel,
+  onAnnotationChange,
+}: {
+  intel: CompanyIntel;
+  onAnnotationChange?: () => void;
+}): React.JSX.Element {
+  const bodyRef = useRef<HTMLDivElement>(null);
+
   const sections = [
     { title: '技术栈', content: intel.techStackMd },
     { title: '面试流程', content: intel.interviewProcessMd },
@@ -14,12 +24,25 @@ export function CompanyIntelCard({ intel }: { intel: CompanyIntel }): React.JSX.
 
   return (
     <div className="space-y-4">
-      {sections.map((s) => (
-        <div key={s.title}>
-          <h4 className="mb-1 text-xs font-medium text-[var(--color-muted)]">{s.title}</h4>
-          <div className="whitespace-pre-wrap text-sm leading-relaxed">{s.content}</div>
-        </div>
-      ))}
+      <div ref={bodyRef} className="space-y-4">
+        {sections.map((s) => (
+          <div key={s.title}>
+            <h4 className="mb-1 text-xs font-medium text-[var(--color-muted)]">{s.title}</h4>
+            <div className="whitespace-pre-wrap text-sm leading-relaxed">{s.content}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* 反问素材这类内容最值得划出来单独存，面试当天直接翻标记就行 */}
+      <div className="border-t border-[var(--color-border)] pt-2">
+        <AnnotationTools
+          targetType="intel"
+          targetId={intel.id}
+          scopeRef={bodyRef}
+          notePlaceholder="记下想追问的点 / 自己的对应经历"
+          onChange={onAnnotationChange}
+        />
+      </div>
     </div>
   );
 }

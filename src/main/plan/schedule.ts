@@ -6,6 +6,7 @@ import type { TaskKind } from '@shared/enums';
 import { getDb, schema } from '../db';
 import { getCampaignRow, listCampaigns, rowToNode, updateCampaign } from '../campaign/repository';
 import { topoSortByPrerequisite } from '../campaign/edges';
+import { recordPlanChange, recordPlanDecision } from './session';
 
 function formatLocal(d: Date): DateOnly {
   const y = d.getFullYear();
@@ -79,6 +80,10 @@ export function generatePlan(
     )
     .all();
   const nodes = topoSortByPrerequisite(byPriority, edges);
+  const priorityOrder = new Map(byPriority.map((n, i) => [n.id, i]));
+  const reorderedByPrerequisite = nodes
+    .filter((n, i) => (priorityOrder.get(n.id) ?? i) > i)
+    .map((n) => n.name);
 
   // 清空旧计划
   const oldDays = db
@@ -262,6 +267,22 @@ export function generatePlan(
     tasksCreated++;
     overflowFallbacks++;
   }
+
+  recordPlanDecision({
+    campaignId,
+    interviewDate: endDate,
+    dailyMinutes: daily,
+    budgetMinutes: dailyBudget(daily),
+    daysCreated: dates.length,
+    tasksCreated,
+    overflowFallbacks,
+    topNodes: nodes.slice(0, 8).map((n) => ({
+      name: n.name,
+      score: n.priorityScore,
+      coverageType: n.coverageType,
+    })),
+    reorderedByPrerequisite,
+  });
 
   return { daysCreated: dates.length, tasksCreated, overflowFallbacks };
 }
@@ -486,6 +507,7 @@ export function deferToday(campaignId: string): number {
       .set({ status: 'deferred' })
       .where(eq(schema.planDay.id, planDay.id))
       .run();
+    recordPlanChange(campaignId, `${today} 整天顺延到 ${tomorrow}，共 ${deferred} 个任务`);
   }
 
   return deferred;

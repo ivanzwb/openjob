@@ -45,6 +45,14 @@ import type {
 // 通用
 // ---------------------------------------------------------------------------
 
+/** 自动更新状态机。disabled 表示没配更新源或处在开发模式 */
+export interface UpdateStatus {
+  state: 'idle' | 'disabled' | 'checking' | 'upToDate' | 'available' | 'downloading' | 'downloaded' | 'error';
+  version?: string;
+  percent?: number;
+  message?: string;
+}
+
 export interface AppPaths {
   userData: string;
   dbFile: string;
@@ -95,6 +103,11 @@ export interface StreamDelta {
   delta: string;
 }
 
+export interface TokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+}
+
 export interface StreamToolCall {
   streamId: string;
   toolName: string;
@@ -110,7 +123,7 @@ export interface StreamDone {
   citations: Citation[];
   /** 本次回答的主要信息来源类型，UI 用 SourceBadge 渲染 */
   evidenceKind: EvidenceKind;
-  usage: { promptTokens: number; completionTokens: number } | null;
+  usage: TokenUsage | null;
 }
 
 export interface StreamError {
@@ -146,6 +159,8 @@ export interface SearchRequest {
   cacheCategory?: 'companyIntel' | 'interviewReports' | 'techDocs';
   /** 跳过缓存强制重新检索 */
   noCache?: boolean;
+  /** 覆盖 Tavily 的地域偏好（小写英文国名，如 china）；不传用配置里的值 */
+  country?: string;
 }
 
 export interface SearchResultItem {
@@ -156,6 +171,12 @@ export interface SearchResultItem {
   contentMd: string | null;
   publishedAt: number | null;
   credibility: number;
+  /** 落库后的 source 行 id，供面经等下游关联出处；命中缓存时也带着 */
+  sourceId?: string;
+  /** 距发布多少天，publishedAt 缺失时为 null */
+  ageDays?: number | null;
+  /** 技术文档超过时效阈值，引用前需核对版本 */
+  stale?: boolean;
 }
 
 export interface SearchResponse {
@@ -176,6 +197,8 @@ export interface FetchUrlResponse {
   title: string;
   contentMd: string;
   fetchedAt: number;
+  /** 落库后的 source 行 id */
+  sourceId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -235,6 +258,26 @@ export interface BlindSpotQuestion {
   id: string;
   questionText: string;
   reportedAt: number | null;
+}
+
+/** 面经条目 + 出处。网络来源必须能回溯到链接与抓取时间 */
+export interface InterviewReportView {
+  id: string;
+  sourceType: ReportSourceType;
+  reportedAt: number | null;
+  createdAt: number;
+  credibilityWeight: number;
+  excerpt: string;
+  questionCount: number;
+  blindSpotCount: number;
+  source: {
+    url: string;
+    domain: string;
+    title: string;
+    credibility: number;
+    fetchedAt: number;
+    publishedAt: number | null;
+  } | null;
 }
 
 export interface CreateCampaignInput {
@@ -313,6 +356,8 @@ export interface SessionSummary {
   title: string;
   createdAt: number;
   messageCount: number;
+  /** 会话累计 token，端点不返回 usage 的部分不计入 */
+  totalTokens: number;
 }
 
 export interface SessionMessageView {
@@ -322,6 +367,18 @@ export interface SessionMessageView {
   contentMd: string;
   citations: Citation[];
   createdAt: number;
+  usage: TokenUsage | null;
+  /** 该条回答下挂的工具调用，含各自摊到的 token 成本 */
+  toolCalls: ToolCallView[];
+}
+
+export interface ToolCallView {
+  id: string;
+  toolName: string;
+  args: Record<string, unknown>;
+  resultSummary: string;
+  durationMs: number;
+  tokenCost: number | null;
 }
 
 export interface SessionSearchHit extends SessionSummary {
@@ -559,6 +616,18 @@ export interface AnnotationToggleInput {
   targetId: string;
 }
 
+/** 标记 + 目标的可读名字，供「我的标记」这类跨类型汇总列表使用 */
+export interface AnnotationView extends Annotation {
+  targetLabel: string;
+}
+
+export interface EnsureCodeRefInput {
+  repoId: string;
+  filePath: string;
+  startLine: number;
+  endLine?: number;
+}
+
 // ---------------------------------------------------------------------------
 // Campaign 对比
 // ---------------------------------------------------------------------------
@@ -587,6 +656,11 @@ export interface CampaignCompareResult {
 export interface IpcInvokeMap {
   'app:getPaths': { req: void; res: AppPaths };
   'app:getVersion': { req: void; res: string };
+
+  'update:status': { req: void; res: UpdateStatus };
+  'update:check': { req: void; res: UpdateStatus };
+  /** 重启安装已下载的更新 */
+  'update:install': { req: void; res: void };
 
   'config:get': { req: void; res: AppConfig };
   'config:update': { req: AppConfig; res: AppConfig };
@@ -630,6 +704,8 @@ export interface IpcInvokeMap {
   'diagnosis:ingestReport': { req: IngestReportInput; res: IngestReportResult };
   /** 联网搜索面经并自动摄入 */
   'diagnosis:ingestWeb': { req: { campaignId: string }; res: IngestWebResult };
+  /** 面经列表，带来源链接与抓取时间 */
+  'diagnosis:listReports': { req: { campaignId: string }; res: InterviewReportView[] };
 
   'node:update': { req: UpdateNodeInput; res: KnowledgeNode };
   'node:delete': { req: { id: string }; res: void };
@@ -681,10 +757,15 @@ export interface IpcInvokeMap {
   'design:submit': { req: DesignSubmitInput; res: DesignSubmitResult };
 
   'annotation:list': { req: { targetType: AnnotationTarget; targetId: string }; res: Annotation[] };
-  'annotation:listForCampaign': { req: { campaignId: string }; res: Annotation[] };
+  /** 一场面试下五类目标的全部标记 */
+  'annotation:listForCampaign': { req: { campaignId: string }; res: AnnotationView[] };
+  /** 一个仓库下的代码位置标记 */
+  'annotation:listForRepo': { req: { repoId: string }; res: AnnotationView[] };
   'annotation:create': { req: AnnotationCreateInput; res: Annotation };
   'annotation:delete': { req: { id: string }; res: void };
   'annotation:toggleBookmark': { req: AnnotationToggleInput; res: { bookmarked: boolean } };
+  /** 标记代码位置前先落一条 code_ref，返回其 id */
+  'codeRef:ensure': { req: EnsureCodeRefInput; res: { id: string } };
 
   'session:list': { req: { kind?: SessionKind; limit?: number }; res: SessionSummary[] };
   'session:getMessages': { req: { sessionId: string }; res: SessionMessageView[] };
@@ -699,6 +780,7 @@ export interface IpcEventMap {
   'stream:done': StreamDone;
   'stream:error': StreamError;
   'job:progress': JobProgress;
+  'update:status': UpdateStatus;
 }
 
 export type IpcInvokeChannel = keyof IpcInvokeMap;
@@ -711,6 +793,9 @@ export type IpcRes<C extends IpcInvokeChannel> = IpcInvokeMap[C]['res'];
 export const IPC_INVOKE_CHANNELS = [
   'app:getPaths',
   'app:getVersion',
+  'update:status',
+  'update:check',
+  'update:install',
   'config:get',
   'config:update',
   'config:setSecret',
@@ -739,6 +824,7 @@ export const IPC_INVOKE_CHANNELS = [
   'diagnosis:fetchIntel',
   'diagnosis:ingestReport',
   'diagnosis:ingestWeb',
+  'diagnosis:listReports',
   'node:update',
   'node:delete',
   'node:create',
@@ -779,9 +865,11 @@ export const IPC_INVOKE_CHANNELS = [
   'design:submit',
   'annotation:list',
   'annotation:listForCampaign',
+  'annotation:listForRepo',
   'annotation:create',
   'annotation:delete',
   'annotation:toggleBookmark',
+  'codeRef:ensure',
   'session:list',
   'session:getMessages',
   'session:search',
@@ -794,6 +882,7 @@ export const IPC_EVENT_CHANNELS = [
   'stream:done',
   'stream:error',
   'job:progress',
+  'update:status',
 ] as const satisfies readonly IpcEventChannel[];
 
 /**

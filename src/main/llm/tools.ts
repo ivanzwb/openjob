@@ -1,6 +1,6 @@
 import type OpenAI from 'openai';
 import type { Citation } from '@shared/entities';
-import { fetchUrl, search } from '../search';
+import { fetchUrl, freshnessLabel, search } from '../search';
 import { compressForContext } from './compress';
 
 /**
@@ -15,7 +15,8 @@ export const AGENT_TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
       description:
         '联网检索。适用于：公司/岗位相关的面经与面试流程、版本敏感的技术细节、时效性内容、开源项目的设计意图讨论。' +
         '不要用于稳定的基础知识（如 TCP 三次握手、红黑树、GC 算法原理），你自己知道得更准，检索只会引入噪音。' +
-        '使用检索结果时必须在回答中标注来源链接。',
+        '使用检索结果时必须在回答中标注来源链接；结果带有「时效」一行，被标为可能过时的内容要么不用，' +
+        '要么明确说明它对应的是哪个时期的版本。',
       parameters: {
         type: 'object',
         properties: {
@@ -134,13 +135,20 @@ export async function runTool(
           i < COMPRESS_TOP_N
             ? (await compressForContext(raw, ctx?.purpose ?? query, 900)).text
             : raw.slice(0, 600);
-        return `[${i + 1}] ${r.title}\nURL: ${r.url}\n可信度: ${r.credibility}/5\n${body}`;
+        return (
+          `[${i + 1}] ${r.title}\nURL: ${r.url}\n可信度: ${r.credibility}/5\n` +
+          `时效: ${freshnessLabel(r)}\n${body}`
+        );
       }),
     );
 
+    const staleCount = res.results.filter((r) => r.stale).length;
     return {
       content: blocks.join('\n\n---\n\n') || '未检索到结果',
-      summary: `${res.provider} 检索「${res.query}」${res.fromCache ? '（缓存）' : ''}，${res.results.length} 条结果`,
+      summary:
+        `${res.provider} 检索「${res.query}」${res.fromCache ? '（缓存）' : ''}，` +
+        `${res.results.length} 条结果` +
+        (staleCount ? `（${staleCount} 条可能过时）` : ''),
       citations,
     };
   }

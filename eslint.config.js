@@ -29,6 +29,14 @@ export default tseslint.config(
   },
 
   {
+    // 构建脚本跑在 Node 里，不走 tsconfig 的 lib 配置
+    files: ['scripts/**/*.mjs', 'eslint.config.js'],
+    languageOptions: {
+      globals: { console: 'readonly', process: 'readonly', URL: 'readonly' },
+    },
+  },
+
+  {
     files: ['src/renderer/**/*.{ts,tsx}'],
     plugins: { 'react-hooks': reactHooks },
     rules: {

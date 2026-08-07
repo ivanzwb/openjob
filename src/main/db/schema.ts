@@ -361,6 +361,9 @@ export const message = sqliteTable(
     role: text('role').$type<MessageRole>().notNull(),
     contentMd: text('content_md').notNull(),
     citations: text('citations', { mode: 'json' }).$type<Citation[]>().notNull().default([]),
+    /** 本轮回答的实际 token 用量；端点不返回 usage 时为 null */
+    promptTokens: integer('prompt_tokens'),
+    completionTokens: integer('completion_tokens'),
     createdAt: integer('created_at').notNull(),
   },
   (t) => [index('idx_message_session').on(t.sessionId, t.createdAt)],

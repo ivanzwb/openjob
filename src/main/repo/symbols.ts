@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { astWasUsed, extractSymbolsAst } from './treeSitter';
 
 const SKIP_DIRS = new Set([
   '.git', 'node_modules', 'dist', 'out', 'build', '.next', 'target', '__pycache__', '.venv', 'vendor',
@@ -68,10 +69,14 @@ function extractSymbols(content: string, lang: string): SymbolHit[] {
   return hits;
 }
 
-/** 生成带符号骨架的 repo map（正则提取函数/类/接口，优于仅列目录） */
+/**
+ * 生成带符号骨架的 repo map。
+ * 优先走 tree-sitter AST；语法文件缺失或语言不支持时降级到正则。
+ */
 export async function buildRepoMapAsync(repoRoot: string, maxFiles = 80): Promise<string> {
   const lines: string[] = ['# Repo Map', ''];
   let count = 0;
+  let regexFallbacks = 0;
 
   const walk = async (dir: string, depth: number): Promise<void> => {
     if (count >= maxFiles || depth > 4) return;
@@ -105,8 +110,11 @@ export async function buildRepoMapAsync(repoRoot: string, maxFiles = 80): Promis
 
         try {
           const content = readFileSync(full, 'utf8');
-          const lang = EXT_LANG[ext] ?? 'typescript';
-          const hits = extractSymbols(content, lang);
+          let hits = await extractSymbolsAst(content, ext);
+          if (!hits) {
+            hits = extractSymbols(content, EXT_LANG[ext] ?? 'typescript');
+            regexFallbacks++;
+          }
           for (const h of hits.slice(0, 12)) {
             lines.push(`${indent}  - ${h.kind} ${h.name} :${h.line}`);
           }
@@ -122,6 +130,14 @@ export async function buildRepoMapAsync(repoRoot: string, maxFiles = 80): Promis
     const { buildRepoMap } = await import('./files');
     return buildRepoMap(repoRoot, maxFiles);
   }
+
+  const source = astWasUsed()
+    ? regexFallbacks > 0
+      ? `tree-sitter AST（${regexFallbacks} 个文件降级为正则）`
+      : 'tree-sitter AST'
+    : '正则提取（tree-sitter 语法文件不可用）';
+  lines.splice(1, 0, `> 符号来源：${source}`);
+
   return lines.join('\n');
 }
 

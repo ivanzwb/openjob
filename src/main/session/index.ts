@@ -1,8 +1,14 @@
 import { randomUUID } from 'node:crypto';
-import { desc, eq } from 'drizzle-orm';
+import { desc, eq, inArray } from 'drizzle-orm';
 import type { Citation } from '@shared/entities';
 import type { SessionKind } from '@shared/enums';
-import type { SessionMessageView, SessionSearchHit, SessionSummary } from '@shared/ipc';
+import type {
+  SessionMessageView,
+  SessionSearchHit,
+  SessionSummary,
+  TokenUsage,
+  ToolCallView,
+} from '@shared/ipc';
 import { getDb, schema } from '../db';
 
 export function createSession(
@@ -29,6 +35,7 @@ export function appendMessage(
   role: 'user' | 'assistant',
   contentMd: string,
   citations: Citation[] = [],
+  usage: TokenUsage | null = null,
 ): string {
   const id = randomUUID();
   const now = Date.now();
@@ -40,6 +47,8 @@ export function appendMessage(
       role,
       contentMd,
       citations,
+      promptTokens: usage?.promptTokens ?? null,
+      completionTokens: usage?.completionTokens ?? null,
       createdAt: now,
     })
     .run();
@@ -52,6 +61,7 @@ export function appendToolCall(
   args: Record<string, unknown>,
   resultSummary: string,
   durationMs: number,
+  tokenCost: number | null = null,
 ): void {
   getDb()
     .insert(schema.toolCall)
@@ -62,7 +72,7 @@ export function appendToolCall(
       args,
       resultSummary,
       durationMs,
-      tokenCost: null,
+      tokenCost,
       createdAt: Date.now(),
     })
     .run();
@@ -79,19 +89,26 @@ export function listSessions(kind?: SessionKind, limit = 50): SessionSummary[] {
 
   const db = getDb();
   return rows.map((s) => {
-    const msgCount =
-      db
-        .select()
-        .from(schema.message)
-        .where(eq(schema.message.sessionId, s.id))
-        .all().length;
+    const msgs = db
+      .select({
+        promptTokens: schema.message.promptTokens,
+        completionTokens: schema.message.completionTokens,
+      })
+      .from(schema.message)
+      .where(eq(schema.message.sessionId, s.id))
+      .all();
+
     return {
       id: s.id,
       campaignId: s.campaignId,
       kind: s.kind,
       title: s.title,
       createdAt: s.createdAt,
-      messageCount: msgCount,
+      messageCount: msgs.length,
+      totalTokens: msgs.reduce(
+        (sum, m) => sum + (m.promptTokens ?? 0) + (m.completionTokens ?? 0),
+        0,
+      ),
     };
   });
 }
@@ -139,6 +156,10 @@ export function searchSessions(query: string, limit = 30): SessionSearchHit[] {
       title: s.title,
       createdAt: s.createdAt,
       messageCount: msgs.length,
+      totalTokens: msgs.reduce(
+        (sum, m) => sum + (m.promptTokens ?? 0) + (m.completionTokens ?? 0),
+        0,
+      ),
       matchCount: matched.length,
       snippet: first ? excerpt(first.contentMd, q) : s.title,
     });
@@ -162,19 +183,49 @@ export function deleteSession(sessionId: string): void {
 }
 
 export function getSessionMessages(sessionId: string): SessionMessageView[] {
-  return getDb()
+  const db = getDb();
+  const messages = db
     .select()
     .from(schema.message)
     .where(eq(schema.message.sessionId, sessionId))
     .orderBy(schema.message.createdAt)
     .all()
-    .filter((m) => m.role === 'user' || m.role === 'assistant')
-    .map((m) => ({
-      id: m.id,
-      sessionId: m.sessionId,
-      role: m.role as 'user' | 'assistant',
-      contentMd: m.contentMd,
-      citations: m.citations,
-      createdAt: m.createdAt,
-    }));
+    .filter((m) => m.role === 'user' || m.role === 'assistant');
+
+  if (messages.length === 0) return [];
+
+  const calls = db
+    .select()
+    .from(schema.toolCall)
+    .where(inArray(schema.toolCall.messageId, messages.map((m) => m.id)))
+    .orderBy(schema.toolCall.createdAt)
+    .all();
+
+  const callsByMessage = new Map<string, ToolCallView[]>();
+  for (const c of calls) {
+    const list = callsByMessage.get(c.messageId) ?? [];
+    list.push({
+      id: c.id,
+      toolName: c.toolName,
+      args: c.args,
+      resultSummary: c.resultSummary,
+      durationMs: c.durationMs,
+      tokenCost: c.tokenCost,
+    });
+    callsByMessage.set(c.messageId, list);
+  }
+
+  return messages.map((m) => ({
+    id: m.id,
+    sessionId: m.sessionId,
+    role: m.role as 'user' | 'assistant',
+    contentMd: m.contentMd,
+    citations: m.citations,
+    createdAt: m.createdAt,
+    usage:
+      m.promptTokens === null && m.completionTokens === null
+        ? null
+        : { promptTokens: m.promptTokens ?? 0, completionTokens: m.completionTokens ?? 0 },
+    toolCalls: callsByMessage.get(m.id) ?? [],
+  }));
 }

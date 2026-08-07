@@ -1,5 +1,6 @@
 import type { FetchUrlResponse, SearchRequest, SearchResultItem } from '@shared/ipc';
 import { credibilityOf, extractDomain } from './routing';
+import { toTavilyTimeRange } from './freshness';
 
 /**
  * Tavily。用于英文内容：官方文档、GitHub、英文技术博客。
@@ -22,8 +23,12 @@ export async function tavilySearch(
   apiKey: string,
   req: SearchRequest,
   credibilityTable: Record<string, number>,
+  country: string,
   signal?: AbortSignal,
 ): Promise<SearchResultItem[]> {
+  // country 只在 topic=general 下生效，Tavily 对 news topic 会忽略它
+  const geo = country.trim().toLowerCase();
+
   const res = await fetch(SEARCH_URL, {
     method: 'POST',
     headers: {
@@ -35,6 +40,9 @@ export async function tavilySearch(
       max_results: Math.min(req.count ?? 8, 20),
       // advanced 消耗 2 credit，只在明确需要广度时才开
       search_depth: 'basic',
+      topic: 'general',
+      time_range: toTavilyTimeRange(req.freshness),
+      country: geo || undefined,
       include_domains: req.includeDomains ?? undefined,
       exclude_domains: req.excludeDomains ?? undefined,
     }),

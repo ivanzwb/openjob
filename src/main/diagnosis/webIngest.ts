@@ -21,10 +21,13 @@ export async function ingestWebReports(campaignId: string): Promise<{
 
   for (const hit of searchRes.results) {
     let raw = (hit.contentMd ?? hit.snippet).trim();
+    let sourceId = hit.sourceId ?? null;
+
     if (raw.length < 150 && hit.url) {
       try {
         const page = await fetchUrl({ url: hit.url });
         raw = page.contentMd.trim();
+        sourceId = page.sourceId ?? sourceId;
         sourcesFetched++;
       } catch {
         // 单条抓取失败不阻断
@@ -33,7 +36,7 @@ export async function ingestWebReports(campaignId: string): Promise<{
     if (raw.length < 80) continue;
 
     const header = `来源：${hit.title}\nURL：${hit.url}\n\n`;
-    const result = await ingestInterviewReport(campaignId, header + raw, 'web');
+    const result = await ingestInterviewReport(campaignId, header + raw, 'web', sourceId);
     reports.push(result);
   }
 

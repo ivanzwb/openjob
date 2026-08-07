@@ -3,6 +3,7 @@ import { app, BrowserWindow, shell } from 'electron';
 import { ensureDirs } from './paths';
 import { registerIpcHandlers } from './ipc';
 import { closeDb, getDb } from './db';
+import { scheduleStartupCheck } from './updater';
 
 const isDev = !app.isPackaged;
 
@@ -61,6 +62,7 @@ app.whenReady().then(() => {
   getDb();
   registerIpcHandlers();
   createWindow();
+  scheduleStartupCheck();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

@@ -27,3 +27,35 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
 }
+
+/* Shiki 自带主题背景，这里改回应用底色，并用 data-line 画出文件真实行号 */
+.shiki-host pre.shiki {
+  margin: 0;
+  padding: 0;
+  background: transparent !important;
+  overflow-x: auto;
+}
+
+.shiki-host code {
+  display: block;
+  counter-reset: none;
+}
+
+.shiki-host .line {
+  display: block;
+  min-height: 1.25rem;
+}
+
+.shiki-host[data-line-numbers] .line::before {
+  content: attr(data-line);
+  display: inline-block;
+  width: 3.5rem;
+  padding-right: 1rem;
+  text-align: right;
+  color: var(--color-muted);
+  user-select: none;
+}
+
+.shiki-host .line:hover {
+  background: rgb(255 255 255 / 4%);
+}

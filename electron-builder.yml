@@ -27,6 +27,14 @@ asarUnpack:
 # 让 electron-builder 按 Electron 的 ABI 重建原生依赖
 npmRebuild: true
 
+# 只为生成 latest.yml（electron-updater 的更新清单），不实际上传。
+# 真正的更新源在运行时由 config.update.feedUrl 通过 setFeedURL 覆盖，
+# 因为这个项目不绑定固定的发布地址。
+publish:
+  - provider: generic
+    url: https://localhost/openjob/
+    channel: latest
+
 # 直接复用 devDependency 里已解压的 Electron，跳过「下载 → 解压 → 重命名」。
 # Windows 上 Defender 会在解压后立刻扫描 electron.exe 与各 dll，持有句柄导致
 # 目录重命名报 EPERM；复用现成目录可以绕开这个时间窗。
