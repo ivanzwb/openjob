@@ -79,7 +79,7 @@ export type AnnotationTarget = (typeof ANNOTATION_TARGETS)[number];
 export const ANNOTATION_KINDS = ['highlight', 'note', 'bookmark'] as const;
 export type AnnotationKind = (typeof ANNOTATION_KINDS)[number];
 
-export const SPEECH_SOURCE_TYPES = ['node', 'codeRef', 'quiz'] as const;
+export const SPEECH_SOURCE_TYPES = ['node', 'codeRef', 'quiz', 'design'] as const;
 export type SpeechSourceType = (typeof SPEECH_SOURCE_TYPES)[number];
 
 export const SESSION_KINDS = ['quiz', 'repoQa', 'freeChat', 'planning'] as const;

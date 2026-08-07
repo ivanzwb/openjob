@@ -7,10 +7,11 @@ import { Settings } from './pages/Settings';
 import { Overview } from './pages/Overview';
 import { Repos } from './pages/Repos';
 import { Scripts } from './pages/Scripts';
+import { DesignPractice } from './pages/DesignPractice';
 import { Today } from './pages/Today';
 import { invoke } from './ipc';
 
-type Tab = 'today' | 'overview' | 'campaigns' | 'repos' | 'scripts' | 'chat' | 'settings';
+type Tab = 'today' | 'overview' | 'campaigns' | 'design' | 'repos' | 'scripts' | 'chat' | 'settings';
 type View = { kind: 'list' } | { kind: 'create' } | { kind: 'detail'; id: string; autoDiagnose?: boolean };
 
 export default function App(): React.JSX.Element {
@@ -33,6 +34,7 @@ export default function App(): React.JSX.Element {
               ['today', '今日'],
               ['overview', '总览'],
               ['campaigns', '备考'],
+              ['design', '设计'],
               ['repos', '源码'],
               ['scripts', '话术'],
               ['chat', '对话'],
@@ -69,6 +71,7 @@ export default function App(): React.JSX.Element {
           />
         )}
         {tab === 'repos' && <Repos />}
+        {tab === 'design' && <DesignPractice />}
         {tab === 'scripts' && <Scripts />}
         {tab === 'settings' && <Settings />}
         {tab === 'chat' && (

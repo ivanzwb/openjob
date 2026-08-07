@@ -1,6 +1,7 @@
 import { app } from 'electron';
 import { getConfig, deleteSecret, hasSecret, setSecret, updateConfig } from '../config';
 import { getCampaignOverview } from '../campaign/overview';
+import { compareCampaigns } from '../campaign/compare';
 import {
   createCampaign,
   createResume,
@@ -19,6 +20,14 @@ import {
   diagnoseFromJd,
   ingestInterviewReport,
 } from '../diagnosis';
+import {
+  createAnnotation,
+  deleteAnnotation,
+  listAnnotations,
+  listAnnotationsForCampaign,
+  toggleBookmark,
+} from '../annotation';
+import { generateDesignCase, submitDesignAnswer } from '../design';
 import { dbHealth } from '../db';
 import { generateExplanation, generateFallbackScript, getExplanation } from '../explain';
 import { startJob } from '../jobs';
@@ -66,6 +75,9 @@ export function registerIpcHandlers(): void {
 
   handle('campaign:list', () => listCampaigns());
   handle('campaign:getOverview', () => getCampaignOverview());
+  handle('campaign:compare', ({ campaignIdA, campaignIdB }) =>
+    compareCampaigns(campaignIdA, campaignIdB),
+  );
   handle('campaign:get', ({ id }) => getCampaignDetail(id));
   handle('campaign:create', (input) => createCampaign(input));
   handle('campaign:update', (input) => updateCampaign(input));
@@ -141,6 +153,28 @@ export function registerIpcHandlers(): void {
     deleteSpeechSnippet(id);
   });
   handle('speech:export', (input) => exportSpeechSnippets(input));
+
+  handle('design:case', ({ campaignId }) => generateDesignCase(campaignId));
+  handle('design:submit', (input) => submitDesignAnswer(
+    input.campaignId,
+    input.caseTitle,
+    input.scenarioMd,
+    input.userAnswer,
+  ));
+
+  handle('annotation:list', ({ targetType, targetId }) =>
+    listAnnotations(targetType, targetId),
+  );
+  handle('annotation:listForCampaign', ({ campaignId }) =>
+    listAnnotationsForCampaign(campaignId),
+  );
+  handle('annotation:create', (input) => createAnnotation(input));
+  handle('annotation:delete', ({ id }) => {
+    deleteAnnotation(id);
+  });
+  handle('annotation:toggleBookmark', ({ targetType, targetId }) => ({
+    bookmarked: toggleBookmark(targetType, targetId),
+  }));
 }
 
 export { emit, handle } from './bridge';

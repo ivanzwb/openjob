@@ -29,6 +29,7 @@ export function CampaignDetail({
   const [interviewDate, setInterviewDate] = useState('');
   const [dailyMinutes, setDailyMinutes] = useState('90');
   const [planMsg, setPlanMsg] = useState<string | null>(null);
+  const [bookmarkedIds, setBookmarkedIds] = useState<Set<string>>(new Set());
   const { active: job, lastMessage } = useJobProgress();
 
   const refresh = useCallback(() => {
@@ -38,6 +39,11 @@ export function CampaignDetail({
       setDailyMinutes(String(d.campaign.dailyMinutes ?? 90));
     });
     void invoke('resume:list', undefined).then(setResumes);
+    void invoke('annotation:listForCampaign', { campaignId: id }).then((anns) => {
+      setBookmarkedIds(
+        new Set(anns.filter((a) => a.kind === 'bookmark').map((a) => a.targetId)),
+      );
+    });
   }, [id]);
 
   const autoRan = useRef(false);
@@ -114,6 +120,19 @@ export function CampaignDetail({
   const deleteNode = async (nodeId: string): Promise<void> => {
     await invoke('node:delete', { id: nodeId });
     refresh();
+  };
+
+  const toggleBookmark = async (nodeId: string): Promise<void> => {
+    const res = await invoke('annotation:toggleBookmark', {
+      targetType: 'node',
+      targetId: nodeId,
+    });
+    setBookmarkedIds((prev) => {
+      const next = new Set(prev);
+      if (res.bookmarked) next.add(nodeId);
+      else next.delete(nodeId);
+      return next;
+    });
   };
 
   const generatePlan = async (): Promise<void> => {
@@ -253,8 +272,10 @@ export function CampaignDetail({
             ) : (
               <KnowledgeTree
                 nodes={nodes}
+                bookmarkedIds={bookmarkedIds}
                 onExpand={(nid) => void expandNode(nid)}
                 onDelete={(nid) => void deleteNode(nid)}
+                onToggleBookmark={(nid) => void toggleBookmark(nid)}
                 expandingId={expandingId}
               />
             )}

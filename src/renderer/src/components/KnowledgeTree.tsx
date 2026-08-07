@@ -10,16 +10,20 @@ const KIND_LABEL: Record<NodeKind, string> = {
 
 interface TreeProps {
   nodes: KnowledgeNodeView[];
+  bookmarkedIds?: Set<string>;
   onExpand?: (nodeId: string) => void;
   onDelete?: (nodeId: string) => void;
+  onToggleBookmark?: (nodeId: string) => void;
   expandingId?: string | null;
 }
 
 /** 层级考点清单 + 进度条，不做图谱可视化 */
 export function KnowledgeTree({
   nodes,
+  bookmarkedIds,
   onExpand,
   onDelete,
+  onToggleBookmark,
   expandingId,
 }: TreeProps): React.JSX.Element {
   const roots = nodes.filter((n) => !n.parentId);
@@ -43,6 +47,11 @@ export function KnowledgeTree({
         >
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
+              {bookmarkedIds?.has(node.id) && (
+                <span className="text-amber-400" title="已收藏">
+                  ★
+                </span>
+              )}
               <span className="text-sm font-medium">{node.name}</span>
               <span className="text-[10px] text-[var(--color-muted)]">
                 {KIND_LABEL[node.kind]}
@@ -63,6 +72,20 @@ export function KnowledgeTree({
             </div>
           </div>
           <div className="flex shrink-0 gap-1">
+            {onToggleBookmark && (
+              <button
+                type="button"
+                onClick={() => onToggleBookmark(node.id)}
+                className={`rounded px-2 py-0.5 text-xs ${
+                  bookmarkedIds?.has(node.id)
+                    ? 'text-amber-400'
+                    : 'text-[var(--color-muted)] hover:text-amber-400'
+                }`}
+                title="收藏考点"
+              >
+                {bookmarkedIds?.has(node.id) ? '★' : '☆'}
+              </button>
+            )}
             {(node.kind === 'domain' || node.kind === 'topic') && onExpand && (
               <button
                 type="button"

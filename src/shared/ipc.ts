@@ -19,6 +19,8 @@ import type {
   NodeStatus,
   ExplanationTier,
   ReportSourceType,
+  AnnotationTarget,
+  AnnotationKind,
 } from './enums';
 import type {
   Campaign,
@@ -33,6 +35,7 @@ import type {
   Resume,
   SpeechSnippet,
   Task,
+  Annotation,
 } from './entities';
 
 // ---------------------------------------------------------------------------
@@ -400,6 +403,71 @@ export interface SpeechExportResult {
 }
 
 // ---------------------------------------------------------------------------
+// 系统设计（阶段 5）
+// ---------------------------------------------------------------------------
+
+export interface DesignCaseResult {
+  campaignId: string;
+  company: string;
+  roleTitle: string;
+  title: string;
+  scenarioMd: string;
+  constraints: string[];
+  evaluationCriteria: string[];
+}
+
+export interface DesignSubmitInput {
+  campaignId: string;
+  caseTitle: string;
+  scenarioMd: string;
+  userAnswer: string;
+}
+
+export interface DesignSubmitResult {
+  score: number;
+  feedbackMd: string;
+  improvedOutlineMd: string;
+  speechSnippetId: string;
+}
+
+// ---------------------------------------------------------------------------
+// 标注
+// ---------------------------------------------------------------------------
+
+export interface AnnotationCreateInput {
+  targetType: AnnotationTarget;
+  targetId: string;
+  kind: AnnotationKind;
+  selectedText?: string;
+  noteMd?: string;
+}
+
+export interface AnnotationToggleInput {
+  targetType: AnnotationTarget;
+  targetId: string;
+}
+
+// ---------------------------------------------------------------------------
+// Campaign 对比
+// ---------------------------------------------------------------------------
+
+export interface CampaignCompareResult {
+  campaignA: { id: string; company: string; roleTitle: string };
+  campaignB: { id: string; company: string; roleTitle: string };
+  overlaps: Array<{
+    nodeName: string;
+    masteryA: number;
+    masteryB: number;
+    examProbA: number;
+    examProbB: number;
+  }>;
+  onlyA: Array<{ nodeName: string; mastery: number; examProb: number }>;
+  onlyB: Array<{ nodeName: string; mastery: number; examProb: number }>;
+  avgMasteryA: number;
+  avgMasteryB: number;
+}
+
+// ---------------------------------------------------------------------------
 // 通道映射
 // ---------------------------------------------------------------------------
 
@@ -428,6 +496,7 @@ export interface IpcInvokeMap {
 
   'campaign:list': { req: void; res: CampaignSummary[] };
   'campaign:getOverview': { req: void; res: CampaignOverview };
+  'campaign:compare': { req: { campaignIdA: string; campaignIdB: string }; res: CampaignCompareResult };
   'campaign:get': { req: { id: string }; res: CampaignDetail };
   'campaign:create': { req: CreateCampaignInput; res: Campaign };
   'campaign:update': { req: UpdateCampaignInput; res: Campaign };
@@ -477,6 +546,15 @@ export interface IpcInvokeMap {
   'speech:update': { req: SpeechUpdateInput; res: SpeechSnippet };
   'speech:delete': { req: { id: string }; res: void };
   'speech:export': { req: SpeechExportInput; res: SpeechExportResult };
+
+  'design:case': { req: { campaignId: string }; res: DesignCaseResult };
+  'design:submit': { req: DesignSubmitInput; res: DesignSubmitResult };
+
+  'annotation:list': { req: { targetType: AnnotationTarget; targetId: string }; res: Annotation[] };
+  'annotation:listForCampaign': { req: { campaignId: string }; res: Annotation[] };
+  'annotation:create': { req: AnnotationCreateInput; res: Annotation };
+  'annotation:delete': { req: { id: string }; res: void };
+  'annotation:toggleBookmark': { req: AnnotationToggleInput; res: { bookmarked: boolean } };
 }
 
 /** 主进程 → 渲染进程的单向推送 */
@@ -512,6 +590,7 @@ export const IPC_INVOKE_CHANNELS = [
   'db:health',
   'campaign:list',
   'campaign:getOverview',
+  'campaign:compare',
   'campaign:get',
   'campaign:create',
   'campaign:update',
@@ -548,6 +627,13 @@ export const IPC_INVOKE_CHANNELS = [
   'speech:update',
   'speech:delete',
   'speech:export',
+  'design:case',
+  'design:submit',
+  'annotation:list',
+  'annotation:listForCampaign',
+  'annotation:create',
+  'annotation:delete',
+  'annotation:toggleBookmark',
 ] as const satisfies readonly IpcInvokeChannel[];
 
 export const IPC_EVENT_CHANNELS = [

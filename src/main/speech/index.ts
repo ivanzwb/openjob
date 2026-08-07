@@ -48,6 +48,14 @@ function resolveSourceLabel(sourceType: SpeechSnippet['sourceType'], sourceId: s
       .get();
     return node ? `考我 · ${node.name}` : '考我';
   }
+  if (sourceType === 'design') {
+    const campaign = db
+      .select()
+      .from(schema.campaign)
+      .where(eq(schema.campaign.id, sourceId))
+      .get();
+    return campaign ? `系统设计 · ${campaign.company}` : '系统设计';
+  }
   return '话术';
 }
 
@@ -75,6 +83,14 @@ export function saveSpeechFromQuiz(
   contentMd: string,
 ): SpeechSnippet {
   return saveSpeech('quiz', attemptId, contentMd, 'spoken');
+}
+
+export function saveSpeechFromDesign(
+  campaignId: string,
+  _caseTitle: string,
+  contentMd: string,
+): SpeechSnippet {
+  return saveSpeech('design', campaignId, contentMd, 'spoken');
 }
 
 export function saveSpeechFromNode(

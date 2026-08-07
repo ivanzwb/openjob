@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { CampaignOverview } from '@shared/ipc';
+import type { CampaignCompareResult, CampaignOverview } from '@shared/ipc';
 import { invoke } from '../ipc';
 
 export function Overview({
@@ -9,16 +9,40 @@ export function Overview({
 }): React.JSX.Element {
   const [data, setData] = useState<CampaignOverview | null>(null);
   const [loading, setLoading] = useState(true);
+  const [compareA, setCompareA] = useState('');
+  const [compareB, setCompareB] = useState('');
+  const [compareResult, setCompareResult] = useState<CampaignCompareResult | null>(null);
+  const [comparing, setComparing] = useState(false);
 
   const refresh = useCallback(() => {
     void invoke('campaign:getOverview', undefined)
-      .then(setData)
+      .then((overview) => {
+        setData(overview);
+        if (overview.campaigns.length >= 2) {
+          setCompareA(overview.campaigns[0]!.id);
+          setCompareB(overview.campaigns[1]!.id);
+        }
+      })
       .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  const runCompare = async (): Promise<void> => {
+    if (!compareA || !compareB || compareA === compareB) return;
+    setComparing(true);
+    try {
+      const res = await invoke('campaign:compare', {
+        campaignIdA: compareA,
+        campaignIdB: compareB,
+      });
+      setCompareResult(res);
+    } finally {
+      setComparing(false);
+    }
+  };
 
   if (loading || !data) {
     return <p className="p-6 text-sm text-[var(--color-muted)]">加载总览…</p>;
@@ -99,6 +123,94 @@ export function Overview({
               </li>
             ))}
           </ul>
+        </section>
+      )}
+
+      {data.campaigns.length >= 2 && (
+        <section className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+          <h3 className="text-sm font-medium">Campaign 对比</h3>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <select
+              value={compareA}
+              onChange={(e) => setCompareA(e.target.value)}
+              className="rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1.5 text-sm"
+            >
+              {data.campaigns.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.company} · {c.roleTitle}
+                </option>
+              ))}
+            </select>
+            <select
+              value={compareB}
+              onChange={(e) => setCompareB(e.target.value)}
+              className="rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1.5 text-sm"
+            >
+              {data.campaigns.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.company} · {c.roleTitle}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button
+            type="button"
+            disabled={comparing || !compareA || !compareB || compareA === compareB}
+            onClick={() => void runCompare()}
+            className="rounded border border-[var(--color-border)] px-3 py-1 text-xs disabled:opacity-40"
+          >
+            {comparing ? '对比中…' : '开始对比'}
+          </button>
+          {compareResult && (
+            <div className="space-y-3 border-t border-[var(--color-border)] pt-3 text-sm">
+              <p className="text-xs text-[var(--color-muted)]">
+                平均掌握度：{compareResult.campaignA.company}{' '}
+                {compareResult.avgMasteryA.toFixed(1)} vs {compareResult.campaignB.company}{' '}
+                {compareResult.avgMasteryB.toFixed(1)}
+              </p>
+              {compareResult.overlaps.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-medium text-[var(--color-muted)]">
+                    重叠考点（{compareResult.overlaps.length}）
+                  </h4>
+                  <ul className="mt-1 max-h-40 space-y-1 overflow-y-auto">
+                    {compareResult.overlaps.slice(0, 15).map((o) => (
+                      <li key={o.nodeName} className="flex justify-between text-xs">
+                        <span>{o.nodeName}</span>
+                        <span className="text-[var(--color-muted)]">
+                          {o.masteryA.toFixed(1)} / {o.masteryB.toFixed(1)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {(compareResult.onlyA.length > 0 || compareResult.onlyB.length > 0) && (
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <div>
+                    <h4 className="text-xs text-[var(--color-muted)]">
+                      仅 {compareResult.campaignA.company}（{compareResult.onlyA.length}）
+                    </h4>
+                    <ul className="mt-1 max-h-32 overflow-y-auto text-xs">
+                      {compareResult.onlyA.slice(0, 8).map((n) => (
+                        <li key={n.nodeName}>{n.nodeName}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div>
+                    <h4 className="text-xs text-[var(--color-muted)]">
+                      仅 {compareResult.campaignB.company}（{compareResult.onlyB.length}）
+                    </h4>
+                    <ul className="mt-1 max-h-32 overflow-y-auto text-xs">
+                      {compareResult.onlyB.slice(0, 8).map((n) => (
+                        <li key={n.nodeName}>{n.nodeName}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </section>
       )}
 
