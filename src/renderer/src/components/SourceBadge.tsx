@@ -35,7 +35,13 @@ export function SourceBadge({ kind }: { kind: EvidenceKind }): React.JSX.Element
   );
 }
 
-export function CitationList({ citations }: { citations: Citation[] }): React.JSX.Element | null {
+export function CitationList({
+  citations,
+  onCodeClick,
+}: {
+  citations: Citation[];
+  onCodeClick?: (c: Citation) => void;
+}): React.JSX.Element | null {
   if (citations.length === 0) return null;
 
   return (
@@ -52,6 +58,14 @@ export function CitationList({ citations }: { citations: Citation[] }): React.JS
             >
               {c.title || c.url}
             </a>
+          ) : c.filePath && onCodeClick ? (
+            <button
+              type="button"
+              onClick={() => onCodeClick(c)}
+              className="font-mono text-emerald-400 hover:underline"
+            >
+              {c.filePath}:{c.startLine}
+            </button>
           ) : (
             <span className="font-mono">
               {c.filePath}:{c.startLine}

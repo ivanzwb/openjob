@@ -23,14 +23,13 @@ import {
   type ExpandNodeResult,
   type JdDiagnosisResult,
   JD_SYSTEM,
-  REPORT_EXTRACT_SYSTEM,
-  type ReportExtractResult,
   RESUME_SYSTEM,
   INTEL_SYSTEM,
 } from './prompts';
 import { findDuplicateByName, flattenChildren, flattenGeneratedTree } from './tree';
+import { applyHistoricalPrior } from './prior';
 import { computePriority } from './priority';
-import type { InterviewReport, ResumeParsed } from '@shared/entities';
+import type { ResumeParsed } from '@shared/entities';
 
 function report(jobId: string, label: string, message: string, progress: number | null): void {
   emit('job:progress', { jobId, label, progress, message, done: false, error: null });
@@ -65,8 +64,14 @@ export async function diagnoseFromJd(campaignId: string, jobId: string): Promise
     insertNodes(rows);
     refreshAllPriorities(campaignId);
 
+    const priorBoosted = applyHistoricalPrior(campaignId, campaign.company);
     updateCampaign({ id: campaignId, roleTitle: result.jdParsed.roleTitle || campaign.roleTitle });
-    done(jobId, label, `已生成 ${rows.length} 个考点`);
+    done(
+      jobId,
+      label,
+      `已生成 ${rows.length} 个考点` +
+        (priorBoosted > 0 ? `，${priorBoosted} 个考点已应用历史真题先验` : ''),
+    );
   } catch (err) {
     fail(jobId, label, err instanceof Error ? err.message : String(err));
   }
@@ -238,102 +243,4 @@ export async function diagnoseFetchIntel(campaignId: string, jobId: string): Pro
   }
 }
 
-/** 手动粘贴面经：提取问题并提升匹配节点的考察概率 */
-export async function ingestInterviewReport(
-  campaignId: string,
-  rawText: string,
-): Promise<{
-  report: InterviewReport;
-  questionsExtracted: number;
-  nodesUpdated: number;
-}> {
-  const campaign = getCampaignRow(campaignId);
-  const extracted = await completeJson<ReportExtractResult>(
-    'outline',
-    REPORT_EXTRACT_SYSTEM,
-    rawText,
-  );
-
-  const db = getDb();
-  const reportId = randomUUID();
-  const now = Date.now();
-  db.insert(schema.interviewReport)
-    .values({
-      id: reportId,
-      campaignId,
-      company: campaign.company,
-      roleTitle: campaign.roleTitle,
-      sourceType: 'pasted',
-      sourceId: null,
-      rawText,
-      reportedAt: now,
-      credibilityWeight: 0.8,
-      createdAt: now,
-    })
-    .run();
-
-  const nodes = db
-    .select()
-    .from(schema.knowledgeNode)
-    .where(eq(schema.knowledgeNode.campaignId, campaignId))
-    .all();
-
-  let nodesUpdated = 0;
-  for (const q of extracted.questions) {
-    const qLower = q.toLowerCase();
-    let best: (typeof nodes)[0] | null = null;
-    let bestScore = 0;
-
-    for (const n of nodes) {
-      const name = n.name.toLowerCase();
-      if (qLower.includes(name) || name.includes(qLower.slice(0, 4))) {
-        const score = name.length;
-        if (score > bestScore) {
-          bestScore = score;
-          best = n;
-        }
-      }
-    }
-
-    const questionId = randomUUID();
-    db.insert(schema.interviewQuestion)
-      .values({
-        id: questionId,
-        reportId,
-        questionText: q,
-        roundNo: null,
-        matchedNodeId: best?.id ?? null,
-        matchConfidence: best ? 0.6 : null,
-        isBlindSpot: !best,
-        createdAt: now,
-      })
-      .run();
-
-    if (best) {
-      const newProb = Math.min(1, best.examProb + 0.08);
-      db.update(schema.knowledgeNode)
-        .set({ examProb: newProb })
-        .where(eq(schema.knowledgeNode.id, best.id))
-        .run();
-      nodesUpdated++;
-    }
-  }
-
-  refreshAllPriorities(campaignId);
-  return {
-    report: {
-      id: reportId,
-      campaignId,
-      company: campaign.company,
-      roleTitle: campaign.roleTitle,
-      sourceType: 'pasted',
-      sourceId: null,
-      rawText,
-      reportedAt: now,
-      credibilityWeight: 0.8,
-      createdAt: now,
-    },
-    questionsExtracted: extracted.questions.length,
-    nodesUpdated,
-  };
-}
+export { ingestInterviewReport } from './ingest';

@@ -18,6 +18,7 @@ import type {
   CoverageType,
   NodeStatus,
   ExplanationTier,
+  ReportSourceType,
 } from './enums';
 import type {
   Campaign,
@@ -28,7 +29,9 @@ import type {
   KnowledgeNode,
   PlanDay,
   QuizAttempt,
+  Repo,
   Resume,
+  SpeechSnippet,
   Task,
 } from './entities';
 
@@ -69,6 +72,8 @@ export interface ChatRequest {
   messages: ChatMessage[];
   /** 开启后 Agent 可自行决定是否联网检索 */
   allowWebSearch?: boolean;
+  /** 指定后启用代码 Agent 工具集（list_dir / read_file / grep） */
+  repoId?: string;
   sessionId?: string;
 }
 
@@ -191,6 +196,14 @@ export interface CampaignDetail {
   nodes: KnowledgeNodeView[];
   intel: CompanyIntel | null;
   reportCount: number;
+  blindSpotQuestions: BlindSpotQuestion[];
+  historicalPriorCampaigns: number;
+}
+
+export interface BlindSpotQuestion {
+  id: string;
+  questionText: string;
+  reportedAt: number | null;
 }
 
 export interface CreateCampaignInput {
@@ -236,12 +249,15 @@ export interface DiagnosisJobStarted {
 export interface IngestReportInput {
   campaignId: string;
   rawText: string;
+  sourceType?: ReportSourceType;
 }
 
 export interface IngestReportResult {
   report: InterviewReport;
   questionsExtracted: number;
   nodesUpdated: number;
+  blindSpotsCreated: number;
+  crossCampaignUpdated: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -251,6 +267,7 @@ export interface IngestReportResult {
 export interface TaskView extends Task {
   nodeName: string | null;
   nodeCoverage: CoverageType | null;
+  repoUrl: string | null;
 }
 
 export interface TodayPlan {
@@ -304,6 +321,54 @@ export interface QuizSubmitResult {
   attempt: QuizAttempt;
   masteryUpdated: number;
   nodeStatus: NodeStatus;
+}
+
+// ---------------------------------------------------------------------------
+// 源码仓库（阶段 3）
+// ---------------------------------------------------------------------------
+
+export interface RepoAddInput {
+  url: string;
+}
+
+export interface RepoReadFileInput {
+  repoId: string;
+  filePath: string;
+  startLine?: number;
+  endLine?: number;
+}
+
+export interface RepoReadFileResult {
+  content: string;
+  totalLines: number;
+  startLine: number;
+  endLine: number;
+}
+
+export interface SpeechSaveInput {
+  repoId: string;
+  contentMd: string;
+  tier?: ExplanationTier;
+}
+
+export interface SpeechSnippetView extends SpeechSnippet {
+  sourceLabel: string;
+}
+
+export interface SpeechUpdateInput {
+  id: string;
+  contentMd: string;
+}
+
+export interface SpeechExportInput {
+  format: 'markdown' | 'anki';
+  ids?: string[];
+}
+
+export interface SpeechExportResult {
+  saved: boolean;
+  path: string | null;
+  count: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -371,6 +436,17 @@ export interface IpcInvokeMap {
 
   'quiz:question': { req: { nodeId: string }; res: QuizQuestionResult };
   'quiz:submit': { req: QuizSubmitInput; res: QuizSubmitResult };
+
+  'repo:list': { req: void; res: Repo[] };
+  'repo:get': { req: { id: string }; res: Repo };
+  'repo:add': { req: RepoAddInput; res: DiagnosisJobStarted };
+  'repo:delete': { req: { id: string }; res: void };
+  'repo:readFile': { req: RepoReadFileInput; res: RepoReadFileResult };
+  'speech:save': { req: SpeechSaveInput; res: SpeechSnippet };
+  'speech:list': { req: void; res: SpeechSnippetView[] };
+  'speech:update': { req: SpeechUpdateInput; res: SpeechSnippet };
+  'speech:delete': { req: { id: string }; res: void };
+  'speech:export': { req: SpeechExportInput; res: SpeechExportResult };
 }
 
 /** 主进程 → 渲染进程的单向推送 */
@@ -430,6 +506,16 @@ export const IPC_INVOKE_CHANNELS = [
   'explain:fallback',
   'quiz:question',
   'quiz:submit',
+  'repo:list',
+  'repo:get',
+  'repo:add',
+  'repo:delete',
+  'repo:readFile',
+  'speech:save',
+  'speech:list',
+  'speech:update',
+  'speech:delete',
+  'speech:export',
 ] as const satisfies readonly IpcInvokeChannel[];
 
 export const IPC_EVENT_CHANNELS = [

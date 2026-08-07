@@ -100,6 +100,13 @@ export function generatePlan(
   let overflowFallbacks = 0;
   const learnedQueue: string[] = [];
 
+  const readyRepos = getDb()
+    .select()
+    .from(schema.repo)
+    .all()
+    .filter((r) => r.status === 'ready');
+  const defaultRepoId = readyRepos[0]?.id ?? null;
+
   for (let di = 0; di < dates.length; di++) {
     const date = dates[di]!;
     const planDayId = randomUUID();
@@ -108,6 +115,7 @@ export function generatePlan(
     const dayTasks: Array<{
       kind: TaskKind;
       nodeId: string | null;
+      repoId: string | null;
       estMinutes: number;
       orderIdx: number;
     }> = [];
@@ -119,7 +127,13 @@ export function generatePlan(
       if (node) {
         const est = Math.min(15, conservativeEst(node.estMinutes));
         if (used + est <= budget) {
-          dayTasks.push({ kind: 'drill', nodeId: drillId, estMinutes: est, orderIdx: dayTasks.length });
+          dayTasks.push({
+            kind: 'drill',
+            nodeId: drillId,
+            repoId: null,
+            estMinutes: est,
+            orderIdx: dayTasks.length,
+          });
           used += est;
         }
       }
@@ -134,7 +148,13 @@ export function generatePlan(
         nodeIdx--;
         break;
       }
-      dayTasks.push({ kind: 'learn', nodeId: node.id, estMinutes: est, orderIdx: dayTasks.length });
+      dayTasks.push({
+        kind: 'learn',
+        nodeId: node.id,
+        repoId: null,
+        estMinutes: est,
+        orderIdx: dayTasks.length,
+      });
       used += est;
       learnedQueue.push(node.id);
     }
@@ -144,7 +164,28 @@ export function generatePlan(
     for (const node of shaky.slice(0, 1)) {
       const est = 15;
       if (used + est <= budget) {
-        dayTasks.push({ kind: 'review', nodeId: node.id, estMinutes: est, orderIdx: dayTasks.length });
+        dayTasks.push({
+          kind: 'review',
+          nodeId: node.id,
+          repoId: null,
+          estMinutes: est,
+          orderIdx: dayTasks.length,
+        });
+        used += est;
+      }
+    }
+
+    // 每隔一天安排源码阅读（有已索引仓库时）
+    if (defaultRepoId && di % 2 === 1) {
+      const est = 25;
+      if (used + est <= budget) {
+        dayTasks.push({
+          kind: 'readCode',
+          nodeId: null,
+          repoId: defaultRepoId,
+          estMinutes: est,
+          orderIdx: dayTasks.length,
+        });
         used += est;
       }
     }
@@ -165,7 +206,7 @@ export function generatePlan(
           id: randomUUID(),
           planDayId,
           nodeId: t.nodeId,
-          repoId: null,
+          repoId: t.repoId,
           kind: t.kind,
           estMinutes: t.estMinutes,
           actualMinutes: null,
@@ -256,7 +297,9 @@ export function getTodayPlan(campaignId?: string): TodayPlan | null {
     .sort((a, b) => a.orderIdx - b.orderIdx);
 
   const nodeIds = taskRows.map((t) => t.nodeId).filter(Boolean) as string[];
+  const repoIds = taskRows.map((t) => t.repoId).filter(Boolean) as string[];
   const nodeMap = new Map<string, { name: string; coverageType: TaskView['nodeCoverage'] }>();
+  const repoMap = new Map<string, string>();
   if (nodeIds.length) {
     const nodeRows = db
       .select()
@@ -265,6 +308,12 @@ export function getTodayPlan(campaignId?: string): TodayPlan | null {
       .all();
     for (const n of nodeRows) {
       nodeMap.set(n.id, { name: n.name, coverageType: n.coverageType });
+    }
+  }
+  if (repoIds.length) {
+    const repoRows = db.select().from(schema.repo).where(inArray(schema.repo.id, repoIds)).all();
+    for (const r of repoRows) {
+      repoMap.set(r.id, r.url);
     }
   }
 
@@ -282,6 +331,7 @@ export function getTodayPlan(campaignId?: string): TodayPlan | null {
       orderIdx: t.orderIdx,
       nodeName: node?.name ?? null,
       nodeCoverage: node?.coverageType ?? null,
+      repoUrl: t.repoId ? (repoMap.get(t.repoId) ?? null) : null,
     };
   });
 
@@ -405,6 +455,9 @@ export function completeTask(taskId: string, actualMinutes?: number): TaskView {
   const node = row.nodeId
     ? db.select().from(schema.knowledgeNode).where(eq(schema.knowledgeNode.id, row.nodeId)).get()
     : null;
+  const repo = row.repoId
+    ? db.select().from(schema.repo).where(eq(schema.repo.id, row.repoId)).get()
+    : null;
 
   return {
     id: updated.id,
@@ -418,6 +471,7 @@ export function completeTask(taskId: string, actualMinutes?: number): TaskView {
     orderIdx: updated.orderIdx,
     nodeName: node?.name ?? null,
     nodeCoverage: node?.coverageType ?? null,
+    repoUrl: repo?.url ?? null,
   };
 }
 
@@ -431,11 +485,15 @@ export function skipTask(taskId: string): TaskView {
   const node = row.nodeId
     ? db.select().from(schema.knowledgeNode).where(eq(schema.knowledgeNode.id, row.nodeId)).get()
     : null;
+  const repo = row.repoId
+    ? db.select().from(schema.repo).where(eq(schema.repo.id, row.repoId)).get()
+    : null;
 
   return {
     ...row,
     status: 'skipped',
     nodeName: node?.name ?? null,
     nodeCoverage: node?.coverageType ?? null,
+    repoUrl: repo?.url ?? null,
   };
 }

@@ -85,3 +85,12 @@ export const INTEL_SYSTEM = `你是面试情报分析师。根据检索到的公
 
 export const REPORT_EXTRACT_SYSTEM = `从面经原文中提取独立的面试问题，每题一行语义完整。
 输出 JSON：{ "questions": ["问题1", "问题2"] }`;
+
+export interface ReportMatchResult {
+  matches: Array<{
+    questionIndex: number;
+    nodeName: string | null;
+    confidence: number;
+    suggestedName?: string | null;
+  }>;
+}

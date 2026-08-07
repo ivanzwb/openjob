@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CampaignDetail as CampaignDetailData } from '@shared/ipc';
 import type { Resume } from '@shared/entities';
 import { CompanyIntelCard } from '../components/CompanyIntelCard';
+import { KnowledgeGraph } from '../components/KnowledgeGraph';
 import { KnowledgeTree } from '../components/KnowledgeTree';
 import { invoke } from '../ipc';
 import { useJobProgress } from '../ipc/useJobProgress';
@@ -18,6 +19,9 @@ export function CampaignDetail({
   const [detail, setDetail] = useState<CampaignDetailData | null>(null);
   const [resumes, setResumes] = useState<Resume[]>([]);
   const [reportText, setReportText] = useState('');
+  const [debriefText, setDebriefText] = useState('');
+  const [ingestMsg, setIngestMsg] = useState<string | null>(null);
+  const [showGraph, setShowGraph] = useState(false);
   const [expandingId, setExpandingId] = useState<string | null>(null);
   const [newResumeLabel, setNewResumeLabel] = useState('我的简历');
   const [newResumeText, setNewResumeText] = useState('');
@@ -84,11 +88,27 @@ export function CampaignDetail({
     await invoke('diagnosis:fetchIntel', { campaignId: id });
   };
 
-  const ingestReport = async (): Promise<void> => {
-    if (!reportText.trim()) return;
-    await invoke('diagnosis:ingestReport', { campaignId: id, rawText: reportText.trim() });
-    setReportText('');
-    refresh();
+  const ingestReport = async (sourceType: 'pasted' | 'selfDebrief'): Promise<void> => {
+    const raw = sourceType === 'selfDebrief' ? debriefText : reportText;
+    if (!raw.trim()) return;
+    setIngestMsg(null);
+    try {
+      const res = await invoke('diagnosis:ingestReport', {
+        campaignId: id,
+        rawText: raw.trim(),
+        sourceType,
+      });
+      setIngestMsg(
+        `提取 ${res.questionsExtracted} 题，更新 ${res.nodesUpdated} 个考点` +
+          (res.blindSpotsCreated ? `，新增 ${res.blindSpotsCreated} 个盲区考点` : '') +
+          (res.crossCampaignUpdated ? `，跨 Campaign 修正 ${res.crossCampaignUpdated} 处` : ''),
+      );
+      if (sourceType === 'selfDebrief') setDebriefText('');
+      else setReportText('');
+      refresh();
+    } catch (err) {
+      setIngestMsg(err instanceof Error ? err.message : String(err));
+    }
   };
 
   const deleteNode = async (nodeId: string): Promise<void> => {
@@ -132,7 +152,15 @@ export function CampaignDetail({
         </button>
         <h2 className="text-lg font-semibold">
           {campaign.company} · {campaign.roleTitle}
+          {campaign.status === 'done' && (
+            <span className="ml-2 text-xs font-normal text-emerald-400">已复盘</span>
+          )}
         </h2>
+        {detail.historicalPriorCampaigns > 0 && (
+          <p className="text-xs text-sky-400">
+            已累积 {detail.historicalPriorCampaigns} 个 Campaign 的真题先验
+          </p>
+        )}
         {job && (
           <p className="text-xs text-sky-400">
             {job.label}：{job.message}
@@ -207,17 +235,47 @@ export function CampaignDetail({
 
       <section className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
-          <h3 className="text-sm font-medium text-[var(--color-muted)]">
-            考点清单（{nodes.length}）
-          </h3>
-          <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-            <KnowledgeTree
-              nodes={nodes}
-              onExpand={(nid) => void expandNode(nid)}
-              onDelete={(nid) => void deleteNode(nid)}
-              expandingId={expandingId}
-            />
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-medium text-[var(--color-muted)]">
+              考点清单（{nodes.length}）
+            </h3>
+            <button
+              type="button"
+              onClick={() => setShowGraph((v) => !v)}
+              className="text-xs text-sky-400 hover:underline"
+            >
+              {showGraph ? '切换清单' : '图谱视图'}
+            </button>
           </div>
+          <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+            {showGraph ? (
+              <KnowledgeGraph nodes={nodes} />
+            ) : (
+              <KnowledgeTree
+                nodes={nodes}
+                onExpand={(nid) => void expandNode(nid)}
+                onDelete={(nid) => void deleteNode(nid)}
+                expandingId={expandingId}
+              />
+            )}
+          </div>
+          {detail.blindSpotQuestions.length > 0 && (
+            <div className="rounded-lg border border-amber-900/50 bg-amber-950/20 p-4">
+              <h3 className="text-sm font-medium text-amber-300">
+                盲区真题（{detail.blindSpotQuestions.length}）
+              </h3>
+              <p className="mt-1 text-xs text-[var(--color-muted)]">
+                图谱未能预测到的题目，信息价值最高，建议优先补学
+              </p>
+              <ul className="mt-2 space-y-1 text-sm">
+                {detail.blindSpotQuestions.map((q) => (
+                  <li key={q.id} className="text-amber-100/90">
+                    · {q.questionText}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
 
         <div className="space-y-6">
@@ -302,7 +360,7 @@ export function CampaignDetail({
             <button
               type="button"
               disabled={!reportText.trim() || Boolean(job)}
-              onClick={() => void ingestReport()}
+              onClick={() => void ingestReport('pasted')}
               className="rounded border border-[var(--color-border)] px-3 py-1 text-xs disabled:opacity-40"
             >
               摄入面经
@@ -310,6 +368,35 @@ export function CampaignDetail({
             {detail.reportCount > 0 && (
               <p className="text-xs text-[var(--color-muted)]">已摄入 {detail.reportCount} 篇</p>
             )}
+            {ingestMsg && (
+              <p
+                className={`text-xs ${ingestMsg.includes('提取') ? 'text-emerald-400' : 'text-red-400'}`}
+              >
+                {ingestMsg}
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-3 rounded-lg border border-emerald-900/40 bg-emerald-950/20 p-4">
+            <h3 className="text-sm font-medium text-emerald-300">面后复盘</h3>
+            <p className="text-xs text-[var(--color-muted)]">
+              面完当天录入实际被问到的题，可信度最高，会自动标记 Campaign 为已复盘
+            </p>
+            <textarea
+              value={debriefText}
+              onChange={(e) => setDebriefText(e.target.value)}
+              rows={5}
+              className="w-full resize-y rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-sm"
+              placeholder="今天面试被问了什么？按轮次或顺序写下…"
+            />
+            <button
+              type="button"
+              disabled={!debriefText.trim() || Boolean(job)}
+              onClick={() => void ingestReport('selfDebrief')}
+              className="rounded bg-emerald-700 px-3 py-1 text-xs disabled:opacity-40"
+            >
+              提交复盘
+            </button>
           </div>
         </div>
       </section>

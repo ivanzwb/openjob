@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { eq, desc, sql } from 'drizzle-orm';
+import { eq, desc, sql, and } from 'drizzle-orm';
 import type {
   Campaign,
   JdParsed,
@@ -13,9 +13,11 @@ import type {
   CreateCampaignInput,
   KnowledgeNodeView,
   UpdateCampaignInput,
+  BlindSpotQuestion,
 } from '@shared/ipc';
 import { getDb, schema } from '../db';
 import { attachPriorityReason, computePriority } from '../diagnosis/priority';
+import { countCrossCampaignReports } from '../diagnosis/prior';
 
 function rowToCampaign(row: typeof schema.campaign.$inferSelect): Campaign {
   return {
@@ -127,6 +129,33 @@ export function getCampaignDetail(id: string): CampaignDetail {
       .where(eq(schema.interviewReport.campaignId, id))
       .get()?.n ?? 0;
 
+  const blindSpotRows = db
+    .select({
+      id: schema.interviewQuestion.id,
+      questionText: schema.interviewQuestion.questionText,
+      reportedAt: schema.interviewReport.reportedAt,
+    })
+    .from(schema.interviewQuestion)
+    .innerJoin(
+      schema.interviewReport,
+      eq(schema.interviewQuestion.reportId, schema.interviewReport.id),
+    )
+    .where(
+      and(
+        eq(schema.interviewQuestion.isBlindSpot, true),
+        eq(schema.interviewReport.campaignId, id),
+      ),
+    )
+    .all();
+
+  const blindSpotQuestions: BlindSpotQuestion[] = blindSpotRows.map((r) => ({
+    id: r.id,
+    questionText: r.questionText,
+    reportedAt: r.reportedAt,
+  }));
+
+  const historicalPriorCampaigns = countCrossCampaignReports(campaign.company);
+
   return {
     campaign,
     resume: resume ? rowToResume(resume) : null,
@@ -144,6 +173,8 @@ export function getCampaignDetail(id: string): CampaignDetail {
         }
       : null,
     reportCount,
+    blindSpotQuestions,
+    historicalPriorCampaigns,
   };
 }
 

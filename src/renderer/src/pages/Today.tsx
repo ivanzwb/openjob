@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { TaskView, TodayPlan } from '@shared/ipc';
 import { ExplanationPanel } from '../components/ExplanationPanel';
 import { QuizPanel } from '../components/QuizPanel';
+import { ReadCodePanel } from '../components/ReadCodePanel';
 import { TaskCard } from '../components/TaskCard';
 import { invoke } from '../ipc';
 
@@ -121,7 +122,15 @@ export function Today(): React.JSX.Element {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-        {!activeTask?.nodeId ? (
+        {!activeTask ? (
+          <p className="text-sm text-[var(--color-muted)]">选择左侧任务开始学习</p>
+        ) : activeTask.kind === 'readCode' && activeTask.repoId ? (
+          <ReadCodePanel
+            key={activeTask.repoId}
+            repoId={activeTask.repoId}
+            onComplete={() => void complete(activeTask.id)}
+          />
+        ) : !activeTask.nodeId ? (
           <p className="text-sm text-[var(--color-muted)]">选择左侧任务开始学习</p>
         ) : activeTask.kind === 'drill' ? (
           <QuizPanel

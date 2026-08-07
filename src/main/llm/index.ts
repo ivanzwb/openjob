@@ -7,9 +7,12 @@ import type { ChatRequest, ProviderTestResult, StreamStarted } from '@shared/ipc
 import { emit } from '../ipc/bridge';
 import { createRoleClient } from './client';
 import { AGENT_TOOLS, runTool } from './tools';
+import { getRepo, getRepoLocalPath } from '../repo/repository';
+import { mergedCodeAgentTools, runCodeRepoTool } from '../repo/tools';
 
 /** 工具调用的最大轮数，防止 Agent 陷入反复检索 */
 const MAX_TOOL_ROUNDS = 4;
+const MAX_REPO_TOOL_ROUNDS = 8;
 
 const active = new Map<string, AbortController>();
 
@@ -75,23 +78,49 @@ async function runChat(
   controller: AbortController,
 ): Promise<void> {
   try {
-    const { client, model, temperature } = createRoleClient(req.role);
+    const role = req.repoId ? 'codeAgent' : req.role;
+    const { client, model, temperature } = createRoleClient(role);
 
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = req.messages.map(
       (m) => ({ role: m.role, content: m.content }),
     );
 
+    let repoRoot: string | null = null;
+    if (req.repoId) {
+      const repo = getRepo(req.repoId);
+      repoRoot = getRepoLocalPath(req.repoId);
+      if (repo.status !== 'ready') {
+        throw new Error('仓库尚未索引完成，请稍候');
+      }
+      messages.unshift({
+        role: 'system',
+        content:
+          `你正在分析仓库：${repo.url}\n\n` +
+          `## 项目摘要\n${repo.summaryMd ?? '（无）'}\n\n` +
+          `## Repo Map（节选）\n${(repo.repoMapMd ?? '').slice(0, 8000)}\n\n` +
+          '规则：所有代码结论必须带 `path:line` 引用；流程梳理用 mermaid 图，每步标注文件行号；' +
+          '设计意图类问题可联网搜索 why。',
+      });
+    }
+
     const citations: Citation[] = [];
     let usedWeb = false;
+    let usedCode = false;
     let finalText = '';
     let usage: { promptTokens: number; completionTokens: number } | null = null;
+    const maxRounds = req.repoId ? MAX_REPO_TOOL_ROUNDS : MAX_TOOL_ROUNDS;
+    const tools = req.repoId
+      ? mergedCodeAgentTools()
+      : req.allowWebSearch
+        ? AGENT_TOOLS
+        : undefined;
 
-    for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
+    for (let round = 0; round <= maxRounds; round++) {
       const stream = await openStream(client, controller, {
         model,
         messages,
         temperature,
-        tools: req.allowWebSearch && round < MAX_TOOL_ROUNDS ? AGENT_TOOLS : undefined,
+        tools: tools && round < maxRounds ? tools : undefined,
       });
 
       let roundText = '';
@@ -148,13 +177,16 @@ async function runChat(
 
         let outcome;
         try {
-          outcome = await runTool(call.name, args, controller.signal);
+          outcome = repoRoot
+            ? await runCodeRepoTool(call.name, args, repoRoot, controller.signal)
+            : await runTool(call.name, args, controller.signal);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           outcome = { content: `工具执行失败: ${msg}`, summary: `${call.name} 失败`, citations: [] };
         }
 
         if (call.name === 'web_search' || call.name === 'fetch_url') usedWeb = true;
+        if (['list_dir', 'read_file', 'grep'].includes(call.name)) usedCode = true;
         citations.push(...outcome.citations);
 
         emit('stream:tool', {
@@ -177,7 +209,7 @@ async function runChat(
       streamId,
       contentMd: finalText,
       citations: dedupeCitations(citations),
-      evidenceKind: usedWeb ? 'web' : 'model',
+      evidenceKind: usedCode ? 'code' : usedWeb ? 'web' : 'model',
       usage,
     });
   } catch (err) {

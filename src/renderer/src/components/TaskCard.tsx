@@ -50,7 +50,11 @@ export function TaskCard({
           {task.nodeCoverage && <CoverageBadge type={task.nodeCoverage} />}
           <span className="ml-auto text-xs text-[var(--color-muted)]">{task.estMinutes} min</span>
         </div>
-        <div className="mt-1 text-sm font-medium">{task.nodeName ?? '（无关联考点）'}</div>
+        <div className="mt-1 text-sm font-medium">
+          {task.kind === 'readCode'
+            ? (task.repoUrl?.replace(/^https?:\/\//, '') ?? '源码阅读')
+            : (task.nodeName ?? '（无关联考点）')}
+        </div>
         {done && <div className="mt-1 text-xs text-emerald-400">已完成</div>}
         {skipped && <div className="mt-1 text-xs text-[var(--color-muted)]">已跳过</div>}
       </button>

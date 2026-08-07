@@ -30,7 +30,15 @@ import {
   skipTask,
 } from '../plan/schedule';
 import { generateQuizQuestion, submitQuizAnswer } from '../quiz';
+import { cloneAndIndex, deleteRepo, getRepo, listRepos, readRepoFile } from '../repo';
 import { clearCache, fetchUrl, search } from '../search';
+import {
+  deleteSpeechSnippet,
+  exportSpeechSnippets,
+  listSpeechSnippets,
+  saveSpeechFromRepo,
+  updateSpeechSnippet,
+} from '../speech';
 import { getAppPaths } from '../paths';
 import { handle } from './bridge';
 
@@ -82,8 +90,8 @@ export function registerIpcHandlers(): void {
   handle('diagnosis:fetchIntel', ({ campaignId }) => ({
     jobId: startJob('公司情报', (jobId) => diagnoseFetchIntel(campaignId, jobId)),
   }));
-  handle('diagnosis:ingestReport', ({ campaignId, rawText }) =>
-    ingestInterviewReport(campaignId, rawText),
+  handle('diagnosis:ingestReport', ({ campaignId, rawText, sourceType }) =>
+    ingestInterviewReport(campaignId, rawText, sourceType),
   );
 
   handle('node:update', (input) => updateNode(input));
@@ -107,6 +115,26 @@ export function registerIpcHandlers(): void {
 
   handle('quiz:question', ({ nodeId }) => generateQuizQuestion(nodeId));
   handle('quiz:submit', (input) => submitQuizAnswer(input.nodeId, input.question, input.userAnswer));
+
+  handle('repo:list', () => listRepos());
+  handle('repo:get', ({ id }) => getRepo(id));
+  handle('repo:add', (input) => ({
+    jobId: startJob('克隆并索引仓库', (jobId) => cloneAndIndex(input.url, jobId)),
+  }));
+  handle('repo:delete', ({ id }) => {
+    deleteRepo(id);
+  });
+  handle('repo:readFile', ({ repoId, filePath, startLine, endLine }) =>
+    readRepoFile(repoId, filePath, startLine, endLine),
+  );
+
+  handle('speech:save', (input) => saveSpeechFromRepo(input.repoId, input.contentMd, input.tier));
+  handle('speech:list', () => listSpeechSnippets());
+  handle('speech:update', (input) => updateSpeechSnippet(input.id, input.contentMd));
+  handle('speech:delete', ({ id }) => {
+    deleteSpeechSnippet(id);
+  });
+  handle('speech:export', (input) => exportSpeechSnippets(input));
 }
 
 export { emit, handle } from './bridge';

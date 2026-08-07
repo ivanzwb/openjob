@@ -7,6 +7,7 @@ import { completeJson } from '../llm/json';
 import { getDb, schema } from '../db';
 import { getCampaignRow, rowToNode } from '../campaign/repository';
 import { computePriority } from '../diagnosis/priority';
+import { saveSpeechFromQuiz } from '../speech';
 
 interface QuizScoreResult {
   score: number;
@@ -113,6 +114,10 @@ export async function submitQuizAnswer(
       createdAt: now,
     })
     .run();
+
+  if (scored.improvedScriptMd.trim()) {
+    saveSpeechFromQuiz(nodeId, attemptId, scored.improvedScriptMd);
+  }
 
   return {
     attempt,
