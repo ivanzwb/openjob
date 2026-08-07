@@ -9,8 +9,15 @@
  */
 
 import type { AppConfig } from './config';
-import type { EvidenceKind, LlmRole, SearchProviderName } from './enums';
-import type { Citation } from './entities';
+import type { EvidenceKind, LlmRole, NodeKind, SearchProviderName, CampaignStatus, CoverageType, NodeStatus } from './enums';
+import type {
+  Campaign,
+  Citation,
+  CompanyIntel,
+  InterviewReport,
+  KnowledgeNode,
+  Resume,
+} from './entities';
 
 // ---------------------------------------------------------------------------
 // 通用
@@ -145,6 +152,86 @@ export interface FetchUrlResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Campaign / 诊断（阶段 1）
+// ---------------------------------------------------------------------------
+
+export interface CampaignSummary {
+  id: string;
+  company: string;
+  roleTitle: string;
+  status: CampaignStatus;
+  interviewDate: string | null;
+  nodeCount: number;
+  hasResume: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** 带优先级依据的节点，供考点清单展示 */
+export interface KnowledgeNodeView extends KnowledgeNode {
+  priorityReason: string;
+}
+
+export interface CampaignDetail {
+  campaign: Campaign;
+  resume: Resume | null;
+  nodes: KnowledgeNodeView[];
+  intel: CompanyIntel | null;
+  reportCount: number;
+}
+
+export interface CreateCampaignInput {
+  company: string;
+  roleTitle: string;
+  jdRaw: string;
+}
+
+export interface UpdateCampaignInput {
+  id: string;
+  company?: string;
+  roleTitle?: string;
+  jdRaw?: string;
+  resumeId?: string | null;
+  interviewDate?: string | null;
+  dailyMinutes?: number | null;
+  status?: CampaignStatus;
+}
+
+export interface CreateResumeInput {
+  label: string;
+  rawText: string;
+}
+
+export interface CreateNodeInput {
+  campaignId: string;
+  parentId: string | null;
+  name: string;
+  kind: NodeKind;
+}
+
+export interface UpdateNodeInput {
+  id: string;
+  name?: string;
+  coverageType?: CoverageType;
+  status?: NodeStatus;
+}
+
+export interface DiagnosisJobStarted {
+  jobId: string;
+}
+
+export interface IngestReportInput {
+  campaignId: string;
+  rawText: string;
+}
+
+export interface IngestReportResult {
+  report: InterviewReport;
+  questionsExtracted: number;
+  nodesUpdated: number;
+}
+
+// ---------------------------------------------------------------------------
 // 通道映射
 // ---------------------------------------------------------------------------
 
@@ -170,6 +257,31 @@ export interface IpcInvokeMap {
   'search:clearCache': { req: void; res: { removed: number } };
 
   'db:health': { req: void; res: { ok: boolean; tables: number; path: string } };
+
+  'campaign:list': { req: void; res: CampaignSummary[] };
+  'campaign:get': { req: { id: string }; res: CampaignDetail };
+  'campaign:create': { req: CreateCampaignInput; res: Campaign };
+  'campaign:update': { req: UpdateCampaignInput; res: Campaign };
+  'campaign:delete': { req: { id: string }; res: void };
+
+  'resume:list': { req: void; res: Resume[] };
+  'resume:create': { req: CreateResumeInput; res: Resume };
+  'resume:delete': { req: { id: string }; res: void };
+
+  /** 解析 JD 并生成两层知识点树，进度通过 job:progress 推送 */
+  'diagnosis:fromJd': { req: { campaignId: string }; res: DiagnosisJobStarted };
+  /** 附加简历后重新交叉分析并更新覆盖类型 */
+  'diagnosis:attachResume': { req: { campaignId: string; resumeId: string }; res: DiagnosisJobStarted };
+  /** 懒加载细化某个节点 */
+  'diagnosis:expandNode': { req: { nodeId: string }; res: DiagnosisJobStarted };
+  /** 联网生成公司情报卡 */
+  'diagnosis:fetchIntel': { req: { campaignId: string }; res: DiagnosisJobStarted };
+  /** 手动粘贴面经，提取真题并修正考察频率 */
+  'diagnosis:ingestReport': { req: IngestReportInput; res: IngestReportResult };
+
+  'node:update': { req: UpdateNodeInput; res: KnowledgeNode };
+  'node:delete': { req: { id: string }; res: void };
+  'node:create': { req: CreateNodeInput; res: KnowledgeNode };
 }
 
 /** 主进程 → 渲染进程的单向推送 */
@@ -203,6 +315,22 @@ export const IPC_INVOKE_CHANNELS = [
   'search:fetchUrl',
   'search:clearCache',
   'db:health',
+  'campaign:list',
+  'campaign:get',
+  'campaign:create',
+  'campaign:update',
+  'campaign:delete',
+  'resume:list',
+  'resume:create',
+  'resume:delete',
+  'diagnosis:fromJd',
+  'diagnosis:attachResume',
+  'diagnosis:expandNode',
+  'diagnosis:fetchIntel',
+  'diagnosis:ingestReport',
+  'node:update',
+  'node:delete',
+  'node:create',
 ] as const satisfies readonly IpcInvokeChannel[];
 
 export const IPC_EVENT_CHANNELS = [

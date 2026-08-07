@@ -1,6 +1,25 @@
 import { app } from 'electron';
 import { getConfig, deleteSecret, hasSecret, setSecret, updateConfig } from '../config';
+import {
+  createCampaign,
+  createResume,
+  deleteCampaign,
+  deleteResume,
+  getCampaignDetail,
+  listCampaigns,
+  listResumes,
+  updateCampaign,
+} from '../campaign/repository';
+import { createNode, deleteNode, updateNode } from '../campaign/nodes';
+import {
+  diagnoseAttachResume,
+  diagnoseExpandNode,
+  diagnoseFetchIntel,
+  diagnoseFromJd,
+  ingestInterviewReport,
+} from '../diagnosis';
 import { dbHealth } from '../db';
+import { startJob } from '../jobs';
 import { cancelStream, startChat, testRole } from '../llm';
 import { clearCache, fetchUrl, search } from '../search';
 import { getAppPaths } from '../paths';
@@ -25,6 +44,44 @@ export function registerIpcHandlers(): void {
   handle('search:clearCache', () => ({ removed: clearCache() }));
 
   handle('db:health', () => dbHealth());
+
+  handle('campaign:list', () => listCampaigns());
+  handle('campaign:get', ({ id }) => getCampaignDetail(id));
+  handle('campaign:create', (input) => createCampaign(input));
+  handle('campaign:update', (input) => updateCampaign(input));
+  handle('campaign:delete', ({ id }) => {
+    deleteCampaign(id);
+  });
+
+  handle('resume:list', () => listResumes());
+  handle('resume:create', (input) => createResume(input.label, input.rawText));
+  handle('resume:delete', ({ id }) => {
+    deleteResume(id);
+  });
+
+  handle('diagnosis:fromJd', ({ campaignId }) => ({
+    jobId: startJob('JD 诊断', (jobId) => diagnoseFromJd(campaignId, jobId)),
+  }));
+  handle('diagnosis:attachResume', ({ campaignId, resumeId }) => ({
+    jobId: startJob('简历交叉分析', (jobId) =>
+      diagnoseAttachResume(campaignId, resumeId, jobId),
+    ),
+  }));
+  handle('diagnosis:expandNode', ({ nodeId }) => ({
+    jobId: startJob('细化考点', (jobId) => diagnoseExpandNode(nodeId, jobId)),
+  }));
+  handle('diagnosis:fetchIntel', ({ campaignId }) => ({
+    jobId: startJob('公司情报', (jobId) => diagnoseFetchIntel(campaignId, jobId)),
+  }));
+  handle('diagnosis:ingestReport', ({ campaignId, rawText }) =>
+    ingestInterviewReport(campaignId, rawText),
+  );
+
+  handle('node:update', (input) => updateNode(input));
+  handle('node:delete', ({ id }) => {
+    deleteNode(id);
+  });
+  handle('node:create', (input) => createNode(input));
 }
 
 export { emit, handle } from './bridge';
