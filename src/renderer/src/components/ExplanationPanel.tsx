@@ -24,6 +24,7 @@ export function ExplanationPanel({
   const [content, setContent] = useState<Explanation | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
 
   const load = async (t: ExplanationTier): Promise<void> => {
     setLoading(true);
@@ -85,6 +86,7 @@ export function ExplanationPanel({
                 type="button"
                 onClick={() => {
                   setTier(t.id);
+                  setSaved(false);
                   void load(t.id);
                 }}
                 className={`rounded px-2 py-0.5 text-xs ${
@@ -103,9 +105,26 @@ export function ExplanationPanel({
       {loading && <p className="text-sm text-[var(--color-muted)]">生成讲解中…</p>}
       {error && <p className="text-sm text-red-400">{error}</p>}
       {content && !loading && (
-        <div className="prose prose-invert max-w-none whitespace-pre-wrap text-sm leading-relaxed">
-          {content.contentMd}
-        </div>
+        <>
+          <div className="prose prose-invert max-w-none whitespace-pre-wrap text-sm leading-relaxed">
+            {content.contentMd}
+          </div>
+          <div className="flex gap-2 pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                void invoke('speech:saveFromNode', {
+                  nodeId,
+                  contentMd: content.contentMd,
+                  tier: fallbackMode ? 'oneliner' : tier,
+                }).then(() => setSaved(true));
+              }}
+              className="text-xs text-sky-400 hover:underline"
+            >
+              {saved ? '已存入话术库' : '存入话术库'}
+            </button>
+          </div>
+        </>
       )}
     </div>
   );

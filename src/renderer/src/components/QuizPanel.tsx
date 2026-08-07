@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { VoiceInputButton } from './VoiceInputButton';
 import type { QuizSubmitResult } from '@shared/ipc';
 import { invoke } from '../ipc';
 
@@ -74,9 +75,10 @@ export function QuizPanel({
             value={answer}
             onChange={(e) => setAnswer(e.target.value)}
             rows={5}
-            placeholder="口述你的回答（打字模拟口述）…"
+            placeholder="口述你的回答（可点「语音口述」）…"
             className="w-full resize-y rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm"
           />
+          <VoiceInputButton currentText={answer} onTextChange={setAnswer} />
           <button
             type="button"
             onClick={() => void submit()}

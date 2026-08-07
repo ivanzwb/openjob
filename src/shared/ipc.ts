@@ -185,6 +185,28 @@ export interface CampaignSummary {
   updatedAt: number;
 }
 
+export interface CampaignOverview {
+  campaignCount: number;
+  activeCampaignCount: number;
+  totalSpeechSnippets: number;
+  totalBlindSpots: number;
+  avgMastery: number;
+  campaigns: CampaignSummary[];
+  weakNodes: Array<{
+    campaignId: string;
+    company: string;
+    roleTitle: string;
+    nodeId: string;
+    nodeName: string;
+    mastery: number;
+  }>;
+  priorByCompany: Array<{
+    company: string;
+    campaignCount: number;
+    reportCount: number;
+  }>;
+}
+
 /** 带优先级依据的节点，供考点清单展示 */
 export interface KnowledgeNodeView extends KnowledgeNode {
   priorityReason: string;
@@ -351,6 +373,12 @@ export interface SpeechSaveInput {
   tier?: ExplanationTier;
 }
 
+export interface SpeechSaveFromNodeInput {
+  nodeId: string;
+  contentMd: string;
+  tier?: ExplanationTier;
+}
+
 export interface SpeechSnippetView extends SpeechSnippet {
   sourceLabel: string;
 }
@@ -361,7 +389,7 @@ export interface SpeechUpdateInput {
 }
 
 export interface SpeechExportInput {
-  format: 'markdown' | 'anki';
+  format: 'markdown' | 'anki' | 'pdf';
   ids?: string[];
 }
 
@@ -399,6 +427,7 @@ export interface IpcInvokeMap {
   'db:health': { req: void; res: { ok: boolean; tables: number; path: string } };
 
   'campaign:list': { req: void; res: CampaignSummary[] };
+  'campaign:getOverview': { req: void; res: CampaignOverview };
   'campaign:get': { req: { id: string }; res: CampaignDetail };
   'campaign:create': { req: CreateCampaignInput; res: Campaign };
   'campaign:update': { req: UpdateCampaignInput; res: Campaign };
@@ -443,6 +472,7 @@ export interface IpcInvokeMap {
   'repo:delete': { req: { id: string }; res: void };
   'repo:readFile': { req: RepoReadFileInput; res: RepoReadFileResult };
   'speech:save': { req: SpeechSaveInput; res: SpeechSnippet };
+  'speech:saveFromNode': { req: SpeechSaveFromNodeInput; res: SpeechSnippet };
   'speech:list': { req: void; res: SpeechSnippetView[] };
   'speech:update': { req: SpeechUpdateInput; res: SpeechSnippet };
   'speech:delete': { req: { id: string }; res: void };
@@ -481,6 +511,7 @@ export const IPC_INVOKE_CHANNELS = [
   'search:clearCache',
   'db:health',
   'campaign:list',
+  'campaign:getOverview',
   'campaign:get',
   'campaign:create',
   'campaign:update',
@@ -512,6 +543,7 @@ export const IPC_INVOKE_CHANNELS = [
   'repo:delete',
   'repo:readFile',
   'speech:save',
+  'speech:saveFromNode',
   'speech:list',
   'speech:update',
   'speech:delete',

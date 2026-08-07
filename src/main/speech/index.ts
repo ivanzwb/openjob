@@ -6,6 +6,7 @@ import type { ExplanationTier } from '@shared/enums';
 import type { SpeechSnippet } from '@shared/entities';
 import type { SpeechExportInput, SpeechExportResult, SpeechSnippetView } from '@shared/ipc';
 import { getDb, schema } from '../db';
+import { writeSpeechPdf } from './pdf';
 
 function rowToSnippet(row: typeof schema.speechSnippet.$inferSelect): SpeechSnippet {
   return {
@@ -76,6 +77,14 @@ export function saveSpeechFromQuiz(
   return saveSpeech('quiz', attemptId, contentMd, 'spoken');
 }
 
+export function saveSpeechFromNode(
+  nodeId: string,
+  contentMd: string,
+  tier: ExplanationTier = 'spoken',
+): SpeechSnippet {
+  return saveSpeech('node', nodeId, contentMd, tier);
+}
+
 function saveSpeech(
   sourceType: SpeechSnippet['sourceType'],
   sourceId: string,
@@ -140,7 +149,9 @@ function buildAnkiExport(snippets: SpeechSnippetView[]): string {
   return lines.join('\n');
 }
 
-export function exportSpeechSnippets(input: SpeechExportInput): SpeechExportResult {
+export async function exportSpeechSnippets(
+  input: SpeechExportInput,
+): Promise<SpeechExportResult> {
   const all = listSpeechSnippets();
   const snippets = input.ids?.length
     ? all.filter((s) => input.ids!.includes(s.id))
@@ -150,15 +161,23 @@ export function exportSpeechSnippets(input: SpeechExportInput): SpeechExportResu
     return { saved: false, path: null, count: 0 };
   }
 
-  const ext = input.format === 'anki' ? 'txt' : 'md';
+  const ext = input.format === 'anki' ? 'txt' : input.format === 'pdf' ? 'pdf' : 'md';
   const defaultName = `openjob-scripts-${Date.now()}.${ext}`;
+  const filterName =
+    input.format === 'anki' ? 'Anki TSV' : input.format === 'pdf' ? 'PDF' : 'Markdown';
+
   const filePath = dialog.showSaveDialogSync({
     defaultPath: defaultName,
-    filters: [{ name: input.format === 'anki' ? 'Anki TSV' : 'Markdown', extensions: [ext] }],
+    filters: [{ name: filterName, extensions: [ext] }],
   });
 
   if (!filePath) {
     return { saved: false, path: null, count: 0 };
+  }
+
+  if (input.format === 'pdf') {
+    await writeSpeechPdf(snippets, filePath);
+    return { saved: true, path: filePath, count: snippets.length };
   }
 
   const content =

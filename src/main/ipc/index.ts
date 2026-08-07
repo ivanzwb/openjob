@@ -1,5 +1,6 @@
 import { app } from 'electron';
 import { getConfig, deleteSecret, hasSecret, setSecret, updateConfig } from '../config';
+import { getCampaignOverview } from '../campaign/overview';
 import {
   createCampaign,
   createResume,
@@ -36,6 +37,7 @@ import {
   deleteSpeechSnippet,
   exportSpeechSnippets,
   listSpeechSnippets,
+  saveSpeechFromNode,
   saveSpeechFromRepo,
   updateSpeechSnippet,
 } from '../speech';
@@ -63,6 +65,7 @@ export function registerIpcHandlers(): void {
   handle('db:health', () => dbHealth());
 
   handle('campaign:list', () => listCampaigns());
+  handle('campaign:getOverview', () => getCampaignOverview());
   handle('campaign:get', ({ id }) => getCampaignDetail(id));
   handle('campaign:create', (input) => createCampaign(input));
   handle('campaign:update', (input) => updateCampaign(input));
@@ -129,6 +132,9 @@ export function registerIpcHandlers(): void {
   );
 
   handle('speech:save', (input) => saveSpeechFromRepo(input.repoId, input.contentMd, input.tier));
+  handle('speech:saveFromNode', (input) =>
+    saveSpeechFromNode(input.nodeId, input.contentMd, input.tier),
+  );
   handle('speech:list', () => listSpeechSnippets());
   handle('speech:update', (input) => updateSpeechSnippet(input.id, input.contentMd));
   handle('speech:delete', ({ id }) => {

@@ -44,7 +44,7 @@ export function Scripts(): React.JSX.Element {
     refresh();
   };
 
-  const exportSnippets = async (format: 'markdown' | 'anki'): Promise<void> => {
+  const exportSnippets = async (format: 'markdown' | 'anki' | 'pdf'): Promise<void> => {
     setExportMsg(null);
     const res = await invoke('speech:export', { format });
     if (res.saved && res.path) {
@@ -78,6 +78,13 @@ export function Scripts(): React.JSX.Element {
             className="rounded border border-[var(--color-border)] px-2 py-1 text-xs"
           >
             导出 Anki
+          </button>
+          <button
+            type="button"
+            onClick={() => void exportSnippets('pdf')}
+            className="rounded border border-[var(--color-border)] px-2 py-1 text-xs"
+          >
+            导出 PDF
           </button>
         </div>
         {exportMsg && <p className="text-xs text-emerald-400">{exportMsg}</p>}

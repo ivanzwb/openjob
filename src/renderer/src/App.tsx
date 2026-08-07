@@ -4,12 +4,13 @@ import { CampaignCreate } from './pages/CampaignCreate';
 import { CampaignDetail } from './pages/CampaignDetail';
 import { CampaignList } from './pages/CampaignList';
 import { Settings } from './pages/Settings';
+import { Overview } from './pages/Overview';
 import { Repos } from './pages/Repos';
 import { Scripts } from './pages/Scripts';
 import { Today } from './pages/Today';
 import { invoke } from './ipc';
 
-type Tab = 'today' | 'campaigns' | 'repos' | 'scripts' | 'chat' | 'settings';
+type Tab = 'today' | 'overview' | 'campaigns' | 'repos' | 'scripts' | 'chat' | 'settings';
 type View = { kind: 'list' } | { kind: 'create' } | { kind: 'detail'; id: string; autoDiagnose?: boolean };
 
 export default function App(): React.JSX.Element {
@@ -30,6 +31,7 @@ export default function App(): React.JSX.Element {
           {(
             [
               ['today', '今日'],
+              ['overview', '总览'],
               ['campaigns', '备考'],
               ['repos', '源码'],
               ['scripts', '话术'],
@@ -58,6 +60,14 @@ export default function App(): React.JSX.Element {
 
       <main className="min-h-0 flex-1 overflow-y-auto">
         {tab === 'today' && <Today />}
+        {tab === 'overview' && (
+          <Overview
+            onOpenCampaign={(id) => {
+              setTab('campaigns');
+              setView({ kind: 'detail', id });
+            }}
+          />
+        )}
         {tab === 'repos' && <Repos />}
         {tab === 'scripts' && <Scripts />}
         {tab === 'settings' && <Settings />}
