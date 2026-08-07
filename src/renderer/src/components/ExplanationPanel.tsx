@@ -14,11 +14,13 @@ export function ExplanationPanel({
   nodeName,
   defaultTier = 'spoken',
   fallbackMode = false,
+  onComplete,
 }: {
   nodeId: string;
   nodeName: string;
   defaultTier?: ExplanationTier;
   fallbackMode?: boolean;
+  onComplete?: () => void;
 }): React.JSX.Element {
   const [tier, setTier] = useState<ExplanationTier>(defaultTier);
   const [content, setContent] = useState<Explanation | null>(null);
@@ -109,7 +111,7 @@ export function ExplanationPanel({
           <div className="prose prose-invert max-w-none whitespace-pre-wrap text-sm leading-relaxed">
             {content.contentMd}
           </div>
-          <div className="flex gap-2 pt-2">
+          <div className="flex flex-wrap items-center gap-2 pt-2">
             <button
               type="button"
               onClick={() => {
@@ -123,6 +125,15 @@ export function ExplanationPanel({
             >
               {saved ? '已存入话术库' : '存入话术库'}
             </button>
+            {onComplete && (
+              <button
+                type="button"
+                onClick={onComplete}
+                className="ml-auto rounded bg-[var(--color-accent)] px-3 py-1 text-xs font-medium"
+              >
+                标记完成
+              </button>
+            )}
           </div>
         </>
       )}

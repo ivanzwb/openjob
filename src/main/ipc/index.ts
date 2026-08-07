@@ -19,6 +19,7 @@ import {
   diagnoseFetchIntel,
   diagnoseFromJd,
   ingestInterviewReport,
+  ingestWebReports,
 } from '../diagnosis';
 import {
   createAnnotation,
@@ -37,6 +38,7 @@ import {
   deferToday,
   generatePlan,
   getTodayPlan,
+  listTodayCampaigns,
   skipTask,
 } from '../plan/schedule';
 import { generateQuizQuestion, submitQuizAnswer } from '../quiz';
@@ -50,6 +52,7 @@ import {
   saveSpeechFromRepo,
   updateSpeechSnippet,
 } from '../speech';
+import { getSessionMessages, listSessions } from '../session';
 import { getAppPaths } from '../paths';
 import { handle } from './bridge';
 
@@ -108,6 +111,15 @@ export function registerIpcHandlers(): void {
   handle('diagnosis:ingestReport', ({ campaignId, rawText, sourceType }) =>
     ingestInterviewReport(campaignId, rawText, sourceType),
   );
+  handle('diagnosis:ingestWeb', async ({ campaignId }) => {
+    const { reports, sourcesFetched } = await ingestWebReports(campaignId);
+    return {
+      reports,
+      sourcesFetched,
+      totalQuestions: reports.reduce((s, r) => s + r.questionsExtracted, 0),
+      totalNodesUpdated: reports.reduce((s, r) => s + r.nodesUpdated, 0),
+    };
+  });
 
   handle('node:update', (input) => updateNode(input));
   handle('node:delete', ({ id }) => {
@@ -118,6 +130,7 @@ export function registerIpcHandlers(): void {
   handle('plan:generate', ({ campaignId, interviewDate, dailyMinutes }) =>
     generatePlan(campaignId, interviewDate, dailyMinutes),
   );
+  handle('plan:listTodayCampaigns', () => listTodayCampaigns());
   handle('plan:getToday', ({ campaignId }) => getTodayPlan(campaignId));
   handle('plan:deferToday', ({ campaignId }) => ({ deferred: deferToday(campaignId) }));
 
@@ -175,6 +188,9 @@ export function registerIpcHandlers(): void {
   handle('annotation:toggleBookmark', ({ targetType, targetId }) => ({
     bookmarked: toggleBookmark(targetType, targetId),
   }));
+
+  handle('session:list', ({ kind, limit }) => listSessions(kind, limit));
+  handle('session:getMessages', ({ sessionId }) => getSessionMessages(sessionId));
 }
 
 export { emit, handle } from './bridge';

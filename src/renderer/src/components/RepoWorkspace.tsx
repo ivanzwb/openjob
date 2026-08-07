@@ -15,23 +15,42 @@ export function RepoWorkspace({
   repo: Repo;
   onComplete?: () => void;
 }): React.JSX.Element {
-  const { state, send, cancel, reset } = useStream();
   const [input, setInput] = useState('');
   const [allowWebSearch, setAllowWebSearch] = useState(true);
   const [codeLoc, setCodeLoc] = useState<CodeLocation | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [, setHistory] = useState<Array<{ role: 'user' | 'assistant'; text: string }>>([]);
+
+  const handleDone = (done: { contentMd: string }): void => {
+    if (!done.contentMd) return;
+    setHistory((h) => {
+      const last = h[h.length - 1];
+      if (last?.role === 'assistant' && last.text === done.contentMd) return h;
+      return [...h, { role: 'assistant', text: done.contentMd }];
+    });
+  };
+
+  const { state, send, cancel, reset, setSessionId } = useStream(null, handleDone);
 
   const submit = (): void => {
     const text = input.trim();
     if (!text || state.running || repo.status !== 'ready') return;
     setInput('');
     setSaved(false);
-    void send({
-      role: 'codeAgent',
-      repoId: repo.id,
-      allowWebSearch,
-      messages: [{ role: 'user', content: text }],
+    setHistory((h) => {
+      const next = [...h, { role: 'user' as const, text }];
+      void send({
+        role: 'codeAgent',
+        repoId: repo.id,
+        allowWebSearch,
+        sessionId: state.sessionId ?? undefined,
+        messages: [
+          ...next.flatMap((m) => [{ role: m.role, content: m.text }]),
+          { role: 'user', content: text },
+        ],
+      });
+      return next;
     });
   };
 
@@ -108,7 +127,15 @@ export function RepoWorkspace({
                   >
                     {saved ? '已存入话术库' : saving ? '保存中…' : '存入话术库'}
                   </button>
-                  <button type="button" onClick={reset} className="hover:text-[var(--color-fg)]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      reset();
+                      setSessionId(null);
+                      setHistory([]);
+                    }}
+                    className="hover:text-[var(--color-fg)]"
+                  >
                     清空
                   </button>
                 </>

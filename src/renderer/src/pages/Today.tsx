@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { TaskView, TodayPlan } from '@shared/ipc';
+import type { TaskView, TodayCampaignOption, TodayPlan } from '@shared/ipc';
 import { ExplanationPanel } from '../components/ExplanationPanel';
 import { QuizPanel } from '../components/QuizPanel';
 import { ReadCodePanel } from '../components/ReadCodePanel';
@@ -7,28 +7,71 @@ import { TaskCard } from '../components/TaskCard';
 import { invoke } from '../ipc';
 
 export function Today(): React.JSX.Element {
+  const [campaigns, setCampaigns] = useState<TodayCampaignOption[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [plan, setPlan] = useState<TodayPlan | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTask, setActiveTask] = useState<TaskView | null>(null);
   const [deferring, setDeferring] = useState(false);
 
-  const refresh = useCallback(() => {
-    void invoke('plan:getToday', {}).then(setPlan).finally(() => setLoading(false));
+  const loadPlan = useCallback((campaignId: string | null) => {
+    if (!campaignId) {
+      setPlan(null);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    void invoke('plan:getToday', { campaignId })
+      .then(setPlan)
+      .finally(() => setLoading(false));
   }, []);
 
+  const refreshCampaigns = useCallback(() => {
+    void invoke('plan:listTodayCampaigns', undefined).then((list) => {
+      setCampaigns(list);
+      const next =
+        list.find((c) => c.hasPlanToday)?.id ?? list[0]?.id ?? null;
+      setSelectedId((prev) => (prev && list.some((c) => c.id === prev) ? prev : next));
+    });
+  }, []);
+
+  const selectCampaign = useCallback(
+    (id: string) => {
+      setSelectedId(id);
+      setActiveTask(null);
+      loadPlan(id);
+    },
+    [loadPlan],
+  );
+
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    void invoke('plan:listTodayCampaigns', undefined).then((list) => {
+      setCampaigns(list);
+      const initial =
+        list.find((c) => c.hasPlanToday)?.id ?? list[0]?.id ?? null;
+      if (initial) {
+        setSelectedId(initial);
+        setLoading(true);
+        void invoke('plan:getToday', { campaignId: initial })
+          .then(setPlan)
+          .finally(() => setLoading(false));
+      } else {
+        setLoading(false);
+      }
+    });
+  }, []);
 
   const complete = async (taskId: string): Promise<void> => {
     await invoke('task:complete', { taskId });
-    refresh();
+    loadPlan(selectedId);
+    refreshCampaigns();
     setActiveTask(null);
   };
 
   const skip = async (taskId: string): Promise<void> => {
     await invoke('task:skip', { taskId });
-    refresh();
+    loadPlan(selectedId);
+    refreshCampaigns();
     if (activeTask?.id === taskId) setActiveTask(null);
   };
 
@@ -37,18 +80,19 @@ export function Today(): React.JSX.Element {
     setDeferring(true);
     try {
       await invoke('plan:deferToday', { campaignId: plan.campaignId });
-      refresh();
+      loadPlan(selectedId);
+      refreshCampaigns();
       setActiveTask(null);
     } finally {
       setDeferring(false);
     }
   };
 
-  if (loading) {
+  if (loading && !plan) {
     return <p className="p-6 text-sm text-[var(--color-muted)]">加载今日任务…</p>;
   }
 
-  if (!plan) {
+  if (campaigns.length === 0) {
     return (
       <div className="mx-auto max-w-2xl p-6 text-center text-sm text-[var(--color-muted)]">
         没有进行中的备考战役。请先在「备考」中创建 Campaign 并生成计划。
@@ -56,13 +100,26 @@ export function Today(): React.JSX.Element {
     );
   }
 
+  if (!plan) {
+    return (
+      <div className="mx-auto max-w-2xl p-6 text-center text-sm text-[var(--color-muted)]">
+        无法加载今日计划
+      </div>
+    );
+  }
+
   if (!plan.planDay) {
     return (
-      <div className="mx-auto max-w-2xl space-y-4 p-6 text-center">
-        <p className="text-sm text-[var(--color-muted)]">
+      <div className="mx-auto max-w-2xl space-y-4 p-6">
+        <CampaignSwitcher
+          campaigns={campaigns}
+          selectedId={selectedId}
+          onChange={selectCampaign}
+        />
+        <p className="text-center text-sm text-[var(--color-muted)]">
           {plan.company} · {plan.roleTitle} — 今天没有排期任务
         </p>
-        <p className="text-xs text-[var(--color-muted)]">
+        <p className="text-center text-xs text-[var(--color-muted)]">
           在 Campaign 详情页设置面试日期并「生成计划」
         </p>
       </div>
@@ -77,9 +134,12 @@ export function Today(): React.JSX.Element {
       <div className="flex min-h-0 w-full flex-col gap-4 lg:w-80 lg:shrink-0">
         <header>
           <h2 className="text-lg font-semibold">今日任务</h2>
-          <p className="text-xs text-[var(--color-muted)]">
-            {plan.company} · {plan.roleTitle} · {plan.date}
-          </p>
+          <CampaignSwitcher
+            campaigns={campaigns}
+            selectedId={selectedId}
+            onChange={selectCampaign}
+          />
+          <p className="mt-1 text-xs text-[var(--color-muted)]">{plan.date}</p>
           <div className="mt-3 flex items-center gap-2">
             <div className="h-2 flex-1 rounded-full bg-[var(--color-border)]">
               <div
@@ -143,11 +203,51 @@ export function Today(): React.JSX.Element {
             nodeId={activeTask.nodeId}
             nodeName={activeTask.nodeName ?? ''}
             fallbackMode
+            onComplete={() => void complete(activeTask.id)}
           />
         ) : (
-          <ExplanationPanel nodeId={activeTask.nodeId} nodeName={activeTask.nodeName ?? ''} />
+          <ExplanationPanel
+            nodeId={activeTask.nodeId}
+            nodeName={activeTask.nodeName ?? ''}
+            onComplete={() => void complete(activeTask.id)}
+          />
         )}
       </div>
     </div>
+  );
+}
+
+function CampaignSwitcher({
+  campaigns,
+  selectedId,
+  onChange,
+}: {
+  campaigns: TodayCampaignOption[];
+  selectedId: string | null;
+  onChange: (id: string) => void;
+}): React.JSX.Element {
+  if (campaigns.length <= 1) {
+    const c = campaigns[0];
+    if (!c) return <></>;
+    return (
+      <p className="mt-1 text-xs text-[var(--color-muted)]">
+        {c.company} · {c.roleTitle}
+      </p>
+    );
+  }
+
+  return (
+    <select
+      value={selectedId ?? ''}
+      onChange={(e) => onChange(e.target.value)}
+      className="mt-2 w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1.5 text-sm"
+    >
+      {campaigns.map((c) => (
+        <option key={c.id} value={c.id}>
+          {c.company} · {c.roleTitle}
+          {c.hasPlanToday ? ` (${c.completedCount}/${c.totalCount})` : ' — 今日无排期'}
+        </option>
+      ))}
+    </select>
   );
 }

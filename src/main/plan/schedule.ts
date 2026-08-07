@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { DateOnly } from '@shared/entities';
-import type { PlanGenerateResult, TaskView, TodayPlan } from '@shared/ipc';
+import type { PlanGenerateResult, TaskView, TodayCampaignOption, TodayPlan } from '@shared/ipc';
 import type { TaskKind } from '@shared/enums';
 import { getDb, schema } from '../db';
-import { getCampaignRow, rowToNode, updateCampaign } from '../campaign/repository';
+import { getCampaignRow, listCampaigns, rowToNode, updateCampaign } from '../campaign/repository';
 
 function formatLocal(d: Date): DateOnly {
   const y = d.getFullYear();
@@ -247,6 +247,49 @@ export function generatePlan(
   }
 
   return { daysCreated: dates.length, tasksCreated, overflowFallbacks };
+}
+
+export function listTodayCampaigns(): TodayCampaignOption[] {
+  const db = getDb();
+  const today = formatLocal(new Date());
+  const campaigns = listCampaigns().filter((c) => c.status === 'active' || c.status === 'planning');
+
+  return campaigns.map((c) => {
+    const planDay = db
+      .select()
+      .from(schema.planDay)
+      .where(and(eq(schema.planDay.campaignId, c.id), eq(schema.planDay.date, today)))
+      .get();
+
+    if (!planDay) {
+      return {
+        id: c.id,
+        company: c.company,
+        roleTitle: c.roleTitle,
+        status: c.status,
+        hasPlanToday: false,
+        completedCount: 0,
+        totalCount: 0,
+      };
+    }
+
+    const tasks = db
+      .select()
+      .from(schema.task)
+      .where(eq(schema.task.planDayId, planDay.id))
+      .all();
+    const completedCount = tasks.filter((t) => t.status === 'done').length;
+
+    return {
+      id: c.id,
+      company: c.company,
+      roleTitle: c.roleTitle,
+      status: c.status,
+      hasPlanToday: true,
+      completedCount,
+      totalCount: tasks.length,
+    };
+  });
 }
 
 function resolveCampaignId(campaignId?: string): string | null {

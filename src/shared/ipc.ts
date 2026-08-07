@@ -21,6 +21,7 @@ import type {
   ReportSourceType,
   AnnotationTarget,
   AnnotationKind,
+  SessionKind,
 } from './enums';
 import type {
   Campaign,
@@ -78,10 +79,12 @@ export interface ChatRequest {
   /** 指定后启用代码 Agent 工具集（list_dir / read_file / grep） */
   repoId?: string;
   sessionId?: string;
+  campaignId?: string;
 }
 
 export interface StreamStarted {
   streamId: string;
+  sessionId: string | null;
 }
 
 export interface StreamDelta {
@@ -100,6 +103,7 @@ export interface StreamToolCall {
 
 export interface StreamDone {
   streamId: string;
+  sessionId: string | null;
   contentMd: string;
   citations: Citation[];
   /** 本次回答的主要信息来源类型，UI 用 SourceBadge 渲染 */
@@ -285,9 +289,48 @@ export interface IngestReportResult {
   crossCampaignUpdated: number;
 }
 
+export interface IngestWebResult {
+  reports: IngestReportResult[];
+  sourcesFetched: number;
+  totalQuestions: number;
+  totalNodesUpdated: number;
+}
+
+// ---------------------------------------------------------------------------
+// 会话历史
+// ---------------------------------------------------------------------------
+
+export interface SessionSummary {
+  id: string;
+  campaignId: string | null;
+  kind: SessionKind;
+  title: string;
+  createdAt: number;
+  messageCount: number;
+}
+
+export interface SessionMessageView {
+  id: string;
+  sessionId: string;
+  role: 'user' | 'assistant';
+  contentMd: string;
+  citations: Citation[];
+  createdAt: number;
+}
+
 // ---------------------------------------------------------------------------
 // 计划与执行（阶段 2）
 // ---------------------------------------------------------------------------
+
+export interface TodayCampaignOption {
+  id: string;
+  company: string;
+  roleTitle: string;
+  status: string;
+  hasPlanToday: boolean;
+  completedCount: number;
+  totalCount: number;
+}
 
 export interface TaskView extends Task {
   nodeName: string | null;
@@ -516,12 +559,15 @@ export interface IpcInvokeMap {
   'diagnosis:fetchIntel': { req: { campaignId: string }; res: DiagnosisJobStarted };
   /** 手动粘贴面经，提取真题并修正考察频率 */
   'diagnosis:ingestReport': { req: IngestReportInput; res: IngestReportResult };
+  /** 联网搜索面经并自动摄入 */
+  'diagnosis:ingestWeb': { req: { campaignId: string }; res: IngestWebResult };
 
   'node:update': { req: UpdateNodeInput; res: KnowledgeNode };
   'node:delete': { req: { id: string }; res: void };
   'node:create': { req: CreateNodeInput; res: KnowledgeNode };
 
   'plan:generate': { req: PlanGenerateInput; res: PlanGenerateResult };
+  'plan:listTodayCampaigns': { req: void; res: TodayCampaignOption[] };
   'plan:getToday': { req: { campaignId?: string }; res: TodayPlan | null };
   'plan:deferToday': { req: { campaignId: string }; res: { deferred: number } };
 
@@ -555,6 +601,9 @@ export interface IpcInvokeMap {
   'annotation:create': { req: AnnotationCreateInput; res: Annotation };
   'annotation:delete': { req: { id: string }; res: void };
   'annotation:toggleBookmark': { req: AnnotationToggleInput; res: { bookmarked: boolean } };
+
+  'session:list': { req: { kind?: SessionKind; limit?: number }; res: SessionSummary[] };
+  'session:getMessages': { req: { sessionId: string }; res: SessionMessageView[] };
 }
 
 /** 主进程 → 渲染进程的单向推送 */
@@ -603,10 +652,12 @@ export const IPC_INVOKE_CHANNELS = [
   'diagnosis:expandNode',
   'diagnosis:fetchIntel',
   'diagnosis:ingestReport',
+  'diagnosis:ingestWeb',
   'node:update',
   'node:delete',
   'node:create',
   'plan:generate',
+  'plan:listTodayCampaigns',
   'plan:getToday',
   'plan:deferToday',
   'task:complete',
@@ -634,6 +685,8 @@ export const IPC_INVOKE_CHANNELS = [
   'annotation:create',
   'annotation:delete',
   'annotation:toggleBookmark',
+  'session:list',
+  'session:getMessages',
 ] as const satisfies readonly IpcInvokeChannel[];
 
 export const IPC_EVENT_CHANNELS = [

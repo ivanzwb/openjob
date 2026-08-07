@@ -5,6 +5,11 @@ import type { Citation } from '@shared/entities';
 import type { ChatRequest, ProviderTestResult, StreamStarted } from '@shared/ipc';
 // 直接引 bridge 而非 ipc/index，避免与 handler 注册形成循环依赖
 import { emit } from '../ipc/bridge';
+import {
+  appendMessage,
+  appendToolCall,
+  createSession,
+} from '../session';
 import { createRoleClient } from './client';
 import { AGENT_TOOLS, runTool } from './tools';
 import { getRepo, getRepoLocalPath } from '../repo/repository';
@@ -25,9 +30,8 @@ export function startChat(req: ChatRequest): StreamStarted {
   const streamId = randomUUID();
   const controller = new AbortController();
   active.set(streamId, controller);
-  // 不 await：立即把 streamId 返回给渲染进程，内容通过事件推送
   void runChat(streamId, req, controller).finally(() => active.delete(streamId));
-  return { streamId };
+  return { streamId, sessionId: req.sessionId ?? null };
 }
 
 interface PendingToolCall {
@@ -77,9 +81,31 @@ async function runChat(
   req: ChatRequest,
   controller: AbortController,
 ): Promise<void> {
+  const pendingToolRecords: Array<{
+    name: string;
+    args: Record<string, unknown>;
+    summary: string;
+    durationMs: number;
+  }> = [];
+
+  let sessionId = req.sessionId ?? null;
+
   try {
     const role = req.repoId ? 'codeAgent' : req.role;
     const { client, model, temperature } = createRoleClient(role);
+
+    const userMessages = req.messages.filter((m) => m.role === 'user');
+    const lastUser = userMessages[userMessages.length - 1]?.content ?? '对话';
+    if (!sessionId) {
+      sessionId = createSession(
+        req.repoId ? 'repoQa' : 'freeChat',
+        lastUser.slice(0, 80),
+        req.campaignId ?? null,
+      );
+    }
+    if (userMessages.length > 0) {
+      appendMessage(sessionId, 'user', userMessages[userMessages.length - 1]!.content);
+    }
 
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = req.messages.map(
       (m) => ({ role: m.role, content: m.content }),
@@ -197,6 +223,13 @@ async function runChat(
           durationMs: Date.now() - startedAt,
         });
 
+        pendingToolRecords.push({
+          name: call.name,
+          args,
+          summary: outcome.summary,
+          durationMs: Date.now() - startedAt,
+        });
+
         messages.push({
           role: 'tool',
           tool_call_id: call.id,
@@ -205,10 +238,19 @@ async function runChat(
       }
     }
 
+    const deduped = dedupeCitations(citations);
+    if (sessionId) {
+      const assistantMsgId = appendMessage(sessionId, 'assistant', finalText, deduped);
+      for (const tc of pendingToolRecords) {
+        appendToolCall(assistantMsgId, tc.name, tc.args, tc.summary, tc.durationMs);
+      }
+    }
+
     emit('stream:done', {
       streamId,
+      sessionId,
       contentMd: finalText,
-      citations: dedupeCitations(citations),
+      citations: deduped,
       evidenceKind: usedCode ? 'code' : usedWeb ? 'web' : 'model',
       usage,
     });
@@ -216,6 +258,7 @@ async function runChat(
     if (controller.signal.aborted) {
       emit('stream:done', {
         streamId,
+        sessionId,
         contentMd: '',
         citations: [],
         evidenceKind: 'model',

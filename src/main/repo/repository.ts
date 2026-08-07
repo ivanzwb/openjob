@@ -7,7 +7,8 @@ import type { Repo } from '@shared/entities';
 import { getDb, schema } from '../db';
 import { getAppPaths } from '../paths';
 import { completeJson } from '../llm/json';
-import { buildRepoMap, detectLanguages, readFileRange } from './files';
+import { detectLanguages, readFileRange } from './files';
+import { buildRepoMapAsync } from './symbols';
 import { assertGitAvailable, resolveGitBinary } from './git';
 import { emit } from '../ipc/bridge';
 
@@ -96,7 +97,7 @@ export async function cloneAndIndex(url: string, jobId: string): Promise<void> {
       .run();
 
     report('正在生成 repo map…', 0.4);
-    const repoMapMd = buildRepoMap(localPath);
+    const repoMapMd = await buildRepoMapAsync(localPath);
     const languages = detectLanguages(localPath);
 
     report('正在生成项目摘要…', 0.7);

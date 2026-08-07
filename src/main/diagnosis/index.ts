@@ -27,6 +27,7 @@ import {
   INTEL_SYSTEM,
 } from './prompts';
 import { findDuplicateByName, flattenChildren, flattenGeneratedTree } from './tree';
+import { filterDuplicatesByEmbedding } from './embedding';
 import { applyHistoricalPrior } from './prior';
 import { computePriority } from './priority';
 import type { ResumeParsed } from '@shared/entities';
@@ -166,8 +167,16 @@ export async function diagnoseExpandNode(nodeId: string, jobId: string): Promise
       .all();
     const existingNames = siblings.map((n) => n.name);
 
+    const candidateNames = result.children.map((c) => c.name);
+    const embeddingSkipped = await filterDuplicatesByEmbedding(
+      parent.campaignId,
+      candidateNames,
+    );
+    const embeddingSkipSet = new Set(embeddingSkipped);
+
     const filtered = result.children.filter(
-      (c) => !findDuplicateByName(existingNames, c.name),
+      (c) =>
+        !findDuplicateByName(existingNames, c.name) && !embeddingSkipSet.has(c.name),
     );
 
     const rows = flattenChildren(
@@ -179,7 +188,12 @@ export async function diagnoseExpandNode(nodeId: string, jobId: string): Promise
     insertNodes(rows);
     refreshAllPriorities(parent.campaignId);
 
-    done(jobId, label, `新增 ${rows.length} 个子考点（去重后）`);
+    const skipped = result.children.length - filtered.length;
+    done(
+      jobId,
+      label,
+      `新增 ${rows.length} 个子考点` + (skipped > 0 ? `（去重跳过 ${skipped} 个）` : ''),
+    );
   } catch (err) {
     fail(jobId, label, err instanceof Error ? err.message : String(err));
   }
@@ -244,3 +258,4 @@ export async function diagnoseFetchIntel(campaignId: string, jobId: string): Pro
 }
 
 export { ingestInterviewReport } from './ingest';
+export { ingestWebReports } from './webIngest';

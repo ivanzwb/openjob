@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CampaignDetail as CampaignDetailData } from '@shared/ipc';
 import type { Resume } from '@shared/entities';
+import type { CoverageType, NodeKind } from '@shared/enums';
 import { CompanyIntelCard } from '../components/CompanyIntelCard';
 import { KnowledgeGraph } from '../components/KnowledgeGraph';
 import { KnowledgeTree } from '../components/KnowledgeTree';
@@ -30,6 +31,7 @@ export function CampaignDetail({
   const [dailyMinutes, setDailyMinutes] = useState('90');
   const [planMsg, setPlanMsg] = useState<string | null>(null);
   const [bookmarkedIds, setBookmarkedIds] = useState<Set<string>>(new Set());
+  const [webIngesting, setWebIngesting] = useState(false);
   const { active: job, lastMessage } = useJobProgress();
 
   const refresh = useCallback(() => {
@@ -120,6 +122,40 @@ export function CampaignDetail({
   const deleteNode = async (nodeId: string): Promise<void> => {
     await invoke('node:delete', { id: nodeId });
     refresh();
+  };
+
+  const updateNode = async (
+    nodeId: string,
+    patch: { name?: string; coverageType?: CoverageType },
+  ): Promise<void> => {
+    await invoke('node:update', { id: nodeId, ...patch });
+    refresh();
+  };
+
+  const createChildNode = async (
+    parentId: string,
+    name: string,
+    kind: NodeKind,
+  ): Promise<void> => {
+    await invoke('node:create', { campaignId: id, parentId, name, kind });
+    refresh();
+  };
+
+  const ingestWeb = async (): Promise<void> => {
+    setIngestMsg(null);
+    setWebIngesting(true);
+    try {
+      const res = await invoke('diagnosis:ingestWeb', { campaignId: id });
+      setIngestMsg(
+        `联网摄入 ${res.reports.length} 篇（抓取 ${res.sourcesFetched} 页），` +
+          `提取 ${res.totalQuestions} 题，更新 ${res.totalNodesUpdated} 个考点`,
+      );
+      refresh();
+    } catch (err) {
+      setIngestMsg(err instanceof Error ? err.message : String(err));
+    } finally {
+      setWebIngesting(false);
+    }
   };
 
   const toggleBookmark = async (nodeId: string): Promise<void> => {
@@ -275,6 +311,8 @@ export function CampaignDetail({
                 bookmarkedIds={bookmarkedIds}
                 onExpand={(nid) => void expandNode(nid)}
                 onDelete={(nid) => void deleteNode(nid)}
+                onUpdate={(nid, patch) => void updateNode(nid, patch)}
+                onCreateChild={(pid, name, kind) => void createChildNode(pid, name, kind)}
                 onToggleBookmark={(nid) => void toggleBookmark(nid)}
                 expandingId={expandingId}
               />
@@ -367,10 +405,18 @@ export function CampaignDetail({
           </div>
 
           <div className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-            <h3 className="text-sm font-medium">面经粘贴</h3>
+            <h3 className="text-sm font-medium">面经摄入</h3>
             <p className="text-xs text-[var(--color-muted)]">
-              粘贴面经原文，提取真题并修正考点考察概率
+              粘贴面经原文，或联网搜索自动摄入
             </p>
+            <button
+              type="button"
+              disabled={webIngesting || Boolean(job)}
+              onClick={() => void ingestWeb()}
+              className="rounded border border-sky-800 bg-sky-950/40 px-3 py-1 text-xs text-sky-300 disabled:opacity-40"
+            >
+              {webIngesting ? '搜索摄入中…' : '搜索摄入面经'}
+            </button>
             <textarea
               value={reportText}
               onChange={(e) => setReportText(e.target.value)}
