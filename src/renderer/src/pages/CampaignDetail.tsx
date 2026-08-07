@@ -1,10 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { CampaignDetail as CampaignDetailData } from '@shared/ipc';
+import type {
+  CampaignDetail as CampaignDetailData,
+  NodeEdgeView,
+  Nudge,
+} from '@shared/ipc';
 import type { Resume } from '@shared/entities';
-import type { CoverageType, NodeKind } from '@shared/enums';
+import type { EdgeRelation, NodeKind } from '@shared/enums';
 import { CompanyIntelCard } from '../components/CompanyIntelCard';
+import { EdgeEditor } from '../components/EdgeEditor';
 import { KnowledgeGraph } from '../components/KnowledgeGraph';
-import { KnowledgeTree } from '../components/KnowledgeTree';
+import { KnowledgeTree, type NodePatch } from '../components/KnowledgeTree';
+import { NudgePanel } from '../components/NudgePanel';
 import { invoke } from '../ipc';
 import { useJobProgress } from '../ipc/useJobProgress';
 
@@ -31,6 +37,11 @@ export function CampaignDetail({
   const [dailyMinutes, setDailyMinutes] = useState('90');
   const [planMsg, setPlanMsg] = useState<string | null>(null);
   const [bookmarkedIds, setBookmarkedIds] = useState<Set<string>>(new Set());
+  const [noteCounts, setNoteCounts] = useState<Map<string, number>>(new Map());
+  const [edges, setEdges] = useState<NodeEdgeView[]>([]);
+  const [showEdges, setShowEdges] = useState(false);
+  const [nudges, setNudges] = useState<Nudge[]>([]);
+  const [applyingHistory, setApplyingHistory] = useState(false);
   const [webIngesting, setWebIngesting] = useState(false);
   const { active: job, lastMessage } = useJobProgress();
 
@@ -45,7 +56,15 @@ export function CampaignDetail({
       setBookmarkedIds(
         new Set(anns.filter((a) => a.kind === 'bookmark').map((a) => a.targetId)),
       );
+      const counts = new Map<string, number>();
+      for (const a of anns) {
+        if (a.kind !== 'note' && a.kind !== 'highlight') continue;
+        counts.set(a.targetId, (counts.get(a.targetId) ?? 0) + 1);
+      }
+      setNoteCounts(counts);
     });
+    void invoke('edge:list', { campaignId: id }).then(setEdges);
+    void invoke('insight:nudges', { campaignId: id }).then(setNudges);
   }, [id]);
 
   const autoRan = useRef(false);
@@ -109,7 +128,10 @@ export function CampaignDetail({
       setIngestMsg(
         `提取 ${res.questionsExtracted} 题，更新 ${res.nodesUpdated} 个考点` +
           (res.blindSpotsCreated ? `，新增 ${res.blindSpotsCreated} 个盲区考点` : '') +
-          (res.crossCampaignUpdated ? `，跨 Campaign 修正 ${res.crossCampaignUpdated} 处` : ''),
+          (res.crossCampaignUpdated ? `，跨 Campaign 修正 ${res.crossCampaignUpdated} 处` : '') +
+          (res.unverifiedCount
+            ? `；${res.corroboratedCount} 处多源印证、${res.unverifiedCount} 处单一来源（权重减半）`
+            : ''),
       );
       if (sourceType === 'selfDebrief') setDebriefText('');
       else setReportText('');
@@ -124,12 +146,53 @@ export function CampaignDetail({
     refresh();
   };
 
-  const updateNode = async (
-    nodeId: string,
-    patch: { name?: string; coverageType?: CoverageType },
-  ): Promise<void> => {
+  const updateNode = async (nodeId: string, patch: NodePatch): Promise<void> => {
     await invoke('node:update', { id: nodeId, ...patch });
     refresh();
+  };
+
+  const addNote = async (nodeId: string, noteMd: string): Promise<void> => {
+    await invoke('annotation:create', {
+      targetType: 'node',
+      targetId: nodeId,
+      kind: 'note',
+      noteMd,
+    });
+    refresh();
+  };
+
+  const createEdge = async (
+    fromNodeId: string,
+    toNodeId: string,
+    relation: EdgeRelation,
+  ): Promise<void> => {
+    try {
+      const edge = await invoke('edge:create', { fromNodeId, toNodeId, relation });
+      setEdges((prev) => [...prev, edge]);
+    } catch (err) {
+      setIngestMsg(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const removeEdge = async (edgeId: string): Promise<void> => {
+    await invoke('edge:delete', { id: edgeId });
+    setEdges((prev) => prev.filter((e) => e.id !== edgeId));
+  };
+
+  const applyHistory = async (): Promise<void> => {
+    setApplyingHistory(true);
+    try {
+      const res = await invoke('insight:applyHistory', { campaignId: id });
+      setNudges(res.nudges);
+      setPlanMsg(
+        res.boosted + res.eased === 0
+          ? '历史信号暂无可回写的内容'
+          : `已生成 ${res.boosted} 处提权、${res.eased} 处拆小，优先级已刷新`,
+      );
+      refresh();
+    } finally {
+      setApplyingHistory(false);
+    }
   };
 
   const createChildNode = async (
@@ -292,28 +355,49 @@ export function CampaignDetail({
         <div className="space-y-4 lg:col-span-2">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-medium text-[var(--color-muted)]">
-              考点清单（{nodes.length}）
+              考点清单（{nodes.length}）· {edges.length} 条关系
             </h3>
-            <button
-              type="button"
-              onClick={() => setShowGraph((v) => !v)}
-              className="text-xs text-sky-400 hover:underline"
-            >
-              {showGraph ? '切换清单' : '图谱视图'}
-            </button>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowEdges((v) => !v)}
+                className="text-xs text-sky-400 hover:underline"
+              >
+                {showEdges ? '收起关系' : '编辑关系'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowGraph((v) => !v)}
+                className="text-xs text-sky-400 hover:underline"
+              >
+                {showGraph ? '切换清单' : '图谱视图'}
+              </button>
+            </div>
           </div>
+          {showEdges && (
+            <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+              <EdgeEditor
+                nodes={nodes}
+                edges={edges}
+                onCreate={(f, t, r) => void createEdge(f, t, r)}
+                onDelete={(eid) => void removeEdge(eid)}
+              />
+            </div>
+          )}
           <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
             {showGraph ? (
-              <KnowledgeGraph nodes={nodes} />
+              <KnowledgeGraph nodes={nodes} edges={edges} />
             ) : (
               <KnowledgeTree
                 nodes={nodes}
                 bookmarkedIds={bookmarkedIds}
+                noteCountByNode={noteCounts}
                 onExpand={(nid) => void expandNode(nid)}
                 onDelete={(nid) => void deleteNode(nid)}
                 onUpdate={(nid, patch) => void updateNode(nid, patch)}
                 onCreateChild={(pid, name, kind) => void createChildNode(pid, name, kind)}
                 onToggleBookmark={(nid) => void toggleBookmark(nid)}
+                onAddNote={(nid, note) => void addNote(nid, note)}
                 expandingId={expandingId}
               />
             )}
@@ -338,6 +422,15 @@ export function CampaignDetail({
         </div>
 
         <div className="space-y-6">
+          <div className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+            <h3 className="text-sm font-medium">该提醒你的事</h3>
+            <NudgePanel
+              nudges={nudges}
+              applying={applyingHistory}
+              onApplyHistory={() => void applyHistory()}
+            />
+          </div>
+
           <div className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
             <h3 className="text-sm font-medium">简历</h3>
             {detail.resume ? (

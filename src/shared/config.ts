@@ -5,7 +5,7 @@
  * 绝不存明文 API Key。密钥经 Electron safeStorage 加密后单独落盘。
  */
 
-import type { LlmRole, SearchProviderName } from './enums';
+import type { CoverageType, LlmRole, SearchProviderName } from './enums';
 
 export interface LlmProviderConfig {
   id: string;
@@ -55,14 +55,44 @@ export interface SearchConfig {
   };
 }
 
+/**
+ * 优先级公式的可调权重。
+ *
+ * 排序一旦成为黑盒，用户不认同就不会跟着计划走，Agent 形态直接垮掉。
+ * 所以公式不只要可见，还必须可调。
+ *
+ * score = examProb^probExp × masteryGap^gapExp × coverageBoost ÷ estMinutes^costExp
+ */
+export interface PriorityWeights {
+  /** 考察概率的指数，调大更偏向高频考点 */
+  probExp: number;
+  /** 掌握差距的指数，调大更偏向完全不会的点 */
+  gapExp: number;
+  /** 学习成本的惩罚指数，0 表示完全不看时长 */
+  costExp: number;
+  /** 各覆盖类型的额外倍率 */
+  coverageBoost: Record<CoverageType, number>;
+  /** 各覆盖类型要求达到的掌握度，决定掌握差距 */
+  targetMastery: Record<CoverageType, number>;
+}
+
 export interface AppConfig {
   /** 配置结构版本，用于后续迁移 */
   version: number;
   llm: LlmConfig;
   search: SearchConfig;
+  priority: PriorityWeights;
 }
 
 export const CONFIG_VERSION = 1;
+
+export const DEFAULT_PRIORITY_WEIGHTS: PriorityWeights = {
+  probExp: 1,
+  gapExp: 1,
+  costExp: 1,
+  coverageBoost: { deepDive: 1.2, gap: 1, landmine: 1.1, extra: 0.8 },
+  targetMastery: { deepDive: 5, gap: 3, landmine: 4, extra: 2 },
+};
 
 /**
  * 首次启动时写入的默认配置。
@@ -122,4 +152,5 @@ export const DEFAULT_CONFIG: AppConfig = {
       techDocs: 30,
     },
   },
+  priority: DEFAULT_PRIORITY_WEIGHTS,
 };

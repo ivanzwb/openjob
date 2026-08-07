@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { TaskView, TodayCampaignOption, TodayPlan } from '@shared/ipc';
+import type { PlanDateOption, TaskView, TodayCampaignOption, TodayPlan } from '@shared/ipc';
 import { ExplanationPanel } from '../components/ExplanationPanel';
 import { QuizPanel } from '../components/QuizPanel';
 import { ReadCodePanel } from '../components/ReadCodePanel';
@@ -13,6 +13,8 @@ export function Today(): React.JSX.Element {
   const [loading, setLoading] = useState(true);
   const [activeTask, setActiveTask] = useState<TaskView | null>(null);
   const [deferring, setDeferring] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [dateOptions, setDateOptions] = useState<PlanDateOption[]>([]);
 
   const loadPlan = useCallback((campaignId: string | null) => {
     if (!campaignId) {
@@ -73,6 +75,49 @@ export function Today(): React.JSX.Element {
     loadPlan(selectedId);
     refreshCampaigns();
     if (activeTask?.id === taskId) setActiveTask(null);
+  };
+
+  const enterEditMode = (): void => {
+    setEditMode((prev) => {
+      const next = !prev;
+      if (next && selectedId) {
+        void invoke('plan:listDates', { campaignId: selectedId }).then(setDateOptions);
+      }
+      return next;
+    });
+  };
+
+  /**
+   * 相邻交换而非拖拽：Electron 里 HTML5 拖放的落点判定很不稳，
+   * 上下移动的操作成本几乎一样，但不会点半天点不中。
+   */
+  const moveWithinDay = async (index: number, delta: number): Promise<void> => {
+    if (!plan?.planDay) return;
+    const ids = plan.tasks.map((t) => t.id);
+    const target = index + delta;
+    if (target < 0 || target >= ids.length) return;
+    [ids[index], ids[target]] = [ids[target]!, ids[index]!];
+    await invoke('task:reorder', { planDayId: plan.planDay.id, taskIds: ids });
+    loadPlan(selectedId);
+  };
+
+  const rescheduleTask = async (taskId: string, date: string): Promise<void> => {
+    await invoke('task:move', { taskId, date });
+    loadPlan(selectedId);
+    refreshCampaigns();
+    if (activeTask?.id === taskId) setActiveTask(null);
+  };
+
+  const removeTask = async (taskId: string): Promise<void> => {
+    await invoke('task:delete', { taskId });
+    loadPlan(selectedId);
+    refreshCampaigns();
+    if (activeTask?.id === taskId) setActiveTask(null);
+  };
+
+  const changeMinutes = async (taskId: string, estMinutes: number): Promise<void> => {
+    await invoke('task:setMinutes', { taskId, estMinutes });
+    loadPlan(selectedId);
   };
 
   const defer = async (): Promise<void> => {
@@ -151,21 +196,41 @@ export function Today(): React.JSX.Element {
               {plan.completedCount}/{plan.totalCount}
             </span>
           </div>
-          <p className="mt-1 text-xs text-[var(--color-muted)]">
-            计划 {plan.plannedMinutes} 分钟
-          </p>
+          <div className="mt-1 flex items-center justify-between">
+            <p className="text-xs text-[var(--color-muted)]">计划 {plan.plannedMinutes} 分钟</p>
+            <button
+              type="button"
+              onClick={enterEditMode}
+              className="text-xs text-sky-400 hover:underline"
+            >
+              {editMode ? '完成调整' : '调整计划'}
+            </button>
+          </div>
         </header>
 
         <div className="min-h-0 flex-1 space-y-2 overflow-y-auto">
-          {plan.tasks.map((t) => (
-            <TaskCard
-              key={t.id}
-              task={t}
-              active={activeTask?.id === t.id}
-              onSelect={() => setActiveTask(t)}
-              onComplete={() => void complete(t.id)}
-              onSkip={() => void skip(t.id)}
-            />
+          {plan.tasks.map((t, i) => (
+            <div key={t.id} className="space-y-1">
+              <TaskCard
+                task={t}
+                active={activeTask?.id === t.id}
+                onSelect={() => setActiveTask(t)}
+                onComplete={() => void complete(t.id)}
+                onSkip={() => void skip(t.id)}
+              />
+              {editMode && (
+                <TaskEditRow
+                  task={t}
+                  isFirst={i === 0}
+                  isLast={i === plan.tasks.length - 1}
+                  dateOptions={dateOptions.filter((d) => d.date !== plan.date)}
+                  onMove={(delta) => void moveWithinDay(i, delta)}
+                  onReschedule={(date) => void rescheduleTask(t.id, date)}
+                  onDelete={() => void removeTask(t.id)}
+                  onMinutes={(m) => void changeMinutes(t.id, m)}
+                />
+              )}
+            </div>
           ))}
         </div>
 
@@ -213,6 +278,85 @@ export function Today(): React.JSX.Element {
           />
         )}
       </div>
+    </div>
+  );
+}
+
+function TaskEditRow({
+  task,
+  isFirst,
+  isLast,
+  dateOptions,
+  onMove,
+  onReschedule,
+  onDelete,
+  onMinutes,
+}: {
+  task: TaskView;
+  isFirst: boolean;
+  isLast: boolean;
+  dateOptions: PlanDateOption[];
+  onMove: (delta: number) => void;
+  onReschedule: (date: string) => void;
+  onDelete: () => void;
+  onMinutes: (estMinutes: number) => void;
+}): React.JSX.Element {
+  return (
+    <div className="flex flex-wrap items-center gap-1 pl-2 text-xs text-[var(--color-muted)]">
+      <button
+        type="button"
+        disabled={isFirst}
+        onClick={() => onMove(-1)}
+        className="rounded border border-[var(--color-border)] px-1.5 disabled:opacity-30"
+        title="上移"
+      >
+        ↑
+      </button>
+      <button
+        type="button"
+        disabled={isLast}
+        onClick={() => onMove(1)}
+        className="rounded border border-[var(--color-border)] px-1.5 disabled:opacity-30"
+        title="下移"
+      >
+        ↓
+      </button>
+      <input
+        type="number"
+        min={5}
+        max={240}
+        step={5}
+        defaultValue={task.estMinutes}
+        onBlur={(e) => {
+          const v = Number(e.target.value);
+          if (v && v !== task.estMinutes) onMinutes(v);
+        }}
+        className="w-14 rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-1 py-0.5"
+        title="预估分钟"
+      />
+      {dateOptions.length > 0 && (
+        <select
+          value=""
+          onChange={(e) => {
+            if (e.target.value) onReschedule(e.target.value);
+          }}
+          className="rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-1 py-0.5"
+        >
+          <option value="">改期到…</option>
+          {dateOptions.map((d) => (
+            <option key={d.date} value={d.date}>
+              {d.date.slice(5)}（{d.taskCount} 项）
+            </option>
+          ))}
+        </select>
+      )}
+      <button
+        type="button"
+        onClick={onDelete}
+        className="rounded border border-[var(--color-border)] px-1.5 hover:text-red-400"
+      >
+        删
+      </button>
     </div>
   );
 }

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import type { Explanation } from '@shared/entities';
+import { useCallback, useEffect, useState } from 'react';
+import type { Annotation, Explanation } from '@shared/entities';
 import type { ExplanationTier } from '@shared/enums';
 import { invoke } from '../ipc';
 
@@ -27,6 +27,40 @@ export function ExplanationPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [annotations, setAnnotations] = useState<Annotation[]>([]);
+  const [selection, setSelection] = useState('');
+  const [noteText, setNoteText] = useState('');
+
+  const loadAnnotations = useCallback(() => {
+    void invoke('annotation:list', { targetType: 'node', targetId: nodeId }).then((list) =>
+      setAnnotations(list.filter((a) => a.kind === 'highlight' || a.kind === 'note')),
+    );
+  }, [nodeId]);
+
+  useEffect(loadAnnotations, [loadAnnotations]);
+
+  // 划词后立刻取一次，等按钮点下去时 selection 往往已经被点击清掉了
+  const captureSelection = (): void => {
+    setSelection(window.getSelection()?.toString().trim() ?? '');
+  };
+
+  const addAnnotation = async (
+    kind: 'highlight' | 'note',
+    payload: { selectedText?: string; noteMd?: string },
+  ): Promise<void> => {
+    await invoke('annotation:create', {
+      targetType: 'node',
+      targetId: nodeId,
+      kind,
+      ...payload,
+    });
+    loadAnnotations();
+  };
+
+  const removeAnnotation = async (annotationId: string): Promise<void> => {
+    await invoke('annotation:delete', { id: annotationId });
+    loadAnnotations();
+  };
 
   const load = async (t: ExplanationTier): Promise<void> => {
     setLoading(true);
@@ -108,9 +142,36 @@ export function ExplanationPanel({
       {error && <p className="text-sm text-red-400">{error}</p>}
       {content && !loading && (
         <>
-          <div className="prose prose-invert max-w-none whitespace-pre-wrap text-sm leading-relaxed">
+          <div
+            onMouseUp={captureSelection}
+            className="prose prose-invert max-w-none whitespace-pre-wrap text-sm leading-relaxed"
+          >
             {content.contentMd}
           </div>
+          {selection && (
+            <div className="flex items-center gap-2 rounded border border-amber-900/50 bg-amber-950/20 px-2 py-1">
+              <span className="min-w-0 flex-1 truncate text-xs text-amber-100/90">
+                「{selection}」
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  void addAnnotation('highlight', { selectedText: selection });
+                  setSelection('');
+                }}
+                className="shrink-0 text-xs text-amber-300 hover:underline"
+              >
+                高亮
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelection('')}
+                className="shrink-0 text-xs text-[var(--color-muted)]"
+              >
+                取消
+              </button>
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-2 pt-2">
             <button
               type="button"
@@ -133,6 +194,52 @@ export function ExplanationPanel({
               >
                 标记完成
               </button>
+            )}
+          </div>
+
+          <div className="space-y-2 border-t border-[var(--color-border)] pt-3">
+            <div className="flex gap-2">
+              <input
+                value={noteText}
+                onChange={(e) => setNoteText(e.target.value)}
+                placeholder="写条笔记，只有自己写下的才记得住"
+                className="min-w-0 flex-1 rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-xs"
+              />
+              <button
+                type="button"
+                disabled={!noteText.trim()}
+                onClick={() => {
+                  void addAnnotation('note', { noteMd: noteText.trim() });
+                  setNoteText('');
+                }}
+                className="shrink-0 rounded border border-[var(--color-border)] px-2 py-1 text-xs disabled:opacity-40"
+              >
+                记笔记
+              </button>
+            </div>
+            {annotations.length > 0 && (
+              <ul className="space-y-1">
+                {annotations.map((a) => (
+                  <li
+                    key={a.id}
+                    className="flex items-start justify-between gap-2 rounded bg-black/20 px-2 py-1 text-xs"
+                  >
+                    <span className="min-w-0">
+                      <span className="mr-1 text-[10px] text-[var(--color-muted)]">
+                        {a.kind === 'highlight' ? '高亮' : '笔记'}
+                      </span>
+                      {a.kind === 'highlight' ? a.selectedText : a.noteMd}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => void removeAnnotation(a.id)}
+                      className="shrink-0 text-[var(--color-muted)] hover:text-red-400"
+                    >
+                      删
+                    </button>
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
         </>

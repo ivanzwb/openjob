@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import type { AppConfig } from '@shared/config';
-import { LLM_ROLES, type LlmRole } from '@shared/enums';
+import type { AppConfig, PriorityWeights } from '@shared/config';
+import { DEFAULT_PRIORITY_WEIGHTS } from '@shared/config';
+import { LLM_ROLES, type CoverageType, type LlmRole } from '@shared/enums';
 import type { ProviderTestResult } from '@shared/ipc';
 import { invoke } from '../ipc';
 import { SecretField } from '../components/SecretField';
@@ -12,6 +13,43 @@ const ROLE_HINTS: Record<LlmRole, string> = {
   quiz: '出题与评分，需要稳定的评判尺度',
   embedding: '向量化，用于去重与真题匹配',
 };
+
+const COVERAGE_TYPES: CoverageType[] = ['deepDive', 'gap', 'landmine', 'extra'];
+
+const COVERAGE_LABEL: Record<CoverageType, string> = {
+  deepDive: '必深挖',
+  gap: '短板',
+  landmine: '雷区',
+  extra: '加分项',
+};
+
+function ExpField({
+  label,
+  hint,
+  value,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  value: number;
+  onChange: (value: number) => void;
+}): React.JSX.Element {
+  return (
+    <label className="space-y-1">
+      <span className="block text-xs">{label}</span>
+      <input
+        type="number"
+        step={0.1}
+        min={0}
+        max={3}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-sm"
+      />
+      <span className="block text-[10px] text-[var(--color-muted)]">{hint}</span>
+    </label>
+  );
+}
 
 export function Settings(): React.JSX.Element {
   const [config, setConfig] = useState<AppConfig | null>(null);
@@ -44,6 +82,10 @@ export function Settings(): React.JSX.Element {
       ...config,
       llm: { ...config.llm, roles: { ...config.llm.roles, [role]: { ...config.llm.roles[role], ...patch } } },
     });
+  };
+
+  const updatePriority = (patch: Partial<PriorityWeights>): void => {
+    void persist({ ...config, priority: { ...config.priority, ...patch } });
   };
 
   const runTest = async (role: LlmRole): Promise<void> => {
@@ -159,6 +201,91 @@ export function Settings(): React.JSX.Element {
         <div className="space-y-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
           <SecretField label="博查 API Key（中文内容）" secretRef={config.search.providers.bocha.apiKeyRef} />
           <SecretField label="Tavily API Key（英文内容 / 网页抓取）" secretRef={config.search.providers.tavily.apiKeyRef} />
+        </div>
+      </section>
+
+      <section className="space-y-4">
+        <div>
+          <h3 className="text-sm font-medium text-[var(--color-muted)]">优先级公式</h3>
+          <p className="mt-1 text-xs text-[var(--color-muted)]">
+            优先级 = 考察概率<sup>p</sup> × 掌握差距<sup>g</sup> × 覆盖类型倍率 ÷ 预估分钟
+            <sup>c</sup>。改完后在 Campaign 页重新生成计划生效。
+          </p>
+        </div>
+        <div className="space-y-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+          <div className="grid grid-cols-3 gap-3">
+            <ExpField
+              label="考察概率指数 p"
+              hint="调大更偏高频考点"
+              value={config.priority.probExp}
+              onChange={(v) => updatePriority({ probExp: v })}
+            />
+            <ExpField
+              label="掌握差距指数 g"
+              hint="调大更偏完全不会的点"
+              value={config.priority.gapExp}
+              onChange={(v) => updatePriority({ gapExp: v })}
+            />
+            <ExpField
+              label="时长惩罚指数 c"
+              hint="0 表示完全不看时长"
+              value={config.priority.costExp}
+              onChange={(v) => updatePriority({ costExp: v })}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-xs text-[var(--color-muted)]">覆盖类型倍率 / 目标掌握度</p>
+            <div className="grid grid-cols-2 gap-3">
+              {COVERAGE_TYPES.map((ct) => (
+                <div key={ct} className="flex items-center gap-2">
+                  <span className="w-14 shrink-0 text-xs">{COVERAGE_LABEL[ct]}</span>
+                  <input
+                    type="number"
+                    step={0.1}
+                    min={0}
+                    max={5}
+                    value={config.priority.coverageBoost[ct]}
+                    onChange={(e) =>
+                      updatePriority({
+                        coverageBoost: {
+                          ...config.priority.coverageBoost,
+                          [ct]: Number(e.target.value),
+                        },
+                      })
+                    }
+                    className="w-16 rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-xs"
+                    title="倍率"
+                  />
+                  <input
+                    type="number"
+                    step={0.5}
+                    min={0}
+                    max={5}
+                    value={config.priority.targetMastery[ct]}
+                    onChange={(e) =>
+                      updatePriority({
+                        targetMastery: {
+                          ...config.priority.targetMastery,
+                          [ct]: Number(e.target.value),
+                        },
+                      })
+                    }
+                    className="w-16 rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-xs"
+                    title="目标掌握度"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => void persist({ ...config, priority: DEFAULT_PRIORITY_WEIGHTS })}
+            className="rounded border border-[var(--color-border)] px-3 py-1.5 text-xs hover:text-[var(--color-fg)]"
+          >
+            恢复默认
+          </button>
         </div>
       </section>
 

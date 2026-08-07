@@ -58,6 +58,78 @@ export function readRepoFile(
   return readFileRange(getRepoLocalPath(repoId), filePath, startLine, endLine);
 }
 
+export interface CodeRefInput {
+  filePath: string;
+  startLine: number;
+  endLine: number;
+  snippet?: string | null;
+}
+
+/**
+ * Agent 读过/搜到的代码位置落库，供话术引用与后续跳转。
+ * 同一段位置重复出现时只更新片段，不重复插入。
+ */
+export function recordCodeRefs(repoId: string, refs: CodeRefInput[]): void {
+  if (refs.length === 0) return;
+  const db = getDb();
+  const existing = db
+    .select()
+    .from(schema.codeRef)
+    .where(eq(schema.codeRef.repoId, repoId))
+    .all();
+  const seen = new Map(
+    existing.map((r) => [`${r.filePath}:${r.startLine}-${r.endLine}`, r.id]),
+  );
+  const commitSha =
+    db.select().from(schema.repo).where(eq(schema.repo.id, repoId)).get()?.commitSha ?? null;
+
+  for (const ref of refs) {
+    const key = `${ref.filePath}:${ref.startLine}-${ref.endLine}`;
+    const snippet = ref.snippet ? ref.snippet.slice(0, 4000) : null;
+    const hit = seen.get(key);
+    if (hit) {
+      if (snippet) {
+        db.update(schema.codeRef).set({ snippet }).where(eq(schema.codeRef.id, hit)).run();
+      }
+      continue;
+    }
+    const id = randomUUID();
+    db.insert(schema.codeRef)
+      .values({
+        id,
+        repoId,
+        filePath: ref.filePath,
+        startLine: ref.startLine,
+        endLine: ref.endLine,
+        commitSha,
+        snippet,
+      })
+      .run();
+    seen.set(key, id);
+  }
+}
+
+export function listCodeRefs(repoId: string): Array<{
+  id: string;
+  filePath: string;
+  startLine: number;
+  endLine: number;
+  snippet: string | null;
+}> {
+  return getDb()
+    .select()
+    .from(schema.codeRef)
+    .where(eq(schema.codeRef.repoId, repoId))
+    .all()
+    .map((r) => ({
+      id: r.id,
+      filePath: r.filePath,
+      startLine: r.startLine,
+      endLine: r.endLine,
+      snippet: r.snippet,
+    }));
+}
+
 export async function cloneAndIndex(url: string, jobId: string): Promise<void> {
   const label = 'Clone 仓库';
   const report = (msg: string, progress: number | null): void => {

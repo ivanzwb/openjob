@@ -1,7 +1,8 @@
 import type OpenAI from 'openai';
 import type { Citation } from '@shared/entities';
-import { AGENT_TOOLS, runTool, type ToolOutcome } from '../llm/tools';
+import { agentTools, runTool, type ToolContext, type ToolOutcome } from '../llm/tools';
 import { grepRepo, listDir, readFileRange } from './files';
+import { recordCodeRefs } from './repository';
 
 export const CODE_REPO_TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
@@ -46,11 +47,12 @@ export const CODE_REPO_TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
       },
     },
   },
-  ...AGENT_TOOLS,
 ];
 
-export function mergedCodeAgentTools(): OpenAI.Chat.Completions.ChatCompletionTool[] {
-  return CODE_REPO_TOOLS;
+export function mergedCodeAgentTools(
+  ctx?: ToolContext,
+): OpenAI.Chat.Completions.ChatCompletionTool[] {
+  return [...CODE_REPO_TOOLS, ...agentTools(ctx)];
 }
 
 export async function runCodeRepoTool(
@@ -58,6 +60,7 @@ export async function runCodeRepoTool(
   args: Record<string, unknown>,
   repoRoot: string,
   signal?: AbortSignal,
+  ctx?: ToolContext & { repoId?: string },
 ): Promise<ToolOutcome> {
   if (name === 'list_dir') {
     const path = String(args['path'] ?? '.');
@@ -74,6 +77,11 @@ export async function runCodeRepoTool(
     const start = typeof args['start_line'] === 'number' ? args['start_line'] : 1;
     const end = typeof args['end_line'] === 'number' ? args['end_line'] : undefined;
     const { content, startLine, endLine } = readFileRange(repoRoot, path, start, end);
+
+    if (ctx?.repoId) {
+      recordCodeRefs(ctx.repoId, [{ filePath: path, startLine, endLine, snippet: content }]);
+    }
+
     return {
       content,
       summary: `read ${path}:${startLine}-${endLine}`,
@@ -104,8 +112,21 @@ export async function runCodeRepoTool(
         });
       }
     }
+
+    if (ctx?.repoId && citations.length > 0) {
+      recordCodeRefs(
+        ctx.repoId,
+        citations.slice(0, 20).map((c) => ({
+          filePath: c.filePath!,
+          startLine: c.startLine!,
+          endLine: c.endLine!,
+          snippet: null,
+        })),
+      );
+    }
+
     return { content, summary: `grep "${pattern}"`, citations };
   }
 
-  return runTool(name, args, signal);
+  return runTool(name, args, signal, ctx);
 }

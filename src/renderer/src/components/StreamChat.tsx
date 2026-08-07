@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { LlmRole, SessionKind } from '@shared/enums';
-import type { SessionMessageView, SessionSummary } from '@shared/ipc';
+import type { SessionMessageView, SessionSearchHit, SessionSummary } from '@shared/ipc';
 import { useStream } from '../ipc/useStream';
 import { invoke } from '../ipc';
 import { CitationList, SourceBadge } from './SourceBadge';
@@ -27,10 +27,25 @@ export function StreamChat({
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [history, setHistory] = useState<SessionMessageView[]>([]);
   const [showSidebar, setShowSidebar] = useState(true);
+  const [query, setQuery] = useState('');
+  const [hits, setHits] = useState<SessionSearchHit[] | null>(null);
 
   const loadSessions = useCallback(() => {
     void invoke('session:list', { kind: sessionKind, limit: 40 }).then(setSessions);
   }, [sessionKind]);
+
+  // 搜索跨 kind，因为「我之前在哪问过这个」时用户并不记得当时在哪个页面问的
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) return;
+    const timer = setTimeout(() => {
+      void invoke('session:search', { query: q, limit: 30 }).then(setHits);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  // 清空输入时直接回落到会话列表，不必再触发一次 setState
+  const searchHits = query.trim() ? hits : null;
 
   const handleDone = useCallback(
     (done: { sessionId: string | null; contentMd: string }) => {
@@ -62,6 +77,12 @@ export function StreamChat({
     setHistory([]);
     reset();
     setSessionId(null);
+  };
+
+  const removeSession = async (sessionId: string): Promise<void> => {
+    await invoke('session:delete', { sessionId });
+    if (state.sessionId === sessionId) startNewSession();
+    loadSessions();
   };
 
   const submit = (): void => {
@@ -108,24 +129,63 @@ export function StreamChat({
               新对话
             </button>
           </div>
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="搜索历史对话…"
+            className="rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-xs"
+          />
           <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
-            {sessions.length === 0 ? (
+            {searchHits !== null ? (
+              searchHits.length === 0 ? (
+                <p className="text-xs text-[var(--color-muted)]">没有匹配的对话</p>
+              ) : (
+                searchHits.map((h) => (
+                  <button
+                    key={h.id}
+                    type="button"
+                    onClick={() => void loadHistory(h.id)}
+                    className="w-full rounded px-2 py-1.5 text-left text-xs text-[var(--color-muted)] hover:bg-black/20"
+                  >
+                    <div className="truncate font-medium text-[var(--color-fg)]">{h.title}</div>
+                    <div className="line-clamp-2 text-[10px] opacity-80">{h.snippet}</div>
+                    <div className="text-[10px] opacity-60">命中 {h.matchCount} 条</div>
+                  </button>
+                ))
+              )
+            ) : sessions.length === 0 ? (
               <p className="text-xs text-[var(--color-muted)]">暂无记录</p>
             ) : (
               sessions.map((s) => (
-                <button
+                <div
                   key={s.id}
-                  type="button"
-                  onClick={() => void loadHistory(s.id)}
-                  className={`w-full rounded px-2 py-1.5 text-left text-xs ${
+                  className={`group flex items-start gap-1 rounded ${
                     state.sessionId === s.id
-                      ? 'bg-[var(--color-surface)] text-[var(--color-fg)]'
-                      : 'text-[var(--color-muted)] hover:bg-black/20'
+                      ? 'bg-[var(--color-surface)]'
+                      : 'hover:bg-black/20'
                   }`}
                 >
-                  <div className="truncate font-medium">{s.title}</div>
-                  <div className="text-[10px] opacity-70">{s.messageCount} 条消息</div>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => void loadHistory(s.id)}
+                    className={`min-w-0 flex-1 px-2 py-1.5 text-left text-xs ${
+                      state.sessionId === s.id
+                        ? 'text-[var(--color-fg)]'
+                        : 'text-[var(--color-muted)]'
+                    }`}
+                  >
+                    <div className="truncate font-medium">{s.title}</div>
+                    <div className="text-[10px] opacity-70">{s.messageCount} 条消息</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void removeSession(s.id)}
+                    className="px-1 py-1.5 text-[10px] text-[var(--color-muted)] opacity-0 hover:text-red-400 group-hover:opacity-100"
+                    title="删除会话"
+                  >
+                    ✕
+                  </button>
+                </div>
               ))
             )}
           </div>

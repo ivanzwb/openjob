@@ -1,4 +1,4 @@
-import type { CoverageType, ExamForm, NodeKind } from '@shared/enums';
+import type { CoverageType, EdgeRelation, ExamForm, NodeKind } from '@shared/enums';
 import type { JdParsed, ResumeParsed } from '@shared/entities';
 
 /** LLM 返回的单个知识点（建树 / 细化共用） */
@@ -13,9 +13,17 @@ export interface GeneratedNode {
   children?: GeneratedNode[];
 }
 
+/** LLM 给出的知识点横向关系，按名称引用节点 */
+export interface GeneratedEdge {
+  from: string;
+  to: string;
+  relation: EdgeRelation;
+}
+
 export interface JdDiagnosisResult {
   jdParsed: JdParsed;
   nodes: GeneratedNode[];
+  edges?: GeneratedEdge[];
 }
 
 export interface CrossAnalyzeResult {
@@ -24,6 +32,7 @@ export interface CrossAnalyzeResult {
 
 export interface ExpandNodeResult {
   children: GeneratedNode[];
+  edges?: GeneratedEdge[];
 }
 
 export interface ReportExtractResult {
@@ -37,10 +46,18 @@ export const JD_SYSTEM = `你是面试备考诊断助手。根据岗位 JD 抽�
 每个 topic 需给出：examProb(0-1)、difficulty(1-5)、estMinutes、examForms(concept/coding/design/scenario 数组)。
 尚未提供简历时，coverageType 一律填 gap（JD 要求但简历未知）。
 
+同时给出知识点之间的横向关系 edges（from/to 必须是上面出现过的节点名）：
+- prerequisite: from 是 to 的前置，不先懂 from 就学不动 to（这决定学习顺序，最重要）
+- related: 常被一起追问
+- contrast: 常被拿来对比
+
+只给确实存在的关系，宁缺毋滥；prerequisite 不允许成环。
+
 输出 JSON：
 {
   "jdParsed": { "roleTitle": "", "requirements": [{"skill":"","weight":0.0}], "seniority": null },
-  "nodes": [{ "name":"","kind":"domain","examProb":0.5,"difficulty":3,"estMinutes":30,"examForms":["concept"],"coverageType":"gap","children":[...] }]
+  "nodes": [{ "name":"","kind":"domain","examProb":0.5,"difficulty":3,"estMinutes":30,"examForms":["concept"],"coverageType":"gap","children":[...] }],
+  "edges": [{ "from":"内存模型","to":"volatile 语义","relation":"prerequisite" }]
 }`;
 
 export const RESUME_SYSTEM = `你是简历解析助手。从简历原文抽取结构化信息。
@@ -72,7 +89,8 @@ export function crossAnalyzeUser(
 
 export const EXPAND_SYSTEM = `你是知识点细化助手。为给定主题生成 3-6 个子知识点（kind=point）。
 保持名称具体、可独立备考。给出 examProb、difficulty、estMinutes、examForms、coverageType。
-输出 JSON：{ "children": [{ "name":"","kind":"point", ... }] }`;
+另给出这些子知识点之间的 edges（relation 取 prerequisite/related/contrast，from/to 用子知识点名）。
+输出 JSON：{ "children": [{ "name":"","kind":"point", ... }], "edges": [{"from":"","to":"","relation":"prerequisite"}] }`;
 
 export const INTEL_SYSTEM = `你是面试情报分析师。根据检索到的公司面经与公开信息，生成结构化情报卡。
 用 markdown 分段，简洁可执行。输出 JSON：

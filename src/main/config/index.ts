@@ -34,6 +34,12 @@ function mergeDefaults(loaded: Partial<AppConfig>): AppConfig {
       },
       cacheTtlDays: { ...base.search.cacheTtlDays, ...loaded.search?.cacheTtlDays },
     },
+    priority: {
+      ...base.priority,
+      ...loaded.priority,
+      coverageBoost: { ...base.priority.coverageBoost, ...loaded.priority?.coverageBoost },
+      targetMastery: { ...base.priority.targetMastery, ...loaded.priority?.targetMastery },
+    },
   };
 }
 

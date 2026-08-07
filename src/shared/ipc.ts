@@ -22,6 +22,8 @@ import type {
   AnnotationTarget,
   AnnotationKind,
   SessionKind,
+  EdgeRelation,
+  TaskKind,
 } from './enums';
 import type {
   Campaign,
@@ -287,6 +289,10 @@ export interface IngestReportResult {
   nodesUpdated: number;
   blindSpotsCreated: number;
   crossCampaignUpdated: number;
+  /** 被 ≥2 个独立来源提到，视为已交叉验证 */
+  corroboratedCount: number;
+  /** 仅单一来源提到，权重打折并标存疑 */
+  unverifiedCount: number;
 }
 
 export interface IngestWebResult {
@@ -316,6 +322,55 @@ export interface SessionMessageView {
   contentMd: string;
   citations: Citation[];
   createdAt: number;
+}
+
+export interface SessionSearchHit extends SessionSummary {
+  /** 命中的消息条数 */
+  matchCount: number;
+  /** 命中处的上下文片段 */
+  snippet: string;
+}
+
+// ---------------------------------------------------------------------------
+// 知识点关系与主动提示
+// ---------------------------------------------------------------------------
+
+export interface NodeEdgeView {
+  id: string;
+  fromNodeId: string;
+  toNodeId: string;
+  fromName: string;
+  toName: string;
+  relation: EdgeRelation;
+}
+
+export interface CreateEdgeInput {
+  fromNodeId: string;
+  toNodeId: string;
+  relation: EdgeRelation;
+}
+
+export type NudgeKind =
+  | 'blindSpot'
+  | 'repeatedMiss'
+  | 'unpreparedLandmine'
+  | 'stalledTask'
+  | 'askedOften';
+
+export interface Nudge {
+  kind: NudgeKind;
+  severity: 'high' | 'medium' | 'low';
+  nodeId: string | null;
+  title: string;
+  detail: string;
+}
+
+export interface HistorySignalResult {
+  /** 因反复提问/反复答错而提权的考点数 */
+  boosted: number;
+  /** 因长期拖延而拆小的考点数 */
+  eased: number;
+  nudges: Nudge[];
 }
 
 // ---------------------------------------------------------------------------
@@ -361,6 +416,20 @@ export interface PlanGenerateResult {
   daysCreated: number;
   tasksCreated: number;
   overflowFallbacks: number;
+}
+
+export interface PlanDateOption {
+  date: string;
+  taskCount: number;
+}
+
+export interface TaskAddInput {
+  campaignId: string;
+  date: string;
+  kind: TaskKind;
+  nodeId?: string | null;
+  repoId?: string | null;
+  estMinutes?: number;
 }
 
 export interface ExplainGetInput {
@@ -566,13 +635,28 @@ export interface IpcInvokeMap {
   'node:delete': { req: { id: string }; res: void };
   'node:create': { req: CreateNodeInput; res: KnowledgeNode };
 
+  'edge:list': { req: { campaignId: string }; res: NodeEdgeView[] };
+  'edge:create': { req: CreateEdgeInput; res: NodeEdgeView };
+  'edge:delete': { req: { id: string }; res: void };
+
+  /** 主动提示：盲区、反复答错、雷区未准备、拖延、反复追问 */
+  'insight:nudges': { req: { campaignId: string }; res: Nudge[] };
+  /** 历史即传感器：把行为信号回写成排序输入 */
+  'insight:applyHistory': { req: { campaignId: string }; res: HistorySignalResult };
+
   'plan:generate': { req: PlanGenerateInput; res: PlanGenerateResult };
   'plan:listTodayCampaigns': { req: void; res: TodayCampaignOption[] };
   'plan:getToday': { req: { campaignId?: string }; res: TodayPlan | null };
   'plan:deferToday': { req: { campaignId: string }; res: { deferred: number } };
+  'plan:listDates': { req: { campaignId: string }; res: PlanDateOption[] };
 
   'task:complete': { req: { taskId: string; actualMinutes?: number }; res: TaskView };
   'task:skip': { req: { taskId: string }; res: TaskView };
+  'task:reorder': { req: { planDayId: string; taskIds: string[] }; res: void };
+  'task:move': { req: { taskId: string; date: string }; res: void };
+  'task:delete': { req: { taskId: string }; res: void };
+  'task:add': { req: TaskAddInput; res: { taskId: string } };
+  'task:setMinutes': { req: { taskId: string; estMinutes: number }; res: void };
 
   'explain:get': { req: ExplainGetInput; res: Explanation | null };
   'explain:generate': { req: ExplainGenerateInput; res: Explanation };
@@ -604,6 +688,8 @@ export interface IpcInvokeMap {
 
   'session:list': { req: { kind?: SessionKind; limit?: number }; res: SessionSummary[] };
   'session:getMessages': { req: { sessionId: string }; res: SessionMessageView[] };
+  'session:search': { req: { query: string; limit?: number }; res: SessionSearchHit[] };
+  'session:delete': { req: { sessionId: string }; res: void };
 }
 
 /** 主进程 → 渲染进程的单向推送 */
@@ -656,12 +742,23 @@ export const IPC_INVOKE_CHANNELS = [
   'node:update',
   'node:delete',
   'node:create',
+  'edge:list',
+  'edge:create',
+  'edge:delete',
+  'insight:nudges',
+  'insight:applyHistory',
   'plan:generate',
   'plan:listTodayCampaigns',
   'plan:getToday',
   'plan:deferToday',
+  'plan:listDates',
   'task:complete',
   'task:skip',
+  'task:reorder',
+  'task:move',
+  'task:delete',
+  'task:add',
+  'task:setMinutes',
   'explain:get',
   'explain:generate',
   'explain:fallback',
@@ -687,6 +784,8 @@ export const IPC_INVOKE_CHANNELS = [
   'annotation:toggleBookmark',
   'session:list',
   'session:getMessages',
+  'session:search',
+  'session:delete',
 ] as const satisfies readonly IpcInvokeChannel[];
 
 export const IPC_EVENT_CHANNELS = [

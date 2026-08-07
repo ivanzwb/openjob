@@ -5,6 +5,7 @@ import type { PlanGenerateResult, TaskView, TodayCampaignOption, TodayPlan } fro
 import type { TaskKind } from '@shared/enums';
 import { getDb, schema } from '../db';
 import { getCampaignRow, listCampaigns, rowToNode, updateCampaign } from '../campaign/repository';
+import { topoSortByPrerequisite } from '../campaign/edges';
 
 function formatLocal(d: Date): DateOnly {
   const y = d.getFullYear();
@@ -54,7 +55,7 @@ export function generatePlan(
   const daily = dailyMinutes ?? campaign.dailyMinutes ?? 90;
 
   const db = getDb();
-  const nodes = db
+  const byPriority = db
     .select()
     .from(schema.knowledgeNode)
     .where(eq(schema.knowledgeNode.campaignId, campaignId))
@@ -64,7 +65,20 @@ export function generatePlan(
     .filter((n) => n.kind !== 'domain')
     .sort((a, b) => b.priorityScore - a.priorityScore);
 
-  if (nodes.length === 0) throw new Error('没有可排期的考点，请先完成 JD 诊断');
+  if (byPriority.length === 0) throw new Error('没有可排期的考点，请先完成 JD 诊断');
+
+  // 前置约束优先于优先级：再高频的考点，缺前置也学不动
+  const edges = db
+    .select()
+    .from(schema.nodeEdge)
+    .where(
+      inArray(
+        schema.nodeEdge.fromNodeId,
+        byPriority.map((n) => n.id),
+      ),
+    )
+    .all();
+  const nodes = topoSortByPrerequisite(byPriority, edges);
 
   // 清空旧计划
   const oldDays = db
@@ -159,8 +173,11 @@ export function generatePlan(
       learnedQueue.push(node.id);
     }
 
-    // 掌握度偏低的加 review
-    const shaky = nodes.filter((n) => n.mastery > 0 && n.mastery < 3 && n.status !== 'mastered');
+    // shaky 状态或掌握度偏低的加 review
+    const shaky = nodes.filter(
+      (n) =>
+        n.status === 'shaky' || (n.mastery > 0 && n.mastery < 3 && n.status !== 'mastered'),
+    );
     for (const node of shaky.slice(0, 1)) {
       const est = 15;
       if (used + est <= budget) {

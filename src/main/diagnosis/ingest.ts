@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import type { InterviewReport } from '@shared/entities';
 import type { ReportSourceType } from '@shared/enums';
 import type { IngestReportResult } from '@shared/ipc';
@@ -110,7 +110,53 @@ async function matchQuestions(
   return result.matches ?? [];
 }
 
-function boostNode(nodeId: string, credibilityWeight: number): void {
+/**
+ * 多源交叉验证：数一数这个考点被几个**独立**来源提到过。
+ *
+ * 面经质量分布极差，洗稿和层层转载很常见。单一来源提到的考点标为存疑、
+ * 只给折扣权重；多个独立来源都提到才给足权重。自己复盘是一手经历，永远算实证。
+ */
+function corroboration(
+  nodeId: string,
+  sourceType: ReportSourceType,
+): { sources: number; factor: number; verified: boolean } {
+  if (sourceType === 'selfDebrief') {
+    return { sources: 1, factor: 1, verified: true };
+  }
+
+  const db = getDb();
+  const questions = db
+    .select()
+    .from(schema.interviewQuestion)
+    .where(eq(schema.interviewQuestion.matchedNodeId, nodeId))
+    .all();
+  if (questions.length === 0) return { sources: 0, factor: 0.5, verified: false };
+
+  const reports = db
+    .select()
+    .from(schema.interviewReport)
+    .where(
+      inArray(
+        schema.interviewReport.id,
+        [...new Set(questions.map((q) => q.reportId))],
+      ),
+    )
+    .all();
+
+  // 同一篇原文被重复摄入不算多源，按原文前缀去重
+  const distinct = new Set(
+    reports.map((r) => `${r.sourceType}|${r.rawText.slice(0, 120)}`),
+  );
+  const sources = distinct.size;
+
+  if (reports.some((r) => r.sourceType === 'selfDebrief')) {
+    return { sources, factor: 1, verified: true };
+  }
+  if (sources >= 2) return { sources, factor: 1, verified: true };
+  return { sources, factor: 0.5, verified: false };
+}
+
+function boostNode(nodeId: string, credibilityWeight: number, factor: number): void {
   const db = getDb();
   const row = db
     .select()
@@ -119,7 +165,7 @@ function boostNode(nodeId: string, credibilityWeight: number): void {
     .get();
   if (!row) return;
 
-  const boost = 0.08 * credibilityWeight;
+  const boost = 0.08 * credibilityWeight * factor;
   const nextProb = Math.min(1, row.examProb + boost);
   const node = rowToNode({ ...row, examProb: nextProb });
   const { score } = computePriority(node);
@@ -177,6 +223,8 @@ export async function ingestInterviewReport(
   let nodesUpdated = 0;
   let blindSpotsCreated = 0;
   let crossCampaignUpdated = 0;
+  let unverifiedCount = 0;
+  let corroboratedCount = 0;
 
   for (let i = 0; i < extracted.questions.length; i++) {
     const q = extracted.questions[i]!;
@@ -212,11 +260,18 @@ export async function ingestInterviewReport(
       .run();
 
     if (matchedNode) {
-      boostNode(matchedNode.id, credibilityWeight);
+      // 先落库本题再算交叉验证，这样当前这一篇也计入来源计数
+      const { factor, verified } = corroboration(matchedNode.id, sourceType);
+      if (verified) corroboratedCount++;
+      else unverifiedCount++;
+
+      boostNode(matchedNode.id, credibilityWeight, factor);
       nodesUpdated++;
-      crossCampaignUpdated += boostExamProbByNodeName(matchedNode.name, credibilityWeight, {
-        excludeCampaignId: campaignId,
-      });
+      crossCampaignUpdated += boostExamProbByNodeName(
+        matchedNode.name,
+        credibilityWeight * factor,
+        { excludeCampaignId: campaignId },
+      );
     }
   }
 
@@ -248,5 +303,7 @@ export async function ingestInterviewReport(
     nodesUpdated,
     blindSpotsCreated,
     crossCampaignUpdated,
+    corroboratedCount,
+    unverifiedCount,
   };
 }

@@ -26,6 +26,7 @@ import {
   RESUME_SYSTEM,
   INTEL_SYSTEM,
 } from './prompts';
+import { insertEdgesByName } from '../campaign/edges';
 import { findDuplicateByName, flattenChildren, flattenGeneratedTree } from './tree';
 import { filterDuplicatesByEmbedding } from './embedding';
 import { applyHistoricalPrior } from './prior';
@@ -63,6 +64,7 @@ export async function diagnoseFromJd(campaignId: string, jobId: string): Promise
     saveJdParsed(campaignId, result.jdParsed);
     const rows = flattenGeneratedTree(campaignId, result.nodes);
     insertNodes(rows);
+    const edgesCreated = insertEdgesByName(campaignId, result.edges ?? []);
     refreshAllPriorities(campaignId);
 
     const priorBoosted = applyHistoricalPrior(campaignId, campaign.company);
@@ -71,6 +73,7 @@ export async function diagnoseFromJd(campaignId: string, jobId: string): Promise
       jobId,
       label,
       `已生成 ${rows.length} 个考点` +
+        (edgesCreated > 0 ? `、${edgesCreated} 条关系` : '') +
         (priorBoosted > 0 ? `，${priorBoosted} 个考点已应用历史真题先验` : ''),
     );
   } catch (err) {
@@ -186,13 +189,20 @@ export async function diagnoseExpandNode(nodeId: string, jobId: string): Promise
       filtered,
     );
     insertNodes(rows);
+    const keptNames = new Set(filtered.map((c) => c.name));
+    const edgesCreated = insertEdgesByName(
+      parent.campaignId,
+      (result.edges ?? []).filter((e) => keptNames.has(e.from) && keptNames.has(e.to)),
+    );
     refreshAllPriorities(parent.campaignId);
 
     const skipped = result.children.length - filtered.length;
     done(
       jobId,
       label,
-      `新增 ${rows.length} 个子考点` + (skipped > 0 ? `（去重跳过 ${skipped} 个）` : ''),
+      `新增 ${rows.length} 个子考点` +
+        (edgesCreated > 0 ? `、${edgesCreated} 条关系` : '') +
+        (skipped > 0 ? `（去重跳过 ${skipped} 个）` : ''),
     );
   } catch (err) {
     fail(jobId, label, err instanceof Error ? err.message : String(err));

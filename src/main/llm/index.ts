@@ -11,9 +11,11 @@ import {
   createSession,
 } from '../session';
 import { createRoleClient } from './client';
-import { AGENT_TOOLS, runTool } from './tools';
+import { agentTools, AGENT_TOOLS, GRAPH_TOOLS, runTool, type ToolContext } from './tools';
 import { getRepo, getRepoLocalPath } from '../repo/repository';
 import { mergedCodeAgentTools, runCodeRepoTool } from '../repo/tools';
+import { getCampaignRow } from '../campaign/repository';
+import { decideSearchTrigger, triggerInstruction } from '../search/trigger';
 
 /** 工具调用的最大轮数，防止 Agent 陷入反复检索 */
 const MAX_TOOL_ROUNDS = 4;
@@ -111,6 +113,21 @@ async function runChat(
       (m) => ({ role: m.role, content: m.content }),
     );
 
+    // 规则触发优先于 Agent 自主判断——模型对「我需不需要搜」判断不准
+    let company: string | null = null;
+    if (req.campaignId) {
+      try {
+        company = getCampaignRow(req.campaignId).company;
+      } catch {
+        company = null;
+      }
+    }
+    const decision = decideSearchTrigger(lastUser, company);
+    const instruction = req.allowWebSearch ? triggerInstruction(decision) : null;
+    if (instruction) messages.unshift({ role: 'system', content: instruction });
+
+    const toolCtx: ToolContext = { campaignId: req.campaignId ?? null, purpose: lastUser };
+
     let repoRoot: string | null = null;
     if (req.repoId) {
       const repo = getRepo(req.repoId);
@@ -136,10 +153,13 @@ async function runChat(
     let usage: { promptTokens: number; completionTokens: number } | null = null;
     const maxRounds = req.repoId ? MAX_REPO_TOOL_ROUNDS : MAX_TOOL_ROUNDS;
     const tools = req.repoId
-      ? mergedCodeAgentTools()
-      : req.allowWebSearch
-        ? AGENT_TOOLS
-        : undefined;
+      ? mergedCodeAgentTools(toolCtx)
+      : req.allowWebSearch || decision.trigger === 'required'
+        ? agentTools(toolCtx)
+        : // 不联网也仍可读写知识图谱，这部分不产生外部调用
+          toolCtx.campaignId
+          ? GRAPH_TOOLS
+          : undefined;
 
     for (let round = 0; round <= maxRounds; round++) {
       const stream = await openStream(client, controller, {
@@ -204,8 +224,11 @@ async function runChat(
         let outcome;
         try {
           outcome = repoRoot
-            ? await runCodeRepoTool(call.name, args, repoRoot, controller.signal)
-            : await runTool(call.name, args, controller.signal);
+            ? await runCodeRepoTool(call.name, args, repoRoot, controller.signal, {
+                ...toolCtx,
+                repoId: req.repoId,
+              })
+            : await runTool(call.name, args, controller.signal, toolCtx);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           outcome = { content: `工具执行失败: ${msg}`, summary: `${call.name} 失败`, citations: [] };

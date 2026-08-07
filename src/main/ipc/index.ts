@@ -13,6 +13,8 @@ import {
   updateCampaign,
 } from '../campaign/repository';
 import { createNode, deleteNode, updateNode } from '../campaign/nodes';
+import { createEdge, deleteEdge, listEdges } from '../campaign/edges';
+import { applyHistorySignals, getCampaignNudges } from '../insights';
 import {
   diagnoseAttachResume,
   diagnoseExpandNode,
@@ -41,6 +43,14 @@ import {
   listTodayCampaigns,
   skipTask,
 } from '../plan/schedule';
+import {
+  addTask,
+  deleteTask,
+  listPlanDates,
+  moveTaskToDate,
+  reorderTasks,
+  updateTaskMinutes,
+} from '../plan/edit';
 import { generateQuizQuestion, submitQuizAnswer } from '../quiz';
 import { cloneAndIndex, deleteRepo, getRepo, listRepos, readRepoFile } from '../repo';
 import { clearCache, fetchUrl, search } from '../search';
@@ -52,7 +62,12 @@ import {
   saveSpeechFromRepo,
   updateSpeechSnippet,
 } from '../speech';
-import { getSessionMessages, listSessions } from '../session';
+import {
+  deleteSession,
+  getSessionMessages,
+  listSessions,
+  searchSessions,
+} from '../session';
 import { getAppPaths } from '../paths';
 import { handle } from './bridge';
 
@@ -127,15 +142,38 @@ export function registerIpcHandlers(): void {
   });
   handle('node:create', (input) => createNode(input));
 
+  handle('edge:list', ({ campaignId }) => listEdges(campaignId));
+  handle('edge:create', (input) => createEdge(input));
+  handle('edge:delete', ({ id }) => {
+    deleteEdge(id);
+  });
+
+  handle('insight:nudges', ({ campaignId }) => getCampaignNudges(campaignId));
+  handle('insight:applyHistory', ({ campaignId }) => applyHistorySignals(campaignId));
+
   handle('plan:generate', ({ campaignId, interviewDate, dailyMinutes }) =>
     generatePlan(campaignId, interviewDate, dailyMinutes),
   );
   handle('plan:listTodayCampaigns', () => listTodayCampaigns());
   handle('plan:getToday', ({ campaignId }) => getTodayPlan(campaignId));
   handle('plan:deferToday', ({ campaignId }) => ({ deferred: deferToday(campaignId) }));
+  handle('plan:listDates', ({ campaignId }) => listPlanDates(campaignId));
 
   handle('task:complete', ({ taskId, actualMinutes }) => completeTask(taskId, actualMinutes));
   handle('task:skip', ({ taskId }) => skipTask(taskId));
+  handle('task:reorder', ({ planDayId, taskIds }) => {
+    reorderTasks(planDayId, taskIds);
+  });
+  handle('task:move', ({ taskId, date }) => {
+    moveTaskToDate(taskId, date);
+  });
+  handle('task:delete', ({ taskId }) => {
+    deleteTask(taskId);
+  });
+  handle('task:add', (input) => ({ taskId: addTask(input) }));
+  handle('task:setMinutes', ({ taskId, estMinutes }) => {
+    updateTaskMinutes(taskId, estMinutes);
+  });
 
   handle('explain:get', ({ nodeId, tier }) => getExplanation(nodeId, tier));
   handle('explain:generate', ({ nodeId, tier }) => generateExplanation(nodeId, tier));
@@ -191,6 +229,10 @@ export function registerIpcHandlers(): void {
 
   handle('session:list', ({ kind, limit }) => listSessions(kind, limit));
   handle('session:getMessages', ({ sessionId }) => getSessionMessages(sessionId));
+  handle('session:search', ({ query, limit }) => searchSessions(query, limit));
+  handle('session:delete', ({ sessionId }) => {
+    deleteSession(sessionId);
+  });
 }
 
 export { emit, handle } from './bridge';
