@@ -22,10 +22,17 @@ export function CampaignDetail({
   const [newResumeLabel, setNewResumeLabel] = useState('我的简历');
   const [newResumeText, setNewResumeText] = useState('');
   const [showResumeForm, setShowResumeForm] = useState(false);
+  const [interviewDate, setInterviewDate] = useState('');
+  const [dailyMinutes, setDailyMinutes] = useState('90');
+  const [planMsg, setPlanMsg] = useState<string | null>(null);
   const { active: job, lastMessage } = useJobProgress();
 
   const refresh = useCallback(() => {
-    void invoke('campaign:get', { id }).then(setDetail);
+    void invoke('campaign:get', { id }).then((d) => {
+      setDetail(d);
+      setInterviewDate(d.campaign.interviewDate ?? '');
+      setDailyMinutes(String(d.campaign.dailyMinutes ?? 90));
+    });
     void invoke('resume:list', undefined).then(setResumes);
   }, [id]);
 
@@ -89,6 +96,24 @@ export function CampaignDetail({
     refresh();
   };
 
+  const generatePlan = async (): Promise<void> => {
+    setPlanMsg(null);
+    try {
+      const res = await invoke('plan:generate', {
+        campaignId: id,
+        interviewDate: interviewDate || undefined,
+        dailyMinutes: Number(dailyMinutes) || 90,
+      });
+      setPlanMsg(
+        `已生成 ${res.daysCreated} 天计划、${res.tasksCreated} 个任务` +
+          (res.overflowFallbacks ? `（含 ${res.overflowFallbacks} 个兜底话术）` : ''),
+      );
+      refresh();
+    } catch (err) {
+      setPlanMsg(err instanceof Error ? err.message : String(err));
+    }
+  };
+
   if (!detail) {
     return <p className="p-6 text-sm text-[var(--color-muted)]">加载中…</p>;
   }
@@ -136,6 +161,48 @@ export function CampaignDetail({
         >
           生成公司情报
         </button>
+      </section>
+
+      <section className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+        <h3 className="text-sm font-medium">日程编排</h3>
+        <p className="text-xs text-[var(--color-muted)]">
+          设置面试日期和每日时长后生成计划，然后到「今日」页执行任务
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="space-y-1">
+            <span className="text-xs text-[var(--color-muted)]">面试日期</span>
+            <input
+              type="date"
+              value={interviewDate}
+              onChange={(e) => setInterviewDate(e.target.value)}
+              className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1.5 text-sm"
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="text-xs text-[var(--color-muted)]">每日分钟</span>
+            <input
+              type="number"
+              min={30}
+              max={480}
+              value={dailyMinutes}
+              onChange={(e) => setDailyMinutes(e.target.value)}
+              className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1.5 text-sm"
+            />
+          </label>
+        </div>
+        <button
+          type="button"
+          disabled={nodes.length === 0}
+          onClick={() => void generatePlan()}
+          className="rounded-lg bg-emerald-700 px-3 py-1.5 text-sm disabled:opacity-40"
+        >
+          生成计划
+        </button>
+        {planMsg && (
+          <p className={`text-xs ${planMsg.includes('已生成') ? 'text-emerald-400' : 'text-red-400'}`}>
+            {planMsg}
+          </p>
+        )}
       </section>
 
       <section className="grid gap-6 lg:grid-cols-3">

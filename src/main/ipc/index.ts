@@ -19,8 +19,17 @@ import {
   ingestInterviewReport,
 } from '../diagnosis';
 import { dbHealth } from '../db';
+import { generateExplanation, generateFallbackScript, getExplanation } from '../explain';
 import { startJob } from '../jobs';
 import { cancelStream, startChat, testRole } from '../llm';
+import {
+  completeTask,
+  deferToday,
+  generatePlan,
+  getTodayPlan,
+  skipTask,
+} from '../plan/schedule';
+import { generateQuizQuestion, submitQuizAnswer } from '../quiz';
 import { clearCache, fetchUrl, search } from '../search';
 import { getAppPaths } from '../paths';
 import { handle } from './bridge';
@@ -82,6 +91,22 @@ export function registerIpcHandlers(): void {
     deleteNode(id);
   });
   handle('node:create', (input) => createNode(input));
+
+  handle('plan:generate', ({ campaignId, interviewDate, dailyMinutes }) =>
+    generatePlan(campaignId, interviewDate, dailyMinutes),
+  );
+  handle('plan:getToday', ({ campaignId }) => getTodayPlan(campaignId));
+  handle('plan:deferToday', ({ campaignId }) => ({ deferred: deferToday(campaignId) }));
+
+  handle('task:complete', ({ taskId, actualMinutes }) => completeTask(taskId, actualMinutes));
+  handle('task:skip', ({ taskId }) => skipTask(taskId));
+
+  handle('explain:get', ({ nodeId, tier }) => getExplanation(nodeId, tier));
+  handle('explain:generate', ({ nodeId, tier }) => generateExplanation(nodeId, tier));
+  handle('explain:fallback', ({ nodeId }) => generateFallbackScript(nodeId));
+
+  handle('quiz:question', ({ nodeId }) => generateQuizQuestion(nodeId));
+  handle('quiz:submit', (input) => submitQuizAnswer(input.nodeId, input.question, input.userAnswer));
 }
 
 export { emit, handle } from './bridge';

@@ -9,14 +9,27 @@
  */
 
 import type { AppConfig } from './config';
-import type { EvidenceKind, LlmRole, NodeKind, SearchProviderName, CampaignStatus, CoverageType, NodeStatus } from './enums';
+import type {
+  EvidenceKind,
+  LlmRole,
+  NodeKind,
+  SearchProviderName,
+  CampaignStatus,
+  CoverageType,
+  NodeStatus,
+  ExplanationTier,
+} from './enums';
 import type {
   Campaign,
   Citation,
   CompanyIntel,
+  Explanation,
   InterviewReport,
   KnowledgeNode,
+  PlanDay,
+  QuizAttempt,
   Resume,
+  Task,
 } from './entities';
 
 // ---------------------------------------------------------------------------
@@ -232,6 +245,68 @@ export interface IngestReportResult {
 }
 
 // ---------------------------------------------------------------------------
+// 计划与执行（阶段 2）
+// ---------------------------------------------------------------------------
+
+export interface TaskView extends Task {
+  nodeName: string | null;
+  nodeCoverage: CoverageType | null;
+}
+
+export interface TodayPlan {
+  campaignId: string;
+  company: string;
+  roleTitle: string;
+  date: string;
+  planDay: PlanDay | null;
+  tasks: TaskView[];
+  completedCount: number;
+  totalCount: number;
+  plannedMinutes: number;
+}
+
+export interface PlanGenerateInput {
+  campaignId: string;
+  /** 未设置时使用 campaign 上的值，再没有则用默认 14 天 / 90 分钟 */
+  interviewDate?: string;
+  dailyMinutes?: number;
+}
+
+export interface PlanGenerateResult {
+  daysCreated: number;
+  tasksCreated: number;
+  overflowFallbacks: number;
+}
+
+export interface ExplainGetInput {
+  nodeId: string;
+  tier: ExplanationTier;
+}
+
+export interface ExplainGenerateInput {
+  nodeId: string;
+  tier: ExplanationTier;
+}
+
+export interface QuizQuestionResult {
+  nodeId: string;
+  nodeName: string;
+  question: string;
+}
+
+export interface QuizSubmitInput {
+  nodeId: string;
+  question: string;
+  userAnswer: string;
+}
+
+export interface QuizSubmitResult {
+  attempt: QuizAttempt;
+  masteryUpdated: number;
+  nodeStatus: NodeStatus;
+}
+
+// ---------------------------------------------------------------------------
 // 通道映射
 // ---------------------------------------------------------------------------
 
@@ -282,6 +357,20 @@ export interface IpcInvokeMap {
   'node:update': { req: UpdateNodeInput; res: KnowledgeNode };
   'node:delete': { req: { id: string }; res: void };
   'node:create': { req: CreateNodeInput; res: KnowledgeNode };
+
+  'plan:generate': { req: PlanGenerateInput; res: PlanGenerateResult };
+  'plan:getToday': { req: { campaignId?: string }; res: TodayPlan | null };
+  'plan:deferToday': { req: { campaignId: string }; res: { deferred: number } };
+
+  'task:complete': { req: { taskId: string; actualMinutes?: number }; res: TaskView };
+  'task:skip': { req: { taskId: string }; res: TaskView };
+
+  'explain:get': { req: ExplainGetInput; res: Explanation | null };
+  'explain:generate': { req: ExplainGenerateInput; res: Explanation };
+  'explain:fallback': { req: { nodeId: string }; res: Explanation };
+
+  'quiz:question': { req: { nodeId: string }; res: QuizQuestionResult };
+  'quiz:submit': { req: QuizSubmitInput; res: QuizSubmitResult };
 }
 
 /** 主进程 → 渲染进程的单向推送 */
@@ -331,6 +420,16 @@ export const IPC_INVOKE_CHANNELS = [
   'node:update',
   'node:delete',
   'node:create',
+  'plan:generate',
+  'plan:getToday',
+  'plan:deferToday',
+  'task:complete',
+  'task:skip',
+  'explain:get',
+  'explain:generate',
+  'explain:fallback',
+  'quiz:question',
+  'quiz:submit',
 ] as const satisfies readonly IpcInvokeChannel[];
 
 export const IPC_EVENT_CHANNELS = [

@@ -4,13 +4,14 @@ import { CampaignCreate } from './pages/CampaignCreate';
 import { CampaignDetail } from './pages/CampaignDetail';
 import { CampaignList } from './pages/CampaignList';
 import { Settings } from './pages/Settings';
+import { Today } from './pages/Today';
 import { invoke } from './ipc';
 
-type Tab = 'campaigns' | 'chat' | 'settings';
+type Tab = 'today' | 'campaigns' | 'chat' | 'settings';
 type View = { kind: 'list' } | { kind: 'create' } | { kind: 'detail'; id: string; autoDiagnose?: boolean };
 
 export default function App(): React.JSX.Element {
-  const [tab, setTab] = useState<Tab>('campaigns');
+  const [tab, setTab] = useState<Tab>('today');
   const [view, setView] = useState<View>({ kind: 'list' });
   const [version, setVersion] = useState('');
 
@@ -26,6 +27,7 @@ export default function App(): React.JSX.Element {
         <nav className="ml-4 flex gap-1">
           {(
             [
+              ['today', '今日'],
               ['campaigns', '备考'],
               ['chat', '对话'],
               ['settings', '设置'],
@@ -51,6 +53,7 @@ export default function App(): React.JSX.Element {
       </header>
 
       <main className="min-h-0 flex-1 overflow-y-auto">
+        {tab === 'today' && <Today />}
         {tab === 'settings' && <Settings />}
         {tab === 'chat' && (
           <div className="mx-auto h-full max-w-3xl p-6">
