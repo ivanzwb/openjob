@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { desc, eq, inArray } from 'drizzle-orm';
 import type { Citation } from '@shared/entities';
-import type { SessionKind } from '@shared/enums';
+import type { EvidenceKind, SessionKind } from '@shared/enums';
 import type {
   SessionMessageView,
   SessionSearchHit,
@@ -36,6 +36,7 @@ export function appendMessage(
   contentMd: string,
   citations: Citation[] = [],
   usage: TokenUsage | null = null,
+  evidenceKind: EvidenceKind | null = null,
 ): string {
   const id = randomUUID();
   const now = Date.now();
@@ -49,6 +50,7 @@ export function appendMessage(
       citations,
       promptTokens: usage?.promptTokens ?? null,
       completionTokens: usage?.completionTokens ?? null,
+      evidenceKind,
       createdAt: now,
     })
     .run();
@@ -226,6 +228,7 @@ export function getSessionMessages(sessionId: string): SessionMessageView[] {
       m.promptTokens === null && m.completionTokens === null
         ? null
         : { promptTokens: m.promptTokens ?? 0, completionTokens: m.completionTokens ?? 0 },
+    evidenceKind: m.evidenceKind,
     toolCalls: callsByMessage.get(m.id) ?? [],
   }));
 }

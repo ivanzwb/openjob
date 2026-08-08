@@ -3,6 +3,7 @@ import type { LlmRole, SessionKind } from '@shared/enums';
 import type { SessionMessageView, SessionSearchHit, SessionSummary } from '@shared/ipc';
 import { useStream } from '../ipc/useStream';
 import { invoke } from '../ipc';
+import { MarkdownContent } from './MarkdownContent';
 import { CitationList, SourceBadge } from './SourceBadge';
 import { ToolTrace } from './ToolTrace';
 
@@ -97,6 +98,7 @@ export function StreamChat({
       citations: [],
       createdAt: Date.now(),
       usage: null,
+      evidenceKind: null,
       toolCalls: [],
     };
     setHistory((h) => {
@@ -217,10 +219,19 @@ export function StreamChat({
                   key={m.id}
                   className={`text-sm ${m.role === 'user' ? 'text-sky-200' : 'leading-relaxed'}`}
                 >
-                  <span className="mb-1 block text-[10px] uppercase text-[var(--color-muted)]">
-                    {m.role === 'user' ? '你' : '助手'}
-                  </span>
-                  <div className="whitespace-pre-wrap">{m.contentMd}</div>
+                  <div className="mb-1 flex items-center gap-2">
+                    <span className="text-[10px] uppercase text-[var(--color-muted)]">
+                      {m.role === 'user' ? '你' : '助手'}
+                    </span>
+                    {m.role === 'assistant' && m.evidenceKind && (
+                      <SourceBadge kind={m.evidenceKind} />
+                    )}
+                  </div>
+                  {m.role === 'user' ? (
+                    <div className="whitespace-pre-wrap">{m.contentMd}</div>
+                  ) : (
+                    <MarkdownContent text={m.contentMd} />
+                  )}
                   <ToolTrace calls={m.toolCalls} usage={m.usage} />
                   {m.citations.length > 0 && <CitationList citations={m.citations} />}
                 </div>
@@ -237,7 +248,7 @@ export function StreamChat({
                       <span className="text-xs text-[var(--color-muted)]">生成中…</span>
                     )}
                   </div>
-                  <div className="whitespace-pre-wrap text-sm">{state.text}</div>
+                  <MarkdownContent text={state.text} />
                   <ToolTrace calls={state.toolCalls} usage={state.usage} />
                   <CitationList citations={state.citations} />
                 </div>

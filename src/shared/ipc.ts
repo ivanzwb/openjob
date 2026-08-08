@@ -368,6 +368,8 @@ export interface SessionMessageView {
   citations: Citation[];
   createdAt: number;
   usage: TokenUsage | null;
+  /** 证据等级，用于历史回看时还原来源角标；老数据为 null */
+  evidenceKind: EvidenceKind | null;
   /** 该条回答下挂的工具调用，含各自摊到的 token 成本 */
   toolCalls: ToolCallView[];
 }
@@ -520,6 +522,15 @@ export interface QuizSubmitResult {
 // ---------------------------------------------------------------------------
 // 源码仓库（阶段 3）
 // ---------------------------------------------------------------------------
+
+/** 系统 git 探测结果。缺 git 时源码模块整体不可用，需提前告知而非 clone 到一半报错 */
+export interface GitStatus {
+  available: boolean;
+  /** 如 "git version 2.45.0"，不可用时为 null */
+  version: string | null;
+  /** 不可用时给出的安装引导 */
+  hint: string | null;
+}
 
 export interface RepoAddInput {
   url: string;
@@ -741,6 +752,7 @@ export interface IpcInvokeMap {
   'quiz:question': { req: { nodeId: string }; res: QuizQuestionResult };
   'quiz:submit': { req: QuizSubmitInput; res: QuizSubmitResult };
 
+  'repo:gitStatus': { req: void; res: GitStatus };
   'repo:list': { req: void; res: Repo[] };
   'repo:get': { req: { id: string }; res: Repo };
   'repo:add': { req: RepoAddInput; res: DiagnosisJobStarted };
@@ -850,6 +862,7 @@ export const IPC_INVOKE_CHANNELS = [
   'explain:fallback',
   'quiz:question',
   'quiz:submit',
+  'repo:gitStatus',
   'repo:list',
   'repo:get',
   'repo:add',

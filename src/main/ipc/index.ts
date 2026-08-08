@@ -54,7 +54,15 @@ import {
   updateTaskMinutes,
 } from '../plan/edit';
 import { generateQuizQuestion, submitQuizAnswer } from '../quiz';
-import { cloneAndIndex, deleteRepo, ensureCodeRef, getRepo, listRepos, readRepoFile } from '../repo';
+import {
+  cloneAndIndex,
+  deleteRepo,
+  ensureCodeRef,
+  getGitStatus,
+  getRepo,
+  listRepos,
+  readRepoFile,
+} from '../repo';
 import { clearCache, fetchUrl, search } from '../search';
 import {
   deleteSpeechSnippet,
@@ -190,6 +198,7 @@ export function registerIpcHandlers(): void {
   handle('quiz:question', ({ nodeId }) => generateQuizQuestion(nodeId));
   handle('quiz:submit', (input) => submitQuizAnswer(input.nodeId, input.question, input.userAnswer));
 
+  handle('repo:gitStatus', () => getGitStatus());
   handle('repo:list', () => listRepos());
   handle('repo:get', ({ id }) => getRepo(id));
   handle('repo:add', (input) => ({

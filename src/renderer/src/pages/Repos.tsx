@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Repo } from '@shared/entities';
+import type { GitStatus } from '@shared/ipc';
 import { RepoWorkspace } from '../components/RepoWorkspace';
 import { useJobProgress } from '../ipc/useJobProgress';
 import { invoke } from '../ipc';
@@ -9,7 +10,12 @@ export function Repos(): React.JSX.Element {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [url, setUrl] = useState('');
   const [adding, setAdding] = useState(false);
+  const [git, setGit] = useState<GitStatus | null>(null);
   const { active, lastMessage } = useJobProgress();
+
+  useEffect(() => {
+    void invoke('repo:gitStatus', undefined).then(setGit);
+  }, []);
 
   const refresh = useCallback(() => {
     void invoke('repo:list', undefined).then((list) => {
@@ -57,17 +63,24 @@ export function Repos(): React.JSX.Element {
           </p>
         </header>
 
+        {git && !git.available && (
+          <div className="rounded border border-amber-900 bg-amber-950/40 p-3 text-xs text-amber-300">
+            {git.hint}
+          </div>
+        )}
+
         <div className="flex gap-2">
           <input
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             placeholder="https://github.com/..."
-            className="min-w-0 flex-1 rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm outline-none focus:border-[var(--color-accent)]"
+            disabled={git !== null && !git.available}
+            className="min-w-0 flex-1 rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm outline-none focus:border-[var(--color-accent)] disabled:opacity-40"
           />
           <button
             type="button"
             onClick={() => void add()}
-            disabled={adding || !url.trim()}
+            disabled={adding || !url.trim() || (git !== null && !git.available)}
             className="shrink-0 rounded bg-[var(--color-accent)] px-3 py-1.5 text-sm disabled:opacity-40"
           >
             添加

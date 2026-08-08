@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type OpenAI from 'openai';
-import type { LlmRole } from '@shared/enums';
+import type { EvidenceKind, LlmRole } from '@shared/enums';
 import type { Citation } from '@shared/entities';
 import type { ChatRequest, ProviderTestResult, StreamStarted, TokenUsage } from '@shared/ipc';
 // 直接引 bridge 而非 ipc/index，避免与 handler 注册形成循环依赖
@@ -297,6 +297,7 @@ async function runChat(
 
     const deduped = dedupeCitations(citations);
     const totalUsage = totals.promptTokens > 0 ? totals : usage;
+    const evidenceKind: EvidenceKind = usedCode ? 'code' : usedWeb ? 'web' : 'model';
     if (sessionId) {
       const assistantMsgId = appendMessage(
         sessionId,
@@ -304,6 +305,7 @@ async function runChat(
         finalText,
         deduped,
         totalUsage,
+        evidenceKind,
       );
       for (const tc of pendingToolRecords) {
         appendToolCall(
@@ -322,7 +324,7 @@ async function runChat(
       sessionId,
       contentMd: finalText,
       citations: deduped,
-      evidenceKind: usedCode ? 'code' : usedWeb ? 'web' : 'model',
+      evidenceKind,
       usage: totalUsage,
     });
   } catch (err) {

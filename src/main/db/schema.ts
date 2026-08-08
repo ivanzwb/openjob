@@ -5,6 +5,7 @@ import type {
   CampaignStatus,
   CoverageType,
   EdgeRelation,
+  EvidenceKind,
   ExamForm,
   ExplanationTier,
   MasterySource,
@@ -364,6 +365,12 @@ export const message = sqliteTable(
     /** 本轮回答的实际 token 用量；端点不返回 usage 时为 null */
     promptTokens: integer('prompt_tokens'),
     completionTokens: integer('completion_tokens'),
+    /**
+     * 这条回答的证据等级（模型知识 / 网络检索 / 代码实证）。
+     * 必须落库：来源角标的意义是让用户事后核验答案不是编的，
+     * 只在流式过程中出现一次等于没有。
+     */
+    evidenceKind: text('evidence_kind').$type<EvidenceKind>(),
     createdAt: integer('created_at').notNull(),
   },
   (t) => [index('idx_message_session').on(t.sessionId, t.createdAt)],
