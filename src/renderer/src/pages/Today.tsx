@@ -175,7 +175,7 @@ export function Today(): React.JSX.Element {
     plan.totalCount > 0 ? Math.round((plan.completedCount / plan.totalCount) * 100) : 0;
 
   return (
-    <div className="mx-auto flex h-full max-w-5xl flex-col gap-4 p-6 lg:flex-row">
+    <div className="mx-auto flex h-full w-full max-w-[1600px] flex-col gap-4 p-6 lg:flex-row">
       <div className="flex min-h-0 w-full flex-col gap-4 lg:w-80 lg:shrink-0">
         <header>
           <h2 className="text-lg font-semibold">今日任务</h2>

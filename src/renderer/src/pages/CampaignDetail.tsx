@@ -54,7 +54,8 @@ export function CampaignDetail({
   const [reports, setReports] = useState<InterviewReportView[]>([]);
   const [showReports, setShowReports] = useState(false);
   const [annotations, setAnnotations] = useState<AnnotationView[]>([]);
-  const { active: job, lastMessage } = useJobProgress();
+  const { active: job, lastMessage, lastError } = useJobProgress();
+  const [expandError, setExpandError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     void invoke('campaign:get', { id }).then((d) => {
@@ -132,8 +133,11 @@ export function CampaignDetail({
 
   const expandNode = async (nodeId: string): Promise<void> => {
     setExpandingId(nodeId);
+    setExpandError(null);
     try {
       await invoke('diagnosis:expandNode', { nodeId });
+    } catch (err) {
+      setExpandError(err instanceof Error ? err.message : String(err));
     } finally {
       setExpandingId(null);
     }
@@ -288,7 +292,7 @@ export function CampaignDetail({
   const { campaign, nodes, intel } = detail;
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 p-6">
+    <div className="mx-auto w-full max-w-[1600px] space-y-6 p-6">
       <header className="space-y-2">
         <button
           type="button"
@@ -314,7 +318,13 @@ export function CampaignDetail({
             {job.progress !== null ? ` (${Math.round(job.progress * 100)}%)` : ''}
           </p>
         )}
-        {!job && lastMessage && (
+        {!job && lastError && (
+          <p className="text-xs font-medium text-red-400">{lastError}</p>
+        )}
+        {!job && !lastError && expandError && (
+          <p className="text-xs font-medium text-red-400">{expandError}</p>
+        )}
+        {!job && !lastError && !expandError && lastMessage && (
           <p className="text-xs text-emerald-400">{lastMessage}</p>
         )}
       </header>

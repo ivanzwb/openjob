@@ -55,7 +55,7 @@ export function DesignPractice(): React.JSX.Element {
   };
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 p-6">
+    <div className="mx-auto w-full max-w-[1600px] space-y-6 p-6">
       <header>
         <h2 className="text-lg font-semibold">系统设计练习</h2>
         <p className="mt-1 text-xs text-[var(--color-muted)]">

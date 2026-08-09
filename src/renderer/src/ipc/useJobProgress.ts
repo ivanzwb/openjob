@@ -6,16 +6,23 @@ import { onEvent } from './index';
 export function useJobProgress(): {
   active: JobProgress | null;
   lastMessage: string | null;
+  lastError: string | null;
 } {
   const [active, setActive] = useState<JobProgress | null>(null);
   const [lastMessage, setLastMessage] = useState<string | null>(null);
+  const [lastError, setLastError] = useState<string | null>(null);
 
   useEffect(() => {
     return onEvent('job:progress', (p) => {
       setActive(p.done ? null : p);
-      setLastMessage(p.error ?? p.message);
+      if (p.error) {
+        setLastError(p.error);
+        setLastMessage(null);
+      } else {
+        setLastMessage(p.message);
+      }
     });
   }, []);
 
-  return { active, lastMessage };
+  return { active, lastMessage, lastError };
 }

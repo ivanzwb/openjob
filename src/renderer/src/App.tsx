@@ -75,7 +75,7 @@ export default function App(): React.JSX.Element {
         {tab === 'scripts' && <Scripts />}
         {tab === 'settings' && <Settings />}
         {tab === 'chat' && (
-          <div className="mx-auto h-full max-w-4xl p-6">
+          <div className="mx-auto h-full w-full max-w-[1600px] p-6">
             <StreamChat role="explain" placeholder="试试问一个需要联网才能答准的问题…" />
           </div>
         )}

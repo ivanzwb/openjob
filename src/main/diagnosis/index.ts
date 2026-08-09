@@ -42,6 +42,7 @@ function done(jobId: string, label: string, message: string): void {
 }
 
 function fail(jobId: string, label: string, message: string): void {
+  console.error(`[job:${label}] ${message}`);
   emit('job:progress', { jobId, label, progress: null, message, done: true, error: message });
 }
 

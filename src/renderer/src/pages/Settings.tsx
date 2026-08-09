@@ -114,7 +114,7 @@ const runTest = async (tier: LlmTier): Promise<void> => {
 };
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8 p-6">
+    <div className="mx-auto w-full max-w-[1600px] space-y-8 p-6">
       <header className="flex items-baseline gap-3">
         <h2 className="text-lg font-semibold">设置</h2>
         {saved && <span className="text-xs text-emerald-400">已保存</span>}

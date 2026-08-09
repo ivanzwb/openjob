@@ -55,7 +55,7 @@ export function Scripts(): React.JSX.Element {
   };
 
   return (
-    <div className="mx-auto flex h-full max-w-5xl flex-col gap-4 p-6 lg:flex-row">
+    <div className="mx-auto flex h-full w-full max-w-[1600px] flex-col gap-4 p-6 lg:flex-row">
       <aside className="flex w-full shrink-0 flex-col gap-3 lg:w-72">
         <header>
           <h2 className="text-lg font-semibold">话术库</h2>
