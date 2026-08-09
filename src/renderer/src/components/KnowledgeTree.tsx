@@ -218,9 +218,11 @@ function NodeRow({
                   />
                 ) : (
                   <span
-                    className={`rounded border px-1.5 py-0.5 text-[10px] ${STATUS_META[node.status].className}`}
+                    className={`rounded border px-1.5 py-0.5 text-[10px] ${
+                      (STATUS_META[node.status] ?? STATUS_META.todo).className
+                    }`}
                   >
-                    {STATUS_META[node.status].label}
+                    {(STATUS_META[node.status] ?? STATUS_META.todo).label}
                   </span>
                 )}
                 {noteCount > 0 && (

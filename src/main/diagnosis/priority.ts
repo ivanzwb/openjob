@@ -32,30 +32,30 @@ export function computePriority(
   override?: PriorityWeights,
 ): PriorityBreakdown {
   const w = override ?? weights();
-  const target = w.targetMastery[node.coverageType];
+  // LLM 输出不可信：coverageType 可能是任意字符串，查表失败回落到中性值，避免算出 NaN
+  const target = w.targetMastery[node.coverageType] ?? 3;
   const masteryGap = Math.max(0, target - node.mastery);
   const minutes = Math.max(node.estMinutes, 1);
-  const boost = w.coverageBoost[node.coverageType];
+  const boost = w.coverageBoost[node.coverageType] ?? 1;
+  const prob = Number.isFinite(node.examProb) ? Math.max(node.examProb, 0) : 0;
 
   const score =
-    (Math.pow(Math.max(node.examProb, 0), w.probExp) *
-      Math.pow(masteryGap, w.gapExp) *
-      boost) /
+    (Math.pow(prob, w.probExp) * Math.pow(masteryGap, w.gapExp) * boost) /
     Math.pow(minutes, w.costExp);
 
   const reason =
     `${COVERAGE_LABEL[node.coverageType]} · ` +
-    `考察概率 ${Math.round(node.examProb * 100)}% · ` +
+    `考察概率 ${Math.round(prob * 100)}% · ` +
     `掌握差距 ${masteryGap.toFixed(1)}/${target} · ` +
     `预估 ${node.estMinutes} 分钟` +
     (boost !== 1 ? ` · 类型加权 ×${boost}` : '');
 
   return {
     nodeId: node.id,
-    examProb: node.examProb,
+    examProb: prob,
     masteryGap,
     estMinutes: node.estMinutes,
-    score,
+    score: Number.isFinite(score) ? score : 0,
     reason,
   };
 }

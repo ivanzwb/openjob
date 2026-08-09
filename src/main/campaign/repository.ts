@@ -308,7 +308,11 @@ export function clearCampaignNodes(campaignId: string): void {
 export function insertNodes(nodes: Array<typeof schema.knowledgeNode.$inferInsert>): void {
   const db = getDb();
   for (const node of nodes) {
-    db.insert(schema.knowledgeNode).values(node).run();
+    // NaN 会被 better-sqlite3 绑定为 NULL，显式写入 NOT NULL 列会炸。
+    // LLM 输出不可信，任何调用方传来非有限分数都归一为 0。
+    db.insert(schema.knowledgeNode)
+      .values({ ...node, priorityScore: Number.isFinite(node.priorityScore) ? node.priorityScore : 0 })
+      .run();
   }
 }
 

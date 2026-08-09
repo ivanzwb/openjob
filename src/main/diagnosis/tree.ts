@@ -6,6 +6,14 @@ import type * as schema from '../db/schema';
 
 type NodeInsert = typeof schema.knowledgeNode.$inferInsert;
 
+const COVERAGE_VALUES: CoverageType[] = ['deepDive', 'gap', 'landmine', 'extra'];
+
+function validCoverage(v: unknown): CoverageType {
+  return typeof v === 'string' && (COVERAGE_VALUES as string[]).includes(v)
+    ? (v as CoverageType)
+    : 'gap';
+}
+
 /** 将两层 GeneratedNode 树展平为可插入数据库的行 */
 export function flattenGeneratedTree(campaignId: string, nodes: GeneratedNode[]): NodeInsert[] {
   const out: NodeInsert[] = [];
@@ -20,10 +28,10 @@ export function flattenGeneratedTree(campaignId: string, nodes: GeneratedNode[])
         parentId,
         name: item.name.trim(),
         kind: item.kind,
-        coverageType: item.coverageType,
-        examProb: clamp(item.examProb, 0, 1),
-        difficulty: clamp(Math.round(item.difficulty), 1, 5),
-        estMinutes: Math.max(10, Math.round(item.estMinutes)),
+        coverageType: validCoverage(item.coverageType),
+        examProb: clamp(toNum(item.examProb, 0), 0, 1),
+        difficulty: clamp(Math.round(toNum(item.difficulty, 3)), 1, 5),
+        estMinutes: Math.max(10, Math.round(toNum(item.estMinutes, 30))),
         examForms: validExamForms(item.examForms),
         mastery: 0,
         masterySource: 'self' as const,
@@ -63,6 +71,12 @@ export function flattenChildren(
 
 function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
+}
+
+/** LLM 输出不可信：数字字段可能是字符串/缺失/null/NaN，统一净化为有限数 */
+function toNum(v: unknown, fallback: number): number {
+  const n = typeof v === 'number' ? v : Number(v);
+  return Number.isFinite(n) ? n : fallback;
 }
 
 /** LLM 输出不可信：examForms 可能是字符串/缺失，归一化为合法数组 */

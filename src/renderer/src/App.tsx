@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { Component, useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import { StreamChat } from './components/StreamChat';
 import { CampaignCreate } from './pages/CampaignCreate';
 import { CampaignDetail } from './pages/CampaignDetail';
@@ -14,6 +15,30 @@ import { invoke } from './ipc';
 type Tab = 'today' | 'overview' | 'campaigns' | 'design' | 'repos' | 'scripts' | 'chat' | 'settings';
 type View = { kind: 'list' } | { kind: 'create' } | { kind: 'detail'; id: string; autoDiagnose?: boolean };
 
+/** 渲染崩溃时展示错误文本而不是黑屏，便于定位（同时兜住用户数据界面） */
+class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null };
+
+  static getDerivedStateFromError(error: Error): { error: Error } {
+    return { error };
+  }
+
+  componentDidCatch(error: Error): void {
+    console.error('[render crash]', error);
+  }
+
+  render(): ReactNode {
+    if (this.state.error) {
+      return (
+        <pre className="whitespace-pre-wrap p-6 text-sm text-red-400">
+          {this.state.error.stack ?? String(this.state.error)}
+        </pre>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function App(): React.JSX.Element {
   const [tab, setTab] = useState<Tab>('today');
   const [view, setView] = useState<View>({ kind: 'list' });
@@ -24,7 +49,8 @@ export default function App(): React.JSX.Element {
   }, []);
 
   return (
-    <div className="flex h-full flex-col">
+    <ErrorBoundary>
+      <div className="flex h-full flex-col">
       <header className="flex shrink-0 items-center gap-4 border-b border-[var(--color-border)] px-5 py-3">
         <span className="font-semibold">openJob</span>
         <span className="text-xs text-[var(--color-muted)]">v{version}</span>
@@ -99,6 +125,7 @@ export default function App(): React.JSX.Element {
           />
         )}
       </main>
-    </div>
+      </div>
+    </ErrorBoundary>
   );
 }

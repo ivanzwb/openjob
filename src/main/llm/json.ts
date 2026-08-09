@@ -13,26 +13,40 @@ export async function completeJson<T>(
 ): Promise<T> {
   const { client, model, temperature } = createRoleClient(role);
 
-  const res = await client.chat.completions.create(
-    {
-      model,
-      temperature: temperature ?? 0.2,
-      messages: [
+  // 空内容/瞬时失败重试一次；解析逻辑与重试解耦，免得每次失败都重新组织消息
+  let raw: string | undefined;
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await client.chat.completions.create(
         {
-          role: 'system',
-          content:
-            system +
-            '\n\n只输出合法 JSON，不要 markdown 代码块，不要任何解释文字。',
+          model,
+          temperature: temperature ?? 0.2,
+          messages: [
+            {
+              role: 'system',
+              content:
+                system +
+                '\n\n只输出合法 JSON，不要 markdown 代码块，不要任何解释文字。',
+            },
+            { role: 'user', content: user },
+          ],
+          response_format: { type: 'json_object' },
         },
-        { role: 'user', content: user },
-      ],
-      response_format: { type: 'json_object' },
-    },
-    { signal },
-  );
+        { signal },
+      );
+      raw = res.choices[0]?.message?.content ?? undefined;
+      if (raw) break;
+    } catch (err) {
+      lastError = err;
+    }
+  }
 
-  const raw = res.choices[0]?.message?.content;
-  if (!raw) throw new Error('模型未返回内容');
+  if (!raw) {
+    throw new Error(
+      lastError ? `模型调用失败：${lastError instanceof Error ? lastError.message : String(lastError)}` : '模型未返回内容（已重试一次）',
+    );
+  }
 
   try {
     return JSON.parse(raw) as T;

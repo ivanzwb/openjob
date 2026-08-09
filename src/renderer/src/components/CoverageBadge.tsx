@@ -27,7 +27,10 @@ const STYLES: Record<
 };
 
 export function CoverageBadge({ type }: { type: CoverageType }): React.JSX.Element {
-  const s = STYLES[type];
+  // 历史数据可能混入 LLM 生成的非法值，查表失败时兜底展示，绝不让整棵树崩
+  const s =
+    STYLES[type] ??
+    ({ label: type, className: 'border-slate-700 bg-slate-900/50 text-slate-400', hint: '' } as const);
   return (
     <span
       title={s.hint}
