@@ -36,7 +36,7 @@ import { generateDesignCase, submitDesignAnswer } from '../design';
 import { dbHealth } from '../db';
 import { generateExplanation, generateFallbackScript, getExplanation } from '../explain';
 import { startJob } from '../jobs';
-import { cancelStream, startChat, testRole } from '../llm';
+import { cancelStream, startChat, testTier } from '../llm';
 import {
   completeTask,
   deferToday,
@@ -81,6 +81,7 @@ import {
 import { getAppPaths } from '../paths';
 import { checkForUpdates, getUpdateStatus, quitAndInstall } from '../updater';
 import { handle } from './bridge';
+import { importResumeFromFile } from '../campaign/resumeImport';
 
 export function registerIpcHandlers(): void {
   handle('app:getPaths', () => getAppPaths());
@@ -96,7 +97,7 @@ export function registerIpcHandlers(): void {
   handle('config:hasSecret', ({ ref }) => hasSecret(ref));
   handle('config:deleteSecret', ({ ref }) => deleteSecret(ref));
 
-  handle('llm:testRole', ({ role }) => testRole(role));
+  handle('llm:testTier', ({ tier }) => testTier(tier));
   handle('llm:chat', (req) => startChat(req));
   handle('llm:cancel', ({ streamId }) => cancelStream(streamId));
 
@@ -120,6 +121,7 @@ export function registerIpcHandlers(): void {
 
   handle('resume:list', () => listResumes());
   handle('resume:create', (input) => createResume(input.label, input.rawText));
+  handle('resume:importFile', () => importResumeFromFile());
   handle('resume:delete', ({ id }) => {
     deleteResume(id);
   });

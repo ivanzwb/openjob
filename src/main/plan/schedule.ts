@@ -5,7 +5,7 @@ import type { PlanGenerateResult, TaskView, TodayCampaignOption, TodayPlan } fro
 import type { TaskKind } from '@shared/enums';
 import { getDb, schema } from '../db';
 import { getCampaignRow, listCampaigns, rowToNode, updateCampaign } from '../campaign/repository';
-import { topoSortByPrerequisite } from '../campaign/edges';
+import { sortNodesByStudyOrder } from '../campaign/edges';
 import { recordPlanChange, recordPlanDecision } from './session';
 
 function formatLocal(d: Date): DateOnly {
@@ -56,31 +56,30 @@ export function generatePlan(
   const daily = dailyMinutes ?? campaign.dailyMinutes ?? 90;
 
   const db = getDb();
-  const byPriority = db
+  // 与考点清单同口径的“备考顺序”：难度基础→深入，同等难度优先级高的靠前，前置约束优先
+  const candidates = db
     .select()
     .from(schema.knowledgeNode)
     .where(eq(schema.knowledgeNode.campaignId, campaignId))
     .all()
     .map(rowToNode)
-  // domain 是容器，不直接排进日程
-    .filter((n) => n.kind !== 'domain')
-    .sort((a, b) => b.priorityScore - a.priorityScore);
+    // domain 是容器，不直接排进日程
+    .filter((n) => n.kind !== 'domain');
 
-  if (byPriority.length === 0) throw new Error('没有可排期的考点，请先完成 JD 诊断');
+  if (candidates.length === 0) throw new Error('没有可排期的考点，请先完成 JD 诊断');
 
-  // 前置约束优先于优先级：再高频的考点，缺前置也学不动
   const edges = db
     .select()
     .from(schema.nodeEdge)
     .where(
       inArray(
         schema.nodeEdge.fromNodeId,
-        byPriority.map((n) => n.id),
+        candidates.map((n) => n.id),
       ),
     )
     .all();
-  const nodes = topoSortByPrerequisite(byPriority, edges);
-  const priorityOrder = new Map(byPriority.map((n, i) => [n.id, i]));
+  const nodes = sortNodesByStudyOrder(candidates, edges);
+  const priorityOrder = new Map(candidates.map((n, i) => [n.id, i]));
   const reorderedByPrerequisite = nodes
     .filter((n, i) => (priorityOrder.get(n.id) ?? i) > i)
     .map((n) => n.name);

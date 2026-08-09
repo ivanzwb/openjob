@@ -12,6 +12,7 @@ import type { AppConfig } from './config';
 import type {
   EvidenceKind,
   LlmRole,
+  LlmTier,
   NodeKind,
   SearchProviderName,
   CampaignStatus,
@@ -680,7 +681,7 @@ export interface IpcInvokeMap {
   'config:hasSecret': { req: { ref: string }; res: boolean };
   'config:deleteSecret': { req: { ref: string }; res: void };
 
-  'llm:testRole': { req: { role: LlmRole }; res: ProviderTestResult };
+  'llm:testTier': { req: { tier: LlmTier }; res: ProviderTestResult };
   /** 立即返回 streamId，内容通过 stream:* 事件推送 */
   'llm:chat': { req: ChatRequest; res: StreamStarted };
   'llm:cancel': { req: { streamId: string }; res: void };
@@ -702,6 +703,8 @@ export interface IpcInvokeMap {
   'resume:list': { req: void; res: Resume[] };
   'resume:create': { req: CreateResumeInput; res: Resume };
   'resume:delete': { req: { id: string }; res: void };
+  /** 弹出文件选择框导入简历（pdf/docx/txt/md），取消或失败时返回 null */
+  'resume:importFile': { req: void; res: Resume | null };
 
   /** 解析 JD 并生成两层知识点树，进度通过 job:progress 推送 */
   'diagnosis:fromJd': { req: { campaignId: string }; res: DiagnosisJobStarted };
@@ -813,7 +816,7 @@ export const IPC_INVOKE_CHANNELS = [
   'config:setSecret',
   'config:hasSecret',
   'config:deleteSecret',
-  'llm:testRole',
+  'llm:testTier',
   'llm:chat',
   'llm:cancel',
   'search:query',
@@ -830,6 +833,7 @@ export const IPC_INVOKE_CHANNELS = [
   'resume:list',
   'resume:create',
   'resume:delete',
+  'resume:importFile',
   'diagnosis:fromJd',
   'diagnosis:attachResume',
   'diagnosis:expandNode',

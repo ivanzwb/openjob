@@ -508,35 +508,45 @@ API Key 存储用 Electron `safeStorage`（走系统密钥链）加密后落盘�
 
 ### 5.2 LLM Provider 抽象
 
-统一 OpenAI 兼容接口，**按任务角色配置模型**（而非全局一个模型），这是控成本的关键。
+统一 OpenAI 兼容接口，**两层结构：档位（tier）定义模型，角色（role）只做映射**。默认只配 `main` 一档即可完整运行，`cheap` 是可选成本优化——这是控成本的关键，也是配置面最小化的平衡点。
 
 ```ts
-type LlmRole = 'outline' | 'explain' | 'codeAgent' | 'quiz' | 'embedding';
+type LlmTier = 'main' | 'cheap';
+type LlmRole = 'outline' | 'explain' | 'codeAgent' | 'quiz';
 
 interface LlmConfig {
   providers: Record<string, {
     baseUrl: string;        // OpenAI 兼容端点
     apiKeyRef: string;      // 指向 safeStorage 中的密钥条目，不明文存储
   }>;
-  roles: Record<LlmRole, {
+  tiers: Record<LlmTier, {
     provider: string;
     model: string;
     temperature?: number;
   }>;
+  // 角色 → 档位映射。除贴出的覆盖项外默认都是 'main'，
+  // 新角色加入时不用新增模型配置，只改映射。
+  roles: Partial<Record<LlmRole, LlmTier>>;
+
+  // embedding 不参与档位选择：模型一换向量空间就变，已有图谱/真题向量全部失效。
+  // 它是固定资产，作为 provider 级固定配置存在，设置页只允许查看不允许随意切换。
+  embedding: {
+    provider: string;
+    model: string;
+  };
 }
 ```
 
-角色分工：
+角色分工（默认映射）：
 
-| 角色 | 用途 | 模型档位 |
-|---|---|---|
-| `outline` | JD/简历解析、图谱大纲、排序决策 | 强 |
-| `explain` | 知识点讲解（调用量最大） | 中等 |
-| `codeAgent` | 源码检索 | 强 |
-| `quiz` | 出题与评分 | 中等 |
-| `embedding` | 节点去重、真题匹配 | embedding 专用 |
+| 角色 | 用途 | 档位 | 说明 |
+|---|---|---|---|
+| `outline` | JD/简历解析、图谱大纲、排序决策 | `main` | 结构决策错不起，调用量小，成本占比低 |
+| `explain` | 知识点讲解（调用量最大） | `cheap` | 全设计里唯一真正省钱的地方，可随意换便宜模型 |
+| `codeAgent` | 源码检索 | `main` | 与 outline 共用强档，不单独占配置位 |
+| `quiz` | 出题与评分 | `main` | 同上 |
 
-> **硬约束**：`codeAgent` 角色的模型**必须支持 function calling**，agentic 检索完全依赖它，这一条不能妥协。`explain` 角色可以随意换便宜模型。
+> **硬约束**：`codeAgent` 必须走 `main` 档——不是因为它需要 function calling（如今便宜模型普遍支持），而是 agentic 循环对**工具协议遵循率**和连续多轮 tool call 的稳定性要求高，弱模型在这里发疯的代价远高于省下的几分钱。`embedding` 模型则相反，一旦选定就锁死，换模型等于推倒已有数据。
 
 ### 5.3 Search Provider 抽象
 
@@ -588,7 +598,7 @@ interface SearchConfig {
 |---|---|
 | 懒加载 | 讲解按需生成，图谱细化点击才展开 |
 | 分级缓存 | 讲解、项目摘要、搜索结果、公司情报全部缓存 |
-| 模型分流 | 大纲用强模型、讲解用中等模型 |
+| 模型分流 | 主力档跑除讲解外的全部角色，讲解单独走便宜档 |
 | 上下文压缩 | 抓回的网页正文先摘要再进上下文（真正贵的是这块，不是搜索调用本身） |
 | 复用共享 | 同一开源项目的摘要与 repo map 可跨 Campaign 复用 |
 
@@ -922,7 +932,7 @@ tool_call(
 - Electron 主进程 + Vite React 渲染进程，`contextIsolation` + preload 白名单
 - 类型安全的 IPC 层（含流式 event 通道）
 - 配置与密钥：`config.json` + `safeStorage`，Settings 页可填 provider 与 API Key
-- LLM provider 抽象（OpenAI 兼容 + 按角色配模型 + 流式）
+- LLM provider 抽象（OpenAI 兼容 + tiers/roles 两层配置 + 流式）
 - Search 层（博查 + Tavily 双 provider + 自动路由 + 缓存 + 引用追溯 + 可信度分级）
 - Drizzle schema + 迁移，SQLite 建表（全量 schema 一次到位）
 - 流式对话组件 `StreamChat`

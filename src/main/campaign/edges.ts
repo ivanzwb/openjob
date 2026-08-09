@@ -168,3 +168,20 @@ export function topoSortByPrerequisite<T extends { id: string }>(
   }
   return out;
 }
+
+/**
+ * 统一的“备考顺序”：难度基础→深入，同等难度优先级高的靠前，
+ * 再以 prerequisite 拓扑约束重排（前置在前）。
+ * 考点清单展示与今日排程都使用同一口径，保证两处顺序一致。
+ */
+export function sortNodesByStudyOrder<
+  T extends { id: string; difficulty: number; priorityScore: number },
+>(
+  nodes: T[],
+  edges: Array<{ fromNodeId: string; toNodeId: string; relation: EdgeRelation }>,
+): T[] {
+  return topoSortByPrerequisite(
+    [...nodes].sort((a, b) => a.difficulty - b.difficulty || b.priorityScore - a.priorityScore),
+    edges,
+  );
+}

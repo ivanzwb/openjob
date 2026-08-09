@@ -1,19 +1,23 @@
 import { useEffect, useState } from 'react';
 import type { AppConfig, PriorityWeights, SearchConfig, UpdateConfig } from '@shared/config';
 import { DEFAULT_PRIORITY_WEIGHTS } from '@shared/config';
-import { LLM_ROLES, type CoverageType, type LlmRole } from '@shared/enums';
+import { LLM_ROLES, LLM_TIERS, type CoverageType, type LlmRole, type LlmTier } from '@shared/enums';
 import type { ProviderTestResult } from '@shared/ipc';
 import { invoke } from '../ipc';
 import { SecretField } from '../components/SecretField';
 import { SearchQualityPanel } from '../components/SearchQualityPanel';
 import { UpdatePanel } from '../components/UpdatePanel';
 
+const TIER_HINTS: Record<LlmTier, string> = {
+  main: '主力档：outline / codeAgent / quiz 与全部未映射的角色都走这一档，必须支持 function calling',
+  cheap: '便宜档：讲解（explain）专用，调用量最大，是成本大头',
+};
+
 const ROLE_HINTS: Record<LlmRole, string> = {
   outline: '生成知识图谱大纲，需要结构化能力，用量小',
   explain: '生成三档讲解，调用最频繁，是成本大头',
-  codeAgent: '源码检索与理解，必须支持 function calling',
+  codeAgent: '源码检索与理解，agent 循环对工具遵循率要求高',
   quiz: '出题与评分，需要稳定的评判尺度',
-  embedding: '向量化，用于去重与真题匹配',
 };
 
 const COVERAGE_TYPES: CoverageType[] = ['deepDive', 'gap', 'landmine', 'extra'];
@@ -56,7 +60,7 @@ function ExpField({
 export function Settings(): React.JSX.Element {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [saved, setSaved] = useState(false);
-  const [tests, setTests] = useState<Partial<Record<LlmRole, ProviderTestResult | 'running'>>>({});
+  const [tests, setTests] = useState<Partial<Record<LlmTier, ProviderTestResult | 'running'>>>({});
   const [dbInfo, setDbInfo] = useState<{ ok: boolean; tables: number; path: string } | null>(null);
 
   useEffect(() => {
@@ -79,12 +83,17 @@ export function Settings(): React.JSX.Element {
     void persist({ ...config, llm: { ...config.llm, providers } });
   };
 
-  const updateRole = (role: LlmRole, patch: Partial<AppConfig['llm']['roles'][LlmRole]>): void => {
-    void persist({
-      ...config,
-      llm: { ...config.llm, roles: { ...config.llm.roles, [role]: { ...config.llm.roles[role], ...patch } } },
-    });
-  };
+const updateTier = (tier: LlmTier, patch: Partial<AppConfig['llm']['tiers'][LlmTier]>): void => {
+  void persist({ ...config, llm: { ...config.llm, tiers: { ...config.llm.tiers, [tier]: { ...config.llm.tiers[tier], ...patch } } } });
+};
+
+const updateRoleTier = (role: LlmRole, tier: LlmTier): void => {
+  void persist({ ...config, llm: { ...config.llm, roles: { ...config.llm.roles, [role]: tier } } });
+};
+
+const updateEmbedding = (patch: Partial<AppConfig['llm']['embedding']>): void => {
+  void persist({ ...config, llm: { ...config.llm, embedding: { ...config.llm.embedding, ...patch } } });
+};
 
   const updatePriority = (patch: Partial<PriorityWeights>): void => {
     void persist({ ...config, priority: { ...config.priority, ...patch } });
@@ -98,11 +107,11 @@ export function Settings(): React.JSX.Element {
     void persist({ ...config, update: { ...config.update, ...patch } });
   };
 
-  const runTest = async (role: LlmRole): Promise<void> => {
-    setTests((t) => ({ ...t, [role]: 'running' }));
-    const result = await invoke('llm:testRole', { role });
-    setTests((t) => ({ ...t, [role]: result }));
-  };
+const runTest = async (tier: LlmTier): Promise<void> => {
+  setTests((t) => ({ ...t, [tier]: 'running' }));
+  const result = await invoke('llm:testTier', { tier });
+  setTests((t) => ({ ...t, [tier]: result }));
+};
 
   return (
     <div className="mx-auto max-w-3xl space-y-8 p-6">
@@ -144,29 +153,28 @@ export function Settings(): React.JSX.Element {
 
       <section className="space-y-3">
         <div>
-          <h3 className="text-sm font-medium text-[var(--color-muted)]">角色分流</h3>
+          <h3 className="text-sm font-medium text-[var(--color-muted)]">模型档位</h3>
           <p className="mt-1 text-xs text-[var(--color-muted)]">
-            按任务用不同模型，而不是全局一个模型。讲解调用量最大，可以配便宜的；
-            源码 Agent 必须支持 function calling。
+            档位定义模型，角色只做映射。只配「主力档」即可完整运行，便宜档是可选的成本优化。
           </p>
         </div>
 
-        {LLM_ROLES.map((role) => {
-          const rc = config.llm.roles[role];
-          const test = tests[role];
+        {LLM_TIERS.map((tier) => {
+          const tc = config.llm.tiers[tier];
+          const test = tests[tier];
           return (
             <div
-              key={role}
+              key={tier}
               className="space-y-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
             >
               <div className="flex items-baseline gap-2">
-                <code className="text-sm text-sky-300">{role}</code>
-                <span className="text-xs text-[var(--color-muted)]">{ROLE_HINTS[role]}</span>
+                <code className="text-sm text-sky-300">{tier}</code>
+                <span className="text-xs text-[var(--color-muted)]">{TIER_HINTS[tier]}</span>
               </div>
               <div className="flex gap-2">
                 <select
-                  value={rc.providerId}
-                  onChange={(e) => updateRole(role, { providerId: e.target.value })}
+                  value={tc.providerId}
+                  onChange={(e) => updateTier(tier, { providerId: e.target.value })}
                   className="rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1.5 text-sm outline-none"
                 >
                   {config.llm.providers.map((p) => (
@@ -176,14 +184,14 @@ export function Settings(): React.JSX.Element {
                   ))}
                 </select>
                 <input
-                  value={rc.model}
-                  onChange={(e) => updateRole(role, { model: e.target.value })}
+                  value={tc.model}
+                  onChange={(e) => updateTier(tier, { model: e.target.value })}
                   placeholder="模型名，如 deepseek-chat"
                   className="flex-1 rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2.5 py-1.5 text-sm outline-none focus:border-[var(--color-accent)]"
                 />
                 <button
                   type="button"
-                  onClick={() => void runTest(role)}
+                  onClick={() => void runTest(tier)}
                   disabled={test === 'running'}
                   className="rounded border border-[var(--color-border)] px-3 py-1.5 text-sm disabled:opacity-40"
                 >
@@ -199,6 +207,64 @@ export function Settings(): React.JSX.Element {
             </div>
           );
         })}
+      </section>
+
+      <section className="space-y-3">
+        <div>
+          <h3 className="text-sm font-medium text-[var(--color-muted)]">角色映射</h3>
+          <p className="mt-1 text-xs text-[var(--color-muted)]">
+            每个角色指定走哪个档位。未列出的角色默认走「主力」档。
+          </p>
+        </div>
+
+        {LLM_ROLES.map((role) => (
+          <div
+            key={role}
+            className="flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3"
+          >
+            <code className="w-24 shrink-0 text-sm text-sky-300">{role}</code>
+            <span className="flex-1 text-xs text-[var(--color-muted)]">{ROLE_HINTS[role]}</span>
+            <select
+              value={config.llm.roles[role] ?? 'main'}
+              onChange={(e) => updateRoleTier(role, e.target.value as LlmTier)}
+              className="rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1.5 text-sm outline-none"
+            >
+              {LLM_TIERS.map((tier) => (
+                <option key={tier} value={tier}>
+                  {tier}
+                </option>
+              ))}
+            </select>
+          </div>
+        ))}
+      </section>
+
+      <section className="space-y-2">
+        <div>
+          <h3 className="text-sm font-medium text-[var(--color-muted)]">Embedding（固定）</h3>
+          <p className="mt-1 text-xs text-[var(--color-muted)]">
+            向量化模型不参与档位选择：一旦切换，已有图谱与真题向量全部失效。换模型前请想清楚。
+          </p>
+        </div>
+        <div className="flex gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+          <select
+            value={config.llm.embedding.providerId}
+            onChange={(e) => updateEmbedding({ providerId: e.target.value })}
+            className="rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1.5 text-sm outline-none"
+          >
+            {config.llm.providers.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+          <input
+            value={config.llm.embedding.model}
+            onChange={(e) => updateEmbedding({ model: e.target.value })}
+            placeholder="如 text-embedding-3-small"
+            className="flex-1 rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2.5 py-1.5 text-sm outline-none focus:border-[var(--color-accent)]"
+          />
+        </div>
       </section>
 
       <section className="space-y-4">

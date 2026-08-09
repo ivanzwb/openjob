@@ -39,6 +39,7 @@ export function CampaignDetail({
   const [newResumeLabel, setNewResumeLabel] = useState('我的简历');
   const [newResumeText, setNewResumeText] = useState('');
   const [showResumeForm, setShowResumeForm] = useState(false);
+  const [importingResume, setImportingResume] = useState(false);
   const [interviewDate, setInterviewDate] = useState('');
   const [dailyMinutes, setDailyMinutes] = useState('90');
   const [planMsg, setPlanMsg] = useState<string | null>(null);
@@ -103,6 +104,19 @@ export function CampaignDetail({
 
   const attachResume = async (resumeId: string): Promise<void> => {
     await invoke('diagnosis:attachResume', { campaignId: id, resumeId });
+  };
+
+  /** 从文件导入简历到简历库；attach=true 时随即关联到当前战役并触发交叉分析 */
+  const importResumeFile = async (attach: boolean): Promise<void> => {
+    setImportingResume(true);
+    try {
+      const r = await invoke('resume:importFile', undefined);
+      if (!r) return; // 用户取消
+      refresh();
+      if (attach) await attachResume(r.id);
+    } finally {
+      setImportingResume(false);
+    }
   };
 
   const createAndAttachResume = async (): Promise<void> => {
@@ -463,7 +477,17 @@ export function CampaignDetail({
           <div className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
             <h3 className="text-sm font-medium">简历</h3>
             {detail.resume ? (
-              <p className="text-xs text-emerald-400">已关联：{detail.resume.label}</p>
+              <div className="space-y-2">
+                <p className="text-xs text-emerald-400">已关联：{detail.resume.label}</p>
+                <button
+                  type="button"
+                  disabled={importingResume}
+                  onClick={() => void importResumeFile(true)}
+                  className="text-xs text-sky-400 hover:underline disabled:opacity-40"
+                >
+                  {importingResume ? '导入中…' : '从文件导入以替换并重新交叉分析'}
+                </button>
+              </div>
             ) : (
               <>
                 {resumes.length > 0 && (
@@ -482,13 +506,23 @@ export function CampaignDetail({
                     ))}
                   </select>
                 )}
-                <button
-                  type="button"
-                  onClick={() => setShowResumeForm((v) => !v)}
-                  className="text-xs text-sky-400 hover:underline"
-                >
-                  {showResumeForm ? '取消' : '+ 粘贴新简历'}
-                </button>
+                <div className="flex gap-4">
+                  <button
+                    type="button"
+                    disabled={importingResume}
+                    onClick={() => void importResumeFile(true)}
+                    className="text-xs text-sky-400 hover:underline disabled:opacity-40"
+                  >
+                    {importingResume ? '导入中…' : '从文件导入并交叉分析'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowResumeForm((v) => !v)}
+                    className="text-xs text-sky-400 hover:underline"
+                  >
+                    {showResumeForm ? '取消' : '+ 粘贴新简历'}
+                  </button>
+                </div>
                 {showResumeForm && (
                   <div className="space-y-2">
                     <input

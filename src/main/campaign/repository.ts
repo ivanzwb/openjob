@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { eq, desc, sql, and } from 'drizzle-orm';
+import { eq, desc, sql, and, inArray } from 'drizzle-orm';
 import type {
   Campaign,
   JdParsed,
@@ -18,6 +18,7 @@ import type {
 import { getDb, schema } from '../db';
 import { attachPriorityReason, computePriority } from '../diagnosis/priority';
 import { countCrossCampaignReports } from '../diagnosis/prior';
+import { sortNodesByStudyOrder } from './edges';
 
 function rowToCampaign(row: typeof schema.campaign.$inferSelect): Campaign {
   return {
@@ -104,14 +105,28 @@ export function getCampaignDetail(id: string): CampaignDetail {
         .get()
     : null;
 
+  // 考点清单按“备考顺序”展示：难度基础→深入、同等难度优先级高的靠前，
+  // 再按 prerequisite 拓扑重排（前置在前）——与今日排程使用同一口径（sortNodesByStudyOrder）
   const nodeRows = db
     .select()
     .from(schema.knowledgeNode)
     .where(eq(schema.knowledgeNode.campaignId, id))
-    .orderBy(desc(schema.knowledgeNode.priorityScore))
     .all();
 
-  const nodes: KnowledgeNodeView[] = nodeRows.map((n) =>
+  const edgeRows = db
+    .select()
+    .from(schema.nodeEdge)
+    .where(
+      inArray(
+        schema.nodeEdge.fromNodeId,
+        nodeRows.map((n) => n.id),
+      ),
+    )
+    .all();
+
+  const orderedNodes = sortNodesByStudyOrder(nodeRows, edgeRows);
+
+  const nodes: KnowledgeNodeView[] = orderedNodes.map((n) =>
     attachPriorityReason(rowToNode(n)),
   );
 

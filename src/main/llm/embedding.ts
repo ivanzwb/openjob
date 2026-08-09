@@ -1,12 +1,14 @@
-import { createRoleClient } from './client';
+import { createEmbeddingClient } from './client';
+import { resolveEmbedding } from '../config';
 
-/** 调用 embedding 角色获取文本向量，失败时返回 null */
+/** 调用 embedding 固定配置获取文本向量，失败时返回 null */
 export async function embedText(text: string): Promise<number[] | null> {
   const trimmed = text.trim();
   if (!trimmed) return null;
 
   try {
-    const { client, model } = createRoleClient('embedding');
+    const { model } = resolveEmbedding();
+    const client = createEmbeddingClient();
     const res = await client.embeddings.create({
       model,
       input: trimmed.slice(0, 8000),

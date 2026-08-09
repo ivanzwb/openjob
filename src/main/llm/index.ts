@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type OpenAI from 'openai';
-import type { EvidenceKind, LlmRole } from '@shared/enums';
+import type { EvidenceKind, LlmTier } from '@shared/enums';
 import type { Citation } from '@shared/entities';
 import type { ChatRequest, ProviderTestResult, StreamStarted, TokenUsage } from '@shared/ipc';
 // 直接引 bridge 而非 ipc/index，避免与 handler 注册形成循环依赖
@@ -10,7 +10,7 @@ import {
   appendToolCall,
   createSession,
 } from '../session';
-import { createRoleClient } from './client';
+import { createRoleClient, createTierClient } from './client';
 import { agentTools, AGENT_TOOLS, GRAPH_TOOLS, runTool, type ToolContext } from './tools';
 import { getRepo, getRepoLocalPath } from '../repo/repository';
 import { mergedCodeAgentTools, runCodeRepoTool } from '../repo/tools';
@@ -388,15 +388,15 @@ function dedupeCitations(list: Citation[]): Citation[] {
 
 /**
  * 连通性与能力探测。带 tools 发一次最小请求：
- * 成功说明支持 function calling（codeAgent 角色的硬性要求），
+ * 成功说明支持 function calling（main 档的硬性要求），
  * 失败则退回不带 tools 再试一次，用于区分「不支持工具」和「压根连不上」。
  */
-export async function testRole(role: LlmRole): Promise<ProviderTestResult> {
+export async function testTier(tier: LlmTier): Promise<ProviderTestResult> {
   const startedAt = Date.now();
   let model = '';
 
   try {
-    const rc = createRoleClient(role);
+    const rc = createTierClient(tier);
     model = rc.model;
 
     try {
@@ -423,7 +423,7 @@ export async function testRole(role: LlmRole): Promise<ProviderTestResult> {
         ok: true,
         latencyMs: Date.now() - startedAt,
         model,
-        message: '连通正常，但不支持 function calling（codeAgent 角色不能用此模型）',
+        message: '连通正常，但不支持 function calling（main 档角色不能用此模型）',
         supportsToolCalling: false,
       };
     }

@@ -65,9 +65,13 @@ function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
 }
 
-function validExamForms(forms: ExamForm[]): ExamForm[] {
+/** LLM 输出不可信：examForms 可能是字符串/缺失，归一化为合法数组 */
+function validExamForms(forms: unknown): ExamForm[] {
   const allowed: ExamForm[] = ['concept', 'coding', 'design', 'scenario'];
-  const filtered = forms.filter((f) => allowed.includes(f));
+  if (!Array.isArray(forms)) return ['concept'];
+  const filtered = forms.filter(
+    (f): f is ExamForm => typeof f === 'string' && allowed.includes(f as ExamForm),
+  );
   return filtered.length ? filtered : ['concept'];
 }
 

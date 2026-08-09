@@ -4,7 +4,11 @@
  * 值在运行时可枚举（用于校验、下拉选项），类型在编译期收窄。
  */
 
-export const LLM_ROLES = ['outline', 'explain', 'codeAgent', 'quiz', 'embedding'] as const;
+export const LLM_TIERS = ['main', 'cheap'] as const;
+export type LlmTier = (typeof LLM_TIERS)[number];
+
+/** 业务角色只做 → 档位映射，不直接持有模型配置 */
+export const LLM_ROLES = ['outline', 'explain', 'codeAgent', 'quiz'] as const;
 export type LlmRole = (typeof LLM_ROLES)[number];
 
 export const CAMPAIGN_STATUSES = ['planning', 'active', 'done'] as const;
