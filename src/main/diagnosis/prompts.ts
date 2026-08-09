@@ -51,7 +51,8 @@ difficulty 是“备考顺序”的唯一主排序依据，必须拉开梯度：
 - 4=深入（底层机制、实现细节）
 - 5=专家级（跨模块整合、系统性设计）
 同一层级的兄弟节点之间 difficulty 必须尽量分散（例如同层尽量覆盖 1/3/5 或 2/4 等不同档位），严禁全部相同。
-domain 的 difficulty = 该领域对候选人的认知深度要求（用于领域间排序）。
+ 严禁出现重复知识点：同一 domain 下的兄弟节点、以及不同层级之间，名称不得含义重叠（例如「Python与AI/ML生态」与「Python AI/ML 生态与数据处理基础」只能保留一个；「数据清洗」与「数据清洗与特征工程」视作重叠，合并为一个）。
+ domain 的 difficulty = 该领域对候选人的认知深度要求（用于领域间排序）。
 尚未提供简历时，coverageType 一律填 gap（JD 要求但简历未知）。
 
 同时给出知识点之间的横向关系 edges（from/to 必须是上面出现过的节点名）：
@@ -96,8 +97,9 @@ export function crossAnalyzeUser(
 }
 
 export const EXPAND_SYSTEM = `你是知识点细化助手。为给定主题生成 3-6 个子知识点（kind=point）。
-保持名称具体、可独立备考。给出 examProb、difficulty、estMinutes、examForms、coverageType。
-difficulty 锚点：1=基础概念，2=入门用法，3=进阶应用，4=底层机制，5=专家级整合；兄弟节点难度必须拉开梯度，严禁全部相同。
+ 保持名称具体、可独立备考。给出 examProb、difficulty、estMinutes、examForms、coverageType。
+ 严禁生成含义重叠的子知识点：兄弟节点名称不得互相包含或近义（如「数据处理」与「数据处理基础」只能保留一个）。
+ difficulty 锚点：1=基础概念，2=入门用法，3=进阶应用，4=底层机制，5=专家级整合；兄弟节点难度必须拉开梯度，严禁全部相同。
 另给出这些子知识点之间的 edges（relation 取 prerequisite/related/contrast，from/to 用子知识点名）。
 输出 JSON：{ "children": [{ "name":"","kind":"point", ... }], "edges": [{"from":"","to":"","relation":"prerequisite"}] }`;
 
