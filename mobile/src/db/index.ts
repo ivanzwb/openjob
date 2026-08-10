@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from 'uuid';
+import * as Crypto from 'expo-crypto';
 import { openDatabaseSync, type SQLiteDatabase } from 'expo-sqlite';
 import type { ConflictChoice, FieldConflict, PairingPayload } from '@shared/sync';
 import { conflictKey, planMerge, resolutionsToChanges } from '@shared/syncMerge';
@@ -24,12 +24,46 @@ interface PeerRow {
 
 let raw: SQLiteDatabase | null = null;
 
+const MIGRATION_LOG = '_migrations';
+
+/**
+ * 迁移日志表:记录已应用的迁移序号,避免每次启动都重放建表 SQL。
+ * 对迁移已部分应用的旧数据库,语句级容错自动跳过已存在对象。
+ */
+function ensureMigrationLog(sqlite: SQLiteDatabase): void {
+  sqlite.execSync(
+    `CREATE TABLE IF NOT EXISTS ${MIGRATION_LOG} (idx INTEGER PRIMARY KEY, tag TEXT NOT NULL, applied_at INTEGER NOT NULL)`,
+  );
+}
+
+function isAlreadyAppliedError(e: unknown): boolean {
+  return /already exists|duplicate column name/i.test(String(e));
+}
+
 function runMigrations(sqlite: SQLiteDatabase): void {
-  for (const sql of MIGRATIONS) {
-    for (const stmt of sql.split('--> statement-breakpoint')) {
+  ensureMigrationLog(sqlite);
+  const applied = new Set(
+    sqlite.getAllSync<{ idx: number }>(`SELECT idx FROM ${MIGRATION_LOG}`).map((r) => r.idx),
+  );
+  for (let index = 0; index < MIGRATIONS.length; index++) {
+    if (applied.has(index)) continue;
+    for (const stmt of MIGRATIONS[index].split('--> statement-breakpoint')) {
       const trimmed = stmt.trim();
-      if (trimmed) sqlite.execSync(trimmed);
+      if (!trimmed) continue;
+      try {
+        sqlite.execSync(trimmed);
+      } catch (e) {
+        // 迁移已部分应用的旧库:表和索引已存在时跳过,不中断启动
+        if (isAlreadyAppliedError(e)) continue;
+        throw e;
+      }
     }
+    sqlite.runSync(
+      `INSERT INTO ${MIGRATION_LOG} (idx, tag, applied_at) VALUES (?, ?, ?)`,
+      index,
+      `migration_${index}`,
+      Date.now(),
+    );
   }
 }
 
@@ -115,7 +149,7 @@ function saveConflicts(sqlite: SQLiteDatabase, runId: string, conflicts: FieldCo
         id, run_id, table_name, row_id, field,
         local_value, remote_value, local_wall_ms, remote_wall_ms, resolution
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
-      uuidv4(),
+      Crypto.randomUUID(),
       runId,
       c.table,
       c.rowId,
@@ -160,7 +194,7 @@ export async function syncNow(): Promise<{
   const plan = planMerge(local, response.changes, ctx);
   const appliedRemote = applyAutoChanges(sqlite, peer.device_id, plan.auto);
 
-  const runId = uuidv4();
+  const runId = Crypto.randomUUID();
   if (plan.conflicts.length > 0) {
     sqlite.runSync(
       `INSERT INTO sync_run (id, peer_device_id, direction, status, applied_count, conflict_count, started_at, finished_at)
