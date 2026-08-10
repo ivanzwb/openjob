@@ -4,25 +4,37 @@ import { syncTableSpecs, type SyncTableSpec } from './tables';
 const WRITE_AS = `coalesce((SELECT value FROM sync_meta WHERE key = 'writeAs'), 'unknown')`;
 const NOW_MS = `CAST(unixepoch('subsec') * 1000 AS INTEGER)`;
 
-function insertTrigger(spec: SyncTableSpec): string {
+/**
+ * 只有当写入者是本机时才记 oplog。应用对端变更时 writingAs() 把 writeAs
+ * 改成对端 id，触发器看到不等于本机 id 就跳过——否则应用回来的数据会再
+ * 写一条 oplog，被当成"本机新变更"推回来源设备，形成每轮同步互推回声、
+ * 水位永久追不上的循环。
+ */
+function isLocalWrite(localDeviceId: string): string {
+  return `(SELECT value FROM sync_meta WHERE key = 'writeAs') = '${localDeviceId}'`;
+}
+
+function insertTrigger(spec: SyncTableSpec, localDeviceId: string): string {
   return `
 CREATE TRIGGER IF NOT EXISTS sync_${spec.name}_ai AFTER INSERT ON \`${spec.name}\`
+WHEN ${isLocalWrite(localDeviceId)}
 BEGIN
   INSERT INTO sync_oplog (table_name, row_id, op, wall_ms, device_id, changed_fields)
   VALUES ('${spec.name}', NEW.\`${spec.pk}\`, 'insert', ${NOW_MS}, ${WRITE_AS}, NULL);
 END;`;
 }
 
-function deleteTrigger(spec: SyncTableSpec): string {
+function deleteTrigger(spec: SyncTableSpec, localDeviceId: string): string {
   return `
 CREATE TRIGGER IF NOT EXISTS sync_${spec.name}_ad AFTER DELETE ON \`${spec.name}\`
+WHEN ${isLocalWrite(localDeviceId)}
 BEGIN
   INSERT INTO sync_oplog (table_name, row_id, op, wall_ms, device_id, changed_fields)
   VALUES ('${spec.name}', OLD.\`${spec.pk}\`, 'delete', ${NOW_MS}, ${WRITE_AS}, NULL);
 END;`;
 }
 
-function updateTrigger(spec: SyncTableSpec): string {
+function updateTrigger(spec: SyncTableSpec, localDeviceId: string): string {
   const tracked = spec.columns.filter((c) => c !== spec.pk);
   const anyChanged = tracked.map((c) => `OLD.\`${c}\` IS NOT NEW.\`${c}\``).join('\n     OR ');
   const fieldList = tracked
@@ -32,6 +44,7 @@ function updateTrigger(spec: SyncTableSpec): string {
   return `
 CREATE TRIGGER IF NOT EXISTS sync_${spec.name}_au AFTER UPDATE ON \`${spec.name}\`
 WHEN ${anyChanged}
+  AND ${isLocalWrite(localDeviceId)}
 BEGIN
   INSERT INTO sync_oplog (table_name, row_id, op, wall_ms, device_id, changed_fields)
   VALUES (
@@ -47,11 +60,11 @@ BEGIN
 END;`;
 }
 
-function buildTriggerSql(spec: SyncTableSpec): string[] {
-  return [insertTrigger(spec), updateTrigger(spec), deleteTrigger(spec)];
+function buildTriggerSql(spec: SyncTableSpec, localDeviceId: string): string[] {
+  return [insertTrigger(spec, localDeviceId), updateTrigger(spec, localDeviceId), deleteTrigger(spec, localDeviceId)];
 }
 
-export function installSyncTriggers(raw: SQLiteDatabase): void {
+export function installSyncTriggers(raw: SQLiteDatabase, localDeviceId: string): void {
   const specs = syncTableSpecs();
   raw.execSync('BEGIN');
   try {
@@ -59,7 +72,7 @@ export function installSyncTriggers(raw: SQLiteDatabase): void {
       for (const suffix of ['ai', 'au', 'ad']) {
         raw.execSync(`DROP TRIGGER IF EXISTS sync_${spec.name}_${suffix};`);
       }
-      for (const sql of buildTriggerSql(spec)) {
+      for (const sql of buildTriggerSql(spec, localDeviceId)) {
         raw.execSync(sql);
       }
     }

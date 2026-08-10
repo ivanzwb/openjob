@@ -12,28 +12,40 @@ import { syncTableSpecs, type SyncTableSpec } from './tables';
 /** 触发器写日志时使用的设备身份；应用对端变更期间会被临时改写 */
 const WRITE_AS = `coalesce((SELECT value FROM sync_meta WHERE key = 'writeAs'), 'unknown')`;
 
+/**
+ * 只有当写入者是本机时才记 oplog。
+ * 应用对端变更时 writingAs() 把 writeAs 改成对端 id，触发器看到不等于
+ * 本机 id 就跳过——否则应用回来的数据会再写一条 oplog，被当成"本机
+ * 新变更"推回来源设备，形成每轮同步都互推回声、水位永久追不上的循环。
+ */
+function isLocalWrite(localDeviceId: string): string {
+  return `(SELECT value FROM sync_meta WHERE key = 'writeAs') = '${localDeviceId}'`;
+}
+
 /** unixepoch('subsec') 返回带小数的秒，乘 1000 得到毫秒 */
 const NOW_MS = `CAST(unixepoch('subsec') * 1000 AS INTEGER)`;
 
-function insertTrigger(spec: SyncTableSpec): string {
+function insertTrigger(spec: SyncTableSpec, localDeviceId: string): string {
   return `
 CREATE TRIGGER IF NOT EXISTS sync_${spec.name}_ai AFTER INSERT ON \`${spec.name}\`
+WHEN ${isLocalWrite(localDeviceId)}
 BEGIN
   INSERT INTO sync_oplog (table_name, row_id, op, wall_ms, device_id, changed_fields)
   VALUES ('${spec.name}', NEW.\`${spec.pk}\`, 'insert', ${NOW_MS}, ${WRITE_AS}, NULL);
 END;`;
 }
 
-function deleteTrigger(spec: SyncTableSpec): string {
+function deleteTrigger(spec: SyncTableSpec, localDeviceId: string): string {
   return `
 CREATE TRIGGER IF NOT EXISTS sync_${spec.name}_ad AFTER DELETE ON \`${spec.name}\`
+WHEN ${isLocalWrite(localDeviceId)}
 BEGIN
   INSERT INTO sync_oplog (table_name, row_id, op, wall_ms, device_id, changed_fields)
   VALUES ('${spec.name}', OLD.\`${spec.pk}\`, 'delete', ${NOW_MS}, ${WRITE_AS}, NULL);
 END;`;
 }
 
-function updateTrigger(spec: SyncTableSpec): string {
+function updateTrigger(spec: SyncTableSpec, localDeviceId: string): string {
   const tracked = spec.columns.filter((c) => c !== spec.pk);
 
   // IS NOT 是 SQLite 的 null 安全比较，NULL IS NOT NULL 为假，
@@ -49,6 +61,7 @@ function updateTrigger(spec: SyncTableSpec): string {
   return `
 CREATE TRIGGER IF NOT EXISTS sync_${spec.name}_au AFTER UPDATE ON \`${spec.name}\`
 WHEN ${anyChanged}
+  AND ${isLocalWrite(localDeviceId)}
 BEGIN
   INSERT INTO sync_oplog (table_name, row_id, op, wall_ms, device_id, changed_fields)
   VALUES (
@@ -64,8 +77,8 @@ BEGIN
 END;`;
 }
 
-export function buildTriggerSql(spec: SyncTableSpec): string[] {
-  return [insertTrigger(spec), updateTrigger(spec), deleteTrigger(spec)];
+export function buildTriggerSql(spec: SyncTableSpec, localDeviceId: string): string[] {
+  return [insertTrigger(spec, localDeviceId), updateTrigger(spec, localDeviceId), deleteTrigger(spec, localDeviceId)];
 }
 
 /**
@@ -74,7 +87,7 @@ export function buildTriggerSql(spec: SyncTableSpec): string[] {
  * 每次启动都先 DROP 再 CREATE：schema 演进后列集合会变，旧触发器里的列
  * 清单是过时的，留着会漏采字段。重建成本可以忽略。
  */
-export function installSyncTriggers(raw: Database): void {
+export function installSyncTriggers(raw: Database, localDeviceId: string): void {
   const specs = syncTableSpecs();
 
   raw.transaction(() => {
@@ -82,7 +95,7 @@ export function installSyncTriggers(raw: Database): void {
       for (const suffix of ['ai', 'au', 'ad']) {
         raw.exec(`DROP TRIGGER IF EXISTS sync_${spec.name}_${suffix};`);
       }
-      for (const sql of buildTriggerSql(spec)) {
+      for (const sql of buildTriggerSql(spec, localDeviceId)) {
         raw.exec(sql);
       }
     }

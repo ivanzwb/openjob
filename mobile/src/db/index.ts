@@ -93,9 +93,9 @@ export async function openDb(): Promise<SQLiteDatabase> {
   raw = openDatabaseSync('openjob.db');
   raw.execSync('PRAGMA foreign_keys = ON;');
   runMigrations(raw);
-  installSyncTriggers(raw);
-
   const identity = await getDeviceIdentity(raw);
+  installSyncTriggers(raw, identity.deviceId);
+
   raw.runSync(
     `INSERT INTO sync_meta (key, value) VALUES ('writeAs', ?)
      ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
@@ -173,12 +173,15 @@ export async function syncNow(): Promise<{
   const peer = getPeer(sqlite);
   if (!peer?.last_address) throw new Error('尚未配对桌面端');
 
-  const local = collectChangeSet(sqlite, identity.deviceId, peer.last_remote_seq);
+  // 水位线语义:last_local_seq = 本端 oplog 已发送给对方的水位;
+  // last_remote_seq = 对端最近上报的 headSeq。
+  // 收集本机待发变更用 last_local_seq,请求对端增量用 last_remote_seq。
+  const local = collectChangeSet(sqlite, identity.deviceId, peer.last_local_seq);
   const response = await exchangeWithDesktop(
     peer.last_address,
     peer.shared_key,
     identity.deviceId,
-    peer.last_local_seq,
+    peer.last_remote_seq,
     local,
   );
 

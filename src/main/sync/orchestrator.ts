@@ -113,7 +113,9 @@ export function handleExchange(input: ExchangeInput): ExchangeResult {
   insertRun(runId, input.peerDeviceId, input.direction, backup.file);
 
   try {
-    const local = collectChangeSet(raw, identity.deviceId, peer.lastRemoteSeq);
+    // 本地(桌面端)待合并变更:自已发送给该对端的水位(lastLocalSeq)起。
+    // 用 lastRemoteSeq(对端 head)过滤本端 oplog 会把本端新变更全部跳过。
+    const local = collectChangeSet(raw, identity.deviceId, peer.lastLocalSeq);
     const ctx = buildMergeContext(input.clockOffsetMs ?? 0);
     const plan = planMerge(local, input.remote, ctx);
 

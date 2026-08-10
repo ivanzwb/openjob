@@ -59,6 +59,6 @@ export function initSyncLayer(raw: Database): DeviceIdentity {
   // 触发器读 writeAs 决定变更归属。默认就是本机，应用对端变更时才临时改写。
   writeMeta(raw, 'writeAs', identity.deviceId);
 
-  installSyncTriggers(raw);
+  installSyncTriggers(raw, identity.deviceId);
   return identity;
 }
