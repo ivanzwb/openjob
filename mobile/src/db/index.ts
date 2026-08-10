@@ -1,12 +1,14 @@
+import { v4 as uuidv4 } from 'uuid';
 import { openDatabaseSync, type SQLiteDatabase } from 'expo-sqlite';
-import type { PairingPayload } from '@shared/sync';
-import { planMerge } from '@shared/syncMerge';
+import type { ConflictChoice, FieldConflict, PairingPayload } from '@shared/sync';
+import { conflictKey, planMerge, resolutionsToChanges } from '@shared/syncMerge';
 import { MIGRATIONS } from './migrations/bundle';
 import { installSyncTriggers } from '../sync/triggers';
 import { getDeviceIdentity } from '../sync/identity';
 import { collectChangeSet, currentHeadSeq } from '../sync/collect';
 import { applyAutoChanges } from '../sync/apply';
 import { exchangeWithDesktop, pairWithDesktop } from '../sync/client';
+import { setPeerCreds } from '../remote/rpc';
 
 interface PeerRow {
   device_id: string;
@@ -31,6 +33,21 @@ function runMigrations(sqlite: SQLiteDatabase): void {
   }
 }
 
+function loadPeerCreds(sqlite: SQLiteDatabase): void {
+  const peer = sqlite.getFirstSync<PeerRow>(`SELECT * FROM sync_peer LIMIT 1`);
+  if (!peer?.last_address) {
+    setPeerCreds(null);
+    return;
+  }
+  void getDeviceIdentity(sqlite).then((identity) => {
+    setPeerCreds({
+      baseUrl: peer.last_address!,
+      sharedKey: peer.shared_key,
+      deviceId: identity.deviceId,
+    });
+  });
+}
+
 export function getRawDb(): SQLiteDatabase {
   if (!raw) throw new Error('请先调用 openDb()');
   return raw;
@@ -50,8 +67,13 @@ export async function openDb(): Promise<SQLiteDatabase> {
      ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
     identity.deviceId,
   );
-
+  loadPeerCreds(raw);
   return raw;
+}
+
+export function isPaired(): boolean {
+  if (!raw) return false;
+  return Boolean(raw.getFirstSync(`SELECT 1 FROM sync_peer LIMIT 1`));
 }
 
 function getPeer(sqlite: SQLiteDatabase): PeerRow | null {
@@ -82,12 +104,35 @@ export async function pairDesktop(payload: PairingPayload): Promise<void> {
     baseUrl,
     now,
   );
+
+  setPeerCreds({ baseUrl, sharedKey: result.sharedKey, deviceId: identity.deviceId });
+}
+
+function saveConflicts(sqlite: SQLiteDatabase, runId: string, conflicts: FieldConflict[]): void {
+  for (const c of conflicts) {
+    sqlite.runSync(
+      `INSERT INTO sync_conflict (
+        id, run_id, table_name, row_id, field,
+        local_value, remote_value, local_wall_ms, remote_wall_ms, resolution
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+      uuidv4(),
+      runId,
+      c.table,
+      c.rowId,
+      c.field,
+      JSON.stringify(c.localValue),
+      JSON.stringify(c.remoteValue),
+      c.localWallMs,
+      c.remoteWallMs,
+    );
+  }
 }
 
 export async function syncNow(): Promise<{
   applied: number;
   conflicts: number;
   status: string;
+  runId: string | null;
 }> {
   const sqlite = await openDb();
   const identity = await getDeviceIdentity(sqlite);
@@ -115,6 +160,21 @@ export async function syncNow(): Promise<{
   const plan = planMerge(local, response.changes, ctx);
   const appliedRemote = applyAutoChanges(sqlite, peer.device_id, plan.auto);
 
+  const runId = uuidv4();
+  if (plan.conflicts.length > 0) {
+    sqlite.runSync(
+      `INSERT INTO sync_run (id, peer_device_id, direction, status, applied_count, conflict_count, started_at, finished_at)
+       VALUES (?, ?, 'auto', 'conflict', ?, ?, ?, ?)`,
+      runId,
+      peer.device_id,
+      appliedRemote,
+      plan.conflicts.length,
+      Date.now(),
+      Date.now(),
+    );
+    saveConflicts(sqlite, runId, plan.conflicts);
+  }
+
   sqlite.runSync(
     `UPDATE sync_peer SET last_local_seq = ?, last_remote_seq = ?, last_sync_at = ?
      WHERE device_id = ?`,
@@ -124,9 +184,152 @@ export async function syncNow(): Promise<{
     peer.device_id,
   );
 
+  const conflictCount = plan.conflicts.length + response.conflictCount;
   return {
     applied: response.appliedCount + appliedRemote,
-    conflicts: plan.conflicts.length + response.conflictCount,
-    status: plan.conflicts.length > 0 || response.conflictCount > 0 ? 'conflict' : 'success',
+    conflicts: conflictCount,
+    status: conflictCount > 0 ? 'conflict' : 'success',
+    runId: plan.conflicts.length > 0 ? runId : null,
   };
+}
+
+export interface PendingConflictRow extends FieldConflict {
+  id: string;
+  runId: string;
+}
+
+export function getPeerLabel(): string | null {
+  const peer = getRawDb().getFirstSync<{ display_name: string; last_address: string | null }>(
+    `SELECT display_name, last_address FROM sync_peer LIMIT 1`,
+  );
+  if (!peer?.last_address) return null;
+  return `${peer.display_name} @ ${peer.last_address.replace(/^https?:\/\//, '')}`;
+}
+
+export function listPendingConflicts(): FieldConflict[] {
+  return listPendingConflictRows();
+}
+
+export function listPendingConflictRows(): PendingConflictRow[] {
+  const sqlite = getRawDb();
+  const rows = sqlite.getAllSync<{
+    id: string;
+    table_name: string;
+    row_id: string;
+    field: string;
+    local_value: string | null;
+    remote_value: string | null;
+    local_wall_ms: number;
+    remote_wall_ms: number;
+    run_id: string;
+  }>(
+    `SELECT c.* FROM sync_conflict c
+     INNER JOIN sync_run r ON r.id = c.run_id
+     WHERE c.resolution = 'pending'
+     ORDER BY c.row_id`,
+  );
+
+  return rows.map((c) => ({
+    id: c.id,
+    runId: c.run_id,
+    table: c.table_name,
+    rowId: c.row_id,
+    field: c.field,
+    localValue: c.local_value ? JSON.parse(c.local_value) : null,
+    remoteValue: c.remote_value ? JSON.parse(c.remote_value) : null,
+    localWallMs: c.local_wall_ms,
+    remoteWallMs: c.remote_wall_ms,
+    label: `${c.table_name}:${c.row_id}`,
+  }));
+}
+
+export async function resolveConflicts(
+  runId: string,
+  choices: Array<{ table: string; rowId: string; field: string; choice: ConflictChoice }>,
+): Promise<void> {
+  const sqlite = getRawDb();
+  const peer = getPeer(sqlite);
+  if (!peer) throw new Error('未配对');
+
+  const pending = sqlite.getAllSync<{
+    id: string;
+    table_name: string;
+    row_id: string;
+    field: string;
+    local_value: string | null;
+    remote_value: string | null;
+    remote_wall_ms: number;
+  }>(`SELECT * FROM sync_conflict WHERE run_id = ? AND resolution = 'pending'`, runId);
+
+  const choiceMap = new Map<string, ConflictChoice>();
+  for (const c of choices) {
+    choiceMap.set(`${c.table}\u0000${c.rowId}\u0000${c.field}`, c.choice);
+  }
+
+  const fieldConflicts: FieldConflict[] = pending.map((c) => ({
+    table: c.table_name,
+    rowId: c.row_id,
+    field: c.field,
+    localValue: c.local_value ? JSON.parse(c.local_value) : null,
+    remoteValue: c.remote_value ? JSON.parse(c.remote_value) : null,
+    localWallMs: 0,
+    remoteWallMs: c.remote_wall_ms,
+    label: `${c.table_name}:${c.row_id}`,
+  }));
+
+  const remoteRows = new Map<string, { table: string; rowId: string; values: Record<string, unknown>; wallMs: number }>();
+  const remoteTombstones: Array<{ table: string; rowId: string; wallMs: number }> = [];
+
+  for (const c of pending) {
+    const choice = choiceMap.get(`${c.table_name}\u0000${c.row_id}\u0000${c.field}`) ?? 'local';
+    if (choice !== 'remote') continue;
+    const k = `${c.table_name}\u0000${c.row_id}`;
+    if (c.field === 'delete') {
+      const remoteVal = c.remote_value ? JSON.parse(c.remote_value) : null;
+      if (remoteVal && typeof remoteVal === 'object') {
+        remoteRows.set(k, {
+          table: c.table_name,
+          rowId: c.row_id,
+          values: remoteVal as Record<string, unknown>,
+          wallMs: c.remote_wall_ms,
+        });
+      } else {
+        remoteTombstones.push({ table: c.table_name, rowId: c.row_id, wallMs: c.remote_wall_ms });
+      }
+      continue;
+    }
+    const existing = remoteRows.get(k);
+    if (existing) {
+      existing.values[c.field] = c.remote_value ? JSON.parse(c.remote_value) : null;
+    } else {
+      remoteRows.set(k, {
+        table: c.table_name,
+        rowId: c.row_id,
+        values: { [c.field]: c.remote_value ? JSON.parse(c.remote_value) : null },
+        wallMs: c.remote_wall_ms,
+      });
+    }
+  }
+
+  const remote = {
+    deviceId: peer.device_id,
+    headSeq: 0,
+    rows: [...remoteRows.values()].map((r) => ({
+      table: r.table,
+      rowId: r.rowId,
+      values: r.values,
+      changedFields: null,
+      wallMs: r.wallMs,
+    })),
+    tombstones: remoteTombstones,
+  };
+
+  const changes = resolutionsToChanges(fieldConflicts, choiceMap, remote);
+  applyAutoChanges(sqlite, peer.device_id, changes);
+
+  for (const c of pending) {
+    const choice = choiceMap.get(`${c.table_name}\u0000${c.row_id}\u0000${c.field}`) ?? 'local';
+    sqlite.runSync(`UPDATE sync_conflict SET resolution = ? WHERE id = ?`, choice, c.id);
+  }
+  sqlite.runSync(`UPDATE sync_run SET status = 'success', finished_at = ? WHERE id = ?`, Date.now(), runId);
 }

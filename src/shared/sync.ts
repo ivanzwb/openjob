@@ -123,6 +123,17 @@ export interface SyncExchangeResponse {
   serverMs: number;
 }
 
+export interface SyncRpcRequest {
+  channel: string;
+  payload?: unknown;
+}
+
+export interface SyncRpcResponse {
+  result: unknown;
+  /** llm:chat 或长任务附带的推送事件 */
+  events?: Array<{ channel: string; payload: unknown }>;
+}
+
 export interface SyncStatus {
   running: boolean;
   port: number | null;

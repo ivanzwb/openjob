@@ -23,6 +23,7 @@ import {
   getPeer,
 } from './pairing';
 import { handleExchange } from './orchestrator';
+import { invokeRpc, isJobChannel, isStreamChannel, waitForStreamEvents } from './rpc';
 import { emit } from '../ipc/bridge';
 
 const DEFAULT_PORT = 19721;
@@ -156,6 +157,32 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       });
 
       sendJson(res, 200, response);
+      return;
+    }
+
+    if (path === '/sync/rpc' && method === 'POST') {
+      const auth = authenticate(req, path, body);
+      if (!auth) {
+        sendJson(res, 401, { error: '未授权' });
+        return;
+      }
+
+      const input = JSON.parse(body) as { channel: string; payload?: unknown };
+      const channel = input.channel as Parameters<typeof invokeRpc>[0];
+      const result = await invokeRpc(channel, (input.payload ?? undefined) as never);
+
+      let events: Array<{ channel: string; payload: unknown }> | undefined;
+      if (isStreamChannel(channel)) {
+        const started = result as { streamId: string };
+        const collected = await waitForStreamEvents(started.streamId);
+        events = collected.events;
+      } else if (isJobChannel(channel)) {
+        const started = result as { jobId: string };
+        const collected = await waitForStreamEvents(started.jobId, 600_000);
+        events = collected.events;
+      }
+
+      sendJson(res, 200, { result, events });
       return;
     }
 
