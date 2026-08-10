@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import QRCodeSVG from 'react-qr-code';
 import type { FieldConflict, PairingPayload, SyncRunSummary, SyncStatus } from '@shared/sync';
 import type { ConflictChoice } from '@shared/sync';
 import { invoke, onEvent } from '../ipc';
@@ -175,6 +176,12 @@ export function SyncPanel(): React.JSX.Element {
             <p className="text-amber-200">
               在手机端扫描以下信息（或手动输入）。配对码 5 分钟内有效。
             </p>
+            <div className="flex flex-col items-center gap-1 rounded bg-white p-3">
+              <QRCodeSVG value={JSON.stringify(pairing)} size={176} level="M" />
+              <p className="text-[10px] text-[var(--color-muted)]">
+                用手机端「扫描二维码配对」扫码，内容与下方 JSON 一致
+              </p>
+            </div>
             <p className="text-lg font-mono tracking-widest text-[var(--color-fg)]">{pairing.code}</p>
             <p className="font-mono text-[11px] text-[var(--color-muted)]">
               http://{pairing.host}:{pairing.port}
