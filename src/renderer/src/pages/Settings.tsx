@@ -7,6 +7,7 @@ import { invoke } from '../ipc';
 import { SecretField } from '../components/SecretField';
 import { SearchQualityPanel } from '../components/SearchQualityPanel';
 import { UpdatePanel } from '../components/UpdatePanel';
+import { SyncPanel } from '../components/SyncPanel';
 
 const TIER_HINTS: Record<LlmTier, string> = {
   main: '主力档：outline / codeAgent / quiz 与全部未映射的角色都走这一档，必须支持 function calling',
@@ -368,6 +369,8 @@ const runTest = async (tier: LlmTier): Promise<void> => {
       </section>
 
       <UpdatePanel value={config.update} onChange={updateUpdater} />
+
+      <SyncPanel />
 
       <section className="space-y-2">
         <h3 className="text-sm font-medium text-[var(--color-muted)]">本地数据</h3>

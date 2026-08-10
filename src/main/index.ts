@@ -4,6 +4,7 @@ import { ensureDirs } from './paths';
 import { registerIpcHandlers } from './ipc';
 import { closeDb, getDb } from './db';
 import { scheduleStartupCheck } from './updater';
+import { startSyncServer } from './sync';
 
 const isDev = !app.isPackaged;
 
@@ -61,6 +62,7 @@ app.whenReady().then(() => {
   // 尽早建库跑迁移，让 schema 问题在启动时暴露而不是首次查询时
   getDb();
   registerIpcHandlers();
+  startSyncServer();
   createWindow();
   scheduleStartupCheck();
 

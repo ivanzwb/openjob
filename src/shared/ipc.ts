@@ -41,6 +41,7 @@ import type {
   Task,
   Annotation,
 } from './entities';
+import type { ConflictChoice, FieldConflict, PairingPayload, SyncRunSummary, SyncStatus } from './sync';
 
 // ---------------------------------------------------------------------------
 // 通用
@@ -787,6 +788,23 @@ export interface IpcInvokeMap {
   'session:getMessages': { req: { sessionId: string }; res: SessionMessageView[] };
   'session:search': { req: { query: string; limit?: number }; res: SessionSearchHit[] };
   'session:delete': { req: { sessionId: string }; res: void };
+
+  'sync:status': { req: void; res: SyncStatus };
+  /** 启动配对并返回二维码载荷 */
+  'sync:beginPairing': { req: void; res: { port: number; payload: PairingPayload | null } };
+  'sync:cancelPairing': { req: void; res: void };
+  'sync:listPeers': { req: void; res: SyncStatus['peers'] };
+  'sync:removePeer': { req: { deviceId: string }; res: void };
+  'sync:listRuns': { req: { limit?: number } | void; res: SyncRunSummary[] };
+  'sync:listConflicts': { req: { runId: string }; res: FieldConflict[] };
+  'sync:resolveConflicts': {
+    req: {
+      runId: string;
+      choices: Array<{ table: string; rowId: string; field: string; choice: ConflictChoice }>;
+    };
+    res: { applied: number };
+  };
+  'sync:rollback': { req: { backupFile: string }; res: void };
 }
 
 /** 主进程 → 渲染进程的单向推送 */
@@ -797,6 +815,13 @@ export interface IpcEventMap {
   'stream:error': StreamError;
   'job:progress': JobProgress;
   'update:status': UpdateStatus;
+  'sync:paired': { deviceId: string; displayName: string };
+  'sync:finished': {
+    runId: string;
+    peerDeviceId: string;
+    status: 'success' | 'conflict';
+    conflictCount: number;
+  };
 }
 
 export type IpcInvokeChannel = keyof IpcInvokeMap;
@@ -892,6 +917,15 @@ export const IPC_INVOKE_CHANNELS = [
   'session:getMessages',
   'session:search',
   'session:delete',
+  'sync:status',
+  'sync:beginPairing',
+  'sync:cancelPairing',
+  'sync:listPeers',
+  'sync:removePeer',
+  'sync:listRuns',
+  'sync:listConflicts',
+  'sync:resolveConflicts',
+  'sync:rollback',
 ] as const satisfies readonly IpcInvokeChannel[];
 
 export const IPC_EVENT_CHANNELS = [
@@ -901,6 +935,8 @@ export const IPC_EVENT_CHANNELS = [
   'stream:error',
   'job:progress',
   'update:status',
+  'sync:paired',
+  'sync:finished',
 ] as const satisfies readonly IpcEventChannel[];
 
 /**

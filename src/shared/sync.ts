@@ -80,3 +80,68 @@ export interface SyncRunSummary {
   startedAt: number;
   finishedAt: number | null;
 }
+
+// ---------------------------------------------------------------------------
+// HTTP 协议（桌面端服务 / 手机端客户端共用）
+// ---------------------------------------------------------------------------
+
+export interface SyncPingRequest {
+  clientMs: number;
+}
+
+export interface SyncPingResponse {
+  serverMs: number;
+  deviceId: string;
+  displayName: string;
+}
+
+export interface SyncPairRequest {
+  code: string;
+  deviceId: string;
+  displayName: string;
+  platform: string;
+}
+
+export interface SyncPairResponse {
+  sharedKey: string;
+  deviceId: string;
+  displayName: string;
+}
+
+export interface SyncExchangeRequest {
+  sinceSeq: number;
+  changes: ChangeSet;
+  clientMs: number;
+}
+
+export interface SyncExchangeResponse {
+  changes: ChangeSet;
+  appliedCount: number;
+  conflictCount: number;
+  runId: string;
+  status: 'success' | 'conflict';
+  serverMs: number;
+}
+
+export interface SyncStatus {
+  running: boolean;
+  port: number | null;
+  host: string;
+  pairingActive: boolean;
+  peers: Array<{
+    deviceId: string;
+    displayName: string;
+    platform: string;
+    lastSyncAt: number | null;
+  }>;
+}
+
+/** 二维码内容：手机扫码后直连桌面端 */
+export interface PairingPayload {
+  v: 1;
+  host: string;
+  port: number;
+  code: string;
+  deviceId: string;
+  displayName: string;
+}

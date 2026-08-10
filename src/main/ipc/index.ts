@@ -82,6 +82,17 @@ import { getAppPaths } from '../paths';
 import { checkForUpdates, getUpdateStatus, quitAndInstall } from '../updater';
 import { handle } from './bridge';
 import { importResumeFromFile } from '../campaign/resumeImport';
+import {
+  beginPairing,
+  endPairing,
+  getSyncStatus,
+  listPeers,
+  listPendingConflicts,
+  listSyncRuns,
+  removePeer,
+  resolveConflicts,
+  restoreBackup,
+} from '../sync';
 
 export function registerIpcHandlers(): void {
   handle('app:getPaths', () => getAppPaths());
@@ -253,6 +264,29 @@ export function registerIpcHandlers(): void {
   handle('session:search', ({ query, limit }) => searchSessions(query, limit));
   handle('session:delete', ({ sessionId }) => {
     deleteSession(sessionId);
+  });
+
+  handle('sync:status', () => getSyncStatus());
+  handle('sync:beginPairing', () => beginPairing());
+  handle('sync:cancelPairing', () => {
+    endPairing();
+  });
+  handle('sync:listPeers', () =>
+    listPeers().map((p) => ({
+      deviceId: p.deviceId,
+      displayName: p.displayName,
+      platform: p.platform,
+      lastSyncAt: p.lastSyncAt,
+    })),
+  );
+  handle('sync:removePeer', ({ deviceId }) => {
+    removePeer(deviceId);
+  });
+  handle('sync:listRuns', (input) => listSyncRuns(input?.limit ?? 20));
+  handle('sync:listConflicts', ({ runId }) => listPendingConflicts(runId));
+  handle('sync:resolveConflicts', (input) => resolveConflicts(input));
+  handle('sync:rollback', ({ backupFile }) => {
+    restoreBackup(backupFile);
   });
 }
 
