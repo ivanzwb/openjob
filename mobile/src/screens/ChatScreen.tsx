@@ -4,16 +4,19 @@ import type { ChatMessage } from '@shared/ipc';
 import { getRawDb } from '../db';
 import { listCampaigns } from '../data/queries';
 import { invokeRemote, textFromStreamEvents } from '../remote/rpc';
+import { useRemoteTask } from '../context/RemoteTaskContext';
 import { theme } from '../theme';
 
 type Msg = { role: 'user' | 'assistant'; text: string };
 
 export function ChatScreen(): React.JSX.Element {
   const campaigns = listCampaigns(getRawDb());
+  const { runTask, active } = useRemoteTask();
   const [campaignId, setCampaignId] = useState(campaigns[0]?.id ?? '');
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
-  const [busy, setBusy] = useState(false);
+
+  const busy = active?.label === '对话';
 
   const send = async () => {
     const text = input.trim();
@@ -21,24 +24,23 @@ export function ChatScreen(): React.JSX.Element {
     setInput('');
     const nextMessages = [...messages, { role: 'user' as const, text }];
     setMessages(nextMessages);
-    setBusy(true);
     try {
-      const chatMessages: ChatMessage[] = nextMessages.map((m) => ({
-        role: m.role,
-        content: m.text,
-      }));
-      const { events } = await invokeRemote('llm:chat', {
-        role: 'explain',
-        messages: chatMessages,
-        campaignId: campaignId || undefined,
-        allowWebSearch: true,
+      await runTask('对话', async () => {
+        const chatMessages: ChatMessage[] = nextMessages.map((m) => ({
+          role: m.role,
+          content: m.text,
+        }));
+        const { events } = await invokeRemote('llm:chat', {
+          role: 'explain',
+          messages: chatMessages,
+          campaignId: campaignId || undefined,
+          allowWebSearch: true,
+        });
+        const { text: reply } = textFromStreamEvents(events);
+        setMessages((m) => [...m, { role: 'assistant', text: reply || '（无回复）' }]);
       });
-      const { text: reply } = textFromStreamEvents(events);
-      setMessages((m) => [...m, { role: 'assistant', text: reply || '（无回复）' }]);
     } catch (e) {
       setMessages((m) => [...m, { role: 'assistant', text: `错误: ${e instanceof Error ? e.message : String(e)}` }]);
-    } finally {
-      setBusy(false);
     }
   };
 

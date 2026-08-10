@@ -3,8 +3,22 @@ import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppProvider, useApp } from './src/context/AppContext';
+import { RemoteTaskProvider, useRemoteTask } from './src/context/RemoteTaskContext';
 import { RootTabs } from './src/navigation/RootTabs';
 import { theme } from './src/theme';
+
+function TaskBanner(): React.JSX.Element | null {
+  const { active } = useRemoteTask();
+  if (!active) return null;
+  return (
+    <View style={{ backgroundColor: theme.surface, borderBottomWidth: 1, borderColor: theme.border, paddingHorizontal: 12, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+      <ActivityIndicator size="small" color={theme.accent} />
+      <Text style={{ color: theme.text, fontSize: 12, flex: 1 }} numberOfLines={1}>
+        {active.label}{active.message ? ` · ${active.message}` : ''}
+      </Text>
+    </View>
+  );
+}
 
 function AppShell(): React.JSX.Element {
   const { ready } = useApp();
@@ -20,6 +34,7 @@ function AppShell(): React.JSX.Element {
 
   return (
     <NavigationContainer>
+      <TaskBanner />
       <RootTabs />
       <StatusBar style="light" />
     </NavigationContainer>
@@ -30,7 +45,9 @@ export default function App(): React.JSX.Element {
   return (
     <SafeAreaProvider>
       <AppProvider>
-        <AppShell />
+        <RemoteTaskProvider>
+          <AppShell />
+        </RemoteTaskProvider>
       </AppProvider>
     </SafeAreaProvider>
   );

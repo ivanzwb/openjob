@@ -3,41 +3,44 @@ import { Pressable, ScrollView, Text } from 'react-native';
 import type { RepoReadFileResult } from '@shared/ipc';
 import type { Repo } from '@shared/entities';
 import { invokeRemote } from '../remote/rpc';
+import { useRemoteTask } from '../context/RemoteTaskContext';
 import { theme } from '../theme';
 
 export function ReposScreen(): React.JSX.Element {
+  const { runTask, active } = useRemoteTask();
   const [repos, setRepos] = useState<Repo[]>([]);
   const [filePath, setFilePath] = useState('');
   const [content, setContent] = useState('');
-  const [busy, setBusy] = useState(false);
+
+  const busy = Boolean(active);
 
   const reload = async () => {
-    setBusy(true);
     try {
-      const { result } = await invokeRemote('repo:list');
-      setRepos(result as Repo[]);
+      await runTask('刷新仓库', async () => {
+        const { result } = await invokeRemote('repo:list');
+        setRepos(result as Repo[]);
+      });
     } catch (e) {
       alert(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
     }
   };
 
   useEffect(() => {
-    void reload();
+    void invokeRemote('repo:list')
+      .then(({ result }) => setRepos(result as Repo[]))
+      .catch((e) => alert(e instanceof Error ? e.message : String(e)));
   }, []);
 
   const openFile = async (repoId: string, path: string) => {
-    setBusy(true);
     try {
-      const { result } = await invokeRemote('repo:readFile', { repoId, filePath: path });
-      const file = result as RepoReadFileResult;
-      setFilePath(path);
-      setContent(file.content);
+      await runTask('读取文件', async () => {
+        const { result } = await invokeRemote('repo:readFile', { repoId, filePath: path });
+        const file = result as RepoReadFileResult;
+        setFilePath(path);
+        setContent(file.content);
+      });
     } catch (e) {
       alert(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
     }
   };
 

@@ -16,6 +16,7 @@ import { getRepo, getRepoLocalPath } from '../repo/repository';
 import { mergedCodeAgentTools, runCodeRepoTool } from '../repo/tools';
 import { getCampaignRow } from '../campaign/repository';
 import { decideSearchTrigger, triggerInstruction } from '../search/trigger';
+import { normalizeChatMessages } from './messages';
 
 /** 工具调用的最大轮数，防止 Agent 陷入反复检索 */
 const MAX_TOOL_ROUNDS = 4;
@@ -171,7 +172,7 @@ async function runChat(
     for (let round = 0; round <= maxRounds; round++) {
       const stream = await openStream(client, controller, {
         model,
-        messages,
+        messages: normalizeChatMessages(messages),
         temperature,
         tools: tools && round < maxRounds ? tools : undefined,
       });

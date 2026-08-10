@@ -5,48 +5,49 @@ import { getRawDb } from '../db';
 import { listCampaigns } from '../data/queries';
 import { invokeRemote } from '../remote/rpc';
 import { useApp } from '../context/AppContext';
+import { useRemoteTask } from '../context/RemoteTaskContext';
 import { theme } from '../theme';
 
 export function DesignScreen(): React.JSX.Element {
   const { triggerSync } = useApp();
+  const { runTask, active } = useRemoteTask();
   const campaigns = listCampaigns(getRawDb());
   const [campaignId, setCampaignId] = useState(campaigns[0]?.id ?? '');
   const [designCase, setDesignCase] = useState<DesignCaseResult | null>(null);
   const [answer, setAnswer] = useState('');
   const [result, setResult] = useState<DesignSubmitResult | null>(null);
-  const [busy, setBusy] = useState(false);
 
   const loadCase = async () => {
-    setBusy(true);
     try {
-      const { result: res } = await invokeRemote('design:case', { campaignId });
-      setDesignCase(res as DesignCaseResult);
-      setResult(null);
+      await runTask('设计出题', async () => {
+        const { result: res } = await invokeRemote('design:case', { campaignId });
+        setDesignCase(res as DesignCaseResult);
+        setResult(null);
+      });
     } catch (e) {
       alert(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
     }
   };
 
   const submit = async () => {
     if (!designCase) return;
-    setBusy(true);
     try {
-      const { result: res } = await invokeRemote('design:submit', {
-        campaignId,
-        caseTitle: designCase.title,
-        scenarioMd: designCase.scenarioMd,
-        userAnswer: answer,
+      await runTask('设计评分', async () => {
+        const { result: res } = await invokeRemote('design:submit', {
+          campaignId,
+          caseTitle: designCase.title,
+          scenarioMd: designCase.scenarioMd,
+          userAnswer: answer,
+        });
+        setResult(res as DesignSubmitResult);
+        await triggerSync();
       });
-      setResult(res as DesignSubmitResult);
-      await triggerSync();
     } catch (e) {
       alert(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
     }
   };
+
+  const busy = Boolean(active);
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: theme.bg }} contentContainerStyle={{ padding: 16, gap: 10 }}>

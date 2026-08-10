@@ -1,9 +1,8 @@
 import { Component, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { StreamChat } from './components/StreamChat';
-import { CampaignCreate } from './pages/CampaignCreate';
-import { CampaignDetail } from './pages/CampaignDetail';
-import { CampaignList } from './pages/CampaignList';
+import { TabPanel } from './components/TabPanel';
+import { CampaignsPanel, type CampaignView } from './pages/CampaignsPanel';
 import { Settings } from './pages/Settings';
 import { Overview } from './pages/Overview';
 import { Repos } from './pages/Repos';
@@ -11,9 +10,20 @@ import { Scripts } from './pages/Scripts';
 import { DesignPractice } from './pages/DesignPractice';
 import { Today } from './pages/Today';
 import { invoke } from './ipc';
+import { useJobProgress } from './ipc/useJobProgress';
 
 type Tab = 'today' | 'overview' | 'campaigns' | 'design' | 'repos' | 'scripts' | 'chat' | 'settings';
-type View = { kind: 'list' } | { kind: 'create' } | { kind: 'detail'; id: string; autoDiagnose?: boolean };
+
+const TABS: Array<{ key: Tab; label: string }> = [
+  { key: 'today', label: '今日' },
+  { key: 'overview', label: '总览' },
+  { key: 'campaigns', label: '备考' },
+  { key: 'design', label: '设计' },
+  { key: 'repos', label: '源码' },
+  { key: 'scripts', label: '话术' },
+  { key: 'chat', label: '对话' },
+  { key: 'settings', label: '设置' },
+];
 
 /** 渲染崩溃时展示错误文本而不是黑屏，便于定位（同时兜住用户数据界面） */
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
@@ -41,90 +51,98 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
 
 export default function App(): React.JSX.Element {
   const [tab, setTab] = useState<Tab>('today');
-  const [view, setView] = useState<View>({ kind: 'list' });
+  const [mountedTabs, setMountedTabs] = useState<Set<Tab>>(() => new Set(['today']));
+  const [view, setView] = useState<CampaignView>({ kind: 'list' });
   const [version, setVersion] = useState('');
+  const { active: job } = useJobProgress();
 
   useEffect(() => {
     void invoke('app:getVersion', undefined).then(setVersion);
   }, []);
 
+  const selectTab = (key: Tab): void => {
+    setTab(key);
+    setMountedTabs((prev) => new Set(prev).add(key));
+  };
+
   return (
     <ErrorBoundary>
       <div className="flex h-full flex-col">
-      <header className="flex shrink-0 items-center gap-4 border-b border-[var(--color-border)] px-5 py-3">
-        <span className="font-semibold">openJob</span>
-        <span className="text-xs text-[var(--color-muted)]">v{version}</span>
-        <nav className="ml-4 flex gap-1">
-          {(
-            [
-              ['today', '今日'],
-              ['overview', '总览'],
-              ['campaigns', '备考'],
-              ['design', '设计'],
-              ['repos', '源码'],
-              ['scripts', '话术'],
-              ['chat', '对话'],
-              ['settings', '设置'],
-            ] as const
-          ).map(([key, label]) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => {
-                setTab(key);
-                if (key === 'campaigns') setView({ kind: 'list' });
-              }}
-              className={`rounded px-3 py-1 text-sm ${
-                tab === key
-                  ? 'bg-[var(--color-surface)] text-[var(--color-fg)]'
-                  : 'text-[var(--color-muted)] hover:text-[var(--color-fg)]'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </nav>
-      </header>
+        <header className="flex shrink-0 items-center gap-4 border-b border-[var(--color-border)] px-5 py-3">
+          <span className="font-semibold">openJob</span>
+          <span className="text-xs text-[var(--color-muted)]">v{version}</span>
+          <nav className="ml-4 flex gap-1">
+            {TABS.map(({ key, label }) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => selectTab(key)}
+                className={`rounded px-3 py-1 text-sm ${
+                  tab === key
+                    ? 'bg-[var(--color-surface)] text-[var(--color-fg)]'
+                    : 'text-[var(--color-muted)] hover:text-[var(--color-fg)]'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
+          {job && (
+            <div className="ml-auto max-w-md truncate text-xs text-[var(--color-muted)]">
+              <span className="text-[var(--color-fg)]">{job.label}</span>
+              {job.message ? ` · ${job.message}` : null}
+              {job.progress != null ? ` (${Math.round(job.progress * 100)}%)` : null}
+            </div>
+          )}
+        </header>
 
-      <main className="min-h-0 flex-1 overflow-y-auto">
-        {tab === 'today' && <Today />}
-        {tab === 'overview' && (
-          <Overview
-            onOpenCampaign={(id) => {
-              setTab('campaigns');
-              setView({ kind: 'detail', id });
-            }}
-          />
-        )}
-        {tab === 'repos' && <Repos />}
-        {tab === 'design' && <DesignPractice />}
-        {tab === 'scripts' && <Scripts />}
-        {tab === 'settings' && <Settings />}
-        {tab === 'chat' && (
-          <div className="mx-auto h-full w-full max-w-[1600px] p-6">
-            <StreamChat role="explain" placeholder="试试问一个需要联网才能答准的问题…" />
-          </div>
-        )}
-        {tab === 'campaigns' && view.kind === 'list' && (
-          <CampaignList
-            onOpen={(id) => setView({ kind: 'detail', id })}
-            onCreate={() => setView({ kind: 'create' })}
-          />
-        )}
-        {tab === 'campaigns' && view.kind === 'create' && (
-          <CampaignCreate
-            onCreated={(id) => setView({ kind: 'detail', id, autoDiagnose: true })}
-            onCancel={() => setView({ kind: 'list' })}
-          />
-        )}
-        {tab === 'campaigns' && view.kind === 'detail' && (
-          <CampaignDetail
-            id={view.id}
-            autoDiagnose={view.autoDiagnose}
-            onBack={() => setView({ kind: 'list' })}
-          />
-        )}
-      </main>
+        <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          {mountedTabs.has('today') && (
+            <TabPanel active={tab === 'today'} className="overflow-y-auto">
+              <Today />
+            </TabPanel>
+          )}
+          {mountedTabs.has('overview') && (
+            <TabPanel active={tab === 'overview'} className="overflow-y-auto">
+              <Overview
+                onOpenCampaign={(id) => {
+                  setView({ kind: 'detail', id });
+                  selectTab('campaigns');
+                }}
+              />
+            </TabPanel>
+          )}
+          {mountedTabs.has('campaigns') && (
+            <CampaignsPanel active={tab === 'campaigns'} view={view} setView={setView} />
+          )}
+          {mountedTabs.has('design') && (
+            <TabPanel active={tab === 'design'} className="overflow-y-auto">
+              <DesignPractice />
+            </TabPanel>
+          )}
+          {mountedTabs.has('repos') && (
+            <TabPanel active={tab === 'repos'} className="overflow-y-auto">
+              <Repos />
+            </TabPanel>
+          )}
+          {mountedTabs.has('scripts') && (
+            <TabPanel active={tab === 'scripts'} className="overflow-y-auto">
+              <Scripts />
+            </TabPanel>
+          )}
+          {mountedTabs.has('chat') && (
+            <TabPanel active={tab === 'chat'} className="overflow-y-auto">
+              <div className="mx-auto h-full w-full max-w-[1600px] p-6">
+                <StreamChat role="explain" placeholder="试试问一个需要联网才能答准的问题…" />
+              </div>
+            </TabPanel>
+          )}
+          {mountedTabs.has('settings') && (
+            <TabPanel active={tab === 'settings'} className="overflow-y-auto">
+              <Settings />
+            </TabPanel>
+          )}
+        </main>
       </div>
     </ErrorBoundary>
   );
