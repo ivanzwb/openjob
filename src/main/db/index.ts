@@ -4,6 +4,7 @@ import Database from 'better-sqlite3';
 import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { getAppPaths } from '../paths';
+import { initSyncLayer } from '../sync/identity';
 import * as schema from './schema';
 
 export type Db = BetterSQLite3Database<typeof schema>;
@@ -31,7 +32,18 @@ export function getDb(): Db {
 
   db = drizzle(raw, { schema });
   migrate(db, { migrationsFolder: migrationsFolder() });
+
+  // 迁移之后才装：触发器要写 sync_oplog / sync_meta，这两张表由迁移创建
+  initSyncLayer(raw);
+
   return db;
+}
+
+/** 同步层要直接执行 VACUUM INTO、批量 apply 等 Drizzle 表达不了的语句 */
+export function getRawDb(): Database.Database {
+  getDb();
+  if (!raw) throw new Error('数据库未初始化');
+  return raw;
 }
 
 export function closeDb(): void {

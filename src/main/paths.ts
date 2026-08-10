@@ -14,12 +14,13 @@ export function getAppPaths(): AppPaths {
     dbFile: join(userData, 'openjob.db'),
     reposDir: join(userData, 'repos'),
     cacheDir: join(userData, 'cache'),
+    backupsDir: join(userData, 'backups'),
   };
 }
 
 export function ensureDirs(): AppPaths {
   const paths = getAppPaths();
-  for (const dir of [paths.userData, paths.reposDir, paths.cacheDir]) {
+  for (const dir of [paths.userData, paths.reposDir, paths.cacheDir, paths.backupsDir]) {
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   }
   return paths;

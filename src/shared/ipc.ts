@@ -59,6 +59,7 @@ export interface AppPaths {
   dbFile: string;
   reposDir: string;
   cacheDir: string;
+  backupsDir: string;
 }
 
 /** 长任务（clone、索引）的进度上报 */

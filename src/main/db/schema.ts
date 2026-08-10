@@ -393,3 +393,102 @@ export const toolCall = sqliteTable(
   },
   (t) => [index('idx_tool_call_message').on(t.messageId)],
 );
+
+// ---------------------------------------------------------------------------
+// 端间同步
+// ---------------------------------------------------------------------------
+
+/**
+ * 变更日志：由 SQLite 触发器写入，业务代码无感知。
+ *
+ * 为什么日志里只存元数据不存行内容：同步时直接回读业务表的当前值即可，
+ * 中间态对 LWW 合并没有意义。存快照会让日志随 embedding、message 这类
+ * 大字段迅速膨胀。
+ *
+ * 删除也记在这里而不是给每张表加 deleted_at —— 软删除要求全代码库每个
+ * SELECT 都带过滤条件，漏一处就是已删数据重新出现在 UI 上。
+ */
+export const syncOplog = sqliteTable(
+  'sync_oplog',
+  {
+    seq: integer('seq').primaryKey({ autoIncrement: true }),
+    tableName: text('table_name').notNull(),
+    rowId: text('row_id').notNull(),
+    op: text('op').$type<'insert' | 'update' | 'delete'>().notNull(),
+    /** 触发器取的本机墙钟毫秒；跨端比较前会用握手测得的时钟偏移校正 */
+    wallMs: integer('wall_ms').notNull(),
+    deviceId: text('device_id').notNull(),
+    /** UPDATE 时实际发生变化的列名，字段级冲突判定的依据；insert/delete 为 null */
+    changedFields: text('changed_fields', { mode: 'json' }).$type<string[]>(),
+  },
+  (t) => [
+    index('idx_oplog_row').on(t.tableName, t.rowId),
+    index('idx_oplog_seq').on(t.seq),
+  ],
+);
+
+/** 已配对的对端设备，以及与它的同步水位线 */
+export const syncPeer = sqliteTable('sync_peer', {
+  deviceId: text('device_id').primaryKey(),
+  displayName: text('display_name').notNull(),
+  platform: text('platform').notNull(),
+  /** 配对时交换的共享密钥，用于请求签名与通道加密 */
+  sharedKey: text('shared_key').notNull(),
+  lastAddress: text('last_address'),
+  /** 上次成功同步后，本机 oplog 推进到的 seq */
+  lastLocalSeq: integer('last_local_seq').notNull().default(0),
+  /** 上次成功同步时对端 oplog 的 seq */
+  lastRemoteSeq: integer('last_remote_seq').notNull().default(0),
+  lastSyncAt: integer('last_sync_at'),
+  pairedAt: integer('paired_at').notNull(),
+});
+
+/** 每次同步的审计记录，回退入口挂在这上面 */
+export const syncRun = sqliteTable(
+  'sync_run',
+  {
+    id: text('id').primaryKey(),
+    peerDeviceId: text('peer_device_id').notNull(),
+    direction: text('direction').$type<'auto' | 'manual'>().notNull(),
+    status: text('status')
+      .$type<'running' | 'success' | 'conflict' | 'failed' | 'rolledBack'>()
+      .notNull(),
+    /** 同步前快照的文件名，回退时按它还原 */
+    backupFile: text('backup_file'),
+    appliedCount: integer('applied_count').notNull().default(0),
+    conflictCount: integer('conflict_count').notNull().default(0),
+    errorMessage: text('error_message'),
+    startedAt: integer('started_at').notNull(),
+    finishedAt: integer('finished_at'),
+  },
+  (t) => [index('idx_sync_run_started').on(t.startedAt)],
+);
+
+/** 待用户裁决的冲突。用户选完某一边后才落到业务表 */
+export const syncConflict = sqliteTable(
+  'sync_conflict',
+  {
+    id: text('id').primaryKey(),
+    runId: text('run_id')
+      .notNull()
+      .references(() => syncRun.id, { onDelete: 'cascade' }),
+    tableName: text('table_name').notNull(),
+    rowId: text('row_id').notNull(),
+    /** 两端都改过的列 */
+    field: text('field').notNull(),
+    localValue: text('local_value', { mode: 'json' }),
+    remoteValue: text('remote_value', { mode: 'json' }),
+    localWallMs: integer('local_wall_ms').notNull(),
+    remoteWallMs: integer('remote_wall_ms').notNull(),
+    resolution: text('resolution').$type<'pending' | 'local' | 'remote'>()
+      .notNull()
+      .default('pending'),
+  },
+  (t) => [index('idx_sync_conflict_run').on(t.runId, t.resolution)],
+);
+
+/** 本机身份等单例配置 */
+export const syncMeta = sqliteTable('sync_meta', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+});
