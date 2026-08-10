@@ -3,6 +3,7 @@ import type {
   CampaignDetail,
   CampaignOverview,
   CampaignSummary,
+  PlanDateOption,
   SpeechSnippetView,
   TodayCampaignOption,
   TodayPlan,
@@ -111,7 +112,21 @@ export function listTodayCampaigns(db: SQLiteDatabase): TodayCampaignOption[] {
     });
 }
 
-export function getTodayPlan(db: SQLiteDatabase, campaignId?: string): TodayPlan | null {
+export function listPlanDates(db: SQLiteDatabase, campaignId: string): PlanDateOption[] {
+  const days = db.getAllSync<{ id: string; date: string }>(
+    `SELECT id, date FROM plan_day WHERE campaign_id = ? ORDER BY date ASC`,
+    campaignId,
+  );
+  return days.map((d) => {
+    const count = db.getFirstSync<{ c: number }>(
+      `SELECT COUNT(*) as c FROM task WHERE plan_day_id = ?`,
+      d.id,
+    );
+    return { date: d.date, taskCount: count?.c ?? 0 };
+  });
+}
+
+export function getTodayPlan(db: SQLiteDatabase, campaignId?: string, date?: string): TodayPlan | null {
   let id = campaignId;
   if (!id) {
     const active = db.getAllSync<{ id: string; updated_at: number }>(
@@ -128,21 +143,21 @@ export function getTodayPlan(db: SQLiteDatabase, campaignId?: string): TodayPlan
   }>(`SELECT id, company, role_title FROM campaign WHERE id = ?`, id);
   if (!campaign) return null;
 
-  const today = todayLocal();
+  const targetDate = date ?? todayLocal();
   const planDay = db.getFirstSync<{
     id: string;
     campaign_id: string;
     date: string;
     planned_minutes: number;
     status: string;
-  }>(`SELECT * FROM plan_day WHERE campaign_id = ? AND date = ?`, id, today);
+  }>(`SELECT * FROM plan_day WHERE campaign_id = ? AND date = ?`, id, targetDate);
 
   if (!planDay) {
     return {
       campaignId: id,
       company: campaign.company,
       roleTitle: campaign.role_title,
-      date: today,
+      date: targetDate,
       planDay: null,
       tasks: [],
       completedCount: 0,
@@ -194,7 +209,7 @@ export function getTodayPlan(db: SQLiteDatabase, campaignId?: string): TodayPlan
     campaignId: id,
     company: campaign.company,
     roleTitle: campaign.role_title,
-    date: today,
+    date: targetDate,
     planDay: {
       id: planDay.id,
       campaignId: planDay.campaign_id,

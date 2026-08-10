@@ -184,7 +184,7 @@ export function registerIpcHandlers(): void {
     generatePlan(campaignId, interviewDate, dailyMinutes),
   );
   handle('plan:listTodayCampaigns', () => listTodayCampaigns());
-  handle('plan:getToday', ({ campaignId }) => getTodayPlan(campaignId));
+  handle('plan:getToday', ({ campaignId, date }) => getTodayPlan(campaignId, date));
   handle('plan:deferToday', ({ campaignId }) => ({ deferred: deferToday(campaignId) }));
   handle('plan:listDates', ({ campaignId }) => listPlanDates(campaignId));
 
@@ -235,13 +235,18 @@ export function registerIpcHandlers(): void {
   });
   handle('speech:export', (input) => exportSpeechSnippets(input));
 
-  handle('design:case', ({ campaignId }) => generateDesignCase(campaignId));
-  handle('design:submit', (input) => submitDesignAnswer(
-    input.campaignId,
-    input.caseTitle,
-    input.scenarioMd,
-    input.userAnswer,
-  ));
+  handle('design:case', ({ campaignId, interviewType }) =>
+    generateDesignCase(campaignId, interviewType ?? 'mixed'),
+  );
+  handle('design:submit', (input) =>
+    submitDesignAnswer(
+      input.campaignId,
+      input.caseTitle,
+      input.scenarioMd,
+      input.userAnswer,
+      input.interviewType,
+    ),
+  );
 
   handle('annotation:list', ({ targetType, targetId }) =>
     listAnnotations(targetType, targetId),

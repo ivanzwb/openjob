@@ -41,6 +41,7 @@ publish:
 electronDist: node_modules/electron/dist
 
 win:
+  icon: build/icon.ico
   target:
     - target: nsis
       arch: [x64]
@@ -52,6 +53,7 @@ nsis:
   deleteAppDataOnUninstall: false
 
 mac:
+  icon: build/icon.png
   target:
     - target: dmg
       arch: [arm64, x64]

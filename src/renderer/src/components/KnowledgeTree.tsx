@@ -45,6 +45,10 @@ interface TreeProps {
   expandingId?: string | null;
   /** 有其它长任务进行中时禁用细化 */
   jobsBusy?: boolean;
+  selectedNodeId?: string | null;
+  onSelectNode?: (nodeId: string) => void;
+  /** 非空时只显示这些考点（含祖先节点） */
+  visibleNodeIds?: Set<string> | null;
 }
 
 /** 层级考点清单 + 进度条，不做图谱可视化 */
@@ -60,10 +64,18 @@ export function KnowledgeTree({
   onAddNote,
   expandingId,
   jobsBusy = false,
+  selectedNodeId,
+  onSelectNode,
+  visibleNodeIds,
 }: TreeProps): React.JSX.Element {
-  const roots = nodes.filter((n) => !n.parentId);
+  const filteredNodes =
+    visibleNodeIds && visibleNodeIds.size > 0
+      ? nodes.filter((n) => visibleNodeIds.has(n.id))
+      : nodes;
+
+  const roots = filteredNodes.filter((n) => !n.parentId);
   const byParent = new Map<string | null, KnowledgeNodeView[]>();
-  for (const n of nodes) {
+  for (const n of filteredNodes) {
     const key = n.parentId;
     const list = byParent.get(key) ?? [];
     list.push(n);
@@ -90,6 +102,8 @@ export function KnowledgeTree({
         onUpdate={onUpdate}
         onCreateChild={onCreateChild}
         onAddNote={onAddNote}
+        selected={selectedNodeId === node.id}
+        onSelect={onSelectNode}
       >
         {children.map((c) => renderNode(c, depth + 1))}
       </NodeRow>
@@ -99,12 +113,14 @@ export function KnowledgeTree({
   if (roots.length === 0) {
     return (
       <p className="text-sm text-[var(--color-muted)]">
-        还没有考点。粘贴 JD 后点击「开始诊断」生成清单。
+        {visibleNodeIds && visibleNodeIds.size > 0
+          ? '该日无排期考点，试试选择其他日期或查看全部考点'
+          : '还没有考点。粘贴 JD 后点击「开始诊断」生成清单。'}
       </p>
     );
   }
 
-  return <div className="space-y-0.5">{roots.map((n) => renderNode(n, 0))}</div>;
+  return <div className="min-w-[360px] space-y-0.5">{roots.map((n) => renderNode(n, 0))}</div>;
 }
 
 function NodeRow({
@@ -121,6 +137,8 @@ function NodeRow({
   onUpdate,
   onCreateChild,
   onAddNote,
+  selected,
+  onSelect,
   children,
 }: {
   node: KnowledgeNodeView;
@@ -136,6 +154,8 @@ function NodeRow({
   onUpdate?: (nodeId: string, patch: NodePatch) => void;
   onCreateChild?: (parentId: string, name: string, kind: NodeKind) => void;
   onAddNote?: (nodeId: string, noteMd: string) => void;
+  selected?: boolean;
+  onSelect?: (nodeId: string) => void;
   children?: React.ReactNode;
 }): React.JSX.Element {
   const [editing, setEditing] = useState(false);
@@ -161,10 +181,27 @@ function NodeRow({
   return (
     <div>
       <div
-        className="flex items-start gap-2 rounded-md border border-transparent px-2 py-2 hover:border-[var(--color-border)] hover:bg-black/20"
+        className={`rounded-md border px-2 py-2 ${
+          selected
+            ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10'
+            : 'border-transparent hover:border-[var(--color-border)] hover:bg-black/20'
+        }`}
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
       >
-        <div className="min-w-0 flex-1">
+        <div
+          className={`${onSelect && !editing ? 'cursor-pointer' : ''}`}
+          onClick={() => {
+            if (!editing && onSelect) onSelect(node.id);
+          }}
+          onKeyDown={(e) => {
+            if (!editing && onSelect && (e.key === 'Enter' || e.key === ' ')) {
+              e.preventDefault();
+              onSelect(node.id);
+            }
+          }}
+          role={onSelect && !editing ? 'button' : undefined}
+          tabIndex={onSelect && !editing ? 0 : undefined}
+        >
           {editing ? (
             <div className="space-y-2">
               <input
@@ -206,13 +243,13 @@ function NodeRow({
             </div>
           ) : (
             <>
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                 {bookmarked && (
                   <span className="text-amber-400" title="已收藏">
                     ★
                   </span>
                 )}
-                <span className="text-sm font-medium">{node.name}</span>
+                <span className="text-sm font-medium leading-snug">{node.name}</span>
                 <span className="text-[10px] text-[var(--color-muted)]">
                   {KIND_LABEL[node.kind]}
                 </span>
@@ -237,9 +274,11 @@ function NodeRow({
                   </span>
                 )}
               </div>
-              <p className="mt-1 text-xs text-[var(--color-muted)]">{node.priorityReason}</p>
+              <p className="mt-1 text-xs leading-relaxed text-[var(--color-muted)]">
+                {node.priorityReason}
+              </p>
               <div className="mt-2 flex items-center gap-2">
-                <div className="h-1.5 max-w-[120px] flex-1 rounded-full bg-[var(--color-border)]">
+                <div className="h-1.5 w-24 shrink-0 rounded-full bg-[var(--color-border)]">
                   <div
                     className="h-full rounded-full bg-[var(--color-accent)]"
                     style={{ width: `${masteryPct}%` }}
@@ -253,7 +292,7 @@ function NodeRow({
           )}
         </div>
         {!editing && (
-          <div className="flex shrink-0 flex-wrap justify-end gap-1">
+          <div className="mt-2 flex flex-wrap gap-1 border-t border-[var(--color-border)]/50 pt-2">
             {onToggleBookmark && (
               <button
                 type="button"

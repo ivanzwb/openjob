@@ -20,29 +20,33 @@ const KIND_COLOR: Record<TaskKind, string> = {
 
 export function TaskCard({
   task,
-  active,
+  linkToStudy = false,
   onSelect,
   onComplete,
   onSkip,
 }: {
   task: TaskView;
-  active: boolean;
+  linkToStudy?: boolean;
   onSelect: () => void;
   onComplete: () => void;
   onSkip: () => void;
 }): React.JSX.Element {
   const done = task.status === 'done';
   const skipped = task.status === 'skipped';
+  const canStudy = linkToStudy && Boolean(task.nodeId) && !done && !skipped;
 
   return (
     <div
-      className={`rounded-lg border p-3 transition-colors ${
-        active
-          ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10'
-          : 'border-[var(--color-border)] bg-[var(--color-surface)]'
-      } ${done ? 'opacity-60' : ''}`}
+      className={`rounded-lg border p-3 transition-colors border-[var(--color-border)] bg-[var(--color-surface)] ${
+        done ? 'opacity-60' : ''
+      } ${canStudy ? 'hover:border-[var(--color-accent)]/50' : ''}`}
     >
-      <button type="button" onClick={onSelect} className="w-full text-left">
+      <button
+        type="button"
+        onClick={onSelect}
+        disabled={!canStudy && linkToStudy}
+        className="w-full text-left disabled:cursor-default"
+      >
         <div className="flex items-center gap-2">
           <span className={`text-xs font-medium ${KIND_COLOR[task.kind]}`}>
             {KIND_LABEL[task.kind]}
@@ -57,6 +61,7 @@ export function TaskCard({
         </div>
         {done && <div className="mt-1 text-xs text-emerald-400">已完成</div>}
         {skipped && <div className="mt-1 text-xs text-[var(--color-muted)]">已跳过</div>}
+        {canStudy && <div className="mt-1 text-xs text-sky-400">去学习 →</div>}
       </button>
 
       {!done && !skipped && (

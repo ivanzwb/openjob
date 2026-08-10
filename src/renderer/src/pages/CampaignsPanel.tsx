@@ -33,7 +33,7 @@ export function CampaignsPanel({
     .map((key) => key.slice('detail:'.length));
 
   return (
-    <TabPanel active={active} className="overflow-y-auto">
+    <TabPanel active={active} className="overflow-hidden">
       {mounted.has('list') && (
         <TabPanel active={view.kind === 'list'}>
           <CampaignList

@@ -5,6 +5,7 @@ import { registerIpcHandlers } from './ipc';
 import { closeDb, getDb } from './db';
 import { scheduleStartupCheck } from './updater';
 import { startSyncServer } from './sync';
+import { applyAppIcon } from './icon';
 
 const isDev = !app.isPackaged;
 
@@ -16,6 +17,7 @@ if (!app.requestSingleInstanceLock()) {
 let mainWindow: BrowserWindow | null = null;
 
 function createWindow(): void {
+  const icon = applyAppIcon();
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -25,6 +27,7 @@ function createWindow(): void {
     autoHideMenuBar: true,
     backgroundColor: '#0b0d12',
     title: 'openJob',
+    ...(icon ? { icon } : {}),
     webPreferences: {
       preload: join(import.meta.dirname, '../preload/index.mjs'),
       // 安全基线：渲染进程拿不到 Node，只能走 preload 暴露的白名单通道

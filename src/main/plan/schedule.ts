@@ -341,18 +341,18 @@ function resolveCampaignId(campaignId?: string): string | null {
   return active.sort((a, b) => b.updatedAt - a.updatedAt)[0]!.id;
 }
 
-export function getTodayPlan(campaignId?: string): TodayPlan | null {
+export function getTodayPlan(campaignId?: string, date?: string): TodayPlan | null {
   const id = resolveCampaignId(campaignId);
   if (!id) return null;
 
   const campaign = getCampaignRow(id);
-  const today = formatLocal(new Date());
+  const targetDate = date ?? formatLocal(new Date());
   const db = getDb();
 
   const planDay = db
     .select()
     .from(schema.planDay)
-    .where(and(eq(schema.planDay.campaignId, id), eq(schema.planDay.date, today)))
+    .where(and(eq(schema.planDay.campaignId, id), eq(schema.planDay.date, targetDate)))
     .get();
 
   if (!planDay) {
@@ -360,7 +360,7 @@ export function getTodayPlan(campaignId?: string): TodayPlan | null {
       campaignId: id,
       company: campaign.company,
       roleTitle: campaign.roleTitle,
-      date: today,
+      date: targetDate,
       planDay: null,
       tasks: [],
       completedCount: 0,
@@ -421,7 +421,7 @@ export function getTodayPlan(campaignId?: string): TodayPlan | null {
     campaignId: id,
     company: campaign.company,
     roleTitle: campaign.roleTitle,
-    date: today,
+    date: targetDate,
     planDay: {
       id: planDay.id,
       campaignId: planDay.campaignId,

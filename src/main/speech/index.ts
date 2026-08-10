@@ -54,7 +54,7 @@ function resolveSourceLabel(sourceType: SpeechSnippet['sourceType'], sourceId: s
       .from(schema.campaign)
       .where(eq(schema.campaign.id, sourceId))
       .get();
-    return campaign ? `系统设计 · ${campaign.company}` : '系统设计';
+    return campaign ? `模拟面试 · ${campaign.company}` : '模拟面试';
   }
   return '话术';
 }

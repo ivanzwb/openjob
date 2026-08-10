@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   AnnotationView,
   CampaignDetail as CampaignDetailData,
   InterviewReportView,
   NodeEdgeView,
   Nudge,
+  TaskView,
+  TodayPlan,
 } from '@shared/ipc';
 import type { Resume } from '@shared/entities';
 import type { EdgeRelation, NodeKind } from '@shared/enums';
@@ -12,11 +14,14 @@ import { AnnotationDigest } from '../components/AnnotationDigest';
 import { AnnotationTools } from '../components/AnnotationTools';
 import { CompanyIntelCard } from '../components/CompanyIntelCard';
 import { EdgeEditor } from '../components/EdgeEditor';
+import { StudyPlanCalendarPopover } from '../components/StudyPlanCalendarPopover';
+import { nodeIdsForPlanFilter } from '@shared/planFilter';
 import { KnowledgeGraph } from '../components/KnowledgeGraph';
 import { KnowledgeTree, type NodePatch } from '../components/KnowledgeTree';
 import { NudgePanel } from '../components/NudgePanel';
-import { PlanDecisionLog } from '../components/PlanDecisionLog';
+import { QuizPanel } from '../components/QuizPanel';
 import { ReportSourceList } from '../components/ReportSourceList';
+import { TaskStudyPanel } from '../components/TaskStudyPanel';
 import { invoke } from '../ipc';
 import { useJobFeedback, useJobProgress } from '../ipc/useJobProgress';
 
@@ -54,11 +59,25 @@ export function CampaignDetail({
   const [reports, setReports] = useState<InterviewReportView[]>([]);
   const [showReports, setShowReports] = useState(false);
   const [annotations, setAnnotations] = useState<AnnotationView[]>([]);
+  const [pageTab, setPageTab] = useState<'study' | 'materials'>('study');
+  const [calendarFilterDate, setCalendarFilterDate] = useState<string | null>(null);
+  const [filterPlan, setFilterPlan] = useState<TodayPlan | null>(null);
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [nodeStudyMode, setNodeStudyMode] = useState<'explain' | 'drill'>('explain');
   const { active: job, lastResult } = useJobProgress();
   const jdJob = useJobFeedback('JD 诊断');
   const intelJob = useJobFeedback('公司情报');
   const resumeJob = useJobFeedback('简历交叉分析');
   const expandJob = useJobFeedback('细化考点');
+
+  useEffect(() => {
+    if (!calendarFilterDate) {
+      setFilterPlan(null);
+      return;
+    }
+    void invoke('plan:getToday', { campaignId: id, date: calendarFilterDate }).then(setFilterPlan);
+  }, [id, calendarFilterDate, planLogKey]);
 
   const refresh = useCallback(() => {
     void invoke('campaign:get', { id }).then((d) => {
@@ -292,378 +311,552 @@ export function CampaignDetail({
     }
   };
 
+  const visibleNodeIds = useMemo(() => {
+    if (!detail || !calendarFilterDate || !filterPlan) return null;
+    return nodeIdsForPlanFilter(detail.nodes, filterPlan.tasks);
+  }, [detail, calendarFilterDate, filterPlan]);
+
   if (!detail) {
     return <p className="p-6 text-sm text-[var(--color-muted)]">加载中…</p>;
   }
 
   const { campaign, nodes, intel } = detail;
+  const selectedNode = nodes.find((n) => n.id === selectedNodeId) ?? null;
+  const markCount = annotations.filter((a) => a.kind !== 'bookmark').length;
+  const bookmarkCount = annotations.filter((a) => a.kind === 'bookmark').length;
+
+  const jumpToNode = (nodeId: string): void => {
+    setPageTab('study');
+    setSelectedNodeId(nodeId);
+    setNodeStudyMode('explain');
+  };
+
+  const openTaskInStudy = (task: TaskView): void => {
+    if (!task.nodeId) return;
+    setPageTab('study');
+    setSelectedNodeId(task.nodeId);
+    setNodeStudyMode(task.kind === 'drill' ? 'drill' : 'explain');
+  };
 
   return (
-    <div className="mx-auto w-full max-w-[1600px] space-y-6 p-6">
-      <header className="space-y-2">
-        <button
-          type="button"
-          onClick={onBack}
-          className="text-xs text-[var(--color-muted)] hover:text-[var(--color-fg)]"
-        >
-          ← 返回列表
-        </button>
-        <h2 className="text-lg font-semibold">
-          {campaign.company} · {campaign.roleTitle}
-          {campaign.status === 'done' && (
-            <span className="ml-2 text-xs font-normal text-emerald-400">已复盘</span>
-          )}
-        </h2>
-        {detail.historicalPriorCampaigns > 0 && (
-          <p className="text-xs text-sky-400">
-            已累积 {detail.historicalPriorCampaigns} 个 Campaign 的真题先验
-          </p>
+    <div className="mx-auto flex h-full w-full max-w-[1600px] flex-col overflow-hidden p-4 lg:p-6">
+      <header className="shrink-0 space-y-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="space-y-1">
+            <button
+              type="button"
+              onClick={onBack}
+              className="text-xs text-[var(--color-muted)] hover:text-[var(--color-fg)]"
+            >
+              ← 返回列表
+            </button>
+            <h2 className="text-lg font-semibold">
+              {campaign.company} · {campaign.roleTitle}
+              {campaign.status === 'done' && (
+                <span className="ml-2 text-xs font-normal text-emerald-400">已复盘</span>
+              )}
+            </h2>
+            {detail.historicalPriorCampaigns > 0 && (
+              <p className="text-xs text-sky-400">
+                已累积 {detail.historicalPriorCampaigns} 个 Campaign 的真题先验
+              </p>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={Boolean(job)}
+              onClick={() => void runDiagnosis()}
+              className="rounded-lg bg-[var(--color-accent)] px-3 py-1.5 text-sm disabled:opacity-40"
+            >
+              {jdJob.isRunning ? '诊断中…' : nodes.length ? '重新诊断' : '开始诊断'}
+            </button>
+            <button
+              type="button"
+              disabled={Boolean(job)}
+              onClick={() => void fetchIntel()}
+              className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm disabled:opacity-40"
+            >
+              {intelJob.isRunning ? '生成中…' : '公司情报'}
+            </button>
+          </div>
+        </div>
+
+        {(job || lastResult) && (
+          <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-xs">
+            {job && (
+              <p className="text-sky-400">
+                {job.label}：{job.message}
+                {job.progress !== null ? ` (${Math.round(job.progress * 100)}%)` : ''}
+              </p>
+            )}
+            {!job && lastResult?.error && (
+              <p className="text-red-400">
+                {lastResult.label}失败：{lastResult.error}
+              </p>
+            )}
+            {!job && lastResult && !lastResult.error && (
+              <p className="text-emerald-400">
+                {lastResult.label}：{lastResult.message}
+              </p>
+            )}
+          </div>
         )}
-        {job && (
-          <p className="text-xs text-sky-400">
-            {job.label}：{job.message}
-            {job.progress !== null ? ` (${Math.round(job.progress * 100)}%)` : ''}
-          </p>
-        )}
-        {!job && lastResult?.error && (
-          <p className="text-xs font-medium text-red-400">
-            {lastResult.label}失败：{lastResult.error}
-          </p>
-        )}
-        {!job && lastResult && !lastResult.error && (
-          <p className="text-xs text-emerald-400">
-            {lastResult.label}：{lastResult.message}
-          </p>
-        )}
+
+        <nav className="flex flex-wrap items-end justify-between gap-3 border-b border-[var(--color-border)]">
+          <div className="flex gap-1">
+            {(
+              [
+                { id: 'study' as const, label: '学习' },
+                {
+                  id: 'materials' as const,
+                  label: '资料与标记',
+                  badge: markCount + bookmarkCount > 0 ? markCount + bookmarkCount : undefined,
+                },
+              ] as const
+            ).map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setPageTab(tab.id)}
+                className={`relative -mb-px border-b-2 px-4 py-2 text-sm transition-colors ${
+                  pageTab === tab.id
+                    ? 'border-[var(--color-accent)] text-[var(--color-fg)]'
+                    : 'border-transparent text-[var(--color-muted)] hover:text-[var(--color-fg)]'
+                }`}
+              >
+                {tab.label}
+                {'badge' in tab && tab.badge != null && (
+                  <span className="ml-1.5 rounded-full bg-[var(--color-accent)]/20 px-1.5 py-0.5 text-[10px] text-[var(--color-accent)]">
+                    {tab.badge}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </nav>
       </header>
 
-      <section className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          disabled={Boolean(job)}
-          onClick={() => void runDiagnosis()}
-          className="rounded-lg bg-[var(--color-accent)] px-3 py-1.5 text-sm disabled:opacity-40"
-        >
-          {jdJob.isRunning ? '诊断中…' : nodes.length ? '重新诊断 JD' : '开始诊断'}
-        </button>
-        <button
-          type="button"
-          disabled={Boolean(job)}
-          onClick={() => void fetchIntel()}
-          className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm disabled:opacity-40"
-        >
-          {intelJob.isRunning ? '生成中…' : '生成公司情报'}
-        </button>
-      </section>
-
-      <section className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-        <h3 className="text-sm font-medium">日程编排</h3>
-        <p className="text-xs text-[var(--color-muted)]">
-          设置面试日期和每日时长后生成计划，然后到「今日」页执行任务
-        </p>
-        <div className="grid grid-cols-2 gap-3">
-          <label className="space-y-1">
-            <span className="text-xs text-[var(--color-muted)]">面试日期</span>
-            <input
-              type="date"
-              value={interviewDate}
-              onChange={(e) => setInterviewDate(e.target.value)}
-              className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1.5 text-sm"
-            />
-          </label>
-          <label className="space-y-1">
-            <span className="text-xs text-[var(--color-muted)]">每日分钟</span>
-            <input
-              type="number"
-              min={30}
-              max={480}
-              value={dailyMinutes}
-              onChange={(e) => setDailyMinutes(e.target.value)}
-              className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1.5 text-sm"
-            />
-          </label>
-        </div>
-        <button
-          type="button"
-          disabled={nodes.length === 0}
-          onClick={() => void generatePlan()}
-          className="rounded-lg bg-emerald-700 px-3 py-1.5 text-sm disabled:opacity-40"
-        >
-          生成计划
-        </button>
-        {planMsg && (
-          <p className={`text-xs ${planMsg.includes('已生成') ? 'text-emerald-400' : 'text-red-400'}`}>
-            {planMsg}
-          </p>
-        )}
-        <PlanDecisionLog campaignId={id} reloadKey={planLogKey} />
-      </section>
-
-      <section className="grid gap-6 lg:grid-cols-3">
-        <div className="space-y-4 lg:col-span-2">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-medium text-[var(--color-muted)]">
-              考点清单（{nodes.length}）· {edges.length} 条关系
-            </h3>
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => setShowEdges((v) => !v)}
-                className="text-xs text-sky-400 hover:underline"
-              >
-                {showEdges ? '收起关系' : '编辑关系'}
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowGraph((v) => !v)}
-                className="text-xs text-sky-400 hover:underline"
-              >
-                {showGraph ? '切换清单' : '图谱视图'}
-              </button>
-            </div>
-          </div>
-          {showEdges && (
-            <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-              <EdgeEditor
-                nodes={nodes}
-                edges={edges}
-                onCreate={(f, t, r) => void createEdge(f, t, r)}
-                onDelete={(eid) => void removeEdge(eid)}
-              />
-            </div>
-          )}
-          <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-            {showGraph ? (
-              <KnowledgeGraph nodes={nodes} edges={edges} />
-            ) : (
-              <KnowledgeTree
-                nodes={nodes}
-                bookmarkedIds={bookmarkedIds}
-                noteCountByNode={noteCounts}
-                onExpand={(nid) => void expandNode(nid)}
-                onDelete={(nid) => void deleteNode(nid)}
-                onUpdate={(nid, patch) => void updateNode(nid, patch)}
-                onCreateChild={(pid, name, kind) => void createChildNode(pid, name, kind)}
-                onToggleBookmark={(nid) => void toggleBookmark(nid)}
-                onAddNote={(nid, note) => void addNote(nid, note)}
-                expandingId={expandJob.isRunning ? pendingExpandNodeId : null}
-                jobsBusy={Boolean(job)}
-              />
-            )}
-          </div>
-          {(expandJob.message || expandJob.error) && (
-            <p className={`text-xs ${expandJob.error ? 'text-red-400' : 'text-emerald-400'}`}>
-              细化考点：{expandJob.error ?? expandJob.message}
-            </p>
-          )}
-          {detail.blindSpotQuestions.length > 0 && (
-            <div className="rounded-lg border border-amber-900/50 bg-amber-950/20 p-4">
-              <h3 className="text-sm font-medium text-amber-300">
-                盲区真题（{detail.blindSpotQuestions.length}）
-              </h3>
-              <p className="mt-1 text-xs text-[var(--color-muted)]">
-                图谱未能预测到的题目，信息价值最高，建议优先补学
-              </p>
-              <ul className="mt-2 space-y-2 text-sm">
-                {detail.blindSpotQuestions.map((q) => (
-                  <li key={q.id} className="space-y-1 text-amber-100/90">
-                    <div>· {q.questionText}</div>
-                    <div className="pl-3">
-                      <AnnotationTools
-                        targetType="question"
-                        targetId={q.id}
-                        notePlaceholder="记下你的答题思路"
-                        onChange={refresh}
-                      />
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-
-        <div className="space-y-6">
-          <div className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-            <h3 className="text-sm font-medium">我的标记</h3>
-            <AnnotationDigest annotations={annotations} onChange={refresh} />
-          </div>
-
-          <div className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-            <h3 className="text-sm font-medium">该提醒你的事</h3>
-            <NudgePanel
-              nudges={nudges}
-              applying={applyingHistory}
-              onApplyHistory={() => void applyHistory()}
-            />
-          </div>
-
-          <div className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-            <h3 className="text-sm font-medium">简历</h3>
-            {resumeJob.isRunning && (
-              <p className="text-xs text-sky-400">简历交叉分析中… {resumeJob.statusMessage}</p>
-            )}
-            {resumeJob.error && (
-              <p className="text-xs text-red-400">{resumeJob.error}</p>
-            )}
-            {resumeJob.message && !resumeJob.isRunning && (
-              <p className="text-xs text-emerald-400">{resumeJob.message}</p>
-            )}
-            {detail.resume ? (
-              <div className="space-y-2">
-                <p className="text-xs text-emerald-400">已关联：{detail.resume.label}</p>
+      <div className="mt-4 min-h-0 flex-1 overflow-hidden">
+        {pageTab === 'study' && (
+          <div className="flex h-full min-h-0 flex-col gap-3 overflow-hidden">
+            {detail.blindSpotQuestions.length > 0 && (
+              <div className="shrink-0 rounded-lg border border-amber-900/50 bg-amber-950/20 px-4 py-3">
+                <p className="text-sm font-medium text-amber-300">
+                  盲区真题 {detail.blindSpotQuestions.length} 道 — 建议优先补学
+                </p>
+                <p className="mt-1 line-clamp-2 text-xs text-amber-100/70">
+                  {detail.blindSpotQuestions.map((q) => q.questionText).join(' · ')}
+                </p>
                 <button
                   type="button"
-                  disabled={importingResume}
-                  onClick={() => void importResumeFile(true)}
-                  className="text-xs text-sky-400 hover:underline disabled:opacity-40"
+                  onClick={() => setPageTab('materials')}
+                  className="mt-2 text-xs text-amber-300 hover:underline"
                 >
-                  {importingResume ? '导入中…' : '从文件导入以替换并重新交叉分析'}
+                  在资料页查看全部 →
                 </button>
               </div>
-            ) : (
-              <>
-                {resumes.length > 0 && (
-                  <select
-                    className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1.5 text-sm disabled:opacity-40"
-                    defaultValue=""
-                    disabled={Boolean(job)}
-                    onChange={(e) => {
-                      if (e.target.value) void attachResume(e.target.value);
-                    }}
-                  >
-                    <option value="">选择已有简历…</option>
-                    {resumes.map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {r.label}
-                      </option>
-                    ))}
-                  </select>
-                )}
-                <div className="flex gap-4">
-                  <button
-                    type="button"
-                    disabled={importingResume}
-                    onClick={() => void importResumeFile(true)}
-                    className="text-xs text-sky-400 hover:underline disabled:opacity-40"
-                  >
-                    {importingResume ? '导入中…' : '从文件导入并交叉分析'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowResumeForm((v) => !v)}
-                    className="text-xs text-sky-400 hover:underline"
-                  >
-                    {showResumeForm ? '取消' : '+ 粘贴新简历'}
-                  </button>
+            )}
+
+            <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+              <div className="grid h-full min-h-0 gap-4 lg:grid-cols-[minmax(420px,2fr)_minmax(0,3fr)]">
+                <div className="flex min-h-0 min-w-0 flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-[var(--color-muted)]">
+                      考点清单
+                      {calendarFilterDate && (
+                        <button
+                          type="button"
+                          onClick={() => setCalendarFilterDate(null)}
+                          className="ml-1 text-sky-400 hover:underline"
+                        >
+                          · {calendarFilterDate.slice(5)} ×
+                        </button>
+                      )}
+                    </span>
+                    <div className="relative flex items-center gap-2">
+                      <span className="text-xs text-[var(--color-muted)]">{nodes.length} 个考点</span>
+                      <button
+                        type="button"
+                        onClick={() => setShowEdges((v) => !v)}
+                        className="text-xs text-sky-400 hover:underline"
+                      >
+                        {showEdges ? '收起关系' : '关系'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowGraph((v) => !v)}
+                        className="text-xs text-sky-400 hover:underline"
+                      >
+                        {showGraph ? '清单' : '图谱'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCalendarOpen((v) => !v)}
+                        className={`text-xs hover:underline ${
+                          calendarFilterDate || calendarOpen
+                            ? 'font-medium text-[var(--color-accent)]'
+                            : 'text-sky-400'
+                        }`}
+                      >
+                        日历{calendarFilterDate ? ` · ${calendarFilterDate.slice(5)}` : ''}
+                      </button>
+                      <StudyPlanCalendarPopover
+                        open={calendarOpen}
+                        onClose={() => setCalendarOpen(false)}
+                        campaignId={id}
+                        nodeCount={nodes.length}
+                        interviewDate={interviewDate}
+                        dailyMinutes={dailyMinutes}
+                        onInterviewDateChange={setInterviewDate}
+                        onDailyMinutesChange={setDailyMinutes}
+                        planMsg={planMsg}
+                        planLogKey={planLogKey}
+                        onGeneratePlan={generatePlan}
+                        filterDate={calendarFilterDate}
+                        onFilterDateChange={setCalendarFilterDate}
+                        onOpenTask={openTaskInStudy}
+                      />
+                    </div>
+                  </div>
+                  {showEdges && (
+                    <div className="shrink-0 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] p-2">
+                      <EdgeEditor
+                        nodes={nodes}
+                        edges={edges}
+                        onCreate={(f, t, r) => void createEdge(f, t, r)}
+                        onDelete={(eid) => void removeEdge(eid)}
+                      />
+                    </div>
+                  )}
+                  <div className="min-h-0 flex-1 overflow-x-auto overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] p-2">
+                    {showGraph ? (
+                      <KnowledgeGraph nodes={nodes} edges={edges} />
+                    ) : (
+                      <KnowledgeTree
+                        nodes={nodes}
+                        bookmarkedIds={bookmarkedIds}
+                        noteCountByNode={noteCounts}
+                        visibleNodeIds={visibleNodeIds}
+                        onExpand={(nid) => void expandNode(nid)}
+                        onDelete={(nid) => void deleteNode(nid)}
+                        onUpdate={(nid, patch) => void updateNode(nid, patch)}
+                        onCreateChild={(pid, name, kind) => void createChildNode(pid, name, kind)}
+                        onToggleBookmark={(nid) => void toggleBookmark(nid)}
+                        onAddNote={(nid, note) => void addNote(nid, note)}
+                        expandingId={expandJob.isRunning ? pendingExpandNodeId : null}
+                        jobsBusy={Boolean(job)}
+                        selectedNodeId={selectedNodeId}
+                        onSelectNode={(nid) => {
+                          setSelectedNodeId(nid);
+                          setNodeStudyMode('explain');
+                        }}
+                      />
+                    )}
+                  </div>
+                  {(expandJob.message || expandJob.error) && (
+                    <p className={`text-xs ${expandJob.error ? 'text-red-400' : 'text-emerald-400'}`}>
+                      细化考点：{expandJob.error ?? expandJob.message}
+                    </p>
+                  )}
                 </div>
-                {showResumeForm && (
-                  <div className="space-y-2">
-                    <input
-                      value={newResumeLabel}
-                      onChange={(e) => setNewResumeLabel(e.target.value)}
-                      className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-sm"
+
+                <div className="flex min-h-0 flex-col rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)]">
+                      {selectedNode ? (
+                        <>
+                          <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--color-border)] px-4 py-3">
+                            <span className="text-sm font-medium">{selectedNode.name}</span>
+                            <span className="text-[10px] text-[var(--color-muted)]">
+                              {selectedNode.coverageType} · 掌握 {selectedNode.mastery}/5
+                            </span>
+                            <div className="ml-auto flex gap-1">
+                              <button
+                                type="button"
+                                onClick={() => setNodeStudyMode('explain')}
+                                className={`rounded px-2 py-0.5 text-xs ${
+                                  nodeStudyMode === 'explain'
+                                    ? 'bg-[var(--color-accent)] text-white'
+                                    : 'text-[var(--color-muted)]'
+                                }`}
+                              >
+                                讲解
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setNodeStudyMode('drill')}
+                                className={`rounded px-2 py-0.5 text-xs ${
+                                  nodeStudyMode === 'drill'
+                                    ? 'bg-[var(--color-accent)] text-white'
+                                    : 'text-[var(--color-muted)]'
+                                }`}
+                              >
+                                考我
+                              </button>
+                            </div>
+                          </div>
+                          <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                            {nodeStudyMode === 'drill' ? (
+                              <QuizPanel nodeId={selectedNode.id} nodeName={selectedNode.name} />
+                            ) : (
+                              <TaskStudyPanel
+                                nodeId={selectedNode.id}
+                                nodeName={selectedNode.name}
+                              />
+                            )}
+                          </div>
+                        </>
+                      ) : (
+                        <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
+                          <p className="text-sm text-[var(--color-muted)]">点击左侧考点开始学习</p>
+                          <p className="text-xs text-[var(--color-muted)]">
+                            细化出的新考点可直接点学，无需等排程
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                </div>
+              </div>
+            </div>
+        )}
+
+        {pageTab === 'materials' && (
+          <div className="h-full space-y-4 overflow-y-auto pr-1">
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+              <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-base font-medium">我的标记</h3>
+                  <p className="mt-0.5 text-xs text-[var(--color-muted)]">
+                    讲解、真题、情报上的高亮与笔记汇总；点击知识点可跳回学习
+                  </p>
+                </div>
+                {markCount + bookmarkCount > 0 && (
+                  <span className="text-xs text-[var(--color-muted)]">
+                    {markCount} 条标记 · {bookmarkCount} 个收藏
+                  </span>
+                )}
+              </div>
+              <AnnotationDigest
+                annotations={annotations}
+                onChange={refresh}
+                onJumpToNode={jumpToNode}
+                layout="wide"
+              />
+              </section>
+
+              <div className="space-y-4">
+                <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+                  <h3 className="text-sm font-medium">该提醒你的事</h3>
+                  <div className="mt-3">
+                    <NudgePanel
+                      nudges={nudges}
+                      applying={applyingHistory}
+                      onApplyHistory={() => void applyHistory()}
                     />
-                    <textarea
-                      value={newResumeText}
-                      onChange={(e) => setNewResumeText(e.target.value)}
-                      rows={6}
-                      placeholder="粘贴简历全文…"
-                      className="w-full resize-y rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-sm"
-                    />
+                  </div>
+                </section>
+
+                <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+                  <h3 className="text-sm font-medium">简历</h3>
+                <div className="mt-3 space-y-2">
+                  {resumeJob.isRunning && (
+                    <p className="text-xs text-sky-400">简历交叉分析中… {resumeJob.statusMessage}</p>
+                  )}
+                  {resumeJob.error && <p className="text-xs text-red-400">{resumeJob.error}</p>}
+                  {resumeJob.message && !resumeJob.isRunning && (
+                    <p className="text-xs text-emerald-400">{resumeJob.message}</p>
+                  )}
+                  {detail.resume ? (
+                    <>
+                      <p className="text-xs text-emerald-400">已关联：{detail.resume.label}</p>
+                      <button
+                        type="button"
+                        disabled={importingResume}
+                        onClick={() => void importResumeFile(true)}
+                        className="text-xs text-sky-400 hover:underline disabled:opacity-40"
+                      >
+                        {importingResume ? '导入中…' : '从文件导入以替换'}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      {resumes.length > 0 && (
+                        <select
+                          className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1.5 text-sm disabled:opacity-40"
+                          defaultValue=""
+                          disabled={Boolean(job)}
+                          onChange={(e) => {
+                            if (e.target.value) void attachResume(e.target.value);
+                          }}
+                        >
+                          <option value="">选择已有简历…</option>
+                          {resumes.map((r) => (
+                            <option key={r.id} value={r.id}>
+                              {r.label}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      <div className="flex flex-wrap gap-3">
+                        <button
+                          type="button"
+                          disabled={importingResume}
+                          onClick={() => void importResumeFile(true)}
+                          className="text-xs text-sky-400 hover:underline disabled:opacity-40"
+                        >
+                          {importingResume ? '导入中…' : '从文件导入'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowResumeForm((v) => !v)}
+                          className="text-xs text-sky-400 hover:underline"
+                        >
+                          {showResumeForm ? '取消' : '+ 粘贴新简历'}
+                        </button>
+                      </div>
+                      {showResumeForm && (
+                        <div className="space-y-2">
+                          <input
+                            value={newResumeLabel}
+                            onChange={(e) => setNewResumeLabel(e.target.value)}
+                            className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-sm"
+                          />
+                          <textarea
+                            value={newResumeText}
+                            onChange={(e) => setNewResumeText(e.target.value)}
+                            rows={5}
+                            placeholder="粘贴简历全文…"
+                            className="w-full resize-y rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-sm"
+                          />
+                          <button
+                            type="button"
+                            disabled={Boolean(job)}
+                            onClick={() => void createAndAttachResume()}
+                            className="rounded bg-[var(--color-accent)] px-3 py-1 text-xs disabled:opacity-40"
+                          >
+                            保存并交叉分析
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </section>
+              </div>
+            </div>
+
+            <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+              <h3 className="text-sm font-medium">公司情报</h3>
+              <div className="mt-3">
+                {intel ? (
+                  <CompanyIntelCard intel={intel} onAnnotationChange={refresh} />
+                ) : (
+                  <p className="text-xs text-[var(--color-muted)]">点击顶部「公司情报」联网检索</p>
+                )}
+              </div>
+            </section>
+
+            {detail.blindSpotQuestions.length > 0 && (
+              <section className="rounded-xl border border-amber-900/50 bg-amber-950/20 p-4">
+                <h3 className="text-sm font-medium text-amber-300">
+                  盲区真题（{detail.blindSpotQuestions.length}）
+                </h3>
+                <p className="mt-1 text-xs text-[var(--color-muted)]">
+                  图谱未能预测到的题目，信息价值最高
+                </p>
+                <ul className="mt-3 space-y-3">
+                  {detail.blindSpotQuestions.map((q) => (
+                    <li key={q.id} className="rounded-lg border border-amber-900/30 bg-black/20 p-3">
+                      <p className="text-sm text-amber-100/90">{q.questionText}</p>
+                      <div className="mt-2">
+                        <AnnotationTools
+                          targetType="question"
+                          targetId={q.id}
+                          notePlaceholder="记下你的答题思路"
+                          onChange={refresh}
+                        />
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+                <h3 className="text-sm font-medium">面经摄入</h3>
+                <p className="mt-1 text-xs text-[var(--color-muted)]">粘贴面经或联网搜索自动摄入</p>
+                <div className="mt-3 space-y-2">
+                  <button
+                    type="button"
+                    disabled={webIngesting || Boolean(job)}
+                    onClick={() => void ingestWeb()}
+                    className="rounded border border-sky-800 bg-sky-950/40 px-3 py-1.5 text-xs text-sky-300 disabled:opacity-40"
+                  >
+                    {webIngesting ? '搜索摄入中…' : '搜索摄入面经'}
+                  </button>
+                  <textarea
+                    value={reportText}
+                    onChange={(e) => setReportText(e.target.value)}
+                    rows={4}
+                    className="w-full resize-y rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-sm"
+                    placeholder="粘贴面经…"
+                  />
+                  <button
+                    type="button"
+                    disabled={!reportText.trim() || Boolean(job)}
+                    onClick={() => void ingestReport('pasted')}
+                    className="rounded border border-[var(--color-border)] px-3 py-1 text-xs disabled:opacity-40"
+                  >
+                    摄入面经
+                  </button>
+                  {detail.reportCount > 0 && (
                     <button
                       type="button"
-                      disabled={Boolean(job)}
-                      onClick={() => void createAndAttachResume()}
-                      className="rounded bg-[var(--color-accent)] px-3 py-1 text-xs disabled:opacity-40"
+                      onClick={() => setShowReports((v) => !v)}
+                      className="text-left text-xs text-[var(--color-muted)] hover:text-[var(--color-fg)]"
                     >
-                      保存并交叉分析
+                      已摄入 {detail.reportCount} 篇 · {showReports ? '收起出处' : '查看出处'}
                     </button>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
+                  )}
+                  {showReports && <ReportSourceList reports={reports} />}
+                  {ingestMsg && (
+                    <p
+                      className={`text-xs ${ingestMsg.includes('提取') ? 'text-emerald-400' : 'text-red-400'}`}
+                    >
+                      {ingestMsg}
+                    </p>
+                  )}
+                </div>
+              </section>
 
-          <div className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-            <h3 className="text-sm font-medium">公司情报</h3>
-            {intel ? (
-              <CompanyIntelCard intel={intel} onAnnotationChange={refresh} />
-            ) : (
-              <p className="text-xs text-[var(--color-muted)]">点击「生成公司情报」联网检索</p>
-            )}
+              <section className="rounded-xl border border-emerald-900/40 bg-emerald-950/20 p-4">
+                <h3 className="text-sm font-medium text-emerald-300">面后复盘</h3>
+                <p className="mt-1 text-xs text-[var(--color-muted)]">
+                  面完当天录入实际被问到的题，会自动标记 Campaign 为已复盘
+                </p>
+                <div className="mt-3 space-y-2">
+                  <textarea
+                    value={debriefText}
+                    onChange={(e) => setDebriefText(e.target.value)}
+                    rows={5}
+                    className="w-full resize-y rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-sm"
+                    placeholder="今天面试被问了什么？"
+                  />
+                  <button
+                    type="button"
+                    disabled={!debriefText.trim() || Boolean(job)}
+                    onClick={() => void ingestReport('selfDebrief')}
+                    className="rounded bg-emerald-700 px-3 py-1.5 text-xs disabled:opacity-40"
+                  >
+                    提交复盘
+                  </button>
+                </div>
+              </section>
+            </div>
           </div>
-
-          <div className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-            <h3 className="text-sm font-medium">面经摄入</h3>
-            <p className="text-xs text-[var(--color-muted)]">
-              粘贴面经原文，或联网搜索自动摄入
-            </p>
-            <button
-              type="button"
-              disabled={webIngesting || Boolean(job)}
-              onClick={() => void ingestWeb()}
-              className="rounded border border-sky-800 bg-sky-950/40 px-3 py-1 text-xs text-sky-300 disabled:opacity-40"
-            >
-              {webIngesting ? '搜索摄入中…' : '搜索摄入面经'}
-            </button>
-            <textarea
-              value={reportText}
-              onChange={(e) => setReportText(e.target.value)}
-              rows={4}
-              className="w-full resize-y rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-sm"
-              placeholder="粘贴面经…"
-            />
-            <button
-              type="button"
-              disabled={!reportText.trim() || Boolean(job)}
-              onClick={() => void ingestReport('pasted')}
-              className="rounded border border-[var(--color-border)] px-3 py-1 text-xs disabled:opacity-40"
-            >
-              摄入面经
-            </button>
-            {detail.reportCount > 0 && (
-              <button
-                type="button"
-                onClick={() => setShowReports((v) => !v)}
-                className="text-left text-xs text-[var(--color-muted)] hover:text-[var(--color-fg)]"
-              >
-                已摄入 {detail.reportCount} 篇 · {showReports ? '收起出处' : '查看出处'}
-              </button>
-            )}
-            {showReports && <ReportSourceList reports={reports} />}
-            {ingestMsg && (
-              <p
-                className={`text-xs ${ingestMsg.includes('提取') ? 'text-emerald-400' : 'text-red-400'}`}
-              >
-                {ingestMsg}
-              </p>
-            )}
-          </div>
-
-          <div className="space-y-3 rounded-lg border border-emerald-900/40 bg-emerald-950/20 p-4">
-            <h3 className="text-sm font-medium text-emerald-300">面后复盘</h3>
-            <p className="text-xs text-[var(--color-muted)]">
-              面完当天录入实际被问到的题，可信度最高，会自动标记 Campaign 为已复盘
-            </p>
-            <textarea
-              value={debriefText}
-              onChange={(e) => setDebriefText(e.target.value)}
-              rows={5}
-              className="w-full resize-y rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-sm"
-              placeholder="今天面试被问了什么？按轮次或顺序写下…"
-            />
-            <button
-              type="button"
-              disabled={!debriefText.trim() || Boolean(job)}
-              onClick={() => void ingestReport('selfDebrief')}
-              className="rounded bg-emerald-700 px-3 py-1 text-xs disabled:opacity-40"
-            >
-              提交复盘
-            </button>
-          </div>
-        </div>
-      </section>
+        )}
+      </div>
     </div>
   );
 }

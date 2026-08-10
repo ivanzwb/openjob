@@ -1,11 +1,28 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { CampaignSummary, DesignCaseResult, DesignSubmitResult } from '@shared/ipc';
+import type {
+  CampaignSummary,
+  DesignCaseResult,
+  DesignSubmitResult,
+  MockInterviewType,
+} from '@shared/ipc';
+import {
+  MOCK_INTERVIEW_TYPE_LABELS,
+  MOCK_INTERVIEW_TYPE_OPTIONS,
+} from '@shared/ipc';
 import { VoiceInputButton } from '../components/VoiceInputButton';
 import { invoke } from '../ipc';
+
+const ANSWER_PLACEHOLDER: Record<string, string> = {
+  concept: '先给结论，再讲原理，最后补充 trade-off 和实际踩坑…',
+  coding: '说明思路 → 写出核心代码 → 分析时间/空间复杂度 → 边界情况…',
+  design: '需求澄清 → 高层架构 → 核心模块 → 扩展与权衡…',
+  scenario: '背景 → 你的职责 → 具体行动 → 结果与复盘…',
+};
 
 export function DesignPractice(): React.JSX.Element {
   const [campaigns, setCampaigns] = useState<CampaignSummary[]>([]);
   const [campaignId, setCampaignId] = useState('');
+  const [interviewType, setInterviewType] = useState<MockInterviewType>('mixed');
   const [designCase, setDesignCase] = useState<DesignCaseResult | null>(null);
   const [answer, setAnswer] = useState('');
   const [result, setResult] = useState<DesignSubmitResult | null>(null);
@@ -26,14 +43,14 @@ export function DesignPractice(): React.JSX.Element {
     setResult(null);
     setAnswer('');
     try {
-      const c = await invoke('design:case', { campaignId });
+      const c = await invoke('design:case', { campaignId, interviewType });
       setDesignCase(c);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
-  }, [campaignId]);
+  }, [campaignId, interviewType]);
 
   const submit = async (): Promise<void> => {
     if (!designCase || !answer.trim()) return;
@@ -45,6 +62,7 @@ export function DesignPractice(): React.JSX.Element {
         caseTitle: designCase.title,
         scenarioMd: designCase.scenarioMd,
         userAnswer: answer.trim(),
+        interviewType: designCase.interviewType,
       });
       setResult(res);
     } catch (err) {
@@ -54,17 +72,20 @@ export function DesignPractice(): React.JSX.Element {
     }
   };
 
+  const typeHint =
+    MOCK_INTERVIEW_TYPE_OPTIONS.find((o) => o.value === interviewType)?.hint ?? '';
+
   return (
     <div className="mx-auto w-full max-w-[1600px] space-y-6 p-6">
       <header>
-        <h2 className="text-lg font-semibold">系统设计练习</h2>
+        <h2 className="text-lg font-semibold">模拟面试</h2>
         <p className="mt-1 text-xs text-[var(--color-muted)]">
-          基于 Campaign 背景生成案例式题目，口述架构方案后获得评分与改进大纲
+          结合公司背景、岗位 JD、简历与考点清单出题，覆盖概念、编码、系统设计、项目场景等多类题型
         </p>
       </header>
 
-      <div className="flex flex-wrap items-end gap-3">
-        <label className="min-w-0 flex-1 space-y-1">
+      <div className="grid gap-3 lg:grid-cols-2">
+        <label className="space-y-1">
           <span className="text-xs text-[var(--color-muted)]">关联 Campaign</span>
           <select
             value={campaignId}
@@ -86,13 +107,35 @@ export function DesignPractice(): React.JSX.Element {
             )}
           </select>
         </label>
+        <label className="space-y-1">
+          <span className="text-xs text-[var(--color-muted)]">题型</span>
+          <select
+            value={interviewType}
+            onChange={(e) => {
+              setInterviewType(e.target.value as MockInterviewType);
+              setDesignCase(null);
+              setResult(null);
+            }}
+            className="w-full rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm"
+          >
+            {MOCK_INTERVIEW_TYPE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+          {typeHint && <p className="text-[10px] text-[var(--color-muted)]">{typeHint}</p>}
+        </label>
+      </div>
+
+      <div>
         <button
           type="button"
           disabled={!campaignId || loading}
           onClick={() => void start()}
           className="rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm disabled:opacity-40"
         >
-          {loading && !designCase ? '出题中…' : designCase ? '换一题' : '开始出题'}
+          {loading && !designCase ? '出题中…' : designCase ? '换一题' : '开始模拟'}
         </button>
       </div>
 
@@ -101,7 +144,17 @@ export function DesignPractice(): React.JSX.Element {
       {designCase && (
         <section className="space-y-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
           <div>
-            <h3 className="font-medium">{designCase.title}</h3>
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="font-medium">{designCase.title}</h3>
+              <span className="rounded bg-sky-900/40 px-2 py-0.5 text-[10px] text-sky-300">
+                {MOCK_INTERVIEW_TYPE_LABELS[designCase.interviewType]}
+              </span>
+              {designCase.relatedNodeName && (
+                <span className="text-[10px] text-[var(--color-muted)]">
+                  关联考点：{designCase.relatedNodeName}
+                </span>
+              )}
+            </div>
             <p className="mt-1 text-xs text-[var(--color-muted)]">
               {designCase.company} · {designCase.roleTitle}
             </p>
@@ -109,7 +162,7 @@ export function DesignPractice(): React.JSX.Element {
           <div className="whitespace-pre-wrap text-sm leading-relaxed">{designCase.scenarioMd}</div>
           {designCase.constraints.length > 0 && (
             <div>
-              <h4 className="text-xs font-medium text-[var(--color-muted)]">约束</h4>
+              <h4 className="text-xs font-medium text-[var(--color-muted)]">约束 / 考察点</h4>
               <ul className="mt-1 list-inside list-disc text-sm">
                 {designCase.constraints.map((c) => (
                   <li key={c}>{c}</li>
@@ -134,7 +187,10 @@ export function DesignPractice(): React.JSX.Element {
                 value={answer}
                 onChange={(e) => setAnswer(e.target.value)}
                 rows={10}
-                placeholder="按需求澄清 → 高层架构 → 核心模块 → 扩展与权衡 的结构回答…"
+                placeholder={
+                  ANSWER_PLACEHOLDER[designCase.interviewType] ??
+                  '口述你的回答，尽量结构化…'
+                }
                 className="w-full resize-y rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm"
               />
               <div className="flex flex-wrap items-center gap-2">
@@ -145,7 +201,7 @@ export function DesignPractice(): React.JSX.Element {
                   onClick={() => void submit()}
                   className="ml-auto rounded bg-emerald-700 px-4 py-2 text-sm disabled:opacity-40"
                 >
-                  {loading ? '评分中…' : '提交方案'}
+                  {loading ? '评分中…' : '提交回答'}
                 </button>
               </div>
             </>
@@ -157,14 +213,14 @@ export function DesignPractice(): React.JSX.Element {
                 <span className="text-2xl font-semibold text-[var(--color-accent)]">
                   {result.score}/5
                 </span>
-                <span className="text-xs text-emerald-400">改进大纲已存入话术库</span>
+                <span className="text-xs text-emerald-400">改进稿已存入话术库</span>
               </div>
               <div>
                 <h4 className="text-xs text-[var(--color-muted)]">反馈</h4>
                 <p className="mt-1 whitespace-pre-wrap">{result.feedbackMd}</p>
               </div>
               <div>
-                <h4 className="text-xs text-[var(--color-muted)]">改进大纲</h4>
+                <h4 className="text-xs text-[var(--color-muted)]">改进稿</h4>
                 <p className="mt-1 whitespace-pre-wrap text-emerald-300">
                   {result.improvedOutlineMd}
                 </p>
@@ -185,7 +241,9 @@ export function DesignPractice(): React.JSX.Element {
       )}
 
       {!designCase && !loading && campaigns.length > 0 && (
-        <p className="text-sm text-[var(--color-muted)]">选择 Campaign 后点击「开始出题」</p>
+        <p className="text-sm text-[var(--color-muted)]">
+          选择 Campaign 和题型后点击「开始模拟」。建议在备考中完成 JD 诊断、关联简历并生成公司情报，题目会更贴近真实面试。
+        </p>
       )}
     </div>
   );

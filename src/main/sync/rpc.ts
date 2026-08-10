@@ -132,7 +132,11 @@ const RPC_HANDLERS: Partial<Record<IpcInvokeChannel, RpcHandler>> = {
     return generatePlan(input.campaignId, input.interviewDate, input.dailyMinutes);
   },
   'plan:listTodayCampaigns': () => listTodayCampaigns(),
-  'plan:getToday': (p) => getTodayPlan((p as { campaignId?: string }).campaignId),
+  'plan:getToday': (p) =>
+    getTodayPlan(
+      (p as { campaignId?: string }).campaignId,
+      (p as { date?: string }).date,
+    ),
   'plan:deferToday': (p) => ({ deferred: deferToday((p as { campaignId: string }).campaignId) }),
   'plan:listDates': (p) => listPlanDates((p as { campaignId: string }).campaignId),
   'task:complete': (p) => completeTask((p as { taskId: string; actualMinutes?: number }).taskId, (p as { taskId: string; actualMinutes?: number }).actualMinutes),
@@ -180,10 +184,19 @@ const RPC_HANDLERS: Partial<Record<IpcInvokeChannel, RpcHandler>> = {
     return updateSpeechSnippet(input.id, input.contentMd);
   },
   'speech:delete': (p) => deleteSpeechSnippet((p as { id: string }).id),
-  'design:case': (p) => generateDesignCase((p as { campaignId: string }).campaignId),
+  'design:case': (p) => {
+    const input = p as IpcReq<'design:case'>;
+    return generateDesignCase(input.campaignId, input.interviewType ?? 'mixed');
+  },
   'design:submit': (p) => {
     const input = p as IpcReq<'design:submit'>;
-    return submitDesignAnswer(input.campaignId, input.caseTitle, input.scenarioMd, input.userAnswer);
+    return submitDesignAnswer(
+      input.campaignId,
+      input.caseTitle,
+      input.scenarioMd,
+      input.userAnswer,
+      input.interviewType,
+    );
   },
   'annotation:list': (p) => listAnnotations((p as { targetType: string; targetId: string }).targetType as IpcReq<'annotation:list'>['targetType'], (p as { targetType: string; targetId: string }).targetId),
   'annotation:listForCampaign': (p) => listAnnotationsForCampaign((p as { campaignId: string }).campaignId),

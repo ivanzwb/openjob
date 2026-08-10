@@ -25,6 +25,7 @@ import type {
   SessionKind,
   EdgeRelation,
   TaskKind,
+  ExamForm,
 } from './enums';
 import type {
   Campaign,
@@ -586,13 +587,36 @@ export interface SpeechExportResult {
 }
 
 // ---------------------------------------------------------------------------
-// 系统设计（阶段 5）
+// 模拟面试（原系统设计，现覆盖多类题型）
 // ---------------------------------------------------------------------------
+
+export type MockInterviewType = ExamForm | 'mixed';
+
+export const MOCK_INTERVIEW_TYPE_OPTIONS: Array<{
+  value: MockInterviewType;
+  label: string;
+  hint: string;
+}> = [
+  { value: 'mixed', label: '综合模拟', hint: '根据公司/JD/简历自动选题' },
+  { value: 'concept', label: '概念 / 八股', hint: '原理、机制、对比追问' },
+  { value: 'coding', label: '编码 / 算法', hint: '手写代码、复杂度分析' },
+  { value: 'design', label: '系统设计', hint: '架构、扩展性、权衡' },
+  { value: 'scenario', label: '项目 / 场景', hint: '简历深挖、行为场景' },
+];
+
+export const MOCK_INTERVIEW_TYPE_LABELS: Record<ExamForm, string> = {
+  concept: '概念 / 八股',
+  coding: '编码 / 算法',
+  design: '系统设计',
+  scenario: '项目 / 场景',
+};
 
 export interface DesignCaseResult {
   campaignId: string;
   company: string;
   roleTitle: string;
+  interviewType: ExamForm;
+  relatedNodeName: string | null;
   title: string;
   scenarioMd: string;
   constraints: string[];
@@ -604,6 +628,7 @@ export interface DesignSubmitInput {
   caseTitle: string;
   scenarioMd: string;
   userAnswer: string;
+  interviewType?: ExamForm;
 }
 
 export interface DesignSubmitResult {
@@ -738,7 +763,7 @@ export interface IpcInvokeMap {
 
   'plan:generate': { req: PlanGenerateInput; res: PlanGenerateResult };
   'plan:listTodayCampaigns': { req: void; res: TodayCampaignOption[] };
-  'plan:getToday': { req: { campaignId?: string }; res: TodayPlan | null };
+  'plan:getToday': { req: { campaignId?: string; date?: string }; res: TodayPlan | null };
   'plan:deferToday': { req: { campaignId: string }; res: { deferred: number } };
   'plan:listDates': { req: { campaignId: string }; res: PlanDateOption[] };
 
@@ -770,7 +795,10 @@ export interface IpcInvokeMap {
   'speech:delete': { req: { id: string }; res: void };
   'speech:export': { req: SpeechExportInput; res: SpeechExportResult };
 
-  'design:case': { req: { campaignId: string }; res: DesignCaseResult };
+  'design:case': {
+    req: { campaignId: string; interviewType?: MockInterviewType };
+    res: DesignCaseResult;
+  };
   'design:submit': { req: DesignSubmitInput; res: DesignSubmitResult };
 
   'annotation:list': { req: { targetType: AnnotationTarget; targetId: string }; res: Annotation[] };

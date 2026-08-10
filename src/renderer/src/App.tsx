@@ -8,17 +8,15 @@ import { Overview } from './pages/Overview';
 import { Repos } from './pages/Repos';
 import { Scripts } from './pages/Scripts';
 import { DesignPractice } from './pages/DesignPractice';
-import { Today } from './pages/Today';
 import { invoke } from './ipc';
 import { useJobProgress } from './ipc/useJobProgress';
 
-type Tab = 'today' | 'overview' | 'campaigns' | 'design' | 'repos' | 'scripts' | 'chat' | 'settings';
+type Tab = 'overview' | 'campaigns' | 'design' | 'repos' | 'scripts' | 'chat' | 'settings';
 
 const TABS: Array<{ key: Tab; label: string }> = [
-  { key: 'today', label: '今日' },
   { key: 'overview', label: '总览' },
   { key: 'campaigns', label: '备考' },
-  { key: 'design', label: '设计' },
+  { key: 'design', label: '模拟面试' },
   { key: 'repos', label: '源码' },
   { key: 'scripts', label: '话术' },
   { key: 'chat', label: '对话' },
@@ -50,8 +48,8 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
 }
 
 export default function App(): React.JSX.Element {
-  const [tab, setTab] = useState<Tab>('today');
-  const [mountedTabs, setMountedTabs] = useState<Set<Tab>>(() => new Set(['today']));
+  const [tab, setTab] = useState<Tab>('campaigns');
+  const [mountedTabs, setMountedTabs] = useState<Set<Tab>>(() => new Set(['campaigns']));
   const [view, setView] = useState<CampaignView>({ kind: 'list' });
   const [version, setVersion] = useState('');
   const { active: job } = useJobProgress();
@@ -69,7 +67,10 @@ export default function App(): React.JSX.Element {
     <ErrorBoundary>
       <div className="flex h-full flex-col">
         <header className="flex shrink-0 items-center gap-4 border-b border-[var(--color-border)] px-5 py-3">
-          <span className="font-semibold">openJob</span>
+          <div className="flex items-center gap-2.5">
+            <img src="/logo.png" alt="" className="h-7 w-7 rounded-lg" />
+            <span className="font-semibold">openJob</span>
+          </div>
           <span className="text-xs text-[var(--color-muted)]">v{version}</span>
           <nav className="ml-4 flex gap-1">
             {TABS.map(({ key, label }) => (
@@ -97,11 +98,6 @@ export default function App(): React.JSX.Element {
         </header>
 
         <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          {mountedTabs.has('today') && (
-            <TabPanel active={tab === 'today'} className="overflow-y-auto">
-              <Today />
-            </TabPanel>
-          )}
           {mountedTabs.has('overview') && (
             <TabPanel active={tab === 'overview'} className="overflow-y-auto">
               <Overview
