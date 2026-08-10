@@ -1,6 +1,6 @@
+import * as Crypto from 'expo-crypto';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import type { TaskView } from '@shared/ipc';
-import { v4 as uuidv4 } from 'uuid';
 import { getDeviceIdentity } from '../sync/identity';
 import { writingAs } from '../sync/triggers';
 
@@ -99,7 +99,7 @@ export async function createCampaign(
   jdRaw: string,
 ): Promise<string> {
   const identity = await getDeviceIdentity(db);
-  const id = uuidv4();
+  const id = Crypto.randomUUID();
   const now = Date.now();
   writingAs(db, identity.deviceId, () => {
     db.runSync(

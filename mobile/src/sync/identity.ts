@@ -1,6 +1,6 @@
+import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { v4 as uuidv4 } from 'uuid';
 
 export interface DeviceIdentity {
   deviceId: string;
@@ -25,7 +25,7 @@ function writeMeta(raw: SQLiteDatabase, key: string, value: string): void {
 export async function getDeviceIdentity(raw: SQLiteDatabase): Promise<DeviceIdentity> {
   let deviceId = readMeta(raw, 'deviceId');
   if (!deviceId) {
-    deviceId = (await SecureStore.getItemAsync('openjob.deviceId')) ?? uuidv4();
+    deviceId = (await SecureStore.getItemAsync('openjob.deviceId')) ?? Crypto.randomUUID();
     await SecureStore.setItemAsync('openjob.deviceId', deviceId);
     writeMeta(raw, 'deviceId', deviceId);
   }
