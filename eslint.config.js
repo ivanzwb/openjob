@@ -10,7 +10,7 @@ import reactHooks from 'eslint-plugin-react-hooks';
  *   3. main 不得反向依赖渲染进程代码
  */
 export default tseslint.config(
-  { ignores: ['out/**', 'dist/**', 'node_modules/**', 'src/main/db/migrations/**'] },
+  { ignores: ['out/**', 'dist/**', 'node_modules/**', 'src/main/db/migrations/**', 'mobile/**'] },
 
   js.configs.recommended,
   ...tseslint.configs.recommended,

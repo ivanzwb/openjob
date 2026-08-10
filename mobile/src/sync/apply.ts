@@ -1,0 +1,109 @@
+import type { SQLiteDatabase } from 'expo-sqlite';
+import type { AutoChange } from '@shared/sync';
+import { syncTableSpec, syncTableSpecs } from './tables';
+import { writingAs } from './triggers';
+
+const INSERT_ORDER = syncTableSpecs().map((s) => s.name);
+const DELETE_ORDER = [...INSERT_ORDER].reverse();
+
+function sortChanges(changes: AutoChange[]): AutoChange[] {
+  const order = (table: string, kind: AutoChange['kind']): number => {
+    const list = kind === 'delete' ? DELETE_ORDER : INSERT_ORDER;
+    const idx = list.indexOf(table);
+    return idx === -1 ? 999 : idx;
+  };
+  return [...changes].sort((a, b) => {
+    const kindOrder = { delete: 0, patch: 1, insert: 2 };
+    if (kindOrder[a.kind] !== kindOrder[b.kind]) return kindOrder[a.kind] - kindOrder[b.kind];
+    return order(a.table, a.kind) - order(b.table, b.kind);
+  });
+}
+
+function bindValue(value: unknown): unknown {
+  if (value === undefined) return null;
+  if (typeof value === 'boolean') return value ? 1 : 0;
+  if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+    return JSON.stringify(value);
+  }
+  return value;
+}
+
+function applyInsert(
+  raw: SQLiteDatabase,
+  table: string,
+  rowId: string,
+  values: Record<string, unknown>,
+): void {
+  const spec = syncTableSpec(table);
+  const existing = raw.getFirstSync<Record<string, unknown>>(
+    `SELECT * FROM \`${table}\` WHERE \`${spec.pk}\` = ?`,
+    rowId,
+  );
+  const merged = { ...values };
+  if (existing) {
+    for (const col of spec.deviceLocal) merged[col] = existing[col];
+  }
+  const cols = Object.keys(merged);
+  const placeholders = cols.map(() => '?').join(', ');
+  const colNames = cols.map((c) => `\`${c}\``).join(', ');
+  raw.runSync(
+    `INSERT OR REPLACE INTO \`${table}\` (${colNames}) VALUES (${placeholders})`,
+    ...(cols.map((c) => bindValue(merged[c])) as (string | number | null)[]),
+  );
+}
+
+function applyPatch(
+  raw: SQLiteDatabase,
+  table: string,
+  rowId: string,
+  values: Record<string, unknown>,
+): void {
+  const spec = syncTableSpec(table);
+  const entries = Object.entries(values).filter(([col]) => !spec.deviceLocal.includes(col));
+  if (entries.length === 0) return;
+  const sets = entries.map(([col]) => `\`${col}\` = ?`).join(', ');
+  raw.runSync(
+    `UPDATE \`${table}\` SET ${sets} WHERE \`${spec.pk}\` = ?`,
+    ...(entries.map(([, v]) => bindValue(v)) as (string | number | null)[]),
+    rowId,
+  );
+}
+
+function applyDelete(raw: SQLiteDatabase, table: string, rowId: string): void {
+  const spec = syncTableSpec(table);
+  raw.runSync(`DELETE FROM \`${table}\` WHERE \`${spec.pk}\` = ?`, rowId);
+}
+
+export function applyAutoChanges(
+  raw: SQLiteDatabase,
+  peerDeviceId: string,
+  changes: AutoChange[],
+): number {
+  const sorted = sortChanges(changes);
+  let applied = 0;
+
+  writingAs(raw, peerDeviceId, () => {
+    raw.execSync('BEGIN');
+    try {
+      for (const change of sorted) {
+        if (change.kind === 'insert') {
+          applyInsert(raw, change.table, change.rowId, {
+            ...change.values,
+            [syncTableSpec(change.table).pk]: change.rowId,
+          });
+        } else if (change.kind === 'patch') {
+          applyPatch(raw, change.table, change.rowId, change.values);
+        } else {
+          applyDelete(raw, change.table, change.rowId);
+        }
+        applied++;
+      }
+      raw.execSync('COMMIT');
+    } catch (e) {
+      raw.execSync('ROLLBACK');
+      throw e;
+    }
+  });
+
+  return applied;
+}
