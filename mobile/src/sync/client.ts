@@ -34,6 +34,24 @@ export function signRequest(
   return hmacSha256Base64Url(sharedKey, payload);
 }
 
+const NETWORK_TIMEOUT_MS = 10_000;
+
+async function fetchWithTimeout(input: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), NETWORK_TIMEOUT_MS);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (e) {
+    const host = new URL(input).host;
+    if (e instanceof Error && e.name === 'AbortError') {
+      throw new Error(`连接 ${host} 超时，请确认桌面端已启动配对`);
+    }
+    throw new Error(`无法连接到桌面端 ${host}（网络被拒绝或重置），请确认桌面端已打开并生成二维码`);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function signedFetch(
   baseUrl: string,
   sharedKey: string,
@@ -46,7 +64,7 @@ async function signedFetch(
   const timestamp = Date.now();
   const signature = signRequest(sharedKey, deviceId, timestamp, method, path, body);
 
-  return fetch(`${baseUrl}${path}`, {
+  return fetchWithTimeout(`${baseUrl}${path}`, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
@@ -59,7 +77,7 @@ async function signedFetch(
 }
 
 export async function pingDesktop(baseUrl: string): Promise<SyncPingResponse> {
-  const res = await fetch(`${baseUrl}/sync/ping`, {
+  const res = await fetchWithTimeout(`${baseUrl}/sync/ping`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ clientMs: Date.now() }),
@@ -80,7 +98,7 @@ export async function pairWithDesktop(
     displayName,
     platform: 'mobile',
   };
-  const res = await fetch(`${baseUrl}/sync/pair`, {
+  const res = await fetchWithTimeout(`${baseUrl}/sync/pair`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),

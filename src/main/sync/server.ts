@@ -200,6 +200,15 @@ export function startSyncServer(port = DEFAULT_PORT): number {
     void handleRequest(req, res);
   });
 
+  // A failed listen() used to be silent: pairing returned a port that was
+  // never bound, so phones got Connection reset while a QR was on screen.
+  // Log the error and clear state so the next beginPairing() retries.
+  server.on('error', (err) => {
+    console.error(`[sync] failed to listen on ${port}:`, err.message);
+    server = null;
+    listenPort = null;
+  });
+
   server.listen(port, '0.0.0.0');
   listenPort = port;
   return port;
