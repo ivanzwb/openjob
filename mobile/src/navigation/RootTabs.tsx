@@ -3,7 +3,6 @@ import { OverviewScreen } from '../screens/OverviewScreen';
 import { ScriptsScreen } from '../screens/ScriptsScreen';
 import { CampaignsScreen } from '../screens/CampaignsScreen';
 import { DesignScreen } from '../screens/DesignScreen';
-import { ChatScreen } from '../screens/ChatScreen';
 import { ReposScreen } from '../screens/ReposScreen';
 import { SyncScreen } from '../screens/SyncScreen';
 import { AppHeaderTitle } from '../components/AppHeaderTitle';
@@ -49,11 +48,6 @@ export function RootTabs(): React.JSX.Element {
         name="Scripts"
         component={ScriptsScreen}
         options={{ title: '话术', tabBarLabel: '话术', headerTitle: () => <AppHeaderTitle title="话术" /> }}
-      />
-      <Tab.Screen
-        name="Chat"
-        component={ChatScreen}
-        options={{ title: '对话', tabBarLabel: '对话', headerTitle: () => <AppHeaderTitle title="对话" /> }}
       />
       <Tab.Screen
         name="Sync"

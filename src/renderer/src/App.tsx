@@ -1,6 +1,5 @@
 import { Component, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { StreamChat } from './components/StreamChat';
 import { TabPanel } from './components/TabPanel';
 import { CampaignsPanel, type CampaignView } from './pages/CampaignsPanel';
 import { Settings } from './pages/Settings';
@@ -11,7 +10,7 @@ import { DesignPractice } from './pages/DesignPractice';
 import { invoke } from './ipc';
 import { useJobProgress } from './ipc/useJobProgress';
 
-type Tab = 'overview' | 'campaigns' | 'design' | 'repos' | 'scripts' | 'chat' | 'settings';
+type Tab = 'overview' | 'campaigns' | 'design' | 'repos' | 'scripts' | 'settings';
 
 const TABS: Array<{ key: Tab; label: string }> = [
   { key: 'overview', label: '总览' },
@@ -19,7 +18,6 @@ const TABS: Array<{ key: Tab; label: string }> = [
   { key: 'design', label: '模拟面试' },
   { key: 'repos', label: '源码' },
   { key: 'scripts', label: '话术' },
-  { key: 'chat', label: '对话' },
   { key: 'settings', label: '设置' },
 ];
 
@@ -124,13 +122,6 @@ export default function App(): React.JSX.Element {
           {mountedTabs.has('scripts') && (
             <TabPanel active={tab === 'scripts'} className="overflow-y-auto">
               <Scripts />
-            </TabPanel>
-          )}
-          {mountedTabs.has('chat') && (
-            <TabPanel active={tab === 'chat'} className="overflow-y-auto">
-              <div className="mx-auto h-full w-full max-w-[1600px] p-6">
-                <StreamChat role="explain" placeholder="试试问一个需要联网才能答准的问题…" />
-              </div>
             </TabPanel>
           )}
           {mountedTabs.has('settings') && (

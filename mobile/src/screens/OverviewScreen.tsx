@@ -3,6 +3,7 @@ import { ScrollView, Text } from 'react-native';
 import type { CampaignOverview } from '@shared/ipc';
 import { getRawDb } from '../db';
 import { getCampaignOverview } from '../data/queries';
+import { GlobalChatPanel } from '../components/GlobalChatPanel';
 import { theme } from '../theme';
 
 export function OverviewScreen(): React.JSX.Element {
@@ -20,6 +21,8 @@ export function OverviewScreen(): React.JSX.Element {
       <Text style={{ color: theme.muted }}>活跃备考 {overview.activeCampaignCount} / 共 {overview.campaignCount}</Text>
       <Text style={{ color: theme.muted }}>平均掌握度 {(overview.avgMastery * 20).toFixed(0)}%</Text>
       <Text style={{ color: theme.muted }}>盲区 {overview.totalBlindSpots}</Text>
+      <Text style={{ color: theme.text, fontSize: 16, fontWeight: '600', marginTop: 8 }}>通用助手</Text>
+      <GlobalChatPanel />
     </ScrollView>
   );
 }

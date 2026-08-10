@@ -188,7 +188,7 @@ export async function exportSpeechSnippets(
   });
 
   if (!filePath) {
-    return { saved: false, path: null, count: 0 };
+    return { saved: false, path: null, count: snippets.length };
   }
 
   if (input.format === 'pdf') {

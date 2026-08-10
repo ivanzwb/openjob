@@ -3,6 +3,7 @@ import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import type { CampaignSummary, KnowledgeNodeView, PlanGenerateResult, TaskView } from '@shared/ipc';
 import { nodeIdsForPlanFilter } from '@shared/planFilter';
 import { KeepAlivePanel } from '../components/KeepAlivePanel';
+import { NodeFollowUpPanel } from '../components/NodeFollowUpPanel';
 import { NodeStudyPanel } from '../components/NodeStudyPanel';
 import { StudyPlanCalendarPopover } from '../components/StudyPlanCalendarPopover';
 import { getRawDb } from '../db';
@@ -71,7 +72,7 @@ function CampaignDetailView({
   const [detail, setDetail] = useState(() => getCampaignDetail(getRawDb(), id));
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<KnowledgeNodeView | null>(null);
-  const [nodeStudyMode, setNodeStudyMode] = useState<'explain' | 'drill'>('explain');
+  const [nodeStudyMode, setNodeStudyMode] = useState<'explain' | 'drill' | 'followUp'>('explain');
   const [interviewDate, setInterviewDate] = useState(detail.campaign.interviewDate ?? '');
   const [dailyMinutes, setDailyMinutes] = useState(String(detail.campaign.dailyMinutes ?? 90));
   const [planMsg, setPlanMsg] = useState<string | null>(null);
@@ -261,13 +262,33 @@ function CampaignDetailView({
             >
               <Text style={{ color: nodeStudyMode === 'drill' ? '#fff' : theme.muted, fontSize: 12 }}>考我</Text>
             </Pressable>
+            <Pressable
+              onPress={() => setNodeStudyMode('followUp')}
+              style={{
+                paddingHorizontal: 10,
+                paddingVertical: 6,
+                borderRadius: 8,
+                backgroundColor: nodeStudyMode === 'followUp' ? theme.accent : theme.bg,
+              }}
+            >
+              <Text style={{ color: nodeStudyMode === 'followUp' ? '#fff' : theme.muted, fontSize: 12 }}>追问</Text>
+            </Pressable>
           </View>
-          <NodeStudyPanel
-            key={`${selectedNode.id}-${nodeStudyMode}`}
-            nodeId={selectedNode.id}
-            nodeName={selectedNode.name}
-            mode={nodeStudyMode}
-          />
+          {nodeStudyMode === 'followUp' ? (
+            <NodeFollowUpPanel
+              key={selectedNode.id}
+              campaignId={id}
+              nodeId={selectedNode.id}
+              nodeName={selectedNode.name}
+            />
+          ) : (
+            <NodeStudyPanel
+              key={`${selectedNode.id}-${nodeStudyMode}`}
+              nodeId={selectedNode.id}
+              nodeName={selectedNode.name}
+              mode={nodeStudyMode}
+            />
+          )}
         </View>
       )}
     </ScrollView>

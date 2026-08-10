@@ -94,6 +94,8 @@ export interface ChatRequest {
   repoId?: string;
   sessionId?: string;
   campaignId?: string;
+  /** 新建会话时落库的分类；已有 sessionId 时忽略 */
+  sessionKind?: SessionKind;
 }
 
 export interface StreamStarted {

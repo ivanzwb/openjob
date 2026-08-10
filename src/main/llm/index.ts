@@ -106,7 +106,7 @@ async function runChat(
     const lastUser = userMessages[userMessages.length - 1]?.content ?? '对话';
     if (!sessionId) {
       sessionId = createSession(
-        req.repoId ? 'repoQa' : 'freeChat',
+        req.sessionKind ?? (req.repoId ? 'repoQa' : 'freeChat'),
         lastUser.slice(0, 80),
         req.campaignId ?? null,
       );

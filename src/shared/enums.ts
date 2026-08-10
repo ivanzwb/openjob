@@ -86,7 +86,7 @@ export type AnnotationKind = (typeof ANNOTATION_KINDS)[number];
 export const SPEECH_SOURCE_TYPES = ['node', 'codeRef', 'quiz', 'design'] as const;
 export type SpeechSourceType = (typeof SPEECH_SOURCE_TYPES)[number];
 
-export const SESSION_KINDS = ['quiz', 'repoQa', 'freeChat', 'planning'] as const;
+export const SESSION_KINDS = ['quiz', 'repoQa', 'freeChat', 'nodeFollowUp', 'planning'] as const;
 export type SessionKind = (typeof SESSION_KINDS)[number];
 
 export const MESSAGE_ROLES = ['system', 'user', 'assistant', 'tool'] as const;

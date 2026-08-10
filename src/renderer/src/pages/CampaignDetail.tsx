@@ -18,6 +18,7 @@ import { StudyPlanCalendarPopover } from '../components/StudyPlanCalendarPopover
 import { nodeIdsForPlanFilter } from '@shared/planFilter';
 import { KnowledgeGraph } from '../components/KnowledgeGraph';
 import { KnowledgeTree, type NodePatch } from '../components/KnowledgeTree';
+import { NodeFollowUpChat } from '../components/NodeFollowUpChat';
 import { NudgePanel } from '../components/NudgePanel';
 import { QuizPanel } from '../components/QuizPanel';
 import { ReportSourceList } from '../components/ReportSourceList';
@@ -64,7 +65,7 @@ export function CampaignDetail({
   const [filterPlan, setFilterPlan] = useState<TodayPlan | null>(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [nodeStudyMode, setNodeStudyMode] = useState<'explain' | 'drill'>('explain');
+  const [nodeStudyMode, setNodeStudyMode] = useState<'explain' | 'drill' | 'followUp'>('explain');
   const { active: job, lastResult } = useJobProgress();
   const jdJob = useJobFeedback('JD 诊断');
   const intelJob = useJobFeedback('公司情报');
@@ -592,16 +593,37 @@ export function CampaignDetail({
                               >
                                 考我
                               </button>
+                              <button
+                                type="button"
+                                onClick={() => setNodeStudyMode('followUp')}
+                                className={`rounded px-2 py-0.5 text-xs ${
+                                  nodeStudyMode === 'followUp'
+                                    ? 'bg-[var(--color-accent)] text-white'
+                                    : 'text-[var(--color-muted)]'
+                                }`}
+                              >
+                                追问
+                              </button>
                             </div>
                           </div>
-                          <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                          <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-4">
                             {nodeStudyMode === 'drill' ? (
-                              <QuizPanel nodeId={selectedNode.id} nodeName={selectedNode.name} />
-                            ) : (
-                              <TaskStudyPanel
+                              <div className="min-h-0 flex-1 overflow-y-auto">
+                                <QuizPanel nodeId={selectedNode.id} nodeName={selectedNode.name} />
+                              </div>
+                            ) : nodeStudyMode === 'followUp' ? (
+                              <NodeFollowUpChat
+                                campaignId={id}
                                 nodeId={selectedNode.id}
                                 nodeName={selectedNode.name}
                               />
+                            ) : (
+                              <div className="min-h-0 flex-1 overflow-y-auto">
+                                <TaskStudyPanel
+                                  nodeId={selectedNode.id}
+                                  nodeName={selectedNode.name}
+                                />
+                              </div>
                             )}
                           </div>
                         </>

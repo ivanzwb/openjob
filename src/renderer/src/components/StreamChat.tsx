@@ -16,18 +16,21 @@ export function StreamChat({
   placeholder = '问点什么…',
   sessionKind = 'freeChat',
   campaignId,
+  compact = false,
 }: {
   role?: LlmRole;
   systemPrompt?: string;
   placeholder?: string;
   sessionKind?: SessionKind;
   campaignId?: string;
+  /** 嵌入备考/总览时使用：默认隐藏历史侧栏、精简控件 */
+  compact?: boolean;
 }): React.JSX.Element {
   const [input, setInput] = useState('');
   const [allowWebSearch, setAllowWebSearch] = useState(true);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [history, setHistory] = useState<SessionMessageView[]>([]);
-  const [showSidebar, setShowSidebar] = useState(true);
+  const [showSidebar, setShowSidebar] = useState(!compact);
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<SessionSearchHit[] | null>(null);
 
@@ -106,6 +109,7 @@ export function StreamChat({
       void send({
         role,
         allowWebSearch,
+        sessionKind,
         sessionId: state.sessionId ?? undefined,
         campaignId,
         messages: [
@@ -201,13 +205,24 @@ export function StreamChat({
 
       <div className="flex min-h-0 flex-1 flex-col gap-3">
         <div className="flex items-center gap-2 text-xs text-[var(--color-muted)]">
-          <button
-            type="button"
-            onClick={() => setShowSidebar((v) => !v)}
-            className="hover:text-[var(--color-fg)]"
-          >
-            {showSidebar ? '隐藏历史' : '显示历史'}
-          </button>
+          {!compact && (
+            <button
+              type="button"
+              onClick={() => setShowSidebar((v) => !v)}
+              className="hover:text-[var(--color-fg)]"
+            >
+              {showSidebar ? '隐藏历史' : '显示历史'}
+            </button>
+          )}
+          {compact && (
+            <button
+              type="button"
+              onClick={() => setShowSidebar((v) => !v)}
+              className="hover:text-[var(--color-fg)]"
+            >
+              {showSidebar ? '收起历史' : '历史'}
+            </button>
+          )}
           {state.sessionId && <span>· 会话已保存</span>}
         </div>
 
@@ -260,7 +275,9 @@ export function StreamChat({
             </div>
           ) : (
             <p className="text-sm text-[var(--color-muted)]">
-              开启联网后，Agent 会自行判断是否需要检索，回答会落库并可在左侧回看。
+              {compact
+                ? '可联网检索；回答会保存，需要时展开历史回看。'
+                : '开启联网后，Agent 会自行判断是否需要检索，回答会落库并可在左侧回看。'}
             </p>
           )}
         </div>
@@ -275,7 +292,11 @@ export function StreamChat({
             允许联网检索
           </label>
           <span>·</span>
-          <span>角色 {role}</span>
+          {!compact && (
+            <>
+              <span>角色 {role}</span>
+            </>
+          )}
           {state.running ? (
             <button type="button" onClick={cancel} className="ml-auto hover:text-[var(--color-fg)]">
               取消
@@ -301,7 +322,7 @@ export function StreamChat({
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submit();
             }}
             placeholder={placeholder}
-            rows={3}
+            rows={compact ? 2 : 3}
             className="flex-1 resize-none rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-sm outline-none focus:border-[var(--color-accent)]"
           />
           <button
