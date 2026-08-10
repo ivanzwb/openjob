@@ -43,6 +43,8 @@ interface TreeProps {
   onCreateChild?: (parentId: string, name: string, kind: NodeKind) => void;
   onAddNote?: (nodeId: string, noteMd: string) => void;
   expandingId?: string | null;
+  /** 有其它长任务进行中时禁用细化 */
+  jobsBusy?: boolean;
 }
 
 /** 层级考点清单 + 进度条，不做图谱可视化 */
@@ -57,6 +59,7 @@ export function KnowledgeTree({
   onCreateChild,
   onAddNote,
   expandingId,
+  jobsBusy = false,
 }: TreeProps): React.JSX.Element {
   const roots = nodes.filter((n) => !n.parentId);
   const byParent = new Map<string | null, KnowledgeNodeView[]>();
@@ -80,6 +83,7 @@ export function KnowledgeTree({
         bookmarked={bookmarkedIds?.has(node.id) ?? false}
         noteCount={noteCountByNode?.get(node.id) ?? 0}
         expanding={expandingId === node.id}
+        jobsBusy={jobsBusy}
         onExpand={onExpand}
         onDelete={onDelete}
         onToggleBookmark={onToggleBookmark}
@@ -110,6 +114,7 @@ function NodeRow({
   bookmarked,
   noteCount,
   expanding,
+  jobsBusy,
   onExpand,
   onDelete,
   onToggleBookmark,
@@ -124,6 +129,7 @@ function NodeRow({
   bookmarked: boolean;
   noteCount: number;
   expanding: boolean;
+  jobsBusy: boolean;
   onExpand?: (nodeId: string) => void;
   onDelete?: (nodeId: string) => void;
   onToggleBookmark?: (nodeId: string) => void;
@@ -290,11 +296,11 @@ function NodeRow({
             {(node.kind === 'domain' || node.kind === 'topic') && onExpand && (
               <button
                 type="button"
-                disabled={expanding}
+                disabled={expanding || jobsBusy}
                 onClick={() => onExpand(node.id)}
                 className="rounded border border-[var(--color-border)] px-2 py-0.5 text-xs disabled:opacity-40"
               >
-                {expanding ? '细化中…' : '细化'}
+                {expanding ? '细化中…' : jobsBusy ? '等待任务…' : '细化'}
               </button>
             )}
             {onDelete && (

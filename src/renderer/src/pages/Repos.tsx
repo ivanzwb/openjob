@@ -2,16 +2,16 @@ import { useCallback, useEffect, useState } from 'react';
 import type { Repo } from '@shared/entities';
 import type { GitStatus } from '@shared/ipc';
 import { RepoWorkspace } from '../components/RepoWorkspace';
-import { useJobProgress } from '../ipc/useJobProgress';
+import { useJobFeedback, useJobProgress } from '../ipc/useJobProgress';
 import { invoke } from '../ipc';
 
 export function Repos(): React.JSX.Element {
   const [repos, setRepos] = useState<Repo[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [url, setUrl] = useState('');
-  const [adding, setAdding] = useState(false);
   const [git, setGit] = useState<GitStatus | null>(null);
-  const { active, lastMessage } = useJobProgress();
+  const { active } = useJobProgress();
+  const cloneJob = useJobFeedback('克隆并索引仓库');
 
   useEffect(() => {
     void invoke('repo:gitStatus', undefined).then(setGit);
@@ -34,13 +34,12 @@ export function Repos(): React.JSX.Element {
 
   const add = async (): Promise<void> => {
     const trimmed = url.trim();
-    if (!trimmed) return;
-    setAdding(true);
+    if (!trimmed || cloneJob.isRunning) return;
     try {
       await invoke('repo:add', { url: trimmed });
       setUrl('');
-    } finally {
-      setAdding(false);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : String(err));
     }
   };
 
@@ -52,6 +51,7 @@ export function Repos(): React.JSX.Element {
   };
 
   const selected = repos.find((r) => r.id === selectedId) ?? null;
+  const cloneBusy = cloneJob.isRunning;
 
   return (
     <div className="mx-auto flex h-full w-full max-w-[1600px] flex-col gap-4 p-6 lg:flex-row">
@@ -80,29 +80,31 @@ export function Repos(): React.JSX.Element {
           <button
             type="button"
             onClick={() => void add()}
-            disabled={adding || !url.trim() || (git !== null && !git.available)}
+            disabled={cloneBusy || !url.trim() || (git !== null && !git.available)}
             className="shrink-0 rounded bg-[var(--color-accent)] px-3 py-1.5 text-sm disabled:opacity-40"
           >
-            添加
+            {cloneBusy ? '克隆中…' : '添加'}
           </button>
         </div>
 
-        {active && (
+        {cloneJob.isRunning && (
           <div className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-xs">
-            <div className="font-medium">{active.label}</div>
-            <div className="mt-1 text-[var(--color-muted)]">{active.message}</div>
-            {active.progress != null && (
+            <div className="font-medium">{cloneJob.statusMessage ?? '克隆并索引中…'}</div>
+            {cloneJob.progress != null && (
               <div className="mt-2 h-1.5 rounded-full bg-[var(--color-border)]">
                 <div
                   className="h-full rounded-full bg-[var(--color-accent)]"
-                  style={{ width: `${Math.round(active.progress * 100)}%` }}
+                  style={{ width: `${Math.round(cloneJob.progress * 100)}%` }}
                 />
               </div>
             )}
           </div>
         )}
-        {!active && lastMessage && (
-          <p className="text-xs text-[var(--color-muted)]">{lastMessage}</p>
+        {cloneJob.error && (
+          <p className="text-xs text-red-400">{cloneJob.error}</p>
+        )}
+        {cloneJob.message && !cloneJob.isRunning && (
+          <p className="text-xs text-emerald-400">{cloneJob.message}</p>
         )}
 
         <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto">

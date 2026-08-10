@@ -18,7 +18,7 @@ import { NudgePanel } from '../components/NudgePanel';
 import { PlanDecisionLog } from '../components/PlanDecisionLog';
 import { ReportSourceList } from '../components/ReportSourceList';
 import { invoke } from '../ipc';
-import { useJobProgress } from '../ipc/useJobProgress';
+import { useJobFeedback, useJobProgress } from '../ipc/useJobProgress';
 
 export function CampaignDetail({
   id,
@@ -35,7 +35,7 @@ export function CampaignDetail({
   const [debriefText, setDebriefText] = useState('');
   const [ingestMsg, setIngestMsg] = useState<string | null>(null);
   const [showGraph, setShowGraph] = useState(false);
-  const [expandingId, setExpandingId] = useState<string | null>(null);
+  const [pendingExpandNodeId, setPendingExpandNodeId] = useState<string | null>(null);
   const [newResumeLabel, setNewResumeLabel] = useState('我的简历');
   const [newResumeText, setNewResumeText] = useState('');
   const [showResumeForm, setShowResumeForm] = useState(false);
@@ -54,8 +54,11 @@ export function CampaignDetail({
   const [reports, setReports] = useState<InterviewReportView[]>([]);
   const [showReports, setShowReports] = useState(false);
   const [annotations, setAnnotations] = useState<AnnotationView[]>([]);
-  const { active: job, lastMessage, lastError } = useJobProgress();
-  const [expandError, setExpandError] = useState<string | null>(null);
+  const { active: job, lastResult } = useJobProgress();
+  const jdJob = useJobFeedback('JD 诊断');
+  const intelJob = useJobFeedback('公司情报');
+  const resumeJob = useJobFeedback('简历交叉分析');
+  const expandJob = useJobFeedback('细化考点');
 
   const refresh = useCallback(() => {
     void invoke('campaign:get', { id }).then((d) => {
@@ -96,8 +99,13 @@ export function CampaignDetail({
   }, [id, autoDiagnose]);
 
   useEffect(() => {
-    if (!job && lastMessage) refresh();
-  }, [job, lastMessage, refresh]);
+    if (!job && lastResult) refresh();
+  }, [job, lastResult, refresh]);
+
+  useEffect(() => {
+    if (expandJob.isRunning) return;
+    if (pendingExpandNodeId) setPendingExpandNodeId(null);
+  }, [expandJob.isRunning, pendingExpandNodeId]);
 
   const runDiagnosis = async (): Promise<void> => {
     await invoke('diagnosis:fromJd', { campaignId: id });
@@ -132,14 +140,13 @@ export function CampaignDetail({
   };
 
   const expandNode = async (nodeId: string): Promise<void> => {
-    setExpandingId(nodeId);
-    setExpandError(null);
+    if (job) return;
+    setPendingExpandNodeId(nodeId);
     try {
       await invoke('diagnosis:expandNode', { nodeId });
     } catch (err) {
-      setExpandError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setExpandingId(null);
+      setPendingExpandNodeId(null);
+      alert(err instanceof Error ? err.message : String(err));
     }
   };
 
@@ -318,14 +325,15 @@ export function CampaignDetail({
             {job.progress !== null ? ` (${Math.round(job.progress * 100)}%)` : ''}
           </p>
         )}
-        {!job && lastError && (
-          <p className="text-xs font-medium text-red-400">{lastError}</p>
+        {!job && lastResult?.error && (
+          <p className="text-xs font-medium text-red-400">
+            {lastResult.label}失败：{lastResult.error}
+          </p>
         )}
-        {!job && !lastError && expandError && (
-          <p className="text-xs font-medium text-red-400">{expandError}</p>
-        )}
-        {!job && !lastError && !expandError && lastMessage && (
-          <p className="text-xs text-emerald-400">{lastMessage}</p>
+        {!job && lastResult && !lastResult.error && (
+          <p className="text-xs text-emerald-400">
+            {lastResult.label}：{lastResult.message}
+          </p>
         )}
       </header>
 
@@ -336,7 +344,7 @@ export function CampaignDetail({
           onClick={() => void runDiagnosis()}
           className="rounded-lg bg-[var(--color-accent)] px-3 py-1.5 text-sm disabled:opacity-40"
         >
-          {nodes.length ? '重新诊断 JD' : '开始诊断'}
+          {jdJob.isRunning ? '诊断中…' : nodes.length ? '重新诊断 JD' : '开始诊断'}
         </button>
         <button
           type="button"
@@ -344,7 +352,7 @@ export function CampaignDetail({
           onClick={() => void fetchIntel()}
           className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm disabled:opacity-40"
         >
-          生成公司情报
+          {intelJob.isRunning ? '生成中…' : '生成公司情报'}
         </button>
       </section>
 
@@ -438,10 +446,16 @@ export function CampaignDetail({
                 onCreateChild={(pid, name, kind) => void createChildNode(pid, name, kind)}
                 onToggleBookmark={(nid) => void toggleBookmark(nid)}
                 onAddNote={(nid, note) => void addNote(nid, note)}
-                expandingId={expandingId}
+                expandingId={expandJob.isRunning ? pendingExpandNodeId : null}
+                jobsBusy={Boolean(job)}
               />
             )}
           </div>
+          {(expandJob.message || expandJob.error) && (
+            <p className={`text-xs ${expandJob.error ? 'text-red-400' : 'text-emerald-400'}`}>
+              细化考点：{expandJob.error ?? expandJob.message}
+            </p>
+          )}
           {detail.blindSpotQuestions.length > 0 && (
             <div className="rounded-lg border border-amber-900/50 bg-amber-950/20 p-4">
               <h3 className="text-sm font-medium text-amber-300">
@@ -486,6 +500,15 @@ export function CampaignDetail({
 
           <div className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
             <h3 className="text-sm font-medium">简历</h3>
+            {resumeJob.isRunning && (
+              <p className="text-xs text-sky-400">简历交叉分析中… {resumeJob.statusMessage}</p>
+            )}
+            {resumeJob.error && (
+              <p className="text-xs text-red-400">{resumeJob.error}</p>
+            )}
+            {resumeJob.message && !resumeJob.isRunning && (
+              <p className="text-xs text-emerald-400">{resumeJob.message}</p>
+            )}
             {detail.resume ? (
               <div className="space-y-2">
                 <p className="text-xs text-emerald-400">已关联：{detail.resume.label}</p>
@@ -502,8 +525,9 @@ export function CampaignDetail({
               <>
                 {resumes.length > 0 && (
                   <select
-                    className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1.5 text-sm"
+                    className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1.5 text-sm disabled:opacity-40"
                     defaultValue=""
+                    disabled={Boolean(job)}
                     onChange={(e) => {
                       if (e.target.value) void attachResume(e.target.value);
                     }}
