@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import type { PairingPayload } from '@shared/sync';
@@ -12,7 +12,12 @@ export function SyncScreen(): React.JSX.Element {
   const { peerLabel, syncStatus, triggerSync, refresh } = useApp();
   const [conflicts, setConflicts] = useState<PendingConflictRow[]>([]);
   const [scanning, setScanning] = useState(false);
+  const [pairError, setPairError] = useState<string | null>(null);
   const [permission, requestPermission] = useCameraPermissions();
+  // CameraView fires onBarcodeScanned repeatedly while a QR stays in view;
+  // each callback previously spawned a parallel pair() fetch, so one scan
+  // burst a queue of failure alerts. Only handle the first code per session.
+  const scannedRef = useRef(false);
 
   const reloadConflicts = useCallback(() => {
     setConflicts(listPendingConflictRows());
@@ -22,16 +27,26 @@ export function SyncScreen(): React.JSX.Element {
     reloadConflicts();
   }, [reloadConflicts, syncStatus]);
 
-  const pair = async (raw: string) => {
-    const parsed = JSON.parse(raw) as PairingPayload;
-    if (parsed.v !== 1 || !parsed.host || !parsed.port || !parsed.code) {
-      throw new Error('配对 JSON 格式不正确');
+  const pair = async (raw: string): Promise<void> => {
+    if (scannedRef.current) return;
+    scannedRef.current = true;
+    try {
+      const parsed = JSON.parse(raw) as PairingPayload;
+      if (parsed.v !== 1 || !parsed.host || !parsed.port || !parsed.code) {
+        throw new Error('配对 JSON 格式不正确');
+      }
+      setPairError(null);
+      await pairDesktop(parsed);
+      setScanning(false);
+      await refresh();
+      await syncNow();
+      reloadConflicts();
+    } catch (e) {
+      // Leave the scanner regardless; surface the error in-page instead of
+      // alert() so background fetch failures stop popping after exit.
+      setScanning(false);
+      setPairError(e instanceof Error ? e.message : String(e));
     }
-    await pairDesktop(parsed);
-    setScanning(false);
-    await refresh();
-    await syncNow();
-    reloadConflicts();
   };
 
   const resolve = async (row: PendingConflictRow, choice: ConflictChoice) => {
@@ -62,10 +77,16 @@ export function SyncScreen(): React.JSX.Element {
           style={{ flex: 1 }}
           barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
           onBarcodeScanned={({ data }) => {
-            void pair(data).catch((e) => alert(e instanceof Error ? e.message : String(e)));
+            void pair(data);
           }}
         />
-        <Pressable onPress={() => setScanning(false)} style={{ position: 'absolute', top: 48, right: 16, backgroundColor: 'rgba(0,0,0,0.6)', padding: 10, borderRadius: 8 }}>
+        <Pressable
+          onPress={() => {
+            scannedRef.current = true;
+            setScanning(false);
+          }}
+          style={{ position: 'absolute', top: 48, right: 16, backgroundColor: 'rgba(0,0,0,0.6)', padding: 10, borderRadius: 8 }}
+        >
           <Text style={{ color: '#fff' }}>关闭</Text>
         </Pressable>
       </View>
@@ -80,8 +101,22 @@ export function SyncScreen(): React.JSX.Element {
       </Text>
       <Text style={{ color: theme.muted }}>状态: {syncStatus}</Text>
 
+      {pairError && (
+        <View style={{ borderWidth: 1, borderColor: theme.danger, borderRadius: 8, padding: 10, backgroundColor: theme.surface, gap: 6 }}>
+          <Text style={{ color: theme.danger, fontWeight: '600' }}>配对失败</Text>
+          <Text style={{ color: theme.text, fontSize: 12 }}>{pairError}</Text>
+        </View>
+      )}
+
       {!peerLabel && (
-        <Pressable onPress={() => setScanning(true)} style={{ backgroundColor: theme.accent, padding: 12, borderRadius: 8, alignItems: 'center' }}>
+        <Pressable
+          onPress={() => {
+            scannedRef.current = false;
+            setPairError(null);
+            setScanning(true);
+          }}
+          style={{ backgroundColor: theme.accent, padding: 12, borderRadius: 8, alignItems: 'center' }}
+        >
           <Text style={{ color: '#fff' }}>扫描二维码配对</Text>
         </Pressable>
       )}
