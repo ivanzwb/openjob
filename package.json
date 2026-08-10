@@ -15,6 +15,7 @@
     "prepackage": "npm run sync:grammars",
     "predist": "npm run sync:grammars",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "ci": "npm run typecheck && npm run lint && npm run smoke:sync && npm run smoke:grammars && npm run build",
     "lint": "eslint .",
     "start": "electron-vite preview",
     "db:generate": "drizzle-kit generate",
