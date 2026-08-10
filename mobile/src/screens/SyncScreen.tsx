@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import type { PairingPayload } from '@shared/sync';
 import type { ConflictChoice } from '@shared/sync';
@@ -10,7 +10,6 @@ import { theme } from '../theme';
 
 export function SyncScreen(): React.JSX.Element {
   const { peerLabel, syncStatus, triggerSync, refresh } = useApp();
-  const [pairJson, setPairJson] = useState('');
   const [conflicts, setConflicts] = useState<PendingConflictRow[]>([]);
   const [scanning, setScanning] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
@@ -82,25 +81,9 @@ export function SyncScreen(): React.JSX.Element {
       <Text style={{ color: theme.muted }}>状态: {syncStatus}</Text>
 
       {!peerLabel && (
-        <>
-          <Pressable onPress={() => setScanning(true)} style={{ backgroundColor: theme.accent, padding: 12, borderRadius: 8, alignItems: 'center' }}>
-            <Text style={{ color: '#fff' }}>扫描二维码配对</Text>
-          </Pressable>
-          <TextInput
-            value={pairJson}
-            onChangeText={setPairJson}
-            placeholder="或粘贴配对 JSON"
-            placeholderTextColor={theme.muted}
-            multiline
-            style={{ minHeight: 80, color: theme.text, borderWidth: 1, borderColor: theme.border, borderRadius: 8, padding: 10 }}
-          />
-          <Pressable
-            onPress={() => void pair(pairJson).catch((e) => alert(e instanceof Error ? e.message : String(e)))}
-            style={{ backgroundColor: theme.surface, padding: 12, borderRadius: 8, alignItems: 'center', borderWidth: 1, borderColor: theme.border }}
-          >
-            <Text style={{ color: theme.text }}>手动配对</Text>
-          </Pressable>
-        </>
+        <Pressable onPress={() => setScanning(true)} style={{ backgroundColor: theme.accent, padding: 12, borderRadius: 8, alignItems: 'center' }}>
+          <Text style={{ color: '#fff' }}>扫描二维码配对</Text>
+        </Pressable>
       )}
 
       {peerLabel && (

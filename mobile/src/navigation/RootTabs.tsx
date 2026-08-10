@@ -1,4 +1,6 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { Ionicons } from '@expo/vector-icons';
+import type { ComponentProps } from 'react';
 import { OverviewScreen } from '../screens/OverviewScreen';
 import { ScriptsScreen } from '../screens/ScriptsScreen';
 import { CampaignsScreen } from '../screens/CampaignsScreen';
@@ -10,19 +12,38 @@ import { theme } from '../theme';
 
 const Tab = createBottomTabNavigator();
 
+type IoniconName = ComponentProps<typeof Ionicons>['name'];
+
+const TAB_ICONS: Record<string, { active: IoniconName; inactive: IoniconName }> = {
+  Overview: { active: 'home', inactive: 'home-outline' },
+  Campaigns: { active: 'book', inactive: 'book-outline' },
+  Design: { active: 'mic', inactive: 'mic-outline' },
+  Repos: { active: 'code-slash', inactive: 'code-slash-outline' },
+  Scripts: { active: 'chatbubble-ellipses', inactive: 'chatbubble-ellipses-outline' },
+  Sync: { active: 'sync', inactive: 'sync-outline' },
+};
+
+function tabIcon(routeName: string) {
+  return ({ focused, color, size }: { focused: boolean; color: string; size: number }) => {
+    const icons = TAB_ICONS[routeName];
+    return <Ionicons name={focused ? icons.active : icons.inactive} size={size} color={color} />;
+  };
+}
+
 export function RootTabs(): React.JSX.Element {
   return (
     <Tab.Navigator
       detachInactiveScreens={false}
-      screenOptions={{
+      screenOptions={({ route }) => ({
         headerStyle: { backgroundColor: theme.surface },
         headerTintColor: theme.text,
         tabBarStyle: { backgroundColor: theme.surface, borderTopColor: theme.border },
         tabBarActiveTintColor: theme.accent,
         tabBarInactiveTintColor: theme.muted,
+        tabBarIcon: tabIcon(route.name),
         lazy: false,
         freezeOnBlur: false,
-      }}
+      })}
     >
       <Tab.Screen
         name="Overview"
