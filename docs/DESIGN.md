@@ -1,7 +1,7 @@
 # openJob — 面试备考 Agent 设计方案
 
 > 状态：设计定稿，待实施
-> 最后更新：2026-08-07
+> 最后更新：2026-08-11
 
 ---
 
@@ -636,6 +636,14 @@ openJob/
     │   ├── db/
     │   │   ├── schema.ts           # Drizzle 表定义
     │   │   └── migrations/
+    │   ├── sync/                   # 桌面 ↔ 手机增量同步（详见 5.7）
+    │   │   ├── server.ts           # 局域网 HTTP 同步服务（配对/心跳/交换）
+    │   │   ├── pairing.ts          # 配对会话与二维码负载
+    │   │   ├── identity.ts         # 设备身份（首次启动生成）
+    │   │   ├── triggers.ts         # 变更捕获触发器（本机写才记账）
+    │   │   ├── collect.ts          # oplog → 变更集快照
+    │   │   ├── apply.ts            # 变更集落库（以对端身份写，不产生回声）
+    │   │   └── orchestrator.ts     # 同步编排与水位线推进
     │   ├── llm/                    # provider 抽象、角色路由、流式
     │   ├── search/                 # bocha / tavily / 路由 / 缓存 / 可信度
     │   ├── tools/                  # Agent 共享工具箱
@@ -669,9 +677,54 @@ openJob/
             └── ipc/                # 类型安全的 IPC 客户端封装
 ```
 
+手机端（`mobile/`，Expo + React Native + expo-sqlite）与桌面端共享 `src/shared/` 类型，作为局域网同步的另一个对端，结构如下：
+
+```
+mobile/
+└── src/
+    ├── db/
+    │   ├── schema.ts              # 与桌面同构的表定义（手写维护，靠 smoke 保障一致）
+    │   └── index.ts               # 打开数据库、迁移、装触发器、加载对端凭据
+    ├── data/
+    │   └── queries.ts             # 只读查询（手机不跑 Agent，只浏览/打卡）
+    ├── sync/
+    │   ├── client.ts              # 配对/心跳/变更集交换的 HTTP 客户端（带签名）
+    │   ├── triggers.ts            # 变更捕获触发器，语义与桌面端完全一致
+    │   └── merge.ts               # 复用 shared/syncMerge 的合并/冲突解析
+    ├── components/                # 通用 UI 组件
+    └── screens/                   # 页面（Sync / Overview / …）
+```
+
 **安全基线**：渲染进程开启 `contextIsolation`、关闭 `nodeIntegration`，仅通过 preload 暴露白名单 IPC 方法。这既是 Electron 安全规范，也强制了「UI 不碰 IO」的分层。
 
 **分层强制**：eslint `no-restricted-imports` 禁止 `src/renderer` 引入 `node:*`、`electron` 主进程模块及 `src/main/**`；`src/shared` 只允许纯类型与常量，不含任何运行时 IO。
+
+### 5.7 桌面 ↔ 手机同步
+
+桌面端（Electron 主进程）内置局域网 HTTP 同步服务，手机端（React Native）通过扫码配对后定期/按需交换增量。手机是**纯对端**：不跑 Agent、不建索引，只读数据 + 轻量打卡，所有变更都通过同一套机制回流桌面。
+
+**变更捕获（两端对称）**：每张同步表配三个 SQLite 触发器（插入/更新/删除），把变更写成 `sync_oplog` 一行（表、行 ID、操作、墙钟、设备 ID、改动列）。关键约束：
+
+- 触发器只记**本机用户操作**。应用对端变更时，连接会临时把 `sync_meta.writeAs` 改写为对端设备 ID，触发器 `WHEN` 条件据此放行/拦截——这叫「回声过滤」。没有这一层，应用对端数据会再写一条 oplog，两端水位互相顶死，永不收敛。
+- 更新触发器只有列值真的变化才记账；`changed_fields` 记录具体改动列，供列级合并用。
+- 每次启动 DROP 再 CREATE 全部触发器，避免旧列清单漏采。
+
+**水位线语义（易踩坑，务必遵守）**：每个对端维护两条游标——
+
+| 游标 | 语义 | 用途 |
+|---|---|---|
+| `last_local_seq` | 本端 oplog 里**已发给该对端**的水位 | 收集本机待发变更：`seq > last_local_seq` |
+| `last_remote_seq` | **对端最近一次上报**的 oplog head | 请求对端增量：`seq > last_remote_seq` |
+
+这两条语义不同、不可互换：用对端 head 过滤本端变更会**静默吞掉本机所有新修改**（这是线上出过的 bug）。同步一轮后两端原地对调推进：本地水位推到本端当前 head，远端水位推到对端上报的 head。
+
+**合并**：两端都用自己的身份构造变更集快照（行快照 + tombstone），在桌面端 `shared/syncMerge` 做列级三方合并：
+
+- 同一行不同列改动 → 自动按列合并
+- 同一列改成不同值 / 删除与修改冲突 → 挂起为冲突，手机端弹 UI 让用户选本端还是对端
+- 手机专属列（`local_path`、`status` 等）在合并时被剔除，不接受对端值
+
+**安全**：配对交换 ECDH 派生共享密钥；每个请求带 HMAC 签名（设备 ID + 时间戳 + 路径 + body），防局域网内重放与伪造。
 
 ---
 
