@@ -3,6 +3,7 @@ import { Alert, Pressable, Text, TextInput, View } from 'react-native';
 import type { Annotation, Explanation } from '@shared/entities';
 import type { ExplanationTier } from '@shared/enums';
 import type { ExplainElaborateResult } from '@shared/ipc';
+import { annotationMarkSummary, sortMarksByContentPosition } from '@shared/annotationMarkList';
 import { invokeRemote } from '../remote/rpc';
 import { useRemoteTask } from '../context/RemoteTaskContext';
 import { useToast } from './Toast';
@@ -58,13 +59,15 @@ export function ExplanationStudyPanel({
   const [modalDraft, setModalDraft] = useState('');
   const [highlightColor, setHighlightColor] = useState<string>(DEFAULT_HIGHLIGHT_COLOR);
   const [viewMarker, setViewMarker] = useState<Annotation | null>(null);
+  const [focusedMarkId, setFocusedMarkId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const bookmarked = annotations.some((a) => a.kind === 'bookmark');
   const highlightMarks = annotations.filter((a) => a.kind === 'highlight');
-  const markCount = annotations.filter(
+  const contentMarks = annotations.filter(
     (a) => a.kind === 'highlight' || a.kind === 'note' || a.kind === 'elaboration',
-  ).length;
+  );
+  const markCount = contentMarks.length;
 
   const highlights: TextHighlight[] = useMemo(
     () =>
@@ -182,6 +185,39 @@ export function ExplanationStudyPanel({
       }));
       Alert.alert('选择标记', '该词句有多个标记', [...buttons, { text: '取消', style: 'cancel' }]);
     }
+  };
+
+  const locateMark = (mark: Annotation): void => {
+    const text = mark.selectedText?.trim();
+    if (text) {
+      setPhrase(text);
+      setSelectionStart(
+        mark.selectionStart ??
+          (content ? phraseSelectionStart(content.contentMd, text) : undefined),
+      );
+    }
+    setFocusedMarkId(mark.id);
+    if (mark.kind === 'note' || mark.kind === 'elaboration') {
+      setViewMarker(mark);
+      setModalMode('viewMarker');
+    }
+    setTimeout(() => setFocusedMarkId(null), 2400);
+  };
+
+  const showMarkList = (): void => {
+    if (!content || !contentMarks.length) return;
+    const sorted = sortMarksByContentPosition(contentMarks, content.contentMd);
+    Alert.alert(
+      '标记列表',
+      '选择要定位的标记',
+      [
+        ...sorted.map((mark) => ({
+          text: annotationMarkSummary(mark),
+          onPress: () => locateMark(mark),
+        })),
+        { text: '取消', style: 'cancel' },
+      ],
+    );
   };
 
   const saveFullEdit = async (): Promise<void> => {
@@ -411,7 +447,9 @@ export function ExplanationStudyPanel({
           </Text>
         </Pressable>
         {markCount > 0 && (
-          <Text style={{ color: theme.muted, fontSize: 11 }}>{markCount} 条标记</Text>
+          <Pressable onPress={showMarkList} hitSlop={6}>
+            <Text style={{ color: theme.accent, fontSize: 11 }}>{markCount} 条标记</Text>
+          </Pressable>
         )}
         {!editing && (
           <>
@@ -467,6 +505,7 @@ export function ExplanationStudyPanel({
           highlights={highlights}
           annotations={annotations}
           onSegmentPress={onSegmentPress}
+          focusedMarkId={focusedMarkId}
         />
       )}
 

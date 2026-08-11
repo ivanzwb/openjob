@@ -61,7 +61,7 @@ export function CampaignDetail({
   const [reports, setReports] = useState<InterviewReportView[]>([]);
   const [showReports, setShowReports] = useState(false);
   const [annotations, setAnnotations] = useState<AnnotationView[]>([]);
-  const [pageTab, setPageTab] = useState<'study' | 'materials'>('study');
+  const [pageTab, setPageTab] = useState<'intel' | 'study' | 'materials'>('intel');
   const [calendarFilterDate, setCalendarFilterDate] = useState<string | null>(null);
   const [filterPlan, setFilterPlan] = useState<TodayPlan | null>(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -282,16 +282,11 @@ export function CampaignDetail({
   };
 
   const toggleBookmark = async (nodeId: string): Promise<void> => {
-    const res = await invoke('annotation:toggleBookmark', {
+    await invoke('annotation:toggleBookmark', {
       targetType: 'node',
       targetId: nodeId,
     });
-    setBookmarkedIds((prev) => {
-      const next = new Set(prev);
-      if (res.bookmarked) next.add(nodeId);
-      else next.delete(nodeId);
-      return next;
-    });
+    refresh();
   };
 
   const generatePlan = async (): Promise<void> => {
@@ -373,14 +368,6 @@ export function CampaignDetail({
             >
               {jdJob.isRunning ? '诊断中…' : nodes.length ? '重新诊断' : '开始诊断'}
             </button>
-            <button
-              type="button"
-              disabled={Boolean(job)}
-              onClick={() => void fetchIntel()}
-              className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm disabled:opacity-40"
-            >
-              {intelJob.isRunning ? '生成中…' : '公司情报'}
-            </button>
           </div>
         </div>
 
@@ -409,6 +396,7 @@ export function CampaignDetail({
           <div className="flex gap-1">
             {(
               [
+                { id: 'intel' as const, label: '情报与面经' },
                 { id: 'study' as const, label: '学习' },
                 {
                   id: 'materials' as const,
@@ -440,6 +428,111 @@ export function CampaignDetail({
       </header>
 
       <div className="mt-4 min-h-0 flex-1 overflow-hidden">
+        {pageTab === 'intel' && (
+          <div className="h-full space-y-4 overflow-y-auto pr-1">
+            <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-sm font-medium">公司情报</h3>
+                  <p className="mt-0.5 text-xs text-[var(--color-muted)]">
+                    联网检索目标公司与岗位背景，可划词记笔记
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={Boolean(job)}
+                  onClick={() => void fetchIntel()}
+                  className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs disabled:opacity-40"
+                >
+                  {intelJob.isRunning ? '生成中…' : intel ? '重新检索' : '生成公司情报'}
+                </button>
+              </div>
+              <div className="mt-3">
+                {intel ? (
+                  <CompanyIntelCard intel={intel} onAnnotationChange={refresh} />
+                ) : (
+                  <p className="text-xs text-[var(--color-muted)]">
+                    点击「生成公司情报」联网检索公司与岗位信息
+                  </p>
+                )}
+              </div>
+            </section>
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+                <h3 className="text-sm font-medium">面经摄入</h3>
+                <p className="mt-1 text-xs text-[var(--color-muted)]">粘贴面经或联网搜索自动摄入</p>
+                <div className="mt-3 space-y-2">
+                  <button
+                    type="button"
+                    disabled={webIngesting || Boolean(job)}
+                    onClick={() => void ingestWeb()}
+                    className="rounded border border-sky-800 bg-sky-950/40 px-3 py-1.5 text-xs text-sky-300 disabled:opacity-40"
+                  >
+                    {webIngesting ? '搜索摄入中…' : '搜索摄入面经'}
+                  </button>
+                  <textarea
+                    value={reportText}
+                    onChange={(e) => setReportText(e.target.value)}
+                    rows={4}
+                    className="w-full resize-y rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-sm"
+                    placeholder="粘贴面经…"
+                  />
+                  <button
+                    type="button"
+                    disabled={!reportText.trim() || Boolean(job)}
+                    onClick={() => void ingestReport('pasted')}
+                    className="rounded border border-[var(--color-border)] px-3 py-1 text-xs disabled:opacity-40"
+                  >
+                    摄入面经
+                  </button>
+                  {detail.reportCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowReports((v) => !v)}
+                      className="text-left text-xs text-[var(--color-muted)] hover:text-[var(--color-fg)]"
+                    >
+                      已摄入 {detail.reportCount} 篇 · {showReports ? '收起出处' : '查看出处'}
+                    </button>
+                  )}
+                  {showReports && <ReportSourceList reports={reports} />}
+                  {ingestMsg && (
+                    <p
+                      className={`text-xs ${ingestMsg.includes('提取') ? 'text-emerald-400' : 'text-red-400'}`}
+                    >
+                      {ingestMsg}
+                    </p>
+                  )}
+                </div>
+              </section>
+
+              <section className="rounded-xl border border-emerald-900/40 bg-emerald-950/20 p-4">
+                <h3 className="text-sm font-medium text-emerald-300">面经复盘</h3>
+                <p className="mt-1 text-xs text-[var(--color-muted)]">
+                  面完当天录入实际被问到的题，会自动标记 Campaign 为已复盘
+                </p>
+                <div className="mt-3 space-y-2">
+                  <textarea
+                    value={debriefText}
+                    onChange={(e) => setDebriefText(e.target.value)}
+                    rows={5}
+                    className="w-full resize-y rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-sm"
+                    placeholder="今天面试被问了什么？"
+                  />
+                  <button
+                    type="button"
+                    disabled={!debriefText.trim() || Boolean(job)}
+                    onClick={() => void ingestReport('selfDebrief')}
+                    className="rounded bg-emerald-700 px-3 py-1.5 text-xs disabled:opacity-40"
+                  >
+                    提交复盘
+                  </button>
+                </div>
+              </section>
+            </div>
+          </div>
+        )}
+
         {pageTab === 'study' && (
           <div className="flex h-full min-h-0 flex-col gap-3 overflow-hidden">
             {detail.blindSpotQuestions.length > 0 && (
@@ -627,6 +720,7 @@ export function CampaignDetail({
                                 <TaskStudyPanel
                                   nodeId={selectedNode.id}
                                   nodeName={selectedNode.name}
+                                  onAnnotationChange={refresh}
                                 />
                               </div>
                             )}
@@ -772,17 +866,6 @@ export function CampaignDetail({
               </div>
             </div>
 
-            <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-              <h3 className="text-sm font-medium">公司情报</h3>
-              <div className="mt-3">
-                {intel ? (
-                  <CompanyIntelCard intel={intel} onAnnotationChange={refresh} />
-                ) : (
-                  <p className="text-xs text-[var(--color-muted)]">点击顶部「公司情报」联网检索</p>
-                )}
-              </div>
-            </section>
-
             {detail.blindSpotQuestions.length > 0 && (
               <section className="rounded-xl border border-amber-900/50 bg-amber-950/20 p-4">
                 <h3 className="text-sm font-medium text-amber-300">
@@ -808,79 +891,6 @@ export function CampaignDetail({
                 </ul>
               </section>
             )}
-
-            <div className="grid gap-4 lg:grid-cols-2">
-              <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-                <h3 className="text-sm font-medium">面经摄入</h3>
-                <p className="mt-1 text-xs text-[var(--color-muted)]">粘贴面经或联网搜索自动摄入</p>
-                <div className="mt-3 space-y-2">
-                  <button
-                    type="button"
-                    disabled={webIngesting || Boolean(job)}
-                    onClick={() => void ingestWeb()}
-                    className="rounded border border-sky-800 bg-sky-950/40 px-3 py-1.5 text-xs text-sky-300 disabled:opacity-40"
-                  >
-                    {webIngesting ? '搜索摄入中…' : '搜索摄入面经'}
-                  </button>
-                  <textarea
-                    value={reportText}
-                    onChange={(e) => setReportText(e.target.value)}
-                    rows={4}
-                    className="w-full resize-y rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-sm"
-                    placeholder="粘贴面经…"
-                  />
-                  <button
-                    type="button"
-                    disabled={!reportText.trim() || Boolean(job)}
-                    onClick={() => void ingestReport('pasted')}
-                    className="rounded border border-[var(--color-border)] px-3 py-1 text-xs disabled:opacity-40"
-                  >
-                    摄入面经
-                  </button>
-                  {detail.reportCount > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setShowReports((v) => !v)}
-                      className="text-left text-xs text-[var(--color-muted)] hover:text-[var(--color-fg)]"
-                    >
-                      已摄入 {detail.reportCount} 篇 · {showReports ? '收起出处' : '查看出处'}
-                    </button>
-                  )}
-                  {showReports && <ReportSourceList reports={reports} />}
-                  {ingestMsg && (
-                    <p
-                      className={`text-xs ${ingestMsg.includes('提取') ? 'text-emerald-400' : 'text-red-400'}`}
-                    >
-                      {ingestMsg}
-                    </p>
-                  )}
-                </div>
-              </section>
-
-              <section className="rounded-xl border border-emerald-900/40 bg-emerald-950/20 p-4">
-                <h3 className="text-sm font-medium text-emerald-300">面后复盘</h3>
-                <p className="mt-1 text-xs text-[var(--color-muted)]">
-                  面完当天录入实际被问到的题，会自动标记 Campaign 为已复盘
-                </p>
-                <div className="mt-3 space-y-2">
-                  <textarea
-                    value={debriefText}
-                    onChange={(e) => setDebriefText(e.target.value)}
-                    rows={5}
-                    className="w-full resize-y rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-sm"
-                    placeholder="今天面试被问了什么？"
-                  />
-                  <button
-                    type="button"
-                    disabled={!debriefText.trim() || Boolean(job)}
-                    onClick={() => void ingestReport('selfDebrief')}
-                    className="rounded bg-emerald-700 px-3 py-1.5 text-xs disabled:opacity-40"
-                  >
-                    提交复盘
-                  </button>
-                </div>
-              </section>
-            </div>
           </div>
         )}
       </div>

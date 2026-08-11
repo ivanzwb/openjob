@@ -103,3 +103,18 @@ body {
   border-radius: 8px;
   overflow: hidden;
 }
+
+@keyframes annotation-focus-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.65);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(251, 191, 36, 0.35);
+  }
+}
+
+.annotation-focus-pulse {
+  animation: annotation-focus-pulse 1.2s ease-in-out 2;
+  border-radius: 2px;
+}

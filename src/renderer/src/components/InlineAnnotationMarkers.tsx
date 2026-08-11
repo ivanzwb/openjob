@@ -190,11 +190,13 @@ function InlineMarkedText({
   markers,
   highlight,
   onDelete,
+  focusAnnotationId,
 }: {
   text: string;
   markers: InlineAnnotation[];
   highlight?: TextHighlight;
   onDelete: (id: string) => void;
+  focusAnnotationId?: string | null;
 }): React.JSX.Element {
   const [activeMarker, setActiveMarker] = useState<InlineAnnotation | null>(null);
   const [showPicker, setShowPicker] = useState(false);
@@ -232,10 +234,26 @@ function InlineMarkedText({
     setAnchorRect(null);
   }, []);
 
+  useEffect(() => {
+    if (!focusAnnotationId) return;
+    const marker = markers.find((m) => m.id === focusAnnotationId);
+    if (!marker) return;
+    const rect = ref.current?.getBoundingClientRect();
+    if (!rect) return;
+    setAnchorRect(rect);
+    setActiveMarker(marker);
+    setShowPicker(false);
+  }, [focusAnnotationId, markers]);
+
   const textClass = `cursor-pointer rounded-sm px-0.5 transition-opacity hover:opacity-90 ${markerTextClass(markers)}`;
   const { hasNote, hasElaboration } = markerKinds(markers);
+  const annotationIds = markers.map((m) => m.id).join(' ');
   const inner = highlight ? (
-    <mark className={textClass} style={highlightTextStyle(highlight.color)}>
+    <mark
+      className={textClass}
+      style={highlightTextStyle(highlight.color)}
+      {...(highlight.annotationId ? { 'data-annotation-id': highlight.annotationId } : {})}
+    >
       {text}
     </mark>
   ) : (
@@ -250,6 +268,7 @@ function InlineMarkedText({
         tabIndex={0}
         title={markerTitle(markers)}
         className="inline"
+        data-annotation-id={annotationIds}
         onClick={(e) => {
           e.stopPropagation();
           open();
@@ -378,6 +397,7 @@ export function renderTextWithInlineMarkers(
   renderPlain: (plain: string, keyPrefix: string) => React.ReactNode[],
   keyPrefix: string,
   highlights?: TextHighlight[],
+  focusAnnotationId?: string | null,
 ): React.ReactNode[] {
   const segments = splitByInlineAnnotations(text, annotations);
   const nodes: React.ReactNode[] = [];
@@ -396,6 +416,7 @@ export function renderTextWithInlineMarkers(
         markers={seg.markers}
         {...(hl ? { highlight: hl } : {})}
         onDelete={onDelete}
+        focusAnnotationId={focusAnnotationId}
       />,
     );
   });

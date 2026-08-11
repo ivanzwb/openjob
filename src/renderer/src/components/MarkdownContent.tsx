@@ -19,11 +19,13 @@ export interface TextHighlight {
   text: string;
   color: string;
   start?: number;
+  annotationId?: string;
 }
 
 interface TextSegment {
   text: string;
   color?: string;
+  annotationId?: string;
 }
 
 function segmentTextWithHighlights(
@@ -33,7 +35,7 @@ function segmentTextWithHighlights(
 ): TextSegment[] {
   if (!highlights.length) return [{ text }];
 
-  const ranges: Array<{ start: number; end: number; color: string }> = [];
+  const ranges: Array<{ start: number; end: number; color: string; annotationId?: string }> = [];
   for (const mark of highlights) {
     const needle = mark.text.trim();
     if (!needle) continue;
@@ -42,12 +44,22 @@ function segmentTextWithHighlights(
       const end = start + needle.length;
       if (start < 0 || end > text.length) continue;
       if (text.slice(start, end) !== needle) continue;
-      ranges.push({ start, end, color: mark.color });
+      ranges.push({
+        start,
+        end,
+        color: mark.color,
+        ...(mark.annotationId ? { annotationId: mark.annotationId } : {}),
+      });
       continue;
     }
     const idx = text.indexOf(needle);
     if (idx === -1) continue;
-    ranges.push({ start: idx, end: idx + needle.length, color: mark.color });
+    ranges.push({
+      start: idx,
+      end: idx + needle.length,
+      color: mark.color,
+      ...(mark.annotationId ? { annotationId: mark.annotationId } : {}),
+    });
   }
 
   if (!ranges.length) return [{ text }];
@@ -58,7 +70,7 @@ function segmentTextWithHighlights(
   for (const range of ranges) {
     if (range.start < cursor) continue;
     if (range.start > cursor) segments.push({ text: text.slice(cursor, range.start) });
-    segments.push({ text: text.slice(range.start, range.end), color: range.color });
+    segments.push({ text: text.slice(range.start, range.end), color: range.color, annotationId: range.annotationId });
     cursor = range.end;
   }
   if (cursor < text.length) segments.push({ text: text.slice(cursor) });
@@ -76,6 +88,7 @@ function renderTextBlock(
   highlights?: TextHighlight[],
   inlineAnnotations?: InlineAnnotation[],
   onDeleteAnnotation?: (id: string) => void,
+  focusAnnotationId?: string | null,
 ): React.ReactNode[] {
   const renderPlain = (plain: string, prefix: string): React.ReactNode[] =>
     renderTextWithRefs(plain, blockStart, onCodeClick, highlights, prefix);
@@ -89,6 +102,7 @@ function renderTextBlock(
       renderPlain,
       keyPrefix,
       highlights,
+      focusAnnotationId,
     );
   }
   return renderTextWithRefs(text, blockStart, onCodeClick, highlights, keyPrefix);
@@ -116,6 +130,7 @@ function renderTextWithRefs(
           key={`${keyPrefix}-hl-${nodes.length}`}
           className="rounded-sm px-0.5"
           style={highlightTextStyle(seg.color)}
+          {...(seg.annotationId ? { 'data-annotation-id': seg.annotationId } : {})}
         >
           {seg.text}
         </mark>,
@@ -238,12 +253,14 @@ export function MarkdownContent({
   highlights,
   annotations,
   onDeleteAnnotation,
+  focusAnnotationId,
 }: {
   text: string;
   onCodeClick?: (loc: CodeLocation) => void;
   highlights?: TextHighlight[];
   annotations?: Annotation[];
   onDeleteAnnotation?: (id: string) => void;
+  focusAnnotationId?: string | null;
 }): React.JSX.Element {
   const inlineAnnotations = useMemo(
     () => (annotations ? filterInlineAnnotations(annotations) : []),
@@ -276,6 +293,7 @@ export function MarkdownContent({
               highlights,
               inlineAnnotations,
               onDeleteAnnotation,
+              focusAnnotationId,
             )}
           </div>
         );

@@ -8,11 +8,13 @@ export function TaskStudyPanel({
   nodeId,
   nodeName,
   onComplete,
+  onAnnotationChange,
 }: {
   task?: TaskView | null;
   nodeId?: string;
   nodeName?: string;
   onComplete?: () => void;
+  onAnnotationChange?: () => void;
 }): React.JSX.Element {
   if (task) {
     if (task.kind === 'readCode' && task.repoId) {
@@ -43,6 +45,7 @@ export function TaskStudyPanel({
           nodeName={task.nodeName ?? ''}
           fallbackMode
           onComplete={onComplete}
+          onAnnotationChange={onAnnotationChange}
         />
       );
     }
@@ -51,12 +54,20 @@ export function TaskStudyPanel({
         nodeId={task.nodeId}
         nodeName={task.nodeName ?? ''}
         onComplete={onComplete}
+        onAnnotationChange={onAnnotationChange}
       />
     );
   }
 
   if (nodeId) {
-    return <ExplanationPanel key={nodeId} nodeId={nodeId} nodeName={nodeName ?? ''} />;
+    return (
+      <ExplanationPanel
+        key={nodeId}
+        nodeId={nodeId}
+        nodeName={nodeName ?? ''}
+        onAnnotationChange={onAnnotationChange}
+      />
+    );
   }
 
   return <p className="text-sm text-[var(--color-muted)]">选择考点或日历任务开始学习</p>;

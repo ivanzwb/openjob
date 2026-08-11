@@ -12,6 +12,7 @@ import {
   useAnnotationTools,
 } from './AnnotationTools';
 import { MarkdownContent } from './MarkdownContent';
+import { AnnotationMarkMenu } from './AnnotationMarkMenu';
 import { ResizeHandleGlyph, useResizablePanel, type ResizablePanelPreset } from './ResizablePopover';
 import { useToast } from './Toast';
 import { useAdaptivePopover } from '../lib/popoverLayout';
@@ -298,6 +299,7 @@ export function ExplanationPanel({
   const [noteSaving, setNoteSaving] = useState(false);
   const [highlightSaving, setHighlightSaving] = useState(false);
   const [clearHighlightSaving, setClearHighlightSaving] = useState(false);
+  const [focusMarkId, setFocusMarkId] = useState<string | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const selectionRef = useRef<SelectionAnchor | null>(null);
   const toast = useToast();
@@ -392,6 +394,27 @@ export function ExplanationPanel({
     document.addEventListener('selectionchange', onSelectionChange);
     return () => document.removeEventListener('selectionchange', onSelectionChange);
   }, [toolbarPanel, content?.contentMd]);
+
+  useEffect(() => {
+    if (!focusMarkId || !bodyRef.current) return;
+    const el =
+      bodyRef.current.querySelector<HTMLElement>(`[data-annotation-id="${focusMarkId}"]`) ??
+      bodyRef.current.querySelector<HTMLElement>(`[data-annotation-id~="${focusMarkId}"]`);
+    if (!el) {
+      setFocusMarkId(null);
+      return;
+    }
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.classList.add('annotation-focus-pulse');
+    const timer = window.setTimeout(() => {
+      el.classList.remove('annotation-focus-pulse');
+      setFocusMarkId(null);
+    }, 2400);
+    return () => {
+      window.clearTimeout(timer);
+      el.classList.remove('annotation-focus-pulse');
+    };
+  }, [focusMarkId, content?.contentMd, annotation.marks]);
 
   const load = async (t: ExplanationTier, forceGenerate = false): Promise<void> => {
     setLoading(true);
@@ -523,10 +546,12 @@ export function ExplanationPanel({
               >
                 {annotation.bookmarked ? '★ 已收藏' : '☆ 收藏'}
               </button>
-              {annotation.marks.length > 0 && (
-                <span className="px-1 text-[10px] text-[var(--color-muted)]">
-                  {annotation.marks.length} 条标记
-                </span>
+              {annotation.marks.length > 0 && content && (
+                <AnnotationMarkMenu
+                  marks={annotation.marks}
+                  contentMd={content.contentMd}
+                  onSelect={setFocusMarkId}
+                />
               )}
 
               <span className="mx-0.5 h-4 w-px bg-[var(--color-border)]" />
@@ -646,10 +671,12 @@ export function ExplanationPanel({
                 highlights={highlightMarks.map((m) => ({
                   text: m.selectedText ?? '',
                   color: m.highlightColor ?? DEFAULT_HIGHLIGHT_COLOR,
+                  annotationId: m.id,
                   ...(m.selectionStart != null ? { start: m.selectionStart } : {}),
                 }))}
                 annotations={inlineMarks}
                 onDeleteAnnotation={annotation.deleteMark}
+                focusAnnotationId={focusMarkId}
               />
             </div>
           </div>

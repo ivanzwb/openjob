@@ -64,11 +64,13 @@ export function AnnotatedExplanationText({
   highlights,
   annotations,
   onSegmentPress,
+  focusedMarkId,
 }: {
   contentMd: string;
   highlights: TextHighlight[];
   annotations: Annotation[];
   onSegmentPress?: (text: string, start: number, markers?: InlineAnnotation[]) => void;
+  focusedMarkId?: string | null;
 }): React.JSX.Element {
   const inlineMarks = useMemo(() => filterInlineAnnotations(annotations), [annotations]);
   const segments = useMemo(
@@ -86,10 +88,22 @@ export function AnnotatedExplanationText({
           return <Text key={i}>{seg.text}</Text>;
         }
         if (seg.kind === 'highlight') {
+          const focused =
+            Boolean(focusedMarkId) &&
+            annotations.some(
+              (a) =>
+                a.id === focusedMarkId &&
+                a.kind === 'highlight' &&
+                a.selectedText?.trim() === seg.text.trim() &&
+                (a.selectionStart == null || a.selectionStart === seg.start),
+            );
           return (
             <Text
               key={i}
-              style={highlightTextStyle(seg.color)}
+              style={[
+                highlightTextStyle(seg.color),
+                focused ? { borderWidth: 1, borderColor: '#fbbf24', borderRadius: 2 } : null,
+              ]}
               onPress={
                 onSegmentPress
                   ? () => onSegmentPress(seg.text, seg.start)
@@ -103,10 +117,14 @@ export function AnnotatedExplanationText({
         const base = markerStyle(seg.markers);
         const hl = seg.highlightColor ? highlightTextStyle(seg.highlightColor) : null;
         const { hasNote, hasElaboration } = markerKinds(seg.markers);
+        const focused = Boolean(focusedMarkId) && seg.markers.some((m) => m.id === focusedMarkId);
         return (
           <Text
             key={i}
-            style={hl ? { ...base, backgroundColor: hl.backgroundColor, color: hl.color } : base}
+            style={[
+              hl ? { ...base, backgroundColor: hl.backgroundColor, color: hl.color } : base,
+              focused ? { borderWidth: 1, borderColor: '#fbbf24', borderRadius: 2 } : null,
+            ]}
             onPress={
               onSegmentPress
                 ? () => onSegmentPress(seg.text, seg.start, seg.markers)
