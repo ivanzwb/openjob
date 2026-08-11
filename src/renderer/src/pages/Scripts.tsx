@@ -121,11 +121,11 @@ export function Scripts(): React.JSX.Element {
             <li className="text-sm text-[var(--color-muted)]">还没有话术，完成考我或源码问答后可沉淀</li>
           ) : (
             snippets.map((s) => (
-              <li key={s.id}>
+              <li key={s.id} className="flex gap-2">
                 <button
                   type="button"
                   onClick={() => pick(s)}
-                  className={`w-full rounded-lg border p-3 text-left text-sm ${
+                  className={`min-w-0 flex-1 rounded-lg border p-3 text-left text-sm ${
                     selectedId === s.id
                       ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10'
                       : 'border-[var(--color-border)] bg-[var(--color-surface)]'
@@ -135,6 +135,14 @@ export function Scripts(): React.JSX.Element {
                   <div className="mt-1 line-clamp-2 text-xs text-[var(--color-muted)]">
                     {s.contentMd.slice(0, 80)}
                   </div>
+                </button>
+                <button
+                  type="button"
+                  title="删除这条话术"
+                  onClick={() => void remove(s.id)}
+                  className="flex w-11 shrink-0 items-center justify-center self-stretch rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] text-[10px] text-red-400 hover:bg-red-500/10 hover:text-red-400"
+                >
+                  删除
                 </button>
               </li>
             ))
@@ -167,25 +175,16 @@ export function Scripts(): React.JSX.Element {
             </div>
             <div className="flex items-center justify-between gap-2">
               <h3 className="text-sm font-medium">{selected.sourceLabel}</h3>
-              <div className="flex gap-2">
+              {panelMode === 'edit' && (
                 <button
                   type="button"
-                  onClick={() => void remove(selected.id)}
-                  className="text-xs text-red-400 hover:underline"
+                  disabled={saving || !dirty}
+                  onClick={() => void save()}
+                  className="rounded bg-[var(--color-accent)] px-3 py-1 text-xs disabled:opacity-40"
                 >
-                  删除
+                  {saving ? '保存中…' : selected.isUserEdited ? '保存修改' : '保存为自己的话'}
                 </button>
-                {panelMode === 'edit' && (
-                  <button
-                    type="button"
-                    disabled={saving || !dirty}
-                    onClick={() => void save()}
-                    className="rounded bg-[var(--color-accent)] px-3 py-1 text-xs disabled:opacity-40"
-                  >
-                    {saving ? '保存中…' : selected.isUserEdited ? '保存修改' : '保存为自己的话'}
-                  </button>
-                )}
-              </div>
+              )}
             </div>
             {panelMode === 'preview' ? (
               <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
