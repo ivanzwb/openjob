@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Alert, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Alert, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import type { SpeechSnippetView } from '@shared/ipc';
 import { getRawDb } from '../db';
 import { listSpeechSnippets } from '../data/queries';
@@ -29,6 +29,7 @@ export function ScriptsScreen(): React.JSX.Element {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [panelMode, setPanelMode] = useState<PanelMode>('preview');
   const [draft, setDraft] = useState('');
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const reload = useCallback(() => {
     const list = listSpeechSnippets(getRawDb());
@@ -104,11 +105,7 @@ export function ScriptsScreen(): React.JSX.Element {
   };
 
   return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: theme.bg }}
-      contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 32 }}
-      keyboardShouldPersistTaps="handled"
-    >
+    <View style={{ flex: 1, backgroundColor: theme.bg, padding: 16, gap: 12 }}>
       <Text style={{ color: theme.muted, fontSize: 12, lineHeight: 18 }}>
         考点讲解、考我反馈、源码问答的口语素材汇总。可预览全文、改写成你自己的话再背。导出请用桌面端。
       </Text>
@@ -119,60 +116,30 @@ export function ScriptsScreen(): React.JSX.Element {
         </Text>
       ) : (
         <>
-          <Text style={{ color: theme.muted, fontSize: 11 }}>共 {items.length} 条</Text>
-
-          <View style={{ gap: 8 }}>
-            {items.map((s) => (
-              <View
-                key={s.id}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'stretch',
-                  gap: 8,
-                }}
-              >
-                <Pressable
-                  onPress={() => pick(s)}
-                  style={{
-                    flex: 1,
-                    borderWidth: 1,
-                    borderColor: selectedId === s.id ? theme.accent : theme.border,
-                    borderRadius: 8,
-                    padding: 12,
-                    backgroundColor: selectedId === s.id ? `${theme.accent}18` : theme.surface,
-                    gap: 4,
-                  }}
-                >
-                  <Text style={{ color: theme.text, fontSize: 13, fontWeight: '600' }} numberOfLines={1}>
-                    {s.sourceLabel}
-                  </Text>
-                  <Text style={{ color: theme.muted, fontSize: 10 }}>
-                    {TIER_LABEL[s.tier]}
-                    {s.isUserEdited ? ' · 已改写' : ''}
-                  </Text>
-                  <Text style={{ color: theme.muted, fontSize: 11, lineHeight: 16 }} numberOfLines={3}>
-                    {markdownToPlainText(s.contentMd)}
-                  </Text>
-                </Pressable>
-                <Pressable
-                  onPress={() => remove(s)}
-                  style={{
-                    justifyContent: 'center',
-                    paddingHorizontal: 10,
-                    borderWidth: 1,
-                    borderColor: theme.border,
-                    borderRadius: 8,
-                    backgroundColor: theme.surface,
-                  }}
-                >
-                  <Text style={{ color: theme.danger, fontSize: 11 }}>删除</Text>
-                </Pressable>
-              </View>
-            ))}
-          </View>
+          {/* 话术下拉选择器：列表折叠为一行，正文获得全部剩余空间 */}
+          <Pressable
+            onPress={() => setPickerOpen(true)}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 8,
+              borderWidth: 1,
+              borderColor: theme.border,
+              borderRadius: 8,
+              backgroundColor: theme.surface,
+              paddingHorizontal: 12,
+              paddingVertical: 10,
+            }}
+          >
+            <Text style={{ flex: 1, color: theme.text, fontSize: 13, fontWeight: '600' }} numberOfLines={1}>
+              {selected ? selected.sourceLabel : '选择一条话术'}
+            </Text>
+            <Text style={{ color: theme.muted, fontSize: 11 }}>共 {items.length} 条</Text>
+            <Text style={{ color: theme.muted, fontSize: 12 }}>▾</Text>
+          </Pressable>
 
           {selected ? (
-            <View style={{ gap: 10, marginTop: 4 }}>
+            <>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
                 {(['preview', 'edit'] as const).map((mode) => (
                   <Pressable
@@ -245,14 +212,13 @@ export function ScriptsScreen(): React.JSX.Element {
               {panelMode === 'preview' ? (
                 <ScrollView
                   style={{
-                    maxHeight: 360,
+                    flex: 1,
                     borderWidth: 1,
                     borderColor: theme.border,
                     borderRadius: 8,
                     backgroundColor: theme.surface,
                   }}
                   contentContainerStyle={{ padding: 12 }}
-                  nestedScrollEnabled
                 >
                   <Text style={{ color: theme.text, fontSize: 13, lineHeight: 22 }}>
                     {markdownToPlainText(selected.contentMd) || '（空）'}
@@ -266,7 +232,7 @@ export function ScriptsScreen(): React.JSX.Element {
                   placeholder="改写成你自己的话…"
                   placeholderTextColor={theme.muted}
                   style={{
-                    minHeight: 280,
+                    flex: 1,
                     color: theme.text,
                     borderWidth: 1,
                     borderColor: theme.border,
@@ -279,12 +245,86 @@ export function ScriptsScreen(): React.JSX.Element {
                   }}
                 />
               )}
-            </View>
+            </>
           ) : (
             <Text style={{ color: theme.muted, fontSize: 13 }}>选择一条话术预览或编辑</Text>
           )}
         </>
       )}
-    </ScrollView>
+
+      {/* 话术下拉列表 */}
+      <Modal visible={pickerOpen} transparent animationType="fade" onRequestClose={() => setPickerOpen(false)}>
+        <View style={{ flex: 1, justifyContent: 'center', padding: 16 }}>
+          <Pressable
+            style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: 'rgba(0,0,0,0.45)' }}
+            onPress={() => setPickerOpen(false)}
+          />
+          <View
+            style={{
+              maxHeight: '85%',
+              borderRadius: 12,
+              borderWidth: 1,
+              borderColor: theme.border,
+              backgroundColor: theme.surface,
+              padding: 14,
+              gap: 10,
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text style={{ color: theme.text, fontWeight: '600', fontSize: 15 }}>话术列表</Text>
+              <Text style={{ color: theme.muted, fontSize: 11 }}>共 {items.length} 条</Text>
+            </View>
+
+            <ScrollView style={{ maxHeight: 420 }} keyboardShouldPersistTaps="handled">
+              <View style={{ gap: 8 }}>
+                {items.map((s) => (
+                  <View key={s.id} style={{ flexDirection: 'row', alignItems: 'stretch', gap: 8 }}>
+                    <Pressable
+                      onPress={() => {
+                        pick(s);
+                        setPickerOpen(false);
+                      }}
+                      style={{
+                        flex: 1,
+                        borderWidth: 1,
+                        borderColor: selectedId === s.id ? theme.accent : theme.border,
+                        borderRadius: 8,
+                        padding: 10,
+                        backgroundColor: selectedId === s.id ? `${theme.accent}18` : theme.bg,
+                        gap: 3,
+                      }}
+                    >
+                      <Text style={{ color: theme.text, fontSize: 13, fontWeight: '600' }} numberOfLines={1}>
+                        {s.sourceLabel}
+                      </Text>
+                      <Text style={{ color: theme.muted, fontSize: 10 }}>
+                        {TIER_LABEL[s.tier]}
+                        {s.isUserEdited ? ' · 已改写' : ''}
+                      </Text>
+                      <Text style={{ color: theme.muted, fontSize: 11, lineHeight: 16 }} numberOfLines={2}>
+                        {markdownToPlainText(s.contentMd)}
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => remove(s)}
+                      style={{
+                        justifyContent: 'center',
+                        paddingHorizontal: 10,
+                        borderWidth: 1,
+                        borderColor: theme.border,
+                        borderRadius: 8,
+                        backgroundColor: theme.bg,
+                      }}
+                    >
+                      <Text style={{ color: theme.danger, fontSize: 11 }}>删除</Text>
+                    </Pressable>
+                  </View>
+                ))}
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </View>
   );
 }
