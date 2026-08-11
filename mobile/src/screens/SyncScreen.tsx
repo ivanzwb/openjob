@@ -3,7 +3,7 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import type { PairingPayload } from '@shared/sync';
 import type { ConflictChoice } from '@shared/sync';
-import { listPendingConflictRows, pairDesktop, resolveConflicts, syncNow, unpairDesktop } from '../db';
+import { listPendingConflictRows, pairDesktop, resolveConflicts, unpairDesktop } from '../db';
 import type { PendingConflictRow } from '../db';
 import { useApp } from '../context/AppContext';
 import { theme } from '../theme';
@@ -39,7 +39,7 @@ export function SyncScreen(): React.JSX.Element {
       await pairDesktop(parsed);
       setScanning(false);
       await refresh();
-      await syncNow({ full: true });
+      await triggerFullSync();
       reloadConflicts();
     } catch (e) {
       // Leave the scanner regardless; surface the error in-page instead of
@@ -122,6 +122,10 @@ export function SyncScreen(): React.JSX.Element {
 
       {peerLabel && (
         <View style={{ gap: 8 }}>
+          <Text style={{ color: theme.muted, fontSize: 11, lineHeight: 16 }}>
+            同步范围：备考、考点、讲解、计划、话术、源码元数据、会话记录等 SQLite 业务数据。
+            {'\n'}不同步：桌面 config.json（模型/API 配置）、secrets、搜索缓存、仓库本地路径；LLM 与克隆走桌面代理。
+          </Text>
           <Pressable onPress={() => void triggerSync()} style={{ backgroundColor: theme.accent, padding: 12, borderRadius: 8, alignItems: 'center' }}>
             <Text style={{ color: '#fff' }}>立即同步</Text>
           </Pressable>

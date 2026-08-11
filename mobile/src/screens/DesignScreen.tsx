@@ -1,23 +1,40 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import type { DesignCaseResult, DesignSubmitResult, MockInterviewType } from '@shared/ipc';
 import { MOCK_INTERVIEW_TYPE_LABELS, MOCK_INTERVIEW_TYPE_OPTIONS } from '@shared/ipc';
+import type { CampaignSummary } from '@shared/ipc';
 import { getRawDb } from '../db';
 import { listCampaigns } from '../data/queries';
 import { invokeRemote } from '../remote/rpc';
 import { useApp } from '../context/AppContext';
 import { useRemoteTask } from '../context/RemoteTaskContext';
+import { useLocalDataReload } from '../hooks/useLocalDataReload';
 import { theme } from '../theme';
+
+function campaignLabel(c: CampaignSummary): string {
+  return `${c.company} · ${c.roleTitle}`;
+}
 
 export function DesignScreen(): React.JSX.Element {
   const { triggerSync } = useApp();
   const { runTask, active } = useRemoteTask();
-  const campaigns = listCampaigns(getRawDb());
-  const [campaignId, setCampaignId] = useState(campaigns[0]?.id ?? '');
+  const [campaigns, setCampaigns] = useState<CampaignSummary[]>([]);
+  const [campaignId, setCampaignId] = useState('');
   const [interviewType, setInterviewType] = useState<MockInterviewType>('mixed');
   const [designCase, setDesignCase] = useState<DesignCaseResult | null>(null);
   const [answer, setAnswer] = useState('');
   const [result, setResult] = useState<DesignSubmitResult | null>(null);
+
+  const reload = useCallback(() => {
+    const list = listCampaigns(getRawDb());
+    setCampaigns(list);
+    setCampaignId((prev) => {
+      if (prev && list.some((c) => c.id === prev)) return prev;
+      return list[0]?.id ?? '';
+    });
+  }, []);
+
+  useLocalDataReload(reload);
 
   const loadCase = async () => {
     try {
@@ -59,23 +76,39 @@ export function DesignScreen(): React.JSX.Element {
         结合公司、JD、简历与考点出题，覆盖概念、编码、系统设计、项目场景
       </Text>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-        {campaigns.map((c) => (
-          <Pressable
-            key={c.id}
-            onPress={() => setCampaignId(c.id)}
-            style={{
-              marginRight: 8,
-              padding: 8,
-              borderRadius: 8,
-              borderWidth: 1,
-              borderColor: campaignId === c.id ? theme.accent : theme.border,
-            }}
-          >
-            <Text style={{ color: theme.text, fontSize: 11 }}>{c.company}</Text>
-          </Pressable>
-        ))}
-      </ScrollView>
+      {campaigns.length === 0 ? (
+        <Text style={{ color: theme.muted, fontSize: 13 }}>请先创建 Campaign 或从桌面端同步</Text>
+      ) : (
+        <>
+          <Text style={{ color: theme.muted, fontSize: 11 }}>关联 Campaign</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {campaigns.map((c) => (
+              <Pressable
+                key={c.id}
+                onPress={() => {
+                  setCampaignId(c.id);
+                  setDesignCase(null);
+                  setResult(null);
+                }}
+                style={{
+                  marginRight: 8,
+                  paddingHorizontal: 10,
+                  paddingVertical: 8,
+                  borderRadius: 8,
+                  borderWidth: 1,
+                  borderColor: campaignId === c.id ? theme.accent : theme.border,
+                  backgroundColor: campaignId === c.id ? `${theme.accent}18` : theme.surface,
+                  maxWidth: 260,
+                }}
+              >
+                <Text style={{ color: theme.text, fontSize: 11 }} numberOfLines={2}>
+                  {campaignLabel(c)}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </>
+      )}
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
         {MOCK_INTERVIEW_TYPE_OPTIONS.map((o) => (

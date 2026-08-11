@@ -374,21 +374,75 @@ export function getCampaignDetail(db: SQLiteDatabase, id: string): CampaignDetai
 
 export function getCampaignOverview(db: SQLiteDatabase): CampaignOverview {
   const campaigns = listCampaigns(db);
-  const active = campaigns.filter((c) => c.status === 'active');
-  const nodes = db.getAllSync<{ mastery: number; exam_prob: number; status: string }>(
-    `SELECT mastery, exam_prob, status FROM knowledge_node`,
+
+  const totalSpeechSnippets =
+    db.getFirstSync<{ n: number }>(`SELECT count(*) AS n FROM speech_snippet`)?.n ?? 0;
+
+  const totalBlindSpots =
+    db.getFirstSync<{ n: number }>(
+      `SELECT count(*) AS n FROM interview_question WHERE is_blind_spot = 1`,
+    )?.n ?? 0;
+
+  const nodeRows = db.getAllSync<{
+    id: string;
+    campaign_id: string;
+    name: string;
+    mastery: number;
+    company: string;
+    role_title: string;
+  }>(
+    `SELECT kn.id, kn.campaign_id, kn.name, kn.mastery, c.company, c.role_title
+     FROM knowledge_node kn
+     INNER JOIN campaign c ON c.id = kn.campaign_id`,
   );
+
+  const weakNodes = nodeRows
+    .filter((n) => n.mastery < 3)
+    .sort((a, b) => a.mastery - b.mastery)
+    .slice(0, 12)
+    .map((n) => ({
+      campaignId: n.campaign_id,
+      company: n.company,
+      roleTitle: n.role_title,
+      nodeId: n.id,
+      nodeName: n.name,
+      mastery: n.mastery,
+    }));
+
+  const reportRows = db.getAllSync<{ company: string; campaign_id: string | null }>(
+    `SELECT company, campaign_id FROM interview_report`,
+  );
+
+  const byCompany = new Map<string, { campaignIds: Set<string>; reportCount: number }>();
+  for (const r of reportRows) {
+    const entry = byCompany.get(r.company) ?? { campaignIds: new Set(), reportCount: 0 };
+    entry.reportCount++;
+    if (r.campaign_id) entry.campaignIds.add(r.campaign_id);
+    byCompany.set(r.company, entry);
+  }
+
+  const priorByCompany = [...byCompany.entries()]
+    .map(([company, v]) => ({
+      company,
+      campaignCount: v.campaignIds.size,
+      reportCount: v.reportCount,
+    }))
+    .sort((a, b) => b.reportCount - a.reportCount);
+
   const avgMastery =
-    nodes.length > 0 ? nodes.reduce((s, n) => s + n.mastery, 0) / nodes.length : 0;
+    nodeRows.length > 0
+      ? nodeRows.reduce((s, n) => s + n.mastery, 0) / nodeRows.length
+      : 0;
+
   return {
     campaignCount: campaigns.length,
-    activeCampaignCount: active.length,
-    totalSpeechSnippets: db.getFirstSync<{ n: number }>(`SELECT count(*) AS n FROM speech_snippet`)?.n ?? 0,
-    totalBlindSpots: 0,
+    activeCampaignCount: campaigns.filter((c) => c.status === 'active').length,
+    totalSpeechSnippets,
+    totalBlindSpots,
     avgMastery,
     campaigns,
-    weakNodes: [],
-    priorByCompany: [],
+    weakNodes,
+    priorByCompany,
   };
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import type { RepoReadFileResult } from '@shared/ipc';
 import type { Repo } from '@shared/entities';
@@ -6,6 +6,7 @@ import { RepoQaPanel } from '../components/RepoQaPanel';
 import { invokeRemote, jobResultFromEvents } from '../remote/rpc';
 import { useApp } from '../context/AppContext';
 import { useRemoteTask } from '../context/RemoteTaskContext';
+import { useLocalDataReload } from '../hooks/useLocalDataReload';
 import { markdownToPlainText } from '../lib/markdownBlocks';
 import { theme } from '../theme';
 
@@ -41,6 +42,10 @@ export function ReposScreen(): React.JSX.Element {
   useEffect(() => {
     void loadRepos().catch((e) => alert(e instanceof Error ? e.message : String(e)));
   }, []);
+
+  useLocalDataReload(useCallback(() => {
+    void loadRepos().catch(() => undefined);
+  }, []));
 
   useEffect(() => {
     setFilePath('');

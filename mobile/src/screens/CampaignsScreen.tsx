@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import type { CampaignSummary, KnowledgeNodeView, PlanGenerateResult, TaskView } from '@shared/ipc';
 import { nodeIdsForPlanFilter } from '@shared/planFilter';
@@ -12,6 +12,7 @@ import { createCampaign } from '../data/mutations';
 import { invokeRemote, jobResultFromEvents } from '../remote/rpc';
 import { useApp } from '../context/AppContext';
 import { useRemoteTask } from '../context/RemoteTaskContext';
+import { useLocalDataReload } from '../hooks/useLocalDataReload';
 import { theme } from '../theme';
 
 function CampaignListView({
@@ -25,11 +26,9 @@ function CampaignListView({
   const [role, setRole] = useState('');
   const [jd, setJd] = useState('');
 
-  const reload = () => setCampaigns(listCampaigns(getRawDb()));
+  const reload = useCallback(() => setCampaigns(listCampaigns(getRawDb())), []);
 
-  useEffect(() => {
-    reload();
-  }, []);
+  useLocalDataReload(reload);
 
   const create = async () => {
     const id = await createCampaign(getRawDb(), company, role, jd);
@@ -49,6 +48,9 @@ function CampaignListView({
       <Pressable onPress={() => void create()} style={btnStyle}>
         <Text style={{ color: '#fff' }}>创建</Text>
       </Pressable>
+      {campaigns.length === 0 && (
+        <Text style={{ color: theme.muted, fontSize: 13 }}>暂无备考，可在上方创建或从桌面端同步</Text>
+      )}
       {campaigns.map((c) => (
         <Pressable key={c.id} onPress={() => onOpenDetail(c.id)} style={cardStyle}>
           <Text style={{ color: theme.text }}>{c.company} · {c.roleTitle}</Text>
@@ -77,12 +79,15 @@ function CampaignDetailView({
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [reloadTick, setReloadTick] = useState(0);
 
-  const reload = () => {
+  const reload = useCallback(() => {
     const next = getCampaignDetail(getRawDb(), id);
     setDetail(next);
     setInterviewDate(next.campaign.interviewDate ?? '');
     setDailyMinutes(String(next.campaign.dailyMinutes ?? 90));
-  };
+    setReloadTick((t) => t + 1);
+  }, [id]);
+
+  useLocalDataReload(reload);
 
   const filterPlan = calendarFilterDate ? getTodayPlan(getRawDb(), id, calendarFilterDate) : null;
   const visibleNodeIds = useMemo(() => {

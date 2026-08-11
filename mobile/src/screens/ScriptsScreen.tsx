@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Alert, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import type { SpeechSnippetView } from '@shared/ipc';
 import { getRawDb } from '../db';
@@ -6,6 +6,7 @@ import { listSpeechSnippets } from '../data/queries';
 import { deleteSpeech, updateSpeech } from '../data/mutations';
 import { useApp } from '../context/AppContext';
 import { useRemoteTask } from '../context/RemoteTaskContext';
+import { useLocalDataReload } from '../hooks/useLocalDataReload';
 import { theme } from '../theme';
 
 export function ScriptsScreen(): React.JSX.Element {
@@ -24,9 +25,7 @@ export function ScriptsScreen(): React.JSX.Element {
     });
   }, []);
 
-  useEffect(() => {
-    reload();
-  }, [reload]);
+  useLocalDataReload(reload);
 
   useEffect(() => {
     if (!selectedId) {

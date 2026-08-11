@@ -20,6 +20,8 @@ interface AppContextValue {
   syncStatus: string;
   lastSyncMessage: string | null;
   conflicts: FieldConflict[];
+  /** 每次同步成功后递增，供各屏重新读本地库 */
+  dataVersion: number;
   refresh: () => Promise<void>;
   triggerSync: () => Promise<void>;
   triggerFullSync: () => Promise<void>;
@@ -34,7 +36,12 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
   const [syncing, setSyncing] = useState(false);
   const [lastSyncMessage, setLastSyncMessage] = useState<string | null>(null);
   const [conflicts, setConflicts] = useState<FieldConflict[]>([]);
+  const [dataVersion, setDataVersion] = useState(0);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const bumpData = useCallback(() => {
+    setDataVersion((v) => v + 1);
+  }, []);
 
   const refresh = useCallback(async () => {
     await openDb();
@@ -53,12 +60,13 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
           (result.conflicts > 0 ? `，${result.conflicts} 处冲突` : ''),
       );
       setConflicts(listPendingConflicts());
+      bumpData();
     } catch (e) {
       setLastSyncMessage(e instanceof Error ? e.message : String(e));
     } finally {
       setSyncing(false);
     }
-  }, []);
+  }, [bumpData]);
 
   const triggerFullSync = useCallback(async () => {
     if (!isPaired()) return;
@@ -70,12 +78,13 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
           (result.conflicts > 0 ? `，${result.conflicts} 处冲突` : ''),
       );
       setConflicts(listPendingConflicts());
+      bumpData();
     } catch (e) {
       setLastSyncMessage(e instanceof Error ? e.message : String(e));
     } finally {
       setSyncing(false);
     }
-  }, []);
+  }, [bumpData]);
 
   useEffect(() => {
     void openDb()
@@ -110,11 +119,12 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
       syncStatus,
       lastSyncMessage,
       conflicts,
+      dataVersion,
       refresh,
       triggerSync,
       triggerFullSync,
     }),
-    [ready, paired, peerLabel, syncing, syncStatus, lastSyncMessage, conflicts, refresh, triggerSync, triggerFullSync],
+    [ready, paired, peerLabel, syncing, syncStatus, lastSyncMessage, conflicts, dataVersion, refresh, triggerSync, triggerFullSync],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
