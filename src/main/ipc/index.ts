@@ -34,7 +34,7 @@ import {
 } from '../annotation';
 import { generateDesignCase, submitDesignAnswer } from '../design';
 import { dbHealth } from '../db';
-import { generateExplanation, generateFallbackScript, getExplanation, updateExplanation, elaborateExplanationSelection } from '../explain';
+import { generateExplanation, generateFallbackScript, getExplanation, updateExplanation, elaborateExplanationSelection, rewriteExplanationSelection } from '../explain';
 import { startJob } from '../jobs';
 import { cancelStream, startChat, testTier } from '../llm';
 import {
@@ -210,6 +210,9 @@ export function registerIpcHandlers(): void {
   handle('explain:update', ({ id, contentMd }) => updateExplanation(id, contentMd));
   handle('explain:elaborate', ({ nodeId, tier, selectedText, contextMd }) =>
     elaborateExplanationSelection(nodeId, tier, selectedText, contextMd),
+  );
+  handle('explain:rewrite', ({ nodeId, tier, selectedText, contextMd }) =>
+    rewriteExplanationSelection(nodeId, tier, selectedText, contextMd),
   );
 
   handle('quiz:question', ({ nodeId }) => generateQuizQuestion(nodeId));

@@ -80,7 +80,7 @@ export const ANNOTATION_TARGETS = [
 ] as const;
 export type AnnotationTarget = (typeof ANNOTATION_TARGETS)[number];
 
-export const ANNOTATION_KINDS = ['highlight', 'note', 'bookmark'] as const;
+export const ANNOTATION_KINDS = ['highlight', 'note', 'elaboration', 'bookmark'] as const;
 export type AnnotationKind = (typeof ANNOTATION_KINDS)[number];
 
 export const SPEECH_SOURCE_TYPES = ['node', 'codeRef', 'quiz', 'design'] as const;

@@ -1,15 +1,236 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { Explanation } from '@shared/entities';
 import type { ExplanationTier } from '@shared/enums';
 import { invoke } from '../ipc';
-import { AnnotationTools, selectionWithin } from './AnnotationTools';
+import {
+  AnnotationMarksPanel,
+  DEFAULT_HIGHLIGHT_COLOR,
+  HighlightColorPicker,
+  getSelectionAnchor,
+  type SelectionAnchor,
+  useAnnotationTools,
+} from './AnnotationTools';
 import { MarkdownContent } from './MarkdownContent';
+import { useToast } from './Toast';
 
 const TIERS: { id: ExplanationTier; label: string }[] = [
   { id: 'oneliner', label: '一句话' },
   { id: 'spoken', label: '口语稿' },
   { id: 'deep', label: '深挖' },
 ];
+
+const toolbarBtn =
+  'rounded px-2 py-1 text-xs text-[var(--color-muted)] hover:bg-black/20 hover:text-[var(--color-fg)] disabled:cursor-not-allowed disabled:opacity-40';
+
+function replaceExcerpt(contentMd: string, selected: string, replacement: string): string {
+  const sel = selected.trim();
+  const rep = replacement.trim();
+  if (!sel || !rep) throw new Error('替换内容为空');
+  if (contentMd.includes(sel)) return contentMd.replace(sel, rep);
+  throw new Error('无法在讲解正文中定位选区，请重新划选');
+}
+
+function SelectionFloatingMenu({
+  anchor,
+  busy,
+  onEdit,
+  onHighlight,
+  onNote,
+  onElaborate,
+  onSaveSpeech,
+}: {
+  anchor: SelectionAnchor;
+  busy: string | null;
+  onEdit: () => void;
+  onHighlight: () => void;
+  onNote: () => void;
+  onElaborate: () => void;
+  onSaveSpeech: () => void;
+}): React.JSX.Element {
+  const menuBtn =
+    'whitespace-nowrap rounded px-2 py-1 text-xs hover:bg-[var(--color-accent)]/20 disabled:opacity-40';
+
+  return createPortal(
+    <div
+      className="fixed z-[100] flex -translate-x-1/2 flex-col items-center"
+      style={{ top: anchor.top, left: anchor.left }}
+      onMouseDown={(e) => e.preventDefault()}
+    >
+      <div className="flex items-center gap-0.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-1 py-1 shadow-lg">
+        <button type="button" className={menuBtn} disabled={Boolean(busy)} onClick={onEdit}>
+          编辑讲解
+        </button>
+        <button type="button" className={menuBtn} disabled={Boolean(busy)} onClick={onHighlight}>
+          {busy === 'highlight' ? '高亮中…' : '划词高亮'}
+        </button>
+        <button type="button" className={menuBtn} disabled={Boolean(busy)} onClick={onNote}>
+          记笔记
+        </button>
+        <button type="button" className={menuBtn} disabled={Boolean(busy)} onClick={onElaborate}>
+          {busy === 'elaborate' ? '细化中…' : '细化讲解'}
+        </button>
+        <button type="button" className={menuBtn} disabled={Boolean(busy)} onClick={onSaveSpeech}>
+          {busy === 'speech' ? '保存中…' : '存入话术库'}
+        </button>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+type ActionPanelMode = 'edit' | 'note' | 'highlight';
+
+function SelectionActionPopover({
+  mode,
+  anchor,
+  editDraft,
+  noteDraft,
+  highlightColor,
+  editSaving,
+  noteSaving,
+  highlightSaving,
+  onEditDraftChange,
+  onNoteDraftChange,
+  onHighlightColorChange,
+  onClose,
+  onSaveEdit,
+  onSaveNote,
+  onSaveHighlight,
+}: {
+  mode: ActionPanelMode;
+  anchor: SelectionAnchor;
+  editDraft: string;
+  noteDraft: string;
+  highlightColor: string;
+  editSaving: boolean;
+  noteSaving: boolean;
+  highlightSaving: boolean;
+  onEditDraftChange: (v: string) => void;
+  onNoteDraftChange: (v: string) => void;
+  onHighlightColorChange: (v: string) => void;
+  onClose: () => void;
+  onSaveEdit: () => void;
+  onSaveNote: () => void;
+  onSaveHighlight: () => void;
+}): React.JSX.Element {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const onPointerDown = (e: MouseEvent): void => {
+      if (ref.current?.contains(e.target as Node)) return;
+      onClose();
+    };
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [onClose]);
+
+  const width = 288;
+  const top = Math.min(anchor.top, window.innerHeight - 320);
+  const left = Math.min(Math.max(8, anchor.left - width / 2), window.innerWidth - width - 8);
+
+  const title =
+    mode === 'edit' ? '编辑讲解' : mode === 'highlight' ? '划词高亮' : '记笔记';
+
+  return createPortal(
+    <div
+      ref={ref}
+      className="fixed z-[110] w-72 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-xl"
+      style={{ top, left }}
+      onMouseDown={(e) => e.preventDefault()}
+    >
+      <div className="mb-2 flex items-start justify-between gap-2">
+        <p className="text-[10px] font-medium text-[var(--color-muted)]">{title}</p>
+        <button
+          type="button"
+          onClick={onClose}
+          className="shrink-0 text-[10px] text-[var(--color-muted)] hover:text-[var(--color-fg)]"
+        >
+          关闭
+        </button>
+      </div>
+      {mode !== 'edit' ? (
+        <p className="mb-2 line-clamp-2 text-[10px] text-amber-300/90">「{anchor.text}」</p>
+      ) : (
+        <p className="mb-2 line-clamp-2 text-[10px] text-[var(--color-muted)]">
+          替换「{anchor.text}」
+        </p>
+      )}
+
+      {mode === 'edit' && (
+        <textarea
+          value={editDraft}
+          onChange={(e) => onEditDraftChange(e.target.value)}
+          rows={4}
+          autoFocus
+          className="mb-3 w-full resize-y rounded border border-[var(--color-border)] bg-[var(--color-bg)] p-2 text-xs leading-relaxed outline-none focus:border-[var(--color-accent)]"
+        />
+      )}
+
+      {mode === 'highlight' && (
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <span className="text-[10px] text-[var(--color-muted)]">高亮颜色</span>
+          <HighlightColorPicker color={highlightColor} onColorChange={onHighlightColorChange} />
+        </div>
+      )}
+
+      {mode === 'note' && (
+        <textarea
+          value={noteDraft}
+          onChange={(e) => onNoteDraftChange(e.target.value)}
+          rows={3}
+          autoFocus
+          placeholder="针对选中内容记笔记…"
+          className="mb-3 w-full resize-y rounded border border-[var(--color-border)] bg-[var(--color-bg)] p-2 text-xs leading-relaxed outline-none focus:border-[var(--color-accent)]"
+        />
+      )}
+
+      <div className="flex justify-end gap-2">
+        <button type="button" className={toolbarBtn} onClick={onClose}>
+          取消
+        </button>
+        {mode === 'edit' && (
+          <button
+            type="button"
+            disabled={editSaving || !editDraft.trim()}
+            className="rounded bg-[var(--color-accent)] px-2 py-1 text-xs text-white disabled:opacity-40"
+            onClick={onSaveEdit}
+          >
+            {editSaving ? '保存中…' : '保存修改'}
+          </button>
+        )}
+        {mode === 'highlight' && (
+          <button
+            type="button"
+            disabled={highlightSaving}
+            className="rounded bg-[var(--color-accent)] px-2 py-1 text-xs text-white disabled:opacity-40"
+            onClick={onSaveHighlight}
+          >
+            {highlightSaving ? '保存中…' : '确认高亮'}
+          </button>
+        )}
+        {mode === 'note' && (
+          <button
+            type="button"
+            disabled={noteSaving || !noteDraft.trim()}
+            className="rounded bg-[var(--color-accent)] px-2 py-1 text-xs text-white disabled:opacity-40"
+            onClick={onSaveNote}
+          >
+            {noteSaving ? '保存中…' : '保存笔记'}
+          </button>
+        )}
+      </div>
+    </div>,
+    document.body,
+  );
+}
 
 export function ExplanationPanel({
   nodeId,
@@ -30,31 +251,115 @@ export function ExplanationPanel({
   const [content, setContent] = useState<Explanation | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const [draftMd, setDraftMd] = useState('');
-  const [savingEdit, setSavingEdit] = useState(false);
+  const [selection, setSelection] = useState<SelectionAnchor | null>(null);
+  const [showFloatingMenu, setShowFloatingMenu] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
   const [regenerating, setRegenerating] = useState(false);
-  const [elaborating, setElaborating] = useState(false);
-  const [elaboration, setElaboration] = useState<{ selectedText: string; md: string } | null>(
-    null,
-  );
+  const [toolbarPanel, setToolbarPanel] = useState<'none' | ActionPanelMode>('none');
+  const [popoverAnchor, setPopoverAnchor] = useState<SelectionAnchor | null>(null);
+  const [editDraft, setEditDraft] = useState('');
+  const [noteDraft, setNoteDraft] = useState('');
+  const [highlightColor, setHighlightColor] = useState(DEFAULT_HIGHLIGHT_COLOR);
+  const [editSaving, setEditSaving] = useState(false);
+  const [noteSaving, setNoteSaving] = useState(false);
+  const [highlightSaving, setHighlightSaving] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
+  const selectionRef = useRef<SelectionAnchor | null>(null);
+  const toast = useToast();
 
   const activeTier = fallbackMode ? 'oneliner' : tier;
   const isUserEdited = content?.modelUsed === 'user-edit';
+  const hasSelection = Boolean(selection);
+
+  const annotation = useAnnotationTools({
+    targetType: 'explanation',
+    targetId: content?.id ?? '',
+    scopeRef: bodyRef,
+    onChange: onAnnotationChange,
+  });
+
+  const highlightMarks = annotation.marks.filter((m) => m.kind === 'highlight');
+  const inlineMarks = annotation.annotations.filter(
+    (m) => m.kind === 'note' || m.kind === 'elaboration',
+  );
+
+  const closeActionPanel = useCallback(() => {
+    setToolbarPanel('none');
+    setPopoverAnchor(null);
+    setEditDraft('');
+    setNoteDraft('');
+    setHighlightColor(DEFAULT_HIGHLIGHT_COLOR);
+  }, []);
+
+  const openActionPanel = useCallback((mode: ActionPanelMode) => {
+    const sel = selectionRef.current ?? selection;
+    if (!sel) return;
+    setPopoverAnchor({ ...sel });
+    setToolbarPanel(mode);
+    setShowFloatingMenu(false);
+    if (mode === 'edit') setEditDraft(sel.text);
+    if (mode === 'note') setNoteDraft('');
+    if (mode === 'highlight') setHighlightColor(DEFAULT_HIGHLIGHT_COLOR);
+  }, [selection]);
+
+  const applySelectionFromDom = useCallback(() => {
+    const anchor = getSelectionAnchor(bodyRef.current);
+    selectionRef.current = anchor;
+    setSelection(anchor);
+    setShowFloatingMenu(Boolean(anchor) && toolbarPanel === 'none');
+    if (!anchor && toolbarPanel === 'none') {
+      setEditDraft('');
+      setNoteDraft('');
+      setHighlightColor(DEFAULT_HIGHLIGHT_COLOR);
+    }
+  }, [toolbarPanel]);
+
+  const clearSelection = useCallback(() => {
+    window.getSelection()?.removeAllRanges();
+    selectionRef.current = null;
+    setSelection(null);
+    setShowFloatingMenu(false);
+    closeActionPanel();
+  }, [closeActionPanel]);
+
+  useEffect(() => {
+    const el = bodyRef.current;
+    if (!el || !content) return;
+
+    const onMouseUp = (): void => {
+      requestAnimationFrame(() => applySelectionFromDom());
+    };
+
+    el.addEventListener('mouseup', onMouseUp);
+    return () => el.removeEventListener('mouseup', onMouseUp);
+  }, [content, applySelectionFromDom]);
+
+  useEffect(() => {
+    const onSelectionChange = (): void => {
+      if (toolbarPanel !== 'none') return;
+      const anchor = getSelectionAnchor(bodyRef.current);
+      if (anchor) return;
+      selectionRef.current = null;
+      setSelection(null);
+      setShowFloatingMenu(false);
+      setEditDraft('');
+      setNoteDraft('');
+      setHighlightColor(DEFAULT_HIGHLIGHT_COLOR);
+    };
+
+    document.addEventListener('selectionchange', onSelectionChange);
+    return () => document.removeEventListener('selectionchange', onSelectionChange);
+  }, [toolbarPanel]);
 
   const load = async (t: ExplanationTier, forceGenerate = false): Promise<void> => {
     setLoading(true);
     setError(null);
-    setElaboration(null);
+    clearSelection();
     try {
       if (!forceGenerate) {
         const cached = await invoke('explain:get', { nodeId, tier: t });
         if (cached) {
           setContent(cached);
-          setDraftMd(cached.contentMd);
-          setEditing(false);
           return;
         }
       }
@@ -62,8 +367,6 @@ export function ExplanationPanel({
         ? await invoke('explain:fallback', { nodeId })
         : await invoke('explain:generate', { nodeId, tier: t });
       setContent(generated);
-      setDraftMd(generated.contentMd);
-      setEditing(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -76,24 +379,19 @@ export function ExplanationPanel({
     void (async () => {
       setLoading(true);
       setError(null);
-      setElaboration(null);
-      setEditing(false);
+      clearSelection();
       try {
         const t = fallbackMode ? 'oneliner' : tier;
         const cached = await invoke('explain:get', { nodeId, tier: t });
         if (cancelled) return;
         if (cached) {
           setContent(cached);
-          setDraftMd(cached.contentMd);
           return;
         }
         const generated = fallbackMode
           ? await invoke('explain:fallback', { nodeId })
           : await invoke('explain:generate', { nodeId, tier: t });
-        if (!cancelled) {
-          setContent(generated);
-          setDraftMd(generated.contentMd);
-        }
+        if (!cancelled) setContent(generated);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err));
       } finally {
@@ -103,31 +401,25 @@ export function ExplanationPanel({
     return () => {
       cancelled = true;
     };
-  }, [nodeId, tier, fallbackMode]);
+  }, [nodeId, tier, fallbackMode, clearSelection]);
 
-  const saveEdit = async (): Promise<void> => {
+  const patchContent = async (nextMd: string): Promise<void> => {
     if (!content) return;
-    setSavingEdit(true);
-    try {
-      const updated = await invoke('explain:update', { id: content.id, contentMd: draftMd });
-      setContent(updated);
-      setDraftMd(updated.contentMd);
-      setEditing(false);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setSavingEdit(false);
-    }
+    const updated = await invoke('explain:update', { id: content.id, contentMd: nextMd });
+    setContent(updated);
+    toast('已手动修订', { variant: 'warning' });
   };
 
-  const regenerate = async (): Promise<void> => {
-    if (
-      isUserEdited &&
-      !confirm('你已手动修改过讲解，重新生成会覆盖当前内容。确定继续？')
-    ) {
-      return;
-    }
+  const regenerateFull = async (): Promise<void> => {
+    const tierLabel = TIERS.find((t) => t.id === activeTier)?.label ?? activeTier;
+    const message = isUserEdited
+      ? `你已手动修改过讲解。重新生成将覆盖当前「${tierLabel}」内容，确定继续？`
+      : `重新生成将覆盖当前「${tierLabel}」讲解内容，确定继续？`;
+    if (!confirm(message)) return;
+
     setRegenerating(true);
+    setError(null);
+    clearSelection();
     try {
       await load(activeTier, true);
     } finally {
@@ -135,186 +427,272 @@ export function ExplanationPanel({
     }
   };
 
-  const elaborateSelection = async (): Promise<void> => {
-    const selected = selectionWithin(bodyRef.current);
-    if (!selected || !content) return;
-    setElaborating(true);
+  const currentSelection = (): SelectionAnchor | null =>
+    popoverAnchor ?? selectionRef.current ?? selection;
+
+  const runOnSelection = async (
+    key: string,
+    fn: (sel: SelectionAnchor) => Promise<void>,
+  ): Promise<void> => {
+    const sel = currentSelection();
+    if (!sel || !content) return;
+    setBusy(key);
     setError(null);
     try {
-      const res = await invoke('explain:elaborate', {
-        nodeId,
-        tier: activeTier,
-        selectedText: selected,
-        contextMd: content.contentMd,
-      });
-      setElaboration({ selectedText: res.selectedText, md: res.elaborationMd });
-      window.getSelection()?.removeAllRanges();
+      await fn(sel);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setElaborating(false);
+      setBusy(null);
     }
   };
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <div className="min-w-0">
-          <h3 className="text-sm font-medium">{nodeName}</h3>
-          {isUserEdited && (
-            <p className="text-[10px] text-amber-300">已手动修订 · 重新生成会覆盖</p>
-          )}
-        </div>
-        {!fallbackMode && (
-          <div className="flex shrink-0 gap-1">
-            {TIERS.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => {
-                  setTier(t.id);
-                  setSaved(false);
-                  void load(t.id);
-                }}
-                className={`rounded px-2 py-0.5 text-xs ${
-                  tier === t.id
-                    ? 'bg-[var(--color-accent)] text-white'
-                    : 'border border-[var(--color-border)] text-[var(--color-muted)]'
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
+    <div className="flex h-full min-h-0 flex-col gap-2">
       {loading && <p className="text-sm text-[var(--color-muted)]">生成讲解中…</p>}
       {error && <p className="text-sm text-red-400">{error}</p>}
-      {content && !loading && (
-        <>
-          {editing ? (
-            <textarea
-              value={draftMd}
-              onChange={(e) => setDraftMd(e.target.value)}
-              rows={18}
-              className="w-full resize-y rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] p-3 text-sm leading-relaxed outline-none focus:border-[var(--color-accent)]"
-            />
-          ) : (
-            <div
-              ref={bodyRef}
-              className="prose prose-invert max-w-none text-sm leading-relaxed"
-            >
-              <MarkdownContent text={content.contentMd} />
-            </div>
-          )}
 
-          <div className="flex flex-wrap items-center gap-2 pt-2">
-            {editing ? (
-              <>
-                <button
-                  type="button"
-                  disabled={savingEdit || !draftMd.trim()}
-                  onClick={() => void saveEdit()}
-                  className="rounded bg-[var(--color-accent)] px-3 py-1 text-xs font-medium disabled:opacity-40"
-                >
-                  {savingEdit ? '保存中…' : '保存修改'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setDraftMd(content.contentMd);
-                    setEditing(false);
-                  }}
-                  className="text-xs text-[var(--color-muted)] hover:text-[var(--color-fg)]"
-                >
-                  取消
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setDraftMd(content.contentMd);
-                    setEditing(true);
-                  }}
-                  className="text-xs text-sky-400 hover:underline"
-                >
-                  编辑讲解
-                </button>
+      {content && !loading && (
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)]">
+          <div className="shrink-0 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
+            <div className="flex flex-wrap items-center gap-1 px-2 py-1.5">
+              <button
+                type="button"
+                onClick={annotation.toggleBookmark}
+                className={`${toolbarBtn} ${annotation.bookmarked ? 'text-amber-300' : ''}`}
+                title={annotation.bookmarked ? '取消收藏' : '收藏'}
+              >
+                {annotation.bookmarked ? '★ 已收藏' : '☆ 收藏'}
+              </button>
+              {annotation.marks.length > 0 && (
+                <span className="px-1 text-[10px] text-[var(--color-muted)]">
+                  {annotation.marks.length} 条标记
+                </span>
+              )}
+
+              <span className="mx-0.5 h-4 w-px bg-[var(--color-border)]" />
+
+              <button
+                type="button"
+                disabled={!hasSelection || Boolean(busy)}
+                onClick={() => openActionPanel('edit')}
+                className={toolbarBtn}
+              >
+                编辑讲解
+              </button>
+              <button
+                type="button"
+                disabled={!hasSelection || Boolean(busy)}
+                onClick={() => openActionPanel('highlight')}
+                className={toolbarBtn}
+              >
+                {busy === 'highlight' ? '高亮中…' : '划词高亮'}
+              </button>
+              <button
+                type="button"
+                disabled={!hasSelection || Boolean(busy)}
+                onClick={() => openActionPanel('note')}
+                className={toolbarBtn}
+              >
+                记笔记
+              </button>
+              <button
+                type="button"
+                disabled={!hasSelection || Boolean(busy)}
+                onClick={() => {
+                  void runOnSelection('elaborate', async (sel) => {
+                    const res = await invoke('explain:elaborate', {
+                      nodeId,
+                      tier: activeTier,
+                      selectedText: sel.text,
+                      contextMd: content.contentMd,
+                    });
+                    await annotation.addElaborationOnSelection(res.selectedText, res.elaborationMd);
+                    toast('细化讲解已保存', { variant: 'success' });
+                    clearSelection();
+                  });
+                }}
+                className={toolbarBtn}
+              >
+                {busy === 'elaborate' ? '细化中…' : '细化讲解'}
+              </button>
+              <button
+                type="button"
+                disabled={!hasSelection || Boolean(busy)}
+                onClick={() => {
+                  void runOnSelection('speech', async (sel) => {
+                    await invoke('speech:saveFromNode', {
+                      nodeId,
+                      contentMd: sel.text,
+                      tier: activeTier,
+                    });
+                    toast('选区已存入话术库', { variant: 'success' });
+                    clearSelection();
+                  });
+                }}
+                className={toolbarBtn}
+              >
+                {busy === 'speech' ? '保存中…' : '存入话术库'}
+              </button>
+
+              <div className="ml-auto flex items-center gap-1">
+                {onComplete && (
+                  <button
+                    type="button"
+                    onClick={onComplete}
+                    className="rounded bg-[var(--color-accent)] px-2 py-1 text-xs font-medium text-white"
+                  >
+                    标记完成
+                  </button>
+                )}
+                {!fallbackMode && (
+                  <>
+                    {onComplete && <span className="mx-0.5 h-4 w-px bg-[var(--color-border)]" />}
+                    {TIERS.map((t) => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => {
+                          setTier(t.id);
+                          void load(t.id);
+                        }}
+                        className={`rounded px-2 py-1 text-xs ${
+                          tier === t.id
+                            ? 'bg-[var(--color-accent)] text-white'
+                            : toolbarBtn
+                        }`}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </>
+                )}
+                <span className="mx-0.5 h-4 w-px bg-[var(--color-border)]" />
                 <button
                   type="button"
                   disabled={regenerating}
-                  onClick={() => void regenerate()}
-                  className="text-xs text-[var(--color-muted)] hover:text-[var(--color-fg)]"
+                  onClick={() => void regenerateFull()}
+                  className={toolbarBtn}
                 >
                   {regenerating ? '重新生成中…' : '重新生成'}
                 </button>
-                <button
-                  type="button"
-                  onMouseDown={(e) => e.preventDefault()}
-                  disabled={elaborating}
-                  onClick={() => void elaborateSelection()}
-                  className="text-xs text-sky-400 hover:underline disabled:opacity-40"
-                  title="先在正文里划选词句，再点这里"
-                >
-                  {elaborating ? '细化中…' : '细化讲解'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    void invoke('speech:saveFromNode', {
-                      nodeId,
-                      contentMd: content.contentMd,
-                      tier: activeTier,
-                    }).then(() => setSaved(true));
-                  }}
-                  className="text-xs text-sky-400 hover:underline"
-                >
-                  {saved ? '已存入话术库' : '存入话术库'}
-                </button>
-              </>
-            )}
-            {onComplete && !editing && (
-              <button
-                type="button"
-                onClick={onComplete}
-                className="ml-auto rounded bg-[var(--color-accent)] px-3 py-1 text-xs font-medium"
-              >
-                标记完成
-              </button>
-            )}
-          </div>
-
-          {elaboration && (
-            <div className="rounded-lg border border-sky-900/50 bg-sky-950/20 p-3">
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <p className="text-xs font-medium text-sky-300">
-                  细化：「{elaboration.selectedText.slice(0, 60)}
-                  {elaboration.selectedText.length > 60 ? '…' : ''}」
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setElaboration(null)}
-                  className="text-[10px] text-[var(--color-muted)] hover:text-[var(--color-fg)]"
-                >
-                  收起
-                </button>
               </div>
-              <MarkdownContent text={elaboration.md} />
             </div>
-          )}
-
-          <div className="border-t border-[var(--color-border)] pt-3">
-            <AnnotationTools
-              targetType="explanation"
-              targetId={content.id}
-              scopeRef={bodyRef}
-              onChange={onAnnotationChange}
-            />
           </div>
-        </>
+
+          <AnnotationMarksPanel
+            marks={highlightMarks}
+            showNote={false}
+            noteText=""
+            notePlaceholder=""
+            onNoteTextChange={() => undefined}
+            onAddNote={() => undefined}
+            onDelete={annotation.deleteMark}
+          />
+
+          <div className="relative min-h-0 flex-1 overflow-y-auto p-4">
+            <div ref={bodyRef} className="prose prose-invert max-w-none text-sm leading-relaxed">
+              <MarkdownContent
+                text={content.contentMd}
+                highlights={highlightMarks.map((m) => ({
+                  text: m.selectedText ?? '',
+                  color: m.highlightColor ?? DEFAULT_HIGHLIGHT_COLOR,
+                }))}
+                annotations={inlineMarks}
+                onDeleteAnnotation={annotation.deleteMark}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showFloatingMenu && selection && content && !loading && toolbarPanel === 'none' && (
+        <SelectionFloatingMenu
+          anchor={selection}
+          busy={busy}
+          onEdit={() => openActionPanel('edit')}
+          onNote={() => openActionPanel('note')}
+          onHighlight={() => openActionPanel('highlight')}
+          onElaborate={() => {
+            void runOnSelection('elaborate', async (sel) => {
+              const res = await invoke('explain:elaborate', {
+                nodeId,
+                tier: activeTier,
+                selectedText: sel.text,
+                contextMd: content.contentMd,
+              });
+              await annotation.addElaborationOnSelection(res.selectedText, res.elaborationMd);
+              toast('细化讲解已保存', { variant: 'success' });
+              clearSelection();
+            });
+          }}
+          onSaveSpeech={() => {
+            void runOnSelection('speech', async (sel) => {
+              await invoke('speech:saveFromNode', {
+                nodeId,
+                contentMd: sel.text,
+                tier: activeTier,
+              });
+              toast('选区已存入话术库', { variant: 'success' });
+              clearSelection();
+            });
+          }}
+        />
+      )}
+
+      {toolbarPanel !== 'none' && popoverAnchor && content && !loading && (
+        <SelectionActionPopover
+          mode={toolbarPanel}
+          anchor={popoverAnchor}
+          editDraft={editDraft}
+          noteDraft={noteDraft}
+          highlightColor={highlightColor}
+          editSaving={editSaving}
+          noteSaving={noteSaving}
+          highlightSaving={highlightSaving}
+          onEditDraftChange={setEditDraft}
+          onNoteDraftChange={setNoteDraft}
+          onHighlightColorChange={setHighlightColor}
+          onClose={closeActionPanel}
+          onSaveEdit={() => {
+            void runOnSelection('edit', async (sel) => {
+              setEditSaving(true);
+              try {
+                const next = replaceExcerpt(content.contentMd, sel.text, editDraft);
+                await patchContent(next);
+                clearSelection();
+              } finally {
+                setEditSaving(false);
+              }
+            });
+          }}
+          onSaveNote={() => {
+            void runOnSelection('note', async (sel) => {
+              setNoteSaving(true);
+              try {
+                await annotation.addNoteOnSelection(sel.text, noteDraft);
+                clearSelection();
+              } finally {
+                setNoteSaving(false);
+              }
+            });
+          }}
+          onSaveHighlight={() => {
+            void runOnSelection('highlight', async (sel) => {
+              setHighlightSaving(true);
+              try {
+                await annotation.highlightText(sel.text, highlightColor);
+                clearSelection();
+              } finally {
+                setHighlightSaving(false);
+              }
+            });
+          }}
+        />
+      )}
+
+      {!content && !loading && (
+        <p className="text-sm text-[var(--color-muted)]">暂无「{nodeName}」的讲解</p>
       )}
     </div>
   );

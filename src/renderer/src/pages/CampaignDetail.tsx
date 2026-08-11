@@ -96,7 +96,7 @@ export function CampaignDetail({
       );
       const counts = new Map<string, number>();
       for (const a of onNodes) {
-        if (a.kind !== 'note' && a.kind !== 'highlight') continue;
+        if (a.kind !== 'note' && a.kind !== 'highlight' && a.kind !== 'elaboration') continue;
         counts.set(a.targetId, (counts.get(a.targetId) ?? 0) + 1);
       }
       setNoteCounts(counts);

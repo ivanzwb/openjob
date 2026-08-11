@@ -525,6 +525,18 @@ export interface ExplainElaborateResult {
   elaborationMd: string;
 }
 
+export interface ExplainRewriteInput {
+  nodeId: string;
+  tier: ExplanationTier;
+  selectedText: string;
+  contextMd?: string;
+}
+
+export interface ExplainRewriteResult {
+  selectedText: string;
+  rewrittenMd: string;
+}
+
 export interface QuizQuestionResult {
   nodeId: string;
   nodeName: string;
@@ -668,6 +680,7 @@ export interface AnnotationCreateInput {
   kind: AnnotationKind;
   selectedText?: string;
   noteMd?: string;
+  highlightColor?: string;
 }
 
 export interface AnnotationToggleInput {
@@ -800,6 +813,7 @@ export interface IpcInvokeMap {
   'explain:fallback': { req: { nodeId: string }; res: Explanation };
   'explain:update': { req: ExplainUpdateInput; res: Explanation };
   'explain:elaborate': { req: ExplainElaborateInput; res: ExplainElaborateResult };
+  'explain:rewrite': { req: ExplainRewriteInput; res: ExplainRewriteResult };
 
   'quiz:question': { req: { nodeId: string }; res: QuizQuestionResult };
   'quiz:submit': { req: QuizSubmitInput; res: QuizSubmitResult };
@@ -942,6 +956,7 @@ export const IPC_INVOKE_CHANNELS = [
   'explain:fallback',
   'explain:update',
   'explain:elaborate',
+  'explain:rewrite',
   'quiz:question',
   'quiz:submit',
   'repo:gitStatus',

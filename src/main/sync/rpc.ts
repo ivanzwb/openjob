@@ -33,7 +33,7 @@ import {
   toggleBookmark,
 } from '../annotation';
 import { generateDesignCase, submitDesignAnswer } from '../design';
-import { generateExplanation, generateFallbackScript, getExplanation, updateExplanation, elaborateExplanationSelection } from '../explain';
+import { generateExplanation, generateFallbackScript, getExplanation, updateExplanation, elaborateExplanationSelection, rewriteExplanationSelection } from '../explain';
 import { startJob } from '../jobs';
 import { cancelStream, startChat, testTier } from '../llm';
 import {
@@ -162,6 +162,15 @@ const RPC_HANDLERS: Partial<Record<IpcInvokeChannel, RpcHandler>> = {
   'explain:elaborate': (p) => {
     const input = p as IpcReq<'explain:elaborate'>;
     return elaborateExplanationSelection(
+      input.nodeId,
+      input.tier,
+      input.selectedText,
+      input.contextMd,
+    );
+  },
+  'explain:rewrite': (p) => {
+    const input = p as IpcReq<'explain:rewrite'>;
+    return rewriteExplanationSelection(
       input.nodeId,
       input.tier,
       input.selectedText,

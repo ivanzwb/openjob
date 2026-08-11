@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import type { AnnotationView } from '@shared/ipc';
 import type { AnnotationTarget } from '@shared/enums';
+import { highlightTextStyle } from '../lib/highlightStyle';
 import { invoke } from '../ipc';
+import { DEFAULT_HIGHLIGHT_COLOR } from './AnnotationTools';
 
 const TARGET_LABEL: Record<AnnotationTarget, string> = {
   node: '知识点',
@@ -112,7 +114,7 @@ export function AnnotationDigest({
                   className={`rounded border px-2 py-0.5 text-[10px] ${TARGET_TONE[a.targetType]}`}
                 >
                   {TARGET_LABEL[a.targetType]}
-                  {a.kind === 'highlight' ? ' · 高亮' : ' · 笔记'}
+                  {a.kind === 'highlight' ? ' · 高亮' : a.kind === 'elaboration' ? ' · 细化' : ' · 笔记'}
                 </span>
                 <button
                   type="button"
@@ -134,7 +136,16 @@ export function AnnotationDigest({
                 <p className="text-xs font-medium text-[var(--color-fg)]">{a.targetLabel}</p>
               )}
               <p className="line-clamp-4 text-sm leading-relaxed text-[var(--color-muted)]">
-                {a.kind === 'highlight' ? `「${a.selectedText}」` : a.noteMd}
+                {a.kind === 'highlight' ? (
+                  <span
+                    className="rounded px-0.5"
+                    style={highlightTextStyle(a.highlightColor ?? DEFAULT_HIGHLIGHT_COLOR)}
+                  >
+                    「{a.selectedText}」
+                  </span>
+                ) : (
+                  a.noteMd
+                )}
               </p>
             </li>
           ))}
@@ -164,7 +175,16 @@ export function AnnotationDigest({
                   )}
                 </div>
                 <div className="break-words">
-                  {a.kind === 'highlight' ? `「${a.selectedText}」` : a.noteMd}
+                  {a.kind === 'highlight' ? (
+                    <span
+                      className="rounded px-0.5 text-[var(--color-fg)]"
+                      style={{ backgroundColor: a.highlightColor ?? DEFAULT_HIGHLIGHT_COLOR }}
+                    >
+                      「{a.selectedText}」
+                    </span>
+                  ) : (
+                    a.noteMd
+                  )}
                 </div>
               </div>
               <button

@@ -1,5 +1,12 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { highlightToHtml } from '../lib/highlight';
+import { highlightTextStyle } from '../lib/highlightStyle';
+import {
+  filterInlineAnnotations,
+  renderTextWithInlineMarkers,
+  type InlineAnnotation,
+} from './InlineAnnotationMarkers';
+import type { Annotation } from '@shared/entities';
 
 export interface CodeLocation {
   filePath: string;
@@ -7,47 +14,128 @@ export interface CodeLocation {
   endLine?: number;
 }
 
+export interface TextHighlight {
+  text: string;
+  color: string;
+}
+
+interface TextSegment {
+  text: string;
+  color?: string;
+}
+
+function segmentTextWithHighlights(text: string, highlights: TextHighlight[]): TextSegment[] {
+  let segments: TextSegment[] = [{ text }];
+  for (const mark of highlights) {
+    const needle = mark.text.trim();
+    if (!needle) continue;
+    const next: TextSegment[] = [];
+    for (const seg of segments) {
+      if (seg.color) {
+        next.push(seg);
+        continue;
+      }
+      const idx = seg.text.indexOf(needle);
+      if (idx === -1) {
+        next.push(seg);
+        continue;
+      }
+      if (idx > 0) next.push({ text: seg.text.slice(0, idx) });
+      next.push({ text: needle, color: mark.color });
+      if (idx + needle.length < seg.text.length) {
+        next.push({ text: seg.text.slice(idx + needle.length) });
+      }
+    }
+    segments = next;
+  }
+  return segments;
+}
+
 const FENCED_BLOCK = /```(\w[\w+-]*)?\n([\s\S]*?)```/g;
 const FILE_REF =
   /(?<![/\w])((?:[\w.-]+\/)+[\w.-]+\.\w+|(?:[\w.-]+\.\w+)):(\d+)(?:-(\d+))?/g;
 
+function renderTextBlock(
+  text: string,
+  keyPrefix: string,
+  onCodeClick?: (loc: CodeLocation) => void,
+  highlights?: TextHighlight[],
+  inlineAnnotations?: InlineAnnotation[],
+  onDeleteAnnotation?: (id: string) => void,
+): React.ReactNode[] {
+  const renderPlain = (plain: string, prefix: string): React.ReactNode[] =>
+    renderTextWithRefs(plain, onCodeClick, highlights, prefix);
+
+  if (inlineAnnotations?.length && onDeleteAnnotation) {
+    return renderTextWithInlineMarkers(
+      text,
+      inlineAnnotations,
+      onDeleteAnnotation,
+      renderPlain,
+      keyPrefix,
+      highlights,
+    );
+  }
+  return renderTextWithRefs(text, onCodeClick, highlights, keyPrefix);
+}
+
 function renderTextWithRefs(
   text: string,
   onCodeClick?: (loc: CodeLocation) => void,
+  highlights?: TextHighlight[],
+  keyPrefix = 't',
 ): React.ReactNode[] {
+  const segments = highlights?.length ? segmentTextWithHighlights(text, highlights) : [{ text }];
   const nodes: React.ReactNode[] = [];
   let last = 0;
   let match: RegExpExecArray | null;
   const re = new RegExp(FILE_REF.source, 'g');
 
-  while ((match = re.exec(text)) !== null) {
-    if (match.index > last) {
-      nodes.push(text.slice(last, match.index));
-    }
-    const filePath = match[1]!;
-    const startLine = Number(match[2]);
-    const endLine = match[3] ? Number(match[3]) : undefined;
-    const label = `${filePath}:${startLine}${endLine ? `-${endLine}` : ''}`;
-    nodes.push(
-      onCodeClick ? (
-        <button
-          key={`${match.index}-${label}`}
-          type="button"
-          onClick={() => onCodeClick({ filePath, startLine, endLine })}
-          className="font-mono text-emerald-400 hover:underline"
+  for (const seg of segments) {
+    if (seg.color) {
+      nodes.push(
+        <mark
+          key={`${keyPrefix}-hl-${nodes.length}`}
+          className="rounded-sm px-0.5"
+          style={highlightTextStyle(seg.color)}
         >
-          {label}
-        </button>
-      ) : (
-        <span key={`${match.index}-${label}`} className="font-mono text-emerald-400">
-          {label}
-        </span>
-      ),
-    );
-    last = match.index + match[0].length;
+          {seg.text}
+        </mark>,
+      );
+      continue;
+    }
+
+    const segText = seg.text;
+    last = 0;
+    while ((match = re.exec(segText)) !== null) {
+      if (match.index > last) {
+        nodes.push(segText.slice(last, match.index));
+      }
+      const filePath = match[1]!;
+      const startLine = Number(match[2]);
+      const endLine = match[3] ? Number(match[3]) : undefined;
+      const label = `${filePath}:${startLine}${endLine ? `-${endLine}` : ''}`;
+      nodes.push(
+        onCodeClick ? (
+          <button
+            key={`${keyPrefix}-${match.index}-${label}`}
+            type="button"
+            onClick={() => onCodeClick({ filePath, startLine, endLine })}
+            className="font-mono text-emerald-400 hover:underline"
+          >
+            {label}
+          </button>
+        ) : (
+          <span key={`${keyPrefix}-${match.index}-${label}`} className="font-mono text-emerald-400">
+            {label}
+          </span>
+        ),
+      );
+      last = match.index + match[0].length;
+    }
+    if (last < segText.length) nodes.push(segText.slice(last));
   }
 
-  if (last < text.length) nodes.push(text.slice(last));
   return nodes.length ? nodes : [text];
 }
 
@@ -129,10 +217,21 @@ function CodeBlock({ lang, code }: { lang: string | null; code: string }): React
 export function MarkdownContent({
   text,
   onCodeClick,
+  highlights,
+  annotations,
+  onDeleteAnnotation,
 }: {
   text: string;
   onCodeClick?: (loc: CodeLocation) => void;
+  highlights?: TextHighlight[];
+  annotations?: Annotation[];
+  onDeleteAnnotation?: (id: string) => void;
 }): React.JSX.Element {
+  const inlineAnnotations = useMemo(
+    () => (annotations ? filterInlineAnnotations(annotations) : []),
+    [annotations],
+  );
+
   const parts = useMemo(() => {
     const blocks: Array<{ type: 'text' | 'mermaid' | 'code'; value: string; lang?: string }> = [];
     let last = 0;
@@ -166,7 +265,14 @@ export function MarkdownContent({
         }
         return (
           <div key={`t-${i}`} className="whitespace-pre-wrap">
-            {renderTextWithRefs(part.value, onCodeClick)}
+            {renderTextBlock(
+              part.value,
+              `t-${i}`,
+              onCodeClick,
+              highlights,
+              inlineAnnotations,
+              onDeleteAnnotation,
+            )}
           </div>
         );
       })}

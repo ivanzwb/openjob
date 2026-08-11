@@ -292,6 +292,7 @@ export interface Annotation {
   kind: AnnotationKind;
   selectedText: string | null;
   noteMd: string | null;
+  highlightColor: string | null;
   createdAt: Timestamp;
 }
 

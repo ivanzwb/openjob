@@ -257,3 +257,69 @@ ${text}`,
 
   return { selectedText: text, elaborationMd: content.markdown };
 }
+
+/** 重写讲解中选中的一段，替换进全文 */
+export async function rewriteExplanationSelection(
+  nodeId: string,
+  tier: ExplanationTier,
+  selectedText: string,
+  contextMd?: string,
+): Promise<{ selectedText: string; rewrittenMd: string }> {
+  const text = selectedText.trim();
+  if (!text) throw new Error('请先选择要重新生成的段落');
+
+  const db = getDb();
+  const nodeRow = db
+    .select()
+    .from(schema.knowledgeNode)
+    .where(eq(schema.knowledgeNode.id, nodeId))
+    .get();
+  if (!nodeRow) throw new Error('考点不存在');
+
+  const node = rowToNode(nodeRow);
+  const campaign = getCampaignRow(node.campaignId);
+  const resumeContext = buildResumeContext(node.campaignId);
+
+  const content = await completeJson<{ markdown: string }>(
+    'explain',
+    `你是面试口语教练。候选人划选了讲解中的一段文字，需要你重写这一段。
+要求：
+- 只输出替换后的这一段正文，不要标题、不要 JSON 外壳
+- 保持与前后文语气一致，口语化、适合面试口述
+- 举例与简历对齐；无相关经历时用通用表述并提示可替换
+- 长度与原文相当，不要无故扩写太多
+输出 JSON：{ "markdown": "..." }`,
+    `公司：${campaign.company}
+岗位：${campaign.roleTitle}
+考点：${node.name}
+讲解档位：${tier}
+
+${resumeContext}
+
+## 当前讲解全文（节选）
+${(contextMd ?? '').slice(0, 6000)}
+
+## 待重写段落
+${text}`,
+  );
+
+  return { selectedText: text, rewrittenMd: content.markdown };
+}
+
+export function replaceExplanationExcerpt(
+  contentMd: string,
+  selectedText: string,
+  replacement: string,
+): string {
+  const sel = selectedText.trim();
+  const rep = replacement.trim();
+  if (!sel || !rep) throw new Error('替换内容为空');
+  if (contentMd.includes(sel)) {
+    return contentMd.replace(sel, rep);
+  }
+  const collapsed = (s: string) => s.replace(/\s+/g, ' ').trim();
+  if (collapsed(contentMd).includes(collapsed(sel))) {
+    throw new Error('选区与原文格式不完全一致，请重新划选后再试');
+  }
+  throw new Error('无法在讲解正文中定位选区，请重新划选');
+}
