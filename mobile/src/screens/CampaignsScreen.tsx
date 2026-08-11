@@ -73,7 +73,7 @@ function CampaignDetailView({
   const [nodeStudyMode, setNodeStudyMode] = useState<'explain' | 'drill' | 'followUp'>('explain');
   const [interviewDate, setInterviewDate] = useState(detail.campaign.interviewDate ?? '');
   const [dailyMinutes, setDailyMinutes] = useState(String(detail.campaign.dailyMinutes ?? 90));
-  const [planMsg, setPlanMsg] = useState<string | null>(null);
+  const [calendarFilterDate, setCalendarFilterDate] = useState<string | null>(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [reloadTick, setReloadTick] = useState(0);
 
@@ -184,7 +184,6 @@ function CampaignDetailView({
           <Text style={{ color: theme.text, fontSize: 12 }}>{active?.label === '公司情报' ? '生成中…' : '公司情报'}</Text>
         </Pressable>
       </View>
-      {statusMsg && <Text style={{ color: theme.muted, fontSize: 12 }}>{statusMsg}</Text>}
 
       <Text style={{ color: theme.muted, fontSize: 12 }}>点击考点学习；日历可筛选当日排期</Text>
 
@@ -301,7 +300,7 @@ function CampaignDetailView({
       dailyMinutes={dailyMinutes}
       onInterviewDateChange={setInterviewDate}
       onDailyMinutesChange={setDailyMinutes}
-      planMsg={planMsg}
+      planMsg={null}
       onGeneratePlan={generatePlan}
       filterDate={calendarFilterDate}
       onFilterDateChange={setCalendarFilterDate}

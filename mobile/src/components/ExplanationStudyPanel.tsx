@@ -5,6 +5,7 @@ import type { ExplanationTier } from '@shared/enums';
 import type { ExplainElaborateResult } from '@shared/ipc';
 import { invokeRemote } from '../remote/rpc';
 import { useRemoteTask } from '../context/RemoteTaskContext';
+import { useToast } from './Toast';
 import { theme } from '../theme';
 import { AnnotatedExplanationText } from './AnnotatedExplanationText';
 import {
@@ -43,6 +44,7 @@ export function ExplanationStudyPanel({
   tier?: ExplanationTier;
 }): React.JSX.Element {
   const { runTask } = useRemoteTask();
+  const toast = useToast();
   const [tier, setTier] = useState<ExplanationTier>(initialTier);
   const [content, setContent] = useState<Explanation | null>(null);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
@@ -57,7 +59,6 @@ export function ExplanationStudyPanel({
   const [highlightColor, setHighlightColor] = useState<string>(DEFAULT_HIGHLIGHT_COLOR);
   const [viewMarker, setViewMarker] = useState<Annotation | null>(null);
   const [busy, setBusy] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
 
   const bookmarked = annotations.some((a) => a.kind === 'bookmark');
   const highlightMarks = annotations.filter((a) => a.kind === 'highlight');
@@ -83,10 +84,12 @@ export function ExplanationStudyPanel({
     [phrase, highlightMarks, selectionStart],
   );
 
-  const showToast = useCallback((msg: string) => {
-    setToast(msg);
-    setTimeout(() => setToast(null), 2200);
-  }, []);
+  const showToast = useCallback(
+    (msg: string) => {
+      toast(msg, { variant: 'success' });
+    },
+    [toast],
+  );
 
   const loadAnnotations = useCallback(async (explanationId: string) => {
     const { result } = await invokeRemote<
@@ -547,23 +550,6 @@ export function ExplanationStudyPanel({
         onSaveElaboration={() => void saveElaboration()}
         onDeleteMarker={() => void deleteMarker()}
       />
-
-      {toast && (
-        <View
-          style={{
-            position: 'absolute',
-            bottom: 0,
-            left: 0,
-            right: 0,
-            backgroundColor: '#1f2937',
-            paddingVertical: 8,
-            paddingHorizontal: 12,
-            borderRadius: 8,
-          }}
-        >
-          <Text style={{ color: theme.text, fontSize: 12, textAlign: 'center' }}>{toast}</Text>
-        </View>
-      )}
     </View>
   );
 }

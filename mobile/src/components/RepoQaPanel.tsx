@@ -58,7 +58,7 @@ export function RepoQaPanel({ repo }: { repo: Repo }): React.JSX.Element {
               borderRadius: 8,
               backgroundColor: theme.surface,
             }}
-            contentContainerStyle={{ padding: 12, gap: 6 }}
+            contentContainerStyle={{ padding: 12, gap: 4 }}
           >
             {busy && !displayText ? (
               <>
