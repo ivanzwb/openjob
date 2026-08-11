@@ -6,11 +6,11 @@ import { getSelectionStartInMarkdown } from '../lib/selectionOffset';
 import { invoke } from '../ipc';
 
 /**
- * ?? / ?? / ??????????????????????
+ * 划词 / 高亮 / 笔记等标注工具（讲解、真题、情报卡等正文区域复用）。
  *
- * ?????? scopeRef ?? mouseup/selectionchange?
- * ?????????? ExplanationPanel ???
- * ???????????????
+ * 选区操作依赖 scopeRef 内的 mouseup/selectionchange；
+ * 高亮颜色与删除逻辑与 ExplanationPanel 共用。
+ * 标记列表面板用于情报卡、真题等非讲解场景。
  */
 
 export function findHighlightMark(
@@ -70,7 +70,7 @@ export function HighlightColorPicker({
         value={color}
         onChange={(e) => onColorChange(e.target.value)}
         className="h-5 w-5 cursor-pointer rounded border-0 bg-transparent p-0"
-        title="?????"
+        title="自定义颜色"
       />
     </div>
   );
@@ -91,7 +91,7 @@ export interface SelectionAnchor {
   selectionStart?: number;
 }
 
-/** ????????????????????? popover ?? */
+/** 在容器内取选区锚点，供划选悬浮 popover 定位 */
 export function getSelectionAnchor(
   scope: HTMLElement | null,
   contentMd?: string,
@@ -123,9 +123,9 @@ export function getSelectionAnchor(
 }
 
 function markKindLabel(kind: Annotation['kind']): string {
-  if (kind === 'highlight') return '??';
-  if (kind === 'elaboration') return '??';
-  return '??';
+  if (kind === 'highlight') return '高亮';
+  if (kind === 'elaboration') return '细化';
+  return '笔记';
 }
 
 export function useAnnotationTools({
@@ -294,7 +294,7 @@ function AnnotationMarksPanel({
             onClick={onAddNote}
             className="shrink-0 rounded border border-[var(--color-border)] px-2 py-1 disabled:opacity-40"
           >
-            ??
+            添加
           </button>
         </div>
       )}
@@ -322,7 +322,7 @@ function AnnotationMarksPanel({
                 onClick={() => onDelete(a.id)}
                 className="shrink-0 text-[var(--color-muted)] hover:text-red-400"
               >
-                {a.kind === 'highlight' ? '??' : '?'}
+                {a.kind === 'highlight' ? '去掉' : '删'}
               </button>
             </li>
           ))}
@@ -340,7 +340,7 @@ export function AnnotationTools({
   targetId,
   scopeRef,
   showBookmark = true,
-  notePlaceholder = '????????????????',
+  notePlaceholder = '写条笔记，只有自己写下的才记得住',
   onChange,
   variant = 'full',
 }: {
@@ -372,9 +372,9 @@ export function AnnotationTools({
           type="button"
           onClick={toggleBookmark}
           className={`${toolbarBtn} ${bookmarked ? 'text-amber-300' : ''}`}
-          title={bookmarked ? '????' : '??'}
+          title={bookmarked ? '取消收藏' : '收藏'}
         >
-          {bookmarked ? '? ???' : '? ??'}
+          {bookmarked ? '★ 已收藏' : '☆ 收藏'}
         </button>
       )}
       <button
@@ -382,15 +382,15 @@ export function AnnotationTools({
         onMouseDown={(e) => e.preventDefault()}
         onClick={addHighlight}
         className={toolbarBtn}
-        title="??????????????"
+        title="先在正文中划选文字，再高亮"
       >
-        ????
+        划词高亮
       </button>
       <button type="button" onClick={() => setShowNote((v) => !v)} className={toolbarBtn}>
-        {showNote ? '????' : '???'}
+        {showNote ? '收起笔记' : '记笔记'}
       </button>
       {marks.length > 0 && variant !== 'toolbar' && (
-        <span className="px-1 text-[var(--color-muted)]">{marks.length} ???</span>
+        <span className="px-1 text-[var(--color-muted)]">{marks.length} 条标记</span>
       )}
     </>
   );
