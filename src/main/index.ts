@@ -26,7 +26,7 @@ function createWindow(): void {
     show: false,
     autoHideMenuBar: true,
     backgroundColor: '#0b0d12',
-    title: 'openJob',
+    title: 'OpenJob',
     ...(icon ? { icon } : {}),
     webPreferences: {
       preload: join(import.meta.dirname, '../preload/index.mjs'),

@@ -25,7 +25,7 @@ export function buildSpeechHtml(snippets: SpeechSnippetView[]): string {
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
-  <title>openJob 话术库</title>
+  <title>OpenJob 话术库</title>
   <style>
     body { font-family: "Segoe UI", system-ui, sans-serif; margin: 40px; color: #111; line-height: 1.6; }
     h1 { font-size: 22px; margin-bottom: 8px; }
@@ -36,7 +36,7 @@ export function buildSpeechHtml(snippets: SpeechSnippetView[]): string {
   </style>
 </head>
 <body>
-  <h1>openJob 话术库</h1>
+  <h1>OpenJob 话术库</h1>
   <p class="meta">导出时间：${escapeHtml(new Date().toLocaleString())} · 共 ${snippets.length} 条</p>
   ${sections}
 </body>

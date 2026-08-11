@@ -148,7 +148,7 @@ export function deleteSpeechSnippet(id: string): void {
 }
 
 function buildMarkdownExport(snippets: SpeechSnippetView[]): string {
-  const lines = ['# openJob 话术库', '', `导出时间：${new Date().toLocaleString()}`, ''];
+  const lines = ['# OpenJob 话术库', '', `导出时间：${new Date().toLocaleString()}`, ''];
   for (const s of snippets) {
     lines.push(`## ${s.sourceLabel}`, '', s.contentMd, '', '---', '');
   }

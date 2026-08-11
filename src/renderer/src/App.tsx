@@ -67,7 +67,7 @@ export default function App(): React.JSX.Element {
         <header className="flex shrink-0 items-center gap-4 border-b border-[var(--color-border)] px-5 py-3">
           <div className="flex items-center gap-2.5">
             <img src="/logo.png" alt="" className="h-7 w-7 rounded-lg" />
-            <span className="font-semibold">openJob</span>
+            <span className="font-semibold">OpenJob</span>
           </div>
           <span className="text-xs text-[var(--color-muted)]">v{version}</span>
           <nav className="ml-4 flex gap-1">

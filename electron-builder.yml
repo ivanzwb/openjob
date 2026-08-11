@@ -1,5 +1,5 @@
 appId: com.openjob.app
-productName: openJob
+productName: OpenJob
 directories:
   output: dist
   buildResources: build
