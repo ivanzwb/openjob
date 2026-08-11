@@ -507,6 +507,24 @@ export interface ExplainGenerateInput {
   tier: ExplanationTier;
 }
 
+export interface ExplainUpdateInput {
+  id: string;
+  contentMd: string;
+}
+
+export interface ExplainElaborateInput {
+  nodeId: string;
+  tier: ExplanationTier;
+  selectedText: string;
+  /** 当前讲解全文，供模型把握上下文 */
+  contextMd?: string;
+}
+
+export interface ExplainElaborateResult {
+  selectedText: string;
+  elaborationMd: string;
+}
+
 export interface QuizQuestionResult {
   nodeId: string;
   nodeName: string;
@@ -780,6 +798,8 @@ export interface IpcInvokeMap {
   'explain:get': { req: ExplainGetInput; res: Explanation | null };
   'explain:generate': { req: ExplainGenerateInput; res: Explanation };
   'explain:fallback': { req: { nodeId: string }; res: Explanation };
+  'explain:update': { req: ExplainUpdateInput; res: Explanation };
+  'explain:elaborate': { req: ExplainElaborateInput; res: ExplainElaborateResult };
 
   'quiz:question': { req: { nodeId: string }; res: QuizQuestionResult };
   'quiz:submit': { req: QuizSubmitInput; res: QuizSubmitResult };
@@ -920,6 +940,8 @@ export const IPC_INVOKE_CHANNELS = [
   'explain:get',
   'explain:generate',
   'explain:fallback',
+  'explain:update',
+  'explain:elaborate',
   'quiz:question',
   'quiz:submit',
   'repo:gitStatus',

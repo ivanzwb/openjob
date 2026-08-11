@@ -11,7 +11,7 @@ import { invoke } from '../ipc';
  * 复习时就没有一个完整的标记集合可翻。
  */
 
-function selectionWithin(scope: HTMLElement | null): string {
+export function selectionWithin(scope: HTMLElement | null): string {
   const sel = window.getSelection();
   const text = sel?.toString().trim() ?? '';
   if (!text) return '';

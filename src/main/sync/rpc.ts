@@ -33,7 +33,7 @@ import {
   toggleBookmark,
 } from '../annotation';
 import { generateDesignCase, submitDesignAnswer } from '../design';
-import { generateExplanation, generateFallbackScript, getExplanation } from '../explain';
+import { generateExplanation, generateFallbackScript, getExplanation, updateExplanation, elaborateExplanationSelection } from '../explain';
 import { startJob } from '../jobs';
 import { cancelStream, startChat, testTier } from '../llm';
 import {
@@ -155,6 +155,19 @@ const RPC_HANDLERS: Partial<Record<IpcInvokeChannel, RpcHandler>> = {
     return generateExplanation(input.nodeId, input.tier);
   },
   'explain:fallback': (p) => generateFallbackScript((p as { nodeId: string }).nodeId),
+  'explain:update': (p) => {
+    const input = p as IpcReq<'explain:update'>;
+    return updateExplanation(input.id, input.contentMd);
+  },
+  'explain:elaborate': (p) => {
+    const input = p as IpcReq<'explain:elaborate'>;
+    return elaborateExplanationSelection(
+      input.nodeId,
+      input.tier,
+      input.selectedText,
+      input.contextMd,
+    );
+  },
   'quiz:question': (p) => generateQuizQuestion((p as { nodeId: string }).nodeId),
   'quiz:submit': (p) => {
     const input = p as IpcReq<'quiz:submit'>;
