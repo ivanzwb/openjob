@@ -63,16 +63,54 @@ export function listSpeechSnippets(db: SQLiteDatabase): SpeechSnippetView[] {
     created_at: number;
   }>(`SELECT * FROM speech_snippet ORDER BY created_at DESC`);
 
-  return rows.map((row) => ({
-    id: row.id,
-    sourceType: row.source_type as SpeechSnippetView['sourceType'],
-    sourceId: row.source_id,
-    tier: row.tier as SpeechSnippetView['tier'],
-    contentMd: row.content_md,
-    isUserEdited: Boolean(row.is_user_edited),
-    createdAt: row.created_at,
-    sourceLabel: row.source_type,
-  }));
+  return rows.map((row) => {
+    const sourceType = row.source_type as SpeechSnippetView['sourceType'];
+    return {
+      id: row.id,
+      sourceType,
+      sourceId: row.source_id,
+      tier: row.tier as SpeechSnippetView['tier'],
+      contentMd: row.content_md,
+      isUserEdited: Boolean(row.is_user_edited),
+      createdAt: row.created_at,
+      sourceLabel: resolveSpeechSourceLabel(db, sourceType, row.source_id),
+    };
+  });
+}
+
+function resolveSpeechSourceLabel(
+  db: SQLiteDatabase,
+  sourceType: SpeechSnippetView['sourceType'],
+  sourceId: string,
+): string {
+  if (sourceType === 'codeRef') {
+    const repo = db.getFirstSync<{ url: string }>(`SELECT url FROM repo WHERE id = ?`, sourceId);
+    return repo ? `源码 · ${repo.url.replace(/^https?:\/\//, '')}` : '源码';
+  }
+  if (sourceType === 'node') {
+    const node = db.getFirstSync<{ name: string }>(`SELECT name FROM knowledge_node WHERE id = ?`, sourceId);
+    return node ? `考点 · ${node.name}` : '考点';
+  }
+  if (sourceType === 'quiz') {
+    const attempt = db.getFirstSync<{ node_id: string }>(
+      `SELECT node_id FROM quiz_attempt WHERE id = ?`,
+      sourceId,
+    );
+    if (!attempt) return '考我';
+    const node = db.getFirstSync<{ name: string }>(
+      `SELECT name FROM knowledge_node WHERE id = ?`,
+      attempt.node_id,
+    );
+    return node ? `考我 · ${node.name}` : '考我';
+  }
+  if (sourceType === 'design') {
+    const campaign = db.getFirstSync<{ company: string }>(
+      `SELECT company FROM campaign WHERE id = ?`,
+      sourceId,
+    );
+    return campaign ? `模拟面试 · ${campaign.company}` : '模拟面试';
+  }
+  return '话术';
 }
 
 export function listTodayCampaigns(db: SQLiteDatabase): TodayCampaignOption[] {

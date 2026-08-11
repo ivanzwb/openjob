@@ -1,5 +1,6 @@
 import type { Database } from 'better-sqlite3';
 import type { AutoChange } from '@shared/sync';
+import { deviceLocalInsertDefaults } from './deviceLocalDefaults';
 import { syncTableSpec, syncTableSpecs } from './tables';
 import { writingAs } from './triggers';
 
@@ -51,6 +52,11 @@ function applyInsert(
   if (existing) {
     for (const col of spec.deviceLocal) {
       merged[col] = existing[col];
+    }
+  } else {
+    const defaults = deviceLocalInsertDefaults(table, merged);
+    for (const col of spec.deviceLocal) {
+      if (merged[col] === undefined && col in defaults) merged[col] = defaults[col];
     }
   }
 

@@ -1,5 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import type { AutoChange } from '@shared/sync';
+import { deviceLocalInsertDefaults } from '../../../src/main/sync/deviceLocalDefaults';
 import { syncTableSpec, syncTableSpecs } from './tables';
 import { writingAs } from './triggers';
 
@@ -42,6 +43,11 @@ function applyInsert(
   const merged = { ...values };
   if (existing) {
     for (const col of spec.deviceLocal) merged[col] = existing[col];
+  } else {
+    const defaults = deviceLocalInsertDefaults(table, merged);
+    for (const col of spec.deviceLocal) {
+      if (merged[col] === undefined && col in defaults) merged[col] = defaults[col];
+    }
   }
   const cols = Object.keys(merged);
   const placeholders = cols.map(() => '?').join(', ');
