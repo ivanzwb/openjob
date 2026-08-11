@@ -1,14 +1,52 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Repo } from '@shared/entities';
 import type { GitStatus } from '@shared/ipc';
+import { MarkdownContent } from '../components/MarkdownContent';
 import { RepoWorkspace } from '../components/RepoWorkspace';
 import { useToast } from '../components/Toast';
 import { useJobFeedback, useJobProgress } from '../ipc/useJobProgress';
 import { invoke } from '../ipc';
 
+type RepoTab = 'summary' | 'qa';
+
+const REPO_TABS: { id: RepoTab; label: string }[] = [
+  { id: 'summary', label: '项目摘要' },
+  { id: 'qa', label: '问答' },
+];
+
+function RepoSummaryPanel({ repo }: { repo: Repo }): React.JSX.Element {
+  if (repo.summaryMd) {
+    return (
+      <div className="prose prose-invert max-w-none text-sm">
+        <MarkdownContent text={repo.summaryMd} />
+      </div>
+    );
+  }
+
+  if (repo.repoMapMd) {
+    return (
+      <div className="space-y-2">
+        <p className="text-xs text-[var(--color-muted)]">Repo Map（节选）</p>
+        <pre className="max-h-[70vh] overflow-y-auto whitespace-pre-wrap font-mono text-xs text-[var(--color-muted)]">
+          {repo.repoMapMd.slice(0, 8000)}
+        </pre>
+      </div>
+    );
+  }
+
+  return (
+    <p className="text-sm text-[var(--color-muted)]">
+      {repo.status === 'ready'
+        ? '暂无项目摘要，索引完成后会自动生成。'
+        : '仓库索引中，完成后将显示项目摘要…'}
+    </p>
+  );
+}
+
 export function Repos(): React.JSX.Element {
   const [repos, setRepos] = useState<Repo[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedTab, setSelectedTab] = useState<RepoTab>('summary');
   const [url, setUrl] = useState('');
   const [git, setGit] = useState<GitStatus | null>(null);
   const { active } = useJobProgress();
@@ -45,6 +83,10 @@ export function Repos(): React.JSX.Element {
   useEffect(() => {
     if (!active) refresh();
   }, [active, refresh]);
+
+  useEffect(() => {
+    setSelectedTab('summary');
+  }, [selectedId]);
 
   const add = async (): Promise<void> => {
     const trimmed = url.trim();
@@ -166,16 +208,30 @@ export function Repos(): React.JSX.Element {
           </div>
         ) : (
           <>
-            {selected.summaryMd && (
-              <details className="shrink-0 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-                <summary className="cursor-pointer text-sm font-medium">项目摘要</summary>
-                <pre className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap text-xs text-[var(--color-muted)]">
-                  {selected.summaryMd}
-                </pre>
-              </details>
-            )}
+            <div className="flex shrink-0 flex-wrap gap-1.5">
+              {REPO_TABS.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setSelectedTab(t.id)}
+                  className={`rounded-lg px-3 py-1.5 text-sm ${
+                    selectedTab === t.id
+                      ? 'bg-[var(--color-accent)] text-white'
+                      : 'border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-muted)] hover:text-[var(--color-fg)]'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
             <div className="min-h-0 flex-1">
-              <RepoWorkspace repo={selected} />
+              {selectedTab === 'summary' ? (
+                <div className="h-full overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+                  <RepoSummaryPanel repo={selected} />
+                </div>
+              ) : (
+                <RepoWorkspace repo={selected} />
+              )}
             </div>
           </>
         )}
