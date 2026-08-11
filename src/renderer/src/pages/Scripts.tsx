@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { SpeechSnippetView } from '@shared/ipc';
+import { MarkdownContent } from '../components/MarkdownContent';
 import { invoke } from '../ipc';
 import { PageShell } from '../components/PageShell';
+
+type PanelMode = 'preview' | 'edit';
 
 export function Scripts(): React.JSX.Element {
   const [snippets, setSnippets] = useState<SpeechSnippetView[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
+  const [panelMode, setPanelMode] = useState<PanelMode>('preview');
   const [saving, setSaving] = useState(false);
   const [exportMsg, setExportMsg] = useState<string | null>(null);
 
@@ -16,7 +20,10 @@ export function Scripts(): React.JSX.Element {
       setSelectedId((prev) => {
         if (prev && list.some((s) => s.id === prev)) return prev;
         const first = list[0];
-        if (first) setDraft(first.contentMd);
+        if (first) {
+          setDraft(first.contentMd);
+          setPanelMode('preview');
+        }
         return first?.id ?? null;
       });
     });
@@ -27,6 +34,24 @@ export function Scripts(): React.JSX.Element {
   }, [refresh]);
 
   const selected = snippets.find((s) => s.id === selectedId) ?? null;
+  const dirty = Boolean(selected && draft !== selected.contentMd);
+
+  const pick = (s: SpeechSnippetView): void => {
+    if (dirty && selected && selected.id !== s.id) {
+      if (!confirm('有未保存的修改，切换将放弃编辑。继续？')) return;
+    }
+    setSelectedId(s.id);
+    setDraft(s.contentMd);
+    setPanelMode('preview');
+  };
+
+  const switchMode = (mode: PanelMode): void => {
+    if (mode === 'preview' && dirty) {
+      if (!confirm('有未保存的修改，切换预览将放弃编辑。继续？')) return;
+      if (selected) setDraft(selected.contentMd);
+    }
+    setPanelMode(mode);
+  };
 
   const save = async (): Promise<void> => {
     if (!selected) return;
@@ -34,6 +59,7 @@ export function Scripts(): React.JSX.Element {
     try {
       await invoke('speech:update', { id: selected.id, contentMd: draft });
       refresh();
+      setPanelMode('preview');
     } finally {
       setSaving(false);
     }
@@ -98,10 +124,7 @@ export function Scripts(): React.JSX.Element {
               <li key={s.id}>
                 <button
                   type="button"
-                  onClick={() => {
-                    setSelectedId(s.id);
-                    setDraft(s.contentMd);
-                  }}
+                  onClick={() => pick(s)}
                   className={`w-full rounded-lg border p-3 text-left text-sm ${
                     selectedId === s.id
                       ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10'
@@ -126,6 +149,22 @@ export function Scripts(): React.JSX.Element {
           </div>
         ) : (
           <>
+            <div className="flex flex-wrap gap-1.5">
+              {(['preview', 'edit'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => switchMode(mode)}
+                  className={`rounded-lg px-3 py-1.5 text-sm ${
+                    panelMode === mode
+                      ? 'bg-[var(--color-accent)] text-white'
+                      : 'border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-muted)] hover:text-[var(--color-fg)]'
+                  }`}
+                >
+                  {mode === 'preview' ? '预览' : '编辑'}
+                </button>
+              ))}
+            </div>
             <div className="flex items-center justify-between gap-2">
               <h3 className="text-sm font-medium">{selected.sourceLabel}</h3>
               <div className="flex gap-2">
@@ -136,22 +175,30 @@ export function Scripts(): React.JSX.Element {
                 >
                   删除
                 </button>
-                <button
-                  type="button"
-                  disabled={saving || draft === selected.contentMd}
-                  onClick={() => void save()}
-                  className="rounded bg-[var(--color-accent)] px-3 py-1 text-xs disabled:opacity-40"
-                >
-                  {saving ? '保存中…' : selected.isUserEdited ? '保存修改' : '保存为自己的话'}
-                </button>
+                {panelMode === 'edit' && (
+                  <button
+                    type="button"
+                    disabled={saving || !dirty}
+                    onClick={() => void save()}
+                    className="rounded bg-[var(--color-accent)] px-3 py-1 text-xs disabled:opacity-40"
+                  >
+                    {saving ? '保存中…' : selected.isUserEdited ? '保存修改' : '保存为自己的话'}
+                  </button>
+                )}
               </div>
             </div>
-            <textarea
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              rows={16}
-              className="min-h-0 flex-1 resize-none rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-sm leading-relaxed outline-none focus:border-[var(--color-accent)]"
-            />
+            {panelMode === 'preview' ? (
+              <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+                <MarkdownContent text={selected.contentMd} />
+              </div>
+            ) : (
+              <textarea
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                rows={16}
+                className="min-h-0 flex-1 resize-none rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-sm leading-relaxed outline-none focus:border-[var(--color-accent)]"
+              />
+            )}
           </>
         )}
       </section>

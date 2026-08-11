@@ -12,7 +12,7 @@ import {
   useAnnotationTools,
 } from './AnnotationTools';
 import { MarkdownContent } from './MarkdownContent';
-import { AutoResizeTextarea } from './AutoResizeTextarea';
+import { ResizeHandleGlyph, useResizablePanel, type ResizablePanelPreset } from './ResizablePopover';
 import { useToast } from './Toast';
 import { useAdaptivePopover } from '../lib/popoverLayout';
 
@@ -123,9 +123,14 @@ function SelectionActionPopover({
   onClearHighlight: () => void;
 }): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null);
+  const preset: ResizablePanelPreset =
+    mode === 'edit' ? 'edit' : mode === 'note' ? 'note' : 'highlight';
+  const { size, resizeHandleProps } = useResizablePanel(preset);
   const popoverStyle = useAdaptivePopover(ref, anchor, true, {
     center: true,
     remeasureKey: `${mode}|${editDraft}|${noteDraft}|${highlightColor}|${existingHighlight}`,
+    resizable: true,
+    panelSize: size,
   });
 
   useEffect(() => {
@@ -150,15 +155,16 @@ function SelectionActionPopover({
   return createPortal(
     <div
       ref={ref}
-      className="fixed z-[110] min-w-48 max-w-[calc(100vw-16px)] rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-xl"
+      className="fixed z-[110] rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-xl"
       style={popoverStyle}
       onMouseDown={(e) => {
         const el = e.target as HTMLElement;
-        if (el.closest('textarea, input, select')) return;
+        if (el.closest('textarea, input, select, button')) return;
         e.preventDefault();
       }}
     >
-      <div className="mb-2 flex items-start justify-between gap-2">
+      <div className="relative flex min-h-0 flex-1 flex-col">
+      <div className="mb-2 flex shrink-0 items-start justify-between gap-2">
         <p className="text-[10px] font-medium text-[var(--color-muted)]">{title}</p>
         <button
           type="button"
@@ -177,12 +183,11 @@ function SelectionActionPopover({
       )}
 
       {mode === 'edit' && (
-        <AutoResizeTextarea
+        <textarea
           value={editDraft}
           onChange={(e) => onEditDraftChange(e.target.value)}
-          minRows={4}
           autoFocus
-          className="mb-3 box-border w-full max-w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] p-2 text-xs leading-relaxed outline-none focus:border-[var(--color-accent)]"
+          className="mb-3 box-border min-h-0 w-full flex-1 resize-none rounded border border-[var(--color-border)] bg-[var(--color-bg)] p-2 text-xs leading-relaxed outline-none focus:border-[var(--color-accent)]"
         />
       )}
 
@@ -194,17 +199,16 @@ function SelectionActionPopover({
       )}
 
       {mode === 'note' && (
-        <AutoResizeTextarea
+        <textarea
           value={noteDraft}
           onChange={(e) => onNoteDraftChange(e.target.value)}
-          minRows={3}
           autoFocus
           placeholder="针对选中内容记笔记…"
-          className="mb-3 box-border w-full max-w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] p-2 text-xs leading-relaxed outline-none focus:border-[var(--color-accent)]"
+          className="mb-3 box-border min-h-0 w-full flex-1 resize-none rounded border border-[var(--color-border)] bg-[var(--color-bg)] p-2 text-xs leading-relaxed outline-none focus:border-[var(--color-accent)]"
         />
       )}
 
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex shrink-0 items-center justify-between gap-2">
         {mode === 'highlight' && existingHighlight ? (
           <button
             type="button"
@@ -252,6 +256,10 @@ function SelectionActionPopover({
             </button>
           )}
         </div>
+      </div>
+      <button type="button" {...resizeHandleProps} aria-label="拖动调整大小">
+        <ResizeHandleGlyph />
+      </button>
       </div>
     </div>,
     document.body,

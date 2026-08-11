@@ -1,34 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Annotation } from '@shared/entities';
+import { MARKER_ICON, MARKER_LABEL, markerKinds, type InlineMarkerKind } from '@shared/inlineMarkers';
 import { highlightTextStyle } from '../lib/highlightStyle';
 import { useAdaptivePopover } from '../lib/popoverLayout';
+import { ResizeHandleGlyph, useResizablePanel } from './ResizablePopover';
 import { MarkdownContent, type TextHighlight } from './MarkdownContent';
 
 export type InlineAnnotation = Pick<Annotation, 'id' | 'kind' | 'selectedText' | 'noteMd'>;
 
-const MARKER_LABEL: Record<'note' | 'elaboration', string> = {
-  note: '笔记',
-  elaboration: '细化讲解',
-};
-
-function markerKinds(markers: InlineAnnotation[]): {
-  hasNote: boolean;
-  hasElaboration: boolean;
-} {
-  return {
-    hasNote: markers.some((m) => m.kind === 'note'),
-    hasElaboration: markers.some((m) => m.kind === 'elaboration'),
-  };
-}
-
 function markerTextClass(markers: InlineAnnotation[]): string {
   const { hasNote, hasElaboration } = markerKinds(markers);
   if (hasNote && hasElaboration) {
-    return 'font-bold text-amber-300 underline decoration-sky-400 decoration-2 decoration-dashed underline-offset-2';
+    return 'font-bold text-amber-300 border-b-2 border-amber-400 underline decoration-dashed decoration-sky-400 decoration-2 underline-offset-[3px]';
   }
   if (hasNote) {
-    return 'font-bold text-amber-300 border-b-2 border-amber-400/90';
+    return 'font-bold text-amber-300 border-b-2 border-amber-400';
   }
   return 'font-bold text-sky-300 border-b-2 border-dashed border-sky-400/90';
 }
@@ -40,6 +27,33 @@ function markerTitle(markers: InlineAnnotation[]): string {
   return '查看细化讲解';
 }
 
+function MarkerGlyph({
+  kind,
+  onClick,
+}: {
+  kind: InlineMarkerKind;
+  onClick: (e: React.MouseEvent) => void;
+}): React.JSX.Element {
+  const vertical = kind === 'note' ? 'align-sub' : 'align-super';
+  const color = kind === 'note' ? 'text-amber-300' : 'text-sky-300';
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      title={MARKER_LABEL[kind]}
+      className={`${vertical} mx-0.5 inline cursor-pointer text-[10px] leading-none ${color} hover:opacity-80`}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick(e as unknown as React.MouseEvent);
+        }
+      }}
+    >
+      {MARKER_ICON[kind]}
+    </span>
+  );
+}
 function InlineMarkerPopover({
   marker,
   anchorRect,
@@ -52,8 +66,11 @@ function InlineMarkerPopover({
   onDelete: (id: string) => void;
 }): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null);
+  const { size, resizeHandleProps } = useResizablePanel('view');
   const popoverStyle = useAdaptivePopover(ref, anchorRect, true, {
     remeasureKey: `${marker.noteMd ?? ''}|${marker.selectedText ?? ''}`,
+    resizable: true,
+    panelSize: size,
   });
 
   useEffect(() => {
@@ -77,11 +94,12 @@ function InlineMarkerPopover({
   return createPortal(
     <div
       ref={ref}
-      className="fixed z-[110] min-w-48 max-w-[calc(100vw-16px)] rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-xl"
+      className="fixed z-[110] rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-xl"
       style={popoverStyle}
       onMouseDown={(e) => e.stopPropagation()}
     >
-      <div className="mb-2 flex items-start justify-between gap-2">
+      <div className="relative flex min-h-0 flex-1 flex-col">
+      <div className="mb-2 flex shrink-0 items-start justify-between gap-2">
         <p className="text-[10px] font-medium text-[var(--color-muted)]">{MARKER_LABEL[kind]}</p>
         <button
           type="button"
@@ -96,8 +114,12 @@ function InlineMarkerPopover({
           「{marker.selectedText}」
         </p>
       )}
-      <div className="break-words text-xs leading-relaxed [overflow-wrap:anywhere] [&_.shiki-host]:overflow-x-hidden [&_pre]:whitespace-pre-wrap">
+      <div className="min-h-0 flex-1 overflow-y-auto break-words text-xs leading-relaxed [overflow-wrap:anywhere] [&_.shiki-host]:overflow-x-hidden [&_pre]:whitespace-pre-wrap">
         <MarkdownContent text={marker.noteMd ?? ''} />
+      </div>
+      <button type="button" {...resizeHandleProps} aria-label="拖动调整大小">
+        <ResizeHandleGlyph />
+      </button>
       </div>
     </div>,
     document.body,
@@ -192,6 +214,18 @@ function InlineMarkedText({
     setShowPicker(true);
   }, [markers]);
 
+  const openKind = useCallback(
+    (kind: InlineMarkerKind) => {
+      const rect = ref.current?.getBoundingClientRect();
+      const marker = markers.find((m) => m.kind === kind);
+      if (!rect || !marker) return;
+      setAnchorRect(rect);
+      setActiveMarker(marker);
+      setShowPicker(false);
+    },
+    [markers],
+  );
+
   const close = useCallback(() => {
     setActiveMarker(null);
     setShowPicker(false);
@@ -199,6 +233,7 @@ function InlineMarkedText({
   }, []);
 
   const textClass = `cursor-pointer rounded-sm px-0.5 transition-opacity hover:opacity-90 ${markerTextClass(markers)}`;
+  const { hasNote, hasElaboration } = markerKinds(markers);
   const inner = highlight ? (
     <mark className={textClass} style={highlightTextStyle(highlight.color)}>
       {text}
@@ -227,6 +262,24 @@ function InlineMarkedText({
         }}
       >
         {inner}
+        {hasNote && (
+          <MarkerGlyph
+            kind="note"
+            onClick={(e) => {
+              e.stopPropagation();
+              openKind('note');
+            }}
+          />
+        )}
+        {hasElaboration && (
+          <MarkerGlyph
+            kind="elaboration"
+            onClick={(e) => {
+              e.stopPropagation();
+              openKind('elaboration');
+            }}
+          />
+        )}
       </span>
       {showPicker && anchorRect && (
         <MarkerPickMenu

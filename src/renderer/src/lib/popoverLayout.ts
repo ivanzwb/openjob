@@ -52,11 +52,18 @@ export function useAdaptivePopover(
   ref: RefObject<HTMLElement | null>,
   anchor: PopoverAnchor | null,
   enabled: boolean,
-  options?: { center?: boolean; remeasureKey?: string },
+  options?: {
+    center?: boolean;
+    remeasureKey?: string;
+    resizable?: boolean;
+    panelSize?: { width: number; height: number };
+  },
 ): React.CSSProperties {
   const [style, setStyle] = useState<React.CSSProperties>({});
   const center = options?.center ?? false;
   const remeasureKey = options?.remeasureKey ?? '';
+  const resizable = options?.resizable ?? false;
+  const panelSize = options?.panelSize;
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -64,6 +71,34 @@ export function useAdaptivePopover(
 
     const maxW = window.innerWidth - MARGIN * 2;
     const maxH = window.innerHeight - MARGIN * 2;
+
+    if (resizable && panelSize) {
+      const naturalWidth = Math.min(Math.max(panelSize.width, MIN_WIDTH), maxW);
+      const height = Math.min(Math.max(panelSize.height, 120), maxH);
+      const point = resolveAnchor(anchor, center);
+      let left = point.center ? point.left - naturalWidth / 2 : point.left;
+      let top = point.top;
+
+      if (top + height > window.innerHeight - MARGIN) {
+        const flippedTop = point.top - 6 - height;
+        top = flippedTop >= MARGIN ? flippedTop : Math.max(MARGIN, window.innerHeight - MARGIN - height);
+      }
+
+      left = Math.min(Math.max(MARGIN, left), window.innerWidth - MARGIN - naturalWidth);
+      top = Math.min(Math.max(MARGIN, top), window.innerHeight - MARGIN - height);
+
+      const nextStyle: React.CSSProperties = {
+        top,
+        left,
+        width: naturalWidth,
+        height,
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+      };
+      setStyle((prev) => (styleEqual(prev, nextStyle) ? prev : nextStyle));
+      return;
+    }
 
     el.style.width = 'max-content';
     el.style.maxWidth = `${maxW}px`;
@@ -106,7 +141,7 @@ export function useAdaptivePopover(
     };
 
     setStyle((prev) => (styleEqual(prev, nextStyle) ? prev : nextStyle));
-  }, [ref, enabled, center, anchorKey(anchor), remeasureKey]);
+  }, [ref, enabled, center, anchorKey(anchor), remeasureKey, resizable, panelSize?.width, panelSize?.height]);
 
   return style;
 }
