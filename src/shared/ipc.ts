@@ -681,6 +681,7 @@ export interface AnnotationCreateInput {
   selectedText?: string;
   noteMd?: string;
   highlightColor?: string;
+  selectionStart?: number;
 }
 
 export interface AnnotationToggleInput {

@@ -12,7 +12,9 @@ import {
   useAnnotationTools,
 } from './AnnotationTools';
 import { MarkdownContent } from './MarkdownContent';
+import { AutoResizeTextarea } from './AutoResizeTextarea';
 import { useToast } from './Toast';
+import { useAdaptivePopover } from '../lib/popoverLayout';
 
 const TIERS: { id: ExplanationTier; label: string }[] = [
   { id: 'oneliner', label: '一句话' },
@@ -34,20 +36,16 @@ function replaceExcerpt(contentMd: string, selected: string, replacement: string
 function SelectionFloatingMenu({
   anchor,
   busy,
-  selectedHighlight,
   onEdit,
   onHighlight,
-  onClearHighlight,
   onNote,
   onElaborate,
   onSaveSpeech,
 }: {
   anchor: SelectionAnchor;
   busy: string | null;
-  selectedHighlight: boolean;
   onEdit: () => void;
   onHighlight: () => void;
-  onClearHighlight: () => void;
   onNote: () => void;
   onElaborate: () => void;
   onSaveSpeech: () => void;
@@ -65,20 +63,9 @@ function SelectionFloatingMenu({
         <button type="button" className={menuBtn} disabled={Boolean(busy)} onClick={onEdit}>
           编辑讲解
         </button>
-        {selectedHighlight ? (
-          <button
-            type="button"
-            className={menuBtn}
-            disabled={Boolean(busy)}
-            onClick={onClearHighlight}
-          >
-            {busy === 'clear-highlight' ? '清除中…' : '清除高亮'}
-          </button>
-        ) : (
-          <button type="button" className={menuBtn} disabled={Boolean(busy)} onClick={onHighlight}>
-            {busy === 'highlight' ? '高亮中…' : '划词高亮'}
-          </button>
-        )}
+        <button type="button" className={menuBtn} disabled={Boolean(busy)} onClick={onHighlight}>
+          {busy === 'highlight' ? '高亮中…' : '划词高亮'}
+        </button>
         <button type="button" className={menuBtn} disabled={Boolean(busy)} onClick={onNote}>
           记笔记
         </button>
@@ -102,9 +89,11 @@ function SelectionActionPopover({
   editDraft,
   noteDraft,
   highlightColor,
+  existingHighlight,
   editSaving,
   noteSaving,
   highlightSaving,
+  clearHighlightSaving,
   onEditDraftChange,
   onNoteDraftChange,
   onHighlightColorChange,
@@ -112,15 +101,18 @@ function SelectionActionPopover({
   onSaveEdit,
   onSaveNote,
   onSaveHighlight,
+  onClearHighlight,
 }: {
   mode: ActionPanelMode;
   anchor: SelectionAnchor;
   editDraft: string;
   noteDraft: string;
   highlightColor: string;
+  existingHighlight: boolean;
   editSaving: boolean;
   noteSaving: boolean;
   highlightSaving: boolean;
+  clearHighlightSaving: boolean;
   onEditDraftChange: (v: string) => void;
   onNoteDraftChange: (v: string) => void;
   onHighlightColorChange: (v: string) => void;
@@ -128,8 +120,15 @@ function SelectionActionPopover({
   onSaveEdit: () => void;
   onSaveNote: () => void;
   onSaveHighlight: () => void;
+  onClearHighlight: () => void;
 }): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null);
+  const popoverStyle = useAdaptivePopover(
+    ref,
+    { ...anchor, center: true },
+    true,
+    [mode, editDraft, noteDraft, highlightColor, existingHighlight],
+  );
 
   useEffect(() => {
     const onPointerDown = (e: MouseEvent): void => {
@@ -147,19 +146,19 @@ function SelectionActionPopover({
     };
   }, [onClose]);
 
-  const width = 288;
-  const top = Math.min(anchor.top, window.innerHeight - 320);
-  const left = Math.min(Math.max(8, anchor.left - width / 2), window.innerWidth - width - 8);
-
   const title =
     mode === 'edit' ? '编辑讲解' : mode === 'highlight' ? '划词高亮' : '记笔记';
 
   return createPortal(
     <div
       ref={ref}
-      className="fixed z-[110] w-72 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-xl"
-      style={{ top, left }}
-      onMouseDown={(e) => e.preventDefault()}
+      className="fixed z-[110] min-w-48 max-w-[calc(100vw-16px)] rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-xl"
+      style={popoverStyle}
+      onMouseDown={(e) => {
+        const el = e.target as HTMLElement;
+        if (el.closest('textarea, input, select')) return;
+        e.preventDefault();
+      }}
     >
       <div className="mb-2 flex items-start justify-between gap-2">
         <p className="text-[10px] font-medium text-[var(--color-muted)]">{title}</p>
@@ -180,12 +179,12 @@ function SelectionActionPopover({
       )}
 
       {mode === 'edit' && (
-        <textarea
+        <AutoResizeTextarea
           value={editDraft}
           onChange={(e) => onEditDraftChange(e.target.value)}
-          rows={4}
+          minRows={4}
           autoFocus
-          className="mb-3 w-full resize-y rounded border border-[var(--color-border)] bg-[var(--color-bg)] p-2 text-xs leading-relaxed outline-none focus:border-[var(--color-accent)]"
+          className="mb-3 box-border w-full max-w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] p-2 text-xs leading-relaxed outline-none focus:border-[var(--color-accent)]"
         />
       )}
 
@@ -197,50 +196,64 @@ function SelectionActionPopover({
       )}
 
       {mode === 'note' && (
-        <textarea
+        <AutoResizeTextarea
           value={noteDraft}
           onChange={(e) => onNoteDraftChange(e.target.value)}
-          rows={3}
+          minRows={3}
           autoFocus
           placeholder="针对选中内容记笔记…"
-          className="mb-3 w-full resize-y rounded border border-[var(--color-border)] bg-[var(--color-bg)] p-2 text-xs leading-relaxed outline-none focus:border-[var(--color-accent)]"
+          className="mb-3 box-border w-full max-w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] p-2 text-xs leading-relaxed outline-none focus:border-[var(--color-accent)]"
         />
       )}
 
-      <div className="flex justify-end gap-2">
-        <button type="button" className={toolbarBtn} onClick={onClose}>
-          取消
-        </button>
-        {mode === 'edit' && (
+      <div className="flex items-center justify-between gap-2">
+        {mode === 'highlight' && existingHighlight ? (
           <button
             type="button"
-            disabled={editSaving || !editDraft.trim()}
-            className="rounded bg-[var(--color-accent)] px-2 py-1 text-xs text-white disabled:opacity-40"
-            onClick={onSaveEdit}
+            disabled={clearHighlightSaving || highlightSaving}
+            className="text-xs text-red-400 hover:text-red-300 disabled:opacity-40"
+            onClick={onClearHighlight}
           >
-            {editSaving ? '保存中…' : '保存修改'}
+            {clearHighlightSaving ? '清除中…' : '清除高亮'}
           </button>
+        ) : (
+          <span />
         )}
-        {mode === 'highlight' && (
-          <button
-            type="button"
-            disabled={highlightSaving}
-            className="rounded bg-[var(--color-accent)] px-2 py-1 text-xs text-white disabled:opacity-40"
-            onClick={onSaveHighlight}
-          >
-            {highlightSaving ? '保存中…' : '确认高亮'}
+        <div className="flex gap-2">
+          <button type="button" className={toolbarBtn} onClick={onClose}>
+            取消
           </button>
-        )}
-        {mode === 'note' && (
-          <button
-            type="button"
-            disabled={noteSaving || !noteDraft.trim()}
-            className="rounded bg-[var(--color-accent)] px-2 py-1 text-xs text-white disabled:opacity-40"
-            onClick={onSaveNote}
-          >
-            {noteSaving ? '保存中…' : '保存笔记'}
-          </button>
-        )}
+          {mode === 'edit' && (
+            <button
+              type="button"
+              disabled={editSaving || !editDraft.trim()}
+              className="rounded bg-[var(--color-accent)] px-2 py-1 text-xs text-white disabled:opacity-40"
+              onClick={onSaveEdit}
+            >
+              {editSaving ? '保存中…' : '保存修改'}
+            </button>
+          )}
+          {mode === 'highlight' && (
+            <button
+              type="button"
+              disabled={highlightSaving || clearHighlightSaving}
+              className="rounded bg-[var(--color-accent)] px-2 py-1 text-xs text-white disabled:opacity-40"
+              onClick={onSaveHighlight}
+            >
+              {highlightSaving ? '保存中…' : existingHighlight ? '更新高亮' : '确认高亮'}
+            </button>
+          )}
+          {mode === 'note' && (
+            <button
+              type="button"
+              disabled={noteSaving || !noteDraft.trim()}
+              className="rounded bg-[var(--color-accent)] px-2 py-1 text-xs text-white disabled:opacity-40"
+              onClick={onSaveNote}
+            >
+              {noteSaving ? '保存中…' : '保存笔记'}
+            </button>
+          )}
+        </div>
       </div>
     </div>,
     document.body,
@@ -278,6 +291,7 @@ export function ExplanationPanel({
   const [editSaving, setEditSaving] = useState(false);
   const [noteSaving, setNoteSaving] = useState(false);
   const [highlightSaving, setHighlightSaving] = useState(false);
+  const [clearHighlightSaving, setClearHighlightSaving] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
   const selectionRef = useRef<SelectionAnchor | null>(null);
   const toast = useToast();
@@ -297,10 +311,10 @@ export function ExplanationPanel({
   const inlineMarks = annotation.annotations.filter(
     (m) => m.kind === 'note' || m.kind === 'elaboration',
   );
-  const selectedHighlightMark = findHighlightMark(
-    (popoverAnchor ?? selection)?.text ?? '',
-    highlightMarks,
-  );
+  const popoverHighlightMark =
+    toolbarPanel === 'highlight' && popoverAnchor
+      ? findHighlightMark(popoverAnchor.text, highlightMarks, popoverAnchor.selectionStart)
+      : undefined;
 
   const closeActionPanel = useCallback(() => {
     setToolbarPanel('none');
@@ -318,11 +332,14 @@ export function ExplanationPanel({
     setShowFloatingMenu(false);
     if (mode === 'edit') setEditDraft(sel.text);
     if (mode === 'note') setNoteDraft('');
-    if (mode === 'highlight') setHighlightColor(DEFAULT_HIGHLIGHT_COLOR);
-  }, [selection]);
+    if (mode === 'highlight') {
+      const existing = findHighlightMark(sel.text, highlightMarks, sel.selectionStart);
+      setHighlightColor(existing?.highlightColor ?? DEFAULT_HIGHLIGHT_COLOR);
+    }
+  }, [selection, highlightMarks]);
 
   const applySelectionFromDom = useCallback(() => {
-    const anchor = getSelectionAnchor(bodyRef.current);
+    const anchor = getSelectionAnchor(bodyRef.current, content?.contentMd);
     selectionRef.current = anchor;
     setSelection(anchor);
     setShowFloatingMenu(Boolean(anchor) && toolbarPanel === 'none');
@@ -331,7 +348,7 @@ export function ExplanationPanel({
       setNoteDraft('');
       setHighlightColor(DEFAULT_HIGHLIGHT_COLOR);
     }
-  }, [toolbarPanel]);
+  }, [toolbarPanel, content?.contentMd]);
 
   const clearSelection = useCallback(() => {
     window.getSelection()?.removeAllRanges();
@@ -356,7 +373,7 @@ export function ExplanationPanel({
   useEffect(() => {
     const onSelectionChange = (): void => {
       if (toolbarPanel !== 'none') return;
-      const anchor = getSelectionAnchor(bodyRef.current);
+      const anchor = getSelectionAnchor(bodyRef.current, content?.contentMd);
       if (anchor) return;
       selectionRef.current = null;
       setSelection(null);
@@ -368,7 +385,7 @@ export function ExplanationPanel({
 
     document.addEventListener('selectionchange', onSelectionChange);
     return () => document.removeEventListener('selectionchange', onSelectionChange);
-  }, [toolbarPanel]);
+  }, [toolbarPanel, content?.contentMd]);
 
   const load = async (t: ExplanationTier, forceGenerate = false): Promise<void> => {
     setLoading(true);
@@ -469,12 +486,17 @@ export function ExplanationPanel({
   const clearSelectedHighlight = (): void => {
     const sel = currentSelection();
     if (!sel) return;
-    const mark = findHighlightMark(sel.text, highlightMarks);
+    const mark = findHighlightMark(sel.text, highlightMarks, sel.selectionStart);
     if (!mark) return;
     void runOnSelection('clear-highlight', async () => {
-      annotation.deleteMark(mark.id);
-      toast('已清除高亮', { variant: 'success' });
-      clearSelection();
+      setClearHighlightSaving(true);
+      try {
+        await annotation.deleteMark(mark.id);
+        toast('已清除高亮', { variant: 'success' });
+        clearSelection();
+      } finally {
+        setClearHighlightSaving(false);
+      }
     });
   };
 
@@ -514,22 +536,10 @@ export function ExplanationPanel({
               <button
                 type="button"
                 disabled={!hasSelection || Boolean(busy)}
-                onClick={() => {
-                  if (selectedHighlightMark) {
-                    clearSelectedHighlight();
-                    return;
-                  }
-                  openActionPanel('highlight');
-                }}
+                onClick={() => openActionPanel('highlight')}
                 className={toolbarBtn}
               >
-                {busy === 'highlight'
-                  ? '高亮中…'
-                  : busy === 'clear-highlight'
-                    ? '清除中…'
-                    : selectedHighlightMark
-                      ? '清除高亮'
-                      : '划词高亮'}
+                {busy === 'highlight' ? '高亮中…' : '划词高亮'}
               </button>
               <button
                 type="button"
@@ -630,6 +640,7 @@ export function ExplanationPanel({
                 highlights={highlightMarks.map((m) => ({
                   text: m.selectedText ?? '',
                   color: m.highlightColor ?? DEFAULT_HIGHLIGHT_COLOR,
+                  ...(m.selectionStart != null ? { start: m.selectionStart } : {}),
                 }))}
                 annotations={inlineMarks}
                 onDeleteAnnotation={annotation.deleteMark}
@@ -643,11 +654,9 @@ export function ExplanationPanel({
         <SelectionFloatingMenu
           anchor={selection}
           busy={busy}
-          selectedHighlight={Boolean(findHighlightMark(selection.text, highlightMarks))}
           onEdit={() => openActionPanel('edit')}
           onNote={() => openActionPanel('note')}
           onHighlight={() => openActionPanel('highlight')}
-          onClearHighlight={clearSelectedHighlight}
           onElaborate={() => {
             void runOnSelection('elaborate', async (sel) => {
               const res = await invoke('explain:elaborate', {
@@ -682,9 +691,11 @@ export function ExplanationPanel({
           editDraft={editDraft}
           noteDraft={noteDraft}
           highlightColor={highlightColor}
+          existingHighlight={Boolean(popoverHighlightMark)}
           editSaving={editSaving}
           noteSaving={noteSaving}
           highlightSaving={highlightSaving}
+          clearHighlightSaving={clearHighlightSaving}
           onEditDraftChange={setEditDraft}
           onNoteDraftChange={setNoteDraft}
           onHighlightColorChange={setHighlightColor}
@@ -716,13 +727,18 @@ export function ExplanationPanel({
             void runOnSelection('highlight', async (sel) => {
               setHighlightSaving(true);
               try {
-                await annotation.highlightText(sel.text, highlightColor);
+                const existing = findHighlightMark(sel.text, highlightMarks, sel.selectionStart);
+                if (existing) {
+                  await annotation.deleteMark(existing.id);
+                }
+                await annotation.highlightText(sel.text, highlightColor, sel.selectionStart);
                 clearSelection();
               } finally {
                 setHighlightSaving(false);
               }
             });
           }}
+          onClearHighlight={clearSelectedHighlight}
         />
       )}
 

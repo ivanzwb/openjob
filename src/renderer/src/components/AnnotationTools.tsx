@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type RefObject } from 'react';
 import type { Annotation } from '@shared/entities';
 import type { AnnotationTarget } from '@shared/enums';
 import { highlightTextStyle } from '../lib/highlightStyle';
+import { getSelectionStartInMarkdown } from '../lib/selectionOffset';
 import { invoke } from '../ipc';
 
 /**
@@ -12,10 +13,22 @@ import { invoke } from '../ipc';
  * ???????????????
  */
 
-export function findHighlightMark(text: string, marks: Annotation[]): Annotation | undefined {
+export function findHighlightMark(
+  text: string,
+  marks: Annotation[],
+  selectionStart?: number,
+): Annotation | undefined {
   const trimmed = text.trim();
   if (!trimmed) return undefined;
-  return marks.find((m) => m.kind === 'highlight' && m.selectedText?.trim() === trimmed);
+  const matches = marks.filter(
+    (m) => m.kind === 'highlight' && m.selectedText?.trim() === trimmed,
+  );
+  if (!matches.length) return undefined;
+  if (selectionStart !== undefined) {
+    const exact = matches.find((m) => m.selectionStart === selectionStart);
+    if (exact) return exact;
+  }
+  return matches.find((m) => m.selectionStart == null) ?? matches[0];
 }
 
 export const HIGHLIGHT_COLORS = [
@@ -75,20 +88,37 @@ export interface SelectionAnchor {
   text: string;
   top: number;
   left: number;
+  selectionStart?: number;
 }
 
-/** ?????????????????????viewport ??? */
-export function getSelectionAnchor(scope: HTMLElement | null): SelectionAnchor | null {
-  const text = selectionWithin(scope);
-  if (!text) return null;
+/** ????????????????????? popover ?? */
+export function getSelectionAnchor(
+  scope: HTMLElement | null,
+  contentMd?: string,
+): SelectionAnchor | null {
   const sel = window.getSelection();
+  const rawText = sel?.toString() ?? '';
+  const text = rawText.trim();
+  if (!text) return null;
+  if (scope && sel?.anchorNode && !scope.contains(sel.anchorNode)) return null;
   if (!sel || sel.rangeCount === 0) return null;
   const rect = sel.getRangeAt(0).getBoundingClientRect();
   if (rect.width === 0 && rect.height === 0) return null;
+
+  let selectionStart: number | undefined;
+  if (contentMd) {
+    const rawStart = getSelectionStartInMarkdown(scope, contentMd);
+    if (rawStart !== null) {
+      const leadingTrim = rawText.indexOf(text);
+      selectionStart = leadingTrim >= 0 ? rawStart + leadingTrim : rawStart;
+    }
+  }
+
   return {
     text,
     top: rect.bottom + 6,
     left: rect.left + rect.width / 2,
+    ...(selectionStart !== undefined ? { selectionStart } : {}),
   };
 }
 
@@ -118,7 +148,7 @@ export function useAnnotationTools({
   setNoteText: (v: string) => void;
   toggleBookmark: () => void;
   addHighlight: () => void;
-  highlightText: (text: string, color?: string) => Promise<void>;
+  highlightText: (text: string, color?: string, selectionStart?: number) => Promise<void>;
   addNote: () => void;
   addNoteOnSelection: (selectedText: string, noteMd: string) => Promise<void>;
   addElaborationOnSelection: (selectedText: string, elaborationMd: string) => Promise<void>;
@@ -145,7 +175,11 @@ export function useAnnotationTools({
     (a) => a.kind === 'highlight' || a.kind === 'note' || a.kind === 'elaboration',
   );
 
-  const highlightText = async (text: string, color = DEFAULT_HIGHLIGHT_COLOR): Promise<void> => {
+  const highlightText = async (
+    text: string,
+    color = DEFAULT_HIGHLIGHT_COLOR,
+    selectionStart?: number,
+  ): Promise<void> => {
     const trimmed = text.trim();
     if (!trimmed) return;
     await invoke('annotation:create', {
@@ -154,6 +188,7 @@ export function useAnnotationTools({
       kind: 'highlight',
       selectedText: trimmed.slice(0, 500),
       highlightColor: color,
+      ...(selectionStart !== undefined ? { selectionStart } : {}),
     });
     refresh();
     window.getSelection()?.removeAllRanges();
@@ -217,9 +252,7 @@ export function useAnnotationTools({
       refresh();
       window.getSelection()?.removeAllRanges();
     },
-    deleteMark: (id: string) => {
-      void invoke('annotation:delete', { id }).then(refresh);
-    },
+    deleteMark: (id: string) => invoke('annotation:delete', { id }).then(refresh),
   };
 }
 

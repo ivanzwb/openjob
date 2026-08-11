@@ -321,6 +321,7 @@ export const annotation = sqliteTable(
     selectedText: text('selected_text'),
     noteMd: text('note_md'),
     highlightColor: text('highlight_color'),
+    selectionStart: integer('selection_start'),
     createdAt: integer('created_at').notNull(),
   },
   (t) => [index('idx_annotation_target').on(t.targetType, t.targetId)],

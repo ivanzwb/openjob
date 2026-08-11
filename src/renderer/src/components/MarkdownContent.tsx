@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { highlightToHtml } from '../lib/highlight';
 import { highlightTextStyle } from '../lib/highlightStyle';
+import { parseMarkdownBlocks } from '../lib/markdownBlocks';
 import {
   filterInlineAnnotations,
   renderTextWithInlineMarkers,
@@ -17,6 +18,7 @@ export interface CodeLocation {
 export interface TextHighlight {
   text: string;
   color: string;
+  start?: number;
 }
 
 interface TextSegment {
@@ -24,39 +26,51 @@ interface TextSegment {
   color?: string;
 }
 
-function segmentTextWithHighlights(text: string, highlights: TextHighlight[]): TextSegment[] {
-  let segments: TextSegment[] = [{ text }];
+function segmentTextWithHighlights(
+  text: string,
+  blockStart: number,
+  highlights: TextHighlight[],
+): TextSegment[] {
+  if (!highlights.length) return [{ text }];
+
+  const ranges: Array<{ start: number; end: number; color: string }> = [];
   for (const mark of highlights) {
     const needle = mark.text.trim();
     if (!needle) continue;
-    const next: TextSegment[] = [];
-    for (const seg of segments) {
-      if (seg.color) {
-        next.push(seg);
-        continue;
-      }
-      const idx = seg.text.indexOf(needle);
-      if (idx === -1) {
-        next.push(seg);
-        continue;
-      }
-      if (idx > 0) next.push({ text: seg.text.slice(0, idx) });
-      next.push({ text: needle, color: mark.color });
-      if (idx + needle.length < seg.text.length) {
-        next.push({ text: seg.text.slice(idx + needle.length) });
-      }
+    if (mark.start !== undefined) {
+      const start = mark.start - blockStart;
+      const end = start + needle.length;
+      if (start < 0 || end > text.length) continue;
+      if (text.slice(start, end) !== needle) continue;
+      ranges.push({ start, end, color: mark.color });
+      continue;
     }
-    segments = next;
+    const idx = text.indexOf(needle);
+    if (idx === -1) continue;
+    ranges.push({ start: idx, end: idx + needle.length, color: mark.color });
   }
-  return segments;
+
+  if (!ranges.length) return [{ text }];
+
+  ranges.sort((a, b) => a.start - b.start);
+  const segments: TextSegment[] = [];
+  let cursor = 0;
+  for (const range of ranges) {
+    if (range.start < cursor) continue;
+    if (range.start > cursor) segments.push({ text: text.slice(cursor, range.start) });
+    segments.push({ text: text.slice(range.start, range.end), color: range.color });
+    cursor = range.end;
+  }
+  if (cursor < text.length) segments.push({ text: text.slice(cursor) });
+  return segments.length ? segments : [{ text }];
 }
 
-const FENCED_BLOCK = /```(\w[\w+-]*)?\n([\s\S]*?)```/g;
 const FILE_REF =
   /(?<![/\w])((?:[\w.-]+\/)+[\w.-]+\.\w+|(?:[\w.-]+\.\w+)):(\d+)(?:-(\d+))?/g;
 
 function renderTextBlock(
   text: string,
+  blockStart: number,
   keyPrefix: string,
   onCodeClick?: (loc: CodeLocation) => void,
   highlights?: TextHighlight[],
@@ -64,11 +78,12 @@ function renderTextBlock(
   onDeleteAnnotation?: (id: string) => void,
 ): React.ReactNode[] {
   const renderPlain = (plain: string, prefix: string): React.ReactNode[] =>
-    renderTextWithRefs(plain, onCodeClick, highlights, prefix);
+    renderTextWithRefs(plain, blockStart, onCodeClick, highlights, prefix);
 
   if (inlineAnnotations?.length && onDeleteAnnotation) {
     return renderTextWithInlineMarkers(
       text,
+      blockStart,
       inlineAnnotations,
       onDeleteAnnotation,
       renderPlain,
@@ -76,16 +91,19 @@ function renderTextBlock(
       highlights,
     );
   }
-  return renderTextWithRefs(text, onCodeClick, highlights, keyPrefix);
+  return renderTextWithRefs(text, blockStart, onCodeClick, highlights, keyPrefix);
 }
 
 function renderTextWithRefs(
   text: string,
+  blockStart: number,
   onCodeClick?: (loc: CodeLocation) => void,
   highlights?: TextHighlight[],
   keyPrefix = 't',
 ): React.ReactNode[] {
-  const segments = highlights?.length ? segmentTextWithHighlights(text, highlights) : [{ text }];
+  const segments = highlights?.length
+    ? segmentTextWithHighlights(text, blockStart, highlights)
+    : [{ text }];
   const nodes: React.ReactNode[] = [];
   let last = 0;
   let match: RegExpExecArray | null;
@@ -232,29 +250,7 @@ export function MarkdownContent({
     [annotations],
   );
 
-  const parts = useMemo(() => {
-    const blocks: Array<{ type: 'text' | 'mermaid' | 'code'; value: string; lang?: string }> = [];
-    let last = 0;
-    let match: RegExpExecArray | null;
-    const re = new RegExp(FENCED_BLOCK.source, 'g');
-
-    while ((match = re.exec(text)) !== null) {
-      if (match.index > last) {
-        blocks.push({ type: 'text', value: text.slice(last, match.index) });
-      }
-      const lang = match[1];
-      const body = match[2] ?? '';
-      if (lang === 'mermaid') {
-        blocks.push({ type: 'mermaid', value: body });
-      } else {
-        blocks.push({ type: 'code', value: body, ...(lang ? { lang } : {}) });
-      }
-      last = match.index + match[0].length;
-    }
-    if (last < text.length) blocks.push({ type: 'text', value: text.slice(last) });
-    if (blocks.length === 0) blocks.push({ type: 'text', value: text });
-    return blocks;
-  }, [text]);
+  const parts = useMemo(() => parseMarkdownBlocks(text), [text]);
 
   return (
     <div className="space-y-1 text-sm leading-relaxed">
@@ -264,9 +260,15 @@ export function MarkdownContent({
           return <CodeBlock key={`c-${i}`} lang={part.lang ?? null} code={part.value} />;
         }
         return (
-          <div key={`t-${i}`} className="whitespace-pre-wrap">
+          <div
+            key={`t-${i}`}
+            className="whitespace-pre-wrap"
+            data-md-start={part.mdStart}
+            data-md-end={part.mdEnd}
+          >
             {renderTextBlock(
               part.value,
+              part.mdStart,
               `t-${i}`,
               onCodeClick,
               highlights,

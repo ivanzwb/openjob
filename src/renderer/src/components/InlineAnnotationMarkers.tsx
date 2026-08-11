@@ -2,24 +2,43 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Annotation } from '@shared/entities';
 import { highlightTextStyle } from '../lib/highlightStyle';
+import { useAdaptivePopover } from '../lib/popoverLayout';
 import { MarkdownContent, type TextHighlight } from './MarkdownContent';
 
 export type InlineAnnotation = Pick<Annotation, 'id' | 'kind' | 'selectedText' | 'noteMd'>;
-
-const MARKER_ICON: Record<'note' | 'elaboration', string> = {
-  note: '📝',
-  elaboration: '💡',
-};
 
 const MARKER_LABEL: Record<'note' | 'elaboration', string> = {
   note: '笔记',
   elaboration: '细化讲解',
 };
 
-const MARKER_TONE: Record<'note' | 'elaboration', string> = {
-  note: 'text-amber-300 hover:bg-amber-500/20',
-  elaboration: 'text-sky-300 hover:bg-sky-500/20',
-};
+function markerKinds(markers: InlineAnnotation[]): {
+  hasNote: boolean;
+  hasElaboration: boolean;
+} {
+  return {
+    hasNote: markers.some((m) => m.kind === 'note'),
+    hasElaboration: markers.some((m) => m.kind === 'elaboration'),
+  };
+}
+
+function markerTextClass(markers: InlineAnnotation[]): string {
+  const { hasNote, hasElaboration } = markerKinds(markers);
+  if (hasNote && hasElaboration) {
+    return 'font-bold text-amber-300 underline decoration-sky-400 decoration-2 decoration-dashed underline-offset-2';
+  }
+  if (hasNote) {
+    return 'font-bold text-amber-300 border-b-2 border-amber-400/90';
+  }
+  return 'font-bold text-sky-300 border-b-2 border-dashed border-sky-400/90';
+}
+
+function markerTitle(markers: InlineAnnotation[]): string {
+  const { hasNote, hasElaboration } = markerKinds(markers);
+  if (hasNote && hasElaboration) return '查看笔记 / 细化讲解';
+  if (hasNote) return '查看笔记';
+  return '查看细化讲解';
+}
 
 function InlineMarkerPopover({
   marker,
@@ -33,7 +52,7 @@ function InlineMarkerPopover({
   onDelete: (id: string) => void;
 }): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null);
-  const kind = marker.kind as 'note' | 'elaboration';
+  const popoverStyle = useAdaptivePopover(ref, anchorRect, true, [marker.noteMd, marker.selectedText]);
 
   useEffect(() => {
     const onPointerDown = (e: MouseEvent): void => {
@@ -51,20 +70,17 @@ function InlineMarkerPopover({
     };
   }, [onClose]);
 
-  const top = Math.min(anchorRect.bottom + 6, window.innerHeight - 280);
-  const left = Math.min(Math.max(8, anchorRect.left), window.innerWidth - 320);
+  const kind = marker.kind as 'note' | 'elaboration';
 
   return createPortal(
     <div
       ref={ref}
-      className="fixed z-[110] w-72 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-xl"
-      style={{ top, left }}
+      className="fixed z-[110] min-w-48 max-w-[calc(100vw-16px)] rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-xl"
+      style={popoverStyle}
       onMouseDown={(e) => e.stopPropagation()}
     >
       <div className="mb-2 flex items-start justify-between gap-2">
-        <p className="text-[10px] font-medium text-[var(--color-muted)]">
-          {MARKER_ICON[kind]} {MARKER_LABEL[kind]}
-        </p>
+        <p className="text-[10px] font-medium text-[var(--color-muted)]">{MARKER_LABEL[kind]}</p>
         <button
           type="button"
           onClick={() => onDelete(marker.id)}
@@ -78,7 +94,7 @@ function InlineMarkerPopover({
           「{marker.selectedText}」
         </p>
       )}
-      <div className="max-h-48 overflow-y-auto text-xs leading-relaxed">
+      <div className="break-words text-xs leading-relaxed [overflow-wrap:anywhere] [&_.shiki-host]:overflow-x-hidden [&_pre]:whitespace-pre-wrap">
         <MarkdownContent text={marker.noteMd ?? ''} />
       </div>
     </div>,
@@ -86,51 +102,149 @@ function InlineMarkerPopover({
   );
 }
 
-function InlineMarkerButton({
-  marker,
+function MarkerPickMenu({
+  markers,
+  anchorRect,
+  onSelect,
+  onClose,
+}: {
+  markers: InlineAnnotation[];
+  anchorRect: DOMRect;
+  onSelect: (marker: InlineAnnotation) => void;
+  onClose: () => void;
+}): React.JSX.Element {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const onPointerDown = (e: MouseEvent): void => {
+      if (ref.current?.contains(e.target as Node)) return;
+      onClose();
+    };
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [onClose]);
+
+  const top = Math.min(anchorRect.bottom + 6, window.innerHeight - 120);
+  const left = Math.min(Math.max(8, anchorRect.left), window.innerWidth - 160);
+
+  return createPortal(
+    <div
+      ref={ref}
+      className="fixed z-[110] flex flex-col gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-xl"
+      style={{ top, left }}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      {markers.map((m) => {
+        const kind = m.kind as 'note' | 'elaboration';
+        return (
+          <button
+            key={m.id}
+            type="button"
+            onClick={() => onSelect(m)}
+            className={`whitespace-nowrap rounded px-2 py-1 text-left text-xs hover:bg-black/20 ${
+              kind === 'note' ? 'font-bold text-amber-300' : 'font-bold text-sky-300'
+            }`}
+          >
+            {MARKER_LABEL[kind]}
+          </button>
+        );
+      })}
+    </div>,
+    document.body,
+  );
+}
+
+function InlineMarkedText({
+  text,
+  markers,
+  highlight,
   onDelete,
 }: {
-  marker: InlineAnnotation;
+  text: string;
+  markers: InlineAnnotation[];
+  highlight?: TextHighlight;
   onDelete: (id: string) => void;
 }): React.JSX.Element {
-  const [open, setOpen] = useState(false);
+  const [activeMarker, setActiveMarker] = useState<InlineAnnotation | null>(null);
+  const [showPicker, setShowPicker] = useState(false);
   const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
-  const btnRef = useRef<HTMLButtonElement>(null);
-  const kind = marker.kind as 'note' | 'elaboration';
+  const ref = useRef<HTMLSpanElement>(null);
 
-  const toggle = useCallback(() => {
-    if (open) {
-      setOpen(false);
-      return;
-    }
-    const rect = btnRef.current?.getBoundingClientRect();
+  const open = useCallback(() => {
+    const rect = ref.current?.getBoundingClientRect();
     if (!rect) return;
     setAnchorRect(rect);
-    setOpen(true);
-  }, [open]);
+    if (markers.length === 1) {
+      setActiveMarker(markers[0]!);
+      setShowPicker(false);
+      return;
+    }
+    setActiveMarker(null);
+    setShowPicker(true);
+  }, [markers]);
+
+  const close = useCallback(() => {
+    setActiveMarker(null);
+    setShowPicker(false);
+    setAnchorRect(null);
+  }, []);
+
+  const textClass = `cursor-pointer rounded-sm px-0.5 transition-opacity hover:opacity-90 ${markerTextClass(markers)}`;
+  const inner = highlight ? (
+    <mark className={textClass} style={highlightTextStyle(highlight.color)}>
+      {text}
+    </mark>
+  ) : (
+    <span className={textClass}>{text}</span>
+  );
 
   return (
     <>
-      <button
-        ref={btnRef}
-        type="button"
+      <span
+        ref={ref}
+        role="button"
+        tabIndex={0}
+        title={markerTitle(markers)}
+        className="inline"
         onClick={(e) => {
           e.stopPropagation();
-          toggle();
+          open();
         }}
-        className={`mx-0.5 inline-flex h-4 w-4 items-center justify-center rounded align-super text-[10px] leading-none ${MARKER_TONE[kind]}`}
-        title={MARKER_LABEL[kind]}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            open();
+          }
+        }}
       >
-        {MARKER_ICON[kind]}
-      </button>
-      {open && anchorRect && (
-        <InlineMarkerPopover
-          marker={marker}
+        {inner}
+      </span>
+      {showPicker && anchorRect && (
+        <MarkerPickMenu
+          markers={markers}
           anchorRect={anchorRect}
-          onClose={() => setOpen(false)}
+          onSelect={(marker) => {
+            setShowPicker(false);
+            setActiveMarker(marker);
+          }}
+          onClose={close}
+        />
+      )}
+      {activeMarker && anchorRect && (
+        <InlineMarkerPopover
+          marker={activeMarker}
+          anchorRect={anchorRect}
+          onClose={close}
           onDelete={(id) => {
             onDelete(id);
-            setOpen(false);
+            close();
           }}
         />
       )}
@@ -140,7 +254,7 @@ function InlineMarkerButton({
 
 type TextSegment =
   | { type: 'plain'; text: string }
-  | { type: 'marked'; text: string; markers: InlineAnnotation[] };
+  | { type: 'marked'; text: string; start: number; end: number; markers: InlineAnnotation[] };
 
 function splitByInlineAnnotations(
   text: string,
@@ -173,7 +287,13 @@ function splitByInlineAnnotations(
 
   for (const m of matches) {
     if (m.start > cursor) segments.push({ type: 'plain', text: text.slice(cursor, m.start) });
-    segments.push({ type: 'marked', text: text.slice(m.start, m.end), markers: m.markers });
+    segments.push({
+      type: 'marked',
+      text: text.slice(m.start, m.end),
+      start: m.start,
+      end: m.end,
+      markers: m.markers,
+    });
     cursor = m.end;
   }
   if (cursor < text.length) segments.push({ type: 'plain', text: text.slice(cursor) });
@@ -181,14 +301,23 @@ function splitByInlineAnnotations(
   return segments;
 }
 
-function findHighlightForText(text: string, highlights?: TextHighlight[]): TextHighlight | undefined {
-  const trimmed = text.trim();
+function findHighlightForSegment(
+  blockStart: number,
+  segStart: number,
+  segText: string,
+  highlights?: TextHighlight[],
+): TextHighlight | undefined {
+  const trimmed = segText.trim();
   if (!trimmed || !highlights?.length) return undefined;
-  return highlights.find((h) => h.text.trim() === trimmed);
+  const absStart = blockStart + segStart;
+  const exact = highlights.find((h) => h.start === absStart && h.text.trim() === trimmed);
+  if (exact) return exact;
+  return highlights.find((h) => h.start === undefined && h.text.trim() === trimmed);
 }
 
 export function renderTextWithInlineMarkers(
   text: string,
+  blockStart: number,
   annotations: InlineAnnotation[],
   onDelete: (id: string) => void,
   renderPlain: (plain: string, keyPrefix: string) => React.ReactNode[],
@@ -204,20 +333,15 @@ export function renderTextWithInlineMarkers(
       nodes.push(...renderPlain(seg.text, segKey));
       return;
     }
-    const hl = findHighlightForText(seg.text, highlights);
+    const hl = findHighlightForSegment(blockStart, seg.start, seg.text, highlights);
     nodes.push(
-      <span key={segKey} className="inline">
-        {hl ? (
-          <mark className="rounded-sm px-0.5" style={highlightTextStyle(hl.color)}>
-            {seg.text}
-          </mark>
-        ) : (
-          <span className="rounded-sm bg-[var(--color-accent)]/10">{seg.text}</span>
-        )}
-        {seg.markers.map((m) => (
-          <InlineMarkerButton key={m.id} marker={m} onDelete={onDelete} />
-        ))}
-      </span>,
+      <InlineMarkedText
+        key={segKey}
+        text={seg.text}
+        markers={seg.markers}
+        {...(hl ? { highlight: hl } : {})}
+        onDelete={onDelete}
+      />,
     );
   });
 

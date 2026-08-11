@@ -14,6 +14,7 @@ function rowToAnnotation(row: typeof schema.annotation.$inferSelect): Annotation
     selectedText: row.selectedText,
     noteMd: row.noteMd,
     highlightColor: row.highlightColor,
+    selectionStart: row.selectionStart,
     createdAt: row.createdAt,
   };
 }
@@ -142,6 +143,7 @@ export function createAnnotation(input: AnnotationCreateInput): Annotation {
     selectedText: input.selectedText ?? null,
     noteMd: input.noteMd ?? null,
     highlightColor: input.highlightColor ?? null,
+    selectionStart: input.selectionStart ?? null,
     createdAt: now,
   };
   getDb().insert(schema.annotation).values(row).run();

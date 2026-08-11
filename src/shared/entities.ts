@@ -293,6 +293,7 @@ export interface Annotation {
   selectedText: string | null;
   noteMd: string | null;
   highlightColor: string | null;
+  selectionStart: number | null;
   createdAt: Timestamp;
 }
 
