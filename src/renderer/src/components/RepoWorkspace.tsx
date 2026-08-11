@@ -98,13 +98,17 @@ export function RepoWorkspace({
             </div>
           ) : state.text || state.running ? (
             <>
-              <div className="mb-2 flex items-center gap-2">
+              <div className="mb-1 flex items-center gap-2">
                 <SourceBadge kind={state.evidenceKind} />
                 {state.running && (
                   <span className="text-xs text-[var(--color-muted)]">分析中…</span>
                 )}
               </div>
-              <MarkdownContent text={state.text} onCodeClick={setCodeLoc} />
+              {state.text.trim() ? (
+                <MarkdownContent text={state.text} onCodeClick={setCodeLoc} />
+              ) : state.running ? (
+                <p className="text-xs text-[var(--color-muted)]">正在检索代码并生成回答…</p>
+              ) : null}
               <ToolTrace calls={state.toolCalls} />
               <CitationList
                 citations={state.citations}

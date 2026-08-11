@@ -41,3 +41,12 @@ export function parseMarkdownBlocks(text: string): MarkdownBlock[] {
   }
   return blocks;
 }
+
+/** 去掉开头空白块，避免角标与正文之间出现大段空行 */
+export function visibleMarkdownBlocks(text: string): MarkdownBlock[] {
+  const normalized = text.replace(/^\s+/, '');
+  return parseMarkdownBlocks(normalized).filter((block) => {
+    if (block.type === 'text') return block.value.trim().length > 0;
+    return block.value.trim().length > 0;
+  });
+}

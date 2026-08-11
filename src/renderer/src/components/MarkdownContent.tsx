@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { highlightToHtml } from '../lib/highlight';
 import { highlightTextStyle } from '../lib/highlightStyle';
-import { parseMarkdownBlocks } from '../lib/markdownBlocks';
+import { visibleMarkdownBlocks } from '../lib/markdownBlocks';
 import {
   filterInlineAnnotations,
   renderTextWithInlineMarkers,
@@ -181,7 +181,7 @@ function MermaidBlock({ chart }: { chart: string }): React.JSX.Element {
     };
   }, [chart, id]);
 
-  return <div ref={ref} className="my-3 overflow-x-auto rounded bg-black/20 p-3" />;
+  return <div ref={ref} className="mb-3 mt-3 overflow-x-auto rounded bg-black/20 p-3 first:mt-0" />;
 }
 
 /** shiki 语言别名归一，模型写 `js` / `sh` 也能命中 */
@@ -219,14 +219,14 @@ function CodeBlock({ lang, code }: { lang: string | null; code: string }): React
   if (html) {
     return (
       <div
-        className="shiki-host my-3 overflow-x-auto rounded bg-black/20 p-3 font-mono text-xs leading-5"
+        className="shiki-host mb-3 mt-3 overflow-x-auto rounded bg-black/20 p-3 font-mono text-xs leading-5 first:mt-0"
         dangerouslySetInnerHTML={{ __html: html }}
       />
     );
   }
 
   return (
-    <pre className="my-3 overflow-x-auto rounded bg-black/20 p-3 font-mono text-xs leading-5">
+    <pre className="mb-3 mt-3 overflow-x-auto rounded bg-black/20 p-3 font-mono text-xs leading-5 first:mt-0">
       {code}
     </pre>
   );
@@ -250,10 +250,12 @@ export function MarkdownContent({
     [annotations],
   );
 
-  const parts = useMemo(() => parseMarkdownBlocks(text), [text]);
+  const parts = useMemo(() => visibleMarkdownBlocks(text), [text]);
+
+  if (parts.length === 0) return <></>;
 
   return (
-    <div className="space-y-1 text-sm leading-relaxed">
+    <div className="space-y-1 text-sm leading-relaxed [&>*:first-child]:mt-0">
       {parts.map((part, i) => {
         if (part.type === 'mermaid') return <MermaidBlock key={`m-${i}`} chart={part.value} />;
         if (part.type === 'code') {
