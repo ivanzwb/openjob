@@ -56,37 +56,65 @@ export async function invokeRemote<C extends string, P, R>(
 }
 
 /** 从 llm:chat 事件流拼出完整助手回复 */
-export function textFromStreamEvents(
-  events: SyncRpcResponse['events'],
-): { text: string; sessionId: string | null } {
+export function streamResultFromEvents(events: SyncRpcResponse['events']): {
+  text: string;
+  sessionId: string | null;
+  evidenceKind: 'model' | 'web' | 'code';
+  error: string | null;
+} {
   let text = '';
   let sessionId: string | null = null;
+  let evidenceKind: 'model' | 'web' | 'code' = 'model';
+  let error: string | null = null;
   for (const ev of events ?? []) {
     if (ev.channel === 'stream:delta') {
       const p = ev.payload as { delta?: string };
       text += p.delta ?? '';
     }
     if (ev.channel === 'stream:done') {
-      const p = ev.payload as { sessionId?: string; contentMd?: string };
+      const p = ev.payload as {
+        sessionId?: string;
+        contentMd?: string;
+        evidenceKind?: 'model' | 'web' | 'code';
+      };
       sessionId = p.sessionId ?? null;
       if (p.contentMd) text = p.contentMd;
+      if (p.evidenceKind) evidenceKind = p.evidenceKind;
     }
     if (ev.channel === 'stream:error') {
       const p = ev.payload as { message?: string };
-      throw new Error(p.message ?? '流式请求失败');
+      error = p.message ?? '流式请求失败';
     }
   }
+  return { text, sessionId, evidenceKind, error };
+}
+
+/** @deprecated 使用 streamResultFromEvents */
+export function textFromStreamEvents(
+  events: SyncRpcResponse['events'],
+): { text: string; sessionId: string | null } {
+  const { text, sessionId } = streamResultFromEvents(events);
   return { text, sessionId };
 }
 
-/** 从长任务事件流提取最后一条进度消息 */
-export function jobMessageFromEvents(events: SyncRpcResponse['events']): string {
-  let last = '任务已完成';
+/** 从长任务事件流提取结果 */
+export function jobResultFromEvents(events: SyncRpcResponse['events']): {
+  message: string;
+  error: string | null;
+} {
+  let message = '任务已完成';
+  let error: string | null = null;
   for (const ev of events ?? []) {
     if (ev.channel !== 'job:progress') continue;
-    const p = ev.payload as { message?: string; error?: string; done?: boolean };
-    if (p.error) return p.error;
-    if (p.message) last = p.message;
+    const p = ev.payload as { message?: string; error?: string | null; done?: boolean };
+    if (p.error) error = p.error;
+    if (p.message) message = p.message;
   }
-  return last;
+  return { message, error };
+}
+
+/** @deprecated 使用 jobResultFromEvents */
+export function jobMessageFromEvents(events: SyncRpcResponse['events']): string {
+  const { message, error } = jobResultFromEvents(events);
+  return error ?? message;
 }

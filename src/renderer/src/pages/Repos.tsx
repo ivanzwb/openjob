@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Repo } from '@shared/entities';
 import type { GitStatus } from '@shared/ipc';
 import { RepoWorkspace } from '../components/RepoWorkspace';
+import { useToast } from '../components/Toast';
 import { useJobFeedback, useJobProgress } from '../ipc/useJobProgress';
 import { invoke } from '../ipc';
 
@@ -12,6 +13,19 @@ export function Repos(): React.JSX.Element {
   const [git, setGit] = useState<GitStatus | null>(null);
   const { active } = useJobProgress();
   const cloneJob = useJobFeedback('克隆并索引仓库');
+  const toast = useToast();
+  const cloneWasRunning = useRef(false);
+
+  useEffect(() => {
+    if (cloneWasRunning.current && !cloneJob.isRunning) {
+      if (cloneJob.error) {
+        toast(`克隆失败：${cloneJob.error}`, { variant: 'error' });
+      } else if (cloneJob.message) {
+        toast(cloneJob.message, { variant: 'success' });
+      }
+    }
+    cloneWasRunning.current = cloneJob.isRunning;
+  }, [cloneJob.isRunning, cloneJob.error, cloneJob.message, toast]);
 
   useEffect(() => {
     void invoke('repo:gitStatus', undefined).then(setGit);
@@ -99,12 +113,6 @@ export function Repos(): React.JSX.Element {
               </div>
             )}
           </div>
-        )}
-        {cloneJob.error && (
-          <p className="text-xs text-red-400">{cloneJob.error}</p>
-        )}
-        {cloneJob.message && !cloneJob.isRunning && (
-          <p className="text-xs text-emerald-400">{cloneJob.message}</p>
         )}
 
         <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto">

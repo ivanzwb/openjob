@@ -131,7 +131,7 @@ export function listCodeRefs(repoId: string): Array<{
 }
 
 export async function cloneAndIndex(url: string, jobId: string): Promise<void> {
-  const label = 'Clone 仓库';
+  const label = '克隆并索引仓库';
   const report = (msg: string, progress: number | null): void => {
     emit('job:progress', { jobId, label, progress, message: msg, done: false, error: null });
   };

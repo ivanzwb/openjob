@@ -4,6 +4,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppProvider, useApp } from './src/context/AppContext';
 import { RemoteTaskProvider, useRemoteTask } from './src/context/RemoteTaskContext';
+import { ToastProvider } from './src/components/Toast';
 import { RootTabs } from './src/navigation/RootTabs';
 import { theme } from './src/theme';
 
@@ -45,9 +46,11 @@ export default function App(): React.JSX.Element {
   return (
     <SafeAreaProvider>
       <AppProvider>
-        <RemoteTaskProvider>
-          <AppShell />
-        </RemoteTaskProvider>
+        <ToastProvider>
+          <RemoteTaskProvider>
+            <AppShell />
+          </RemoteTaskProvider>
+        </ToastProvider>
       </AppProvider>
     </SafeAreaProvider>
   );

@@ -6,6 +6,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { useToast } from '../components/Toast';
 
 interface RemoteTask {
   label: string;
@@ -14,44 +15,45 @@ interface RemoteTask {
 
 interface RemoteTaskContextValue {
   active: RemoteTask | null;
-  lastMessage: string | null;
-  lastError: string | null;
-  runTask: <T>(label: string, fn: () => Promise<T>) => Promise<T>;
-  clearStatus: () => void;
+  runTask: <T>(
+    label: string,
+    fn: () => Promise<T>,
+    options?: { toastSuccess?: boolean },
+  ) => Promise<T>;
 }
 
 const RemoteTaskContext = createContext<RemoteTaskContextValue | null>(null);
 
 export function RemoteTaskProvider({ children }: { children: ReactNode }): React.JSX.Element {
   const [active, setActive] = useState<RemoteTask | null>(null);
-  const [lastMessage, setLastMessage] = useState<string | null>(null);
-  const [lastError, setLastError] = useState<string | null>(null);
+  const toast = useToast();
 
-  const runTask = useCallback(async <T,>(label: string, fn: () => Promise<T>): Promise<T> => {
-    setActive({ label, message: '进行中…' });
-    setLastError(null);
-    try {
-      const result = await fn();
-      setLastMessage(`${label}完成`);
-      return result;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setLastError(message);
-      throw err;
-    } finally {
-      setActive(null);
-    }
-  }, []);
-
-  const clearStatus = useCallback(() => {
-    setLastMessage(null);
-    setLastError(null);
-  }, []);
-
-  const value = useMemo(
-    () => ({ active, lastMessage, lastError, runTask, clearStatus }),
-    [active, lastMessage, lastError, runTask, clearStatus],
+  const runTask = useCallback(
+    async <T,>(
+      label: string,
+      fn: () => Promise<T>,
+      options?: { toastSuccess?: boolean },
+    ): Promise<T> => {
+      setActive({ label, message: '进行中…' });
+      try {
+        const result = await fn();
+        if (options?.toastSuccess !== false) {
+          const msg = typeof result === 'string' && result.trim() ? result : `${label}完成`;
+          toast(msg, { variant: 'success' });
+        }
+        return result;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        toast(message, { variant: 'error' });
+        throw err;
+      } finally {
+        setActive(null);
+      }
+    },
+    [toast],
   );
+
+  const value = useMemo(() => ({ active, runTask }), [active, runTask]);
 
   return <RemoteTaskContext.Provider value={value}>{children}</RemoteTaskContext.Provider>;
 }

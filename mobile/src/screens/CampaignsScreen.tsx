@@ -9,7 +9,7 @@ import { StudyPlanCalendarPopover } from '../components/StudyPlanCalendarPopover
 import { getRawDb } from '../db';
 import { getCampaignDetail, getTodayPlan, listCampaigns } from '../data/queries';
 import { createCampaign } from '../data/mutations';
-import { invokeRemote } from '../remote/rpc';
+import { invokeRemote, jobResultFromEvents } from '../remote/rpc';
 import { useApp } from '../context/AppContext';
 import { useRemoteTask } from '../context/RemoteTaskContext';
 import { theme } from '../theme';
@@ -70,13 +70,11 @@ function CampaignDetailView({
   const { triggerSync } = useApp();
   const { runTask, active } = useRemoteTask();
   const [detail, setDetail] = useState(() => getCampaignDetail(getRawDb(), id));
-  const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<KnowledgeNodeView | null>(null);
   const [nodeStudyMode, setNodeStudyMode] = useState<'explain' | 'drill' | 'followUp'>('explain');
   const [interviewDate, setInterviewDate] = useState(detail.campaign.interviewDate ?? '');
   const [dailyMinutes, setDailyMinutes] = useState(String(detail.campaign.dailyMinutes ?? 90));
   const [planMsg, setPlanMsg] = useState<string | null>(null);
-  const [calendarFilterDate, setCalendarFilterDate] = useState<string | null>(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [reloadTick, setReloadTick] = useState(0);
 
@@ -110,26 +108,30 @@ function CampaignDetailView({
   const diagnose = async () => {
     try {
       await runTask('JD 诊断', async () => {
-        await invokeRemote('diagnosis:fromJd', { campaignId: id });
+        const { events } = await invokeRemote('diagnosis:fromJd', { campaignId: id });
+        const { message, error } = jobResultFromEvents(events);
+        if (error) throw new Error(error);
+        return message;
       });
       await triggerSync();
       reload();
-      setStatusMsg('JD 诊断完成');
-    } catch (e) {
-      setStatusMsg(e instanceof Error ? e.message : String(e));
+    } catch {
+      // toast handled by runTask
     }
   };
 
   const fetchIntel = async () => {
     try {
       await runTask('公司情报', async () => {
-        await invokeRemote('diagnosis:fetchIntel', { campaignId: id });
+        const { events } = await invokeRemote('diagnosis:fetchIntel', { campaignId: id });
+        const { message, error } = jobResultFromEvents(events);
+        if (error) throw new Error(error);
+        return message;
       });
       await triggerSync();
       reload();
-      setStatusMsg('公司情报已生成');
-    } catch (e) {
-      setStatusMsg(e instanceof Error ? e.message : String(e));
+    } catch {
+      // toast handled by runTask
     }
   };
 
@@ -145,14 +147,13 @@ function CampaignDetailView({
           interviewDate: interviewDate || undefined,
           dailyMinutes: Number(dailyMinutes) || 90,
         });
-        return result;
+        return `已生成 ${result.daysCreated} 天计划、${result.tasksCreated} 个任务`;
       });
       await triggerSync();
       reload();
-      setPlanMsg(`已生成 ${res.daysCreated} 天计划、${res.tasksCreated} 个任务`);
       setReloadTick((t) => t + 1);
-    } catch (e) {
-      setPlanMsg(e instanceof Error ? e.message : String(e));
+    } catch {
+      // toast handled by runTask
     }
   };
 
