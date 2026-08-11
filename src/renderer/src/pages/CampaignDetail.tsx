@@ -530,7 +530,11 @@ export function CampaignDetail({
                       />
                     </div>
                   )}
-                  <div className="min-h-0 flex-1 overflow-x-auto overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] p-2">
+                  <div
+                    className={`min-h-0 flex-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] p-2 ${
+                      showGraph ? 'flex flex-col overflow-hidden' : 'overflow-x-auto overflow-y-auto'
+                    }`}
+                  >
                     {showGraph ? (
                       <KnowledgeGraph nodes={nodes} edges={edges} />
                     ) : (

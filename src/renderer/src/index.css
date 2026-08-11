@@ -59,3 +59,47 @@ body {
 .shiki-host .line:hover {
   background: rgb(255 255 255 / 4%);
 }
+
+/* 考点图谱：深色主题下的控件与缩略图 */
+.knowledge-graph-host .react-flow {
+  width: 100%;
+  height: 100%;
+}
+
+.knowledge-graph-host .dark.react-flow,
+.knowledge-graph-host .react-flow.dark {
+  --xy-background-color: var(--color-bg);
+  --xy-controls-button-background-color-default: var(--color-surface);
+  --xy-controls-button-background-color-hover-default: rgb(255 255 255 / 8%);
+  --xy-controls-button-color-default: var(--color-fg);
+  --xy-controls-button-color-hover-default: var(--color-fg);
+  --xy-controls-button-border-color-default: var(--color-border);
+  --xy-controls-box-shadow-default: 0 4px 16px rgb(0 0 0 / 35%);
+  --xy-minimap-background-color: var(--color-surface);
+  --xy-minimap-mask-color: rgb(79 124 255 / 0.14);
+  --xy-minimap-node-color: var(--color-muted);
+}
+
+.knowledge-graph-host .react-flow__controls {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.knowledge-graph-host .react-flow__controls-button {
+  border: none;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.knowledge-graph-host .react-flow__controls-button:last-child {
+  border-bottom: none;
+}
+
+.knowledge-graph-host .react-flow__controls-button svg {
+  fill: var(--color-fg);
+}
+
+.knowledge-graph-host .react-flow__minimap {
+  border-radius: 8px;
+  overflow: hidden;
+}

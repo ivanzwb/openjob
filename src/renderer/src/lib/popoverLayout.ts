@@ -7,7 +7,7 @@ export type PopoverAnchor =
   | { top: number; left: number; width?: number; center?: boolean }
   | DOMRect;
 
-function resolveAnchor(anchor: PopoverAnchor): {
+function resolveAnchor(anchor: PopoverAnchor, center: boolean): {
   top: number;
   left: number;
   width: number;
@@ -18,15 +18,33 @@ function resolveAnchor(anchor: PopoverAnchor): {
       top: anchor.bottom + 6,
       left: anchor.left,
       width: anchor.width,
-      center: false,
+      center,
     };
   }
   return {
     top: anchor.top,
     left: anchor.left,
     width: anchor.width ?? 0,
-    center: anchor.center ?? false,
+    center: anchor.center ?? center,
   };
+}
+
+function anchorKey(anchor: PopoverAnchor | null): string {
+  if (!anchor) return '';
+  if (anchor instanceof DOMRect) {
+    return `rect:${anchor.top},${anchor.left},${anchor.bottom},${anchor.right}`;
+  }
+  return `pt:${anchor.top},${anchor.left},${anchor.width ?? 0}`;
+}
+
+function styleEqual(a: React.CSSProperties, b: React.CSSProperties): boolean {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  for (const key of keys) {
+    if (a[key as keyof React.CSSProperties] !== b[key as keyof React.CSSProperties]) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /** Measure popover size from content and clamp position within the viewport. */
@@ -34,9 +52,11 @@ export function useAdaptivePopover(
   ref: RefObject<HTMLElement | null>,
   anchor: PopoverAnchor | null,
   enabled: boolean,
-  remeasureDeps: unknown[] = [],
+  options?: { center?: boolean; remeasureKey?: string },
 ): React.CSSProperties {
   const [style, setStyle] = useState<React.CSSProperties>({});
+  const center = options?.center ?? false;
+  const remeasureKey = options?.remeasureKey ?? '';
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -58,7 +78,7 @@ export function useAdaptivePopover(
     const needsScroll = contentHeight > maxH;
     const height = needsScroll ? maxH : contentHeight;
 
-    const point = resolveAnchor(anchor);
+    const point = resolveAnchor(anchor, center);
     let left = point.center ? point.left - naturalWidth / 2 : point.left;
     let top = point.top;
 
@@ -75,17 +95,18 @@ export function useAdaptivePopover(
     el.style.removeProperty('max-height');
     el.style.removeProperty('overflow');
 
-    setStyle({
+    const nextStyle: React.CSSProperties = {
       top,
       left,
       width: naturalWidth,
       overflowX: 'hidden',
       ...(needsScroll
         ? { maxHeight: maxH, overflowY: 'auto' as const }
-        : { height: contentHeight, overflowY: 'hidden' as const }),
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ref, anchor, enabled, ...remeasureDeps]);
+        : { overflowY: 'hidden' as const }),
+    };
+
+    setStyle((prev) => (styleEqual(prev, nextStyle) ? prev : nextStyle));
+  }, [ref, enabled, center, anchorKey(anchor), remeasureKey]);
 
   return style;
 }

@@ -123,12 +123,10 @@ function SelectionActionPopover({
   onClearHighlight: () => void;
 }): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null);
-  const popoverStyle = useAdaptivePopover(
-    ref,
-    { ...anchor, center: true },
-    true,
-    [mode, editDraft, noteDraft, highlightColor, existingHighlight],
-  );
+  const popoverStyle = useAdaptivePopover(ref, anchor, true, {
+    center: true,
+    remeasureKey: `${mode}|${editDraft}|${noteDraft}|${highlightColor}|${existingHighlight}`,
+  });
 
   useEffect(() => {
     const onPointerDown = (e: MouseEvent): void => {

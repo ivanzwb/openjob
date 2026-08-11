@@ -114,12 +114,34 @@ export function KnowledgeGraph({
   }
 
   return (
-    <div className="space-y-2">
-      <div className="h-[420px] w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)]">
-        <ReactFlow nodes={flowNodes} edges={flowEdges} fitView minZoom={0.3} maxZoom={1.5}>
-          <Background gap={16} />
-          <Controls />
-          <MiniMap pannable zoomable />
+    <div className="flex h-full min-h-0 flex-col gap-2">
+      <div className="knowledge-graph-host relative min-h-0 flex-1 overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)]">
+        <ReactFlow
+          className="knowledge-graph-flow"
+          colorMode="dark"
+          nodes={flowNodes}
+          edges={flowEdges}
+          fitView
+          minZoom={0.3}
+          maxZoom={1.5}
+          proOptions={{ hideAttribution: true }}
+        >
+          <Background gap={16} color="var(--color-border)" />
+          <Controls position="bottom-left" showInteractive={false} />
+          <MiniMap
+            pannable
+            zoomable
+            position="bottom-right"
+            bgColor="var(--color-surface)"
+            maskColor="rgb(79 124 255 / 0.14)"
+            nodeColor={(node) => (node.style?.borderColor as string) ?? '#8b93a7'}
+            nodeStrokeColor="var(--color-border)"
+            style={{
+              backgroundColor: 'var(--color-surface)',
+              border: '1px solid var(--color-border)',
+              borderRadius: 8,
+            }}
+          />
         </ReactFlow>
       </div>
       {edges.length > 0 && (

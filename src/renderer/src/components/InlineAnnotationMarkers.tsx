@@ -52,7 +52,9 @@ function InlineMarkerPopover({
   onDelete: (id: string) => void;
 }): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null);
-  const popoverStyle = useAdaptivePopover(ref, anchorRect, true, [marker.noteMd, marker.selectedText]);
+  const popoverStyle = useAdaptivePopover(ref, anchorRect, true, {
+    remeasureKey: `${marker.noteMd ?? ''}|${marker.selectedText ?? ''}`,
+  });
 
   useEffect(() => {
     const onPointerDown = (e: MouseEvent): void => {
