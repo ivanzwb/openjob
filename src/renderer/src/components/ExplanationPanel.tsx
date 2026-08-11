@@ -4,9 +4,9 @@ import type { Explanation } from '@shared/entities';
 import type { ExplanationTier } from '@shared/enums';
 import { invoke } from '../ipc';
 import {
-  AnnotationMarksPanel,
   DEFAULT_HIGHLIGHT_COLOR,
   HighlightColorPicker,
+  findHighlightMark,
   getSelectionAnchor,
   type SelectionAnchor,
   useAnnotationTools,
@@ -34,16 +34,20 @@ function replaceExcerpt(contentMd: string, selected: string, replacement: string
 function SelectionFloatingMenu({
   anchor,
   busy,
+  selectedHighlight,
   onEdit,
   onHighlight,
+  onClearHighlight,
   onNote,
   onElaborate,
   onSaveSpeech,
 }: {
   anchor: SelectionAnchor;
   busy: string | null;
+  selectedHighlight: boolean;
   onEdit: () => void;
   onHighlight: () => void;
+  onClearHighlight: () => void;
   onNote: () => void;
   onElaborate: () => void;
   onSaveSpeech: () => void;
@@ -61,9 +65,20 @@ function SelectionFloatingMenu({
         <button type="button" className={menuBtn} disabled={Boolean(busy)} onClick={onEdit}>
           编辑讲解
         </button>
-        <button type="button" className={menuBtn} disabled={Boolean(busy)} onClick={onHighlight}>
-          {busy === 'highlight' ? '高亮中…' : '划词高亮'}
-        </button>
+        {selectedHighlight ? (
+          <button
+            type="button"
+            className={menuBtn}
+            disabled={Boolean(busy)}
+            onClick={onClearHighlight}
+          >
+            {busy === 'clear-highlight' ? '清除中…' : '清除高亮'}
+          </button>
+        ) : (
+          <button type="button" className={menuBtn} disabled={Boolean(busy)} onClick={onHighlight}>
+            {busy === 'highlight' ? '高亮中…' : '划词高亮'}
+          </button>
+        )}
         <button type="button" className={menuBtn} disabled={Boolean(busy)} onClick={onNote}>
           记笔记
         </button>
@@ -282,6 +297,10 @@ export function ExplanationPanel({
   const inlineMarks = annotation.annotations.filter(
     (m) => m.kind === 'note' || m.kind === 'elaboration',
   );
+  const selectedHighlightMark = findHighlightMark(
+    (popoverAnchor ?? selection)?.text ?? '',
+    highlightMarks,
+  );
 
   const closeActionPanel = useCallback(() => {
     setToolbarPanel('none');
@@ -447,6 +466,18 @@ export function ExplanationPanel({
     }
   };
 
+  const clearSelectedHighlight = (): void => {
+    const sel = currentSelection();
+    if (!sel) return;
+    const mark = findHighlightMark(sel.text, highlightMarks);
+    if (!mark) return;
+    void runOnSelection('clear-highlight', async () => {
+      annotation.deleteMark(mark.id);
+      toast('已清除高亮', { variant: 'success' });
+      clearSelection();
+    });
+  };
+
   return (
     <div className="flex h-full min-h-0 flex-col gap-2">
       {loading && <p className="text-sm text-[var(--color-muted)]">生成讲解中…</p>}
@@ -483,10 +514,22 @@ export function ExplanationPanel({
               <button
                 type="button"
                 disabled={!hasSelection || Boolean(busy)}
-                onClick={() => openActionPanel('highlight')}
+                onClick={() => {
+                  if (selectedHighlightMark) {
+                    clearSelectedHighlight();
+                    return;
+                  }
+                  openActionPanel('highlight');
+                }}
                 className={toolbarBtn}
               >
-                {busy === 'highlight' ? '高亮中…' : '划词高亮'}
+                {busy === 'highlight'
+                  ? '高亮中…'
+                  : busy === 'clear-highlight'
+                    ? '清除中…'
+                    : selectedHighlightMark
+                      ? '清除高亮'
+                      : '划词高亮'}
               </button>
               <button
                 type="button"
@@ -580,16 +623,6 @@ export function ExplanationPanel({
             </div>
           </div>
 
-          <AnnotationMarksPanel
-            marks={highlightMarks}
-            showNote={false}
-            noteText=""
-            notePlaceholder=""
-            onNoteTextChange={() => undefined}
-            onAddNote={() => undefined}
-            onDelete={annotation.deleteMark}
-          />
-
           <div className="relative min-h-0 flex-1 overflow-y-auto p-4">
             <div ref={bodyRef} className="prose prose-invert max-w-none text-sm leading-relaxed">
               <MarkdownContent
@@ -610,9 +643,11 @@ export function ExplanationPanel({
         <SelectionFloatingMenu
           anchor={selection}
           busy={busy}
+          selectedHighlight={Boolean(findHighlightMark(selection.text, highlightMarks))}
           onEdit={() => openActionPanel('edit')}
           onNote={() => openActionPanel('note')}
           onHighlight={() => openActionPanel('highlight')}
+          onClearHighlight={clearSelectedHighlight}
           onElaborate={() => {
             void runOnSelection('elaborate', async (sel) => {
               const res = await invoke('explain:elaborate', {
