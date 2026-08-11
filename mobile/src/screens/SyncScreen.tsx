@@ -95,7 +95,6 @@ export function SyncScreen(): React.JSX.Element {
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: theme.bg }} contentContainerStyle={{ padding: 16, gap: 12 }}>
-      <Text style={{ color: theme.text, fontSize: 20, fontWeight: '600' }}>同步</Text>
       <Text style={{ color: theme.muted }}>
         {peerLabel ?? '未配对 — 在桌面端设置中生成二维码'}
       </Text>

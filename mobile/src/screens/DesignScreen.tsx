@@ -55,7 +55,6 @@ export function DesignScreen(): React.JSX.Element {
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: theme.bg }} contentContainerStyle={{ padding: 16, gap: 10 }}>
-      <Text style={{ color: theme.text, fontSize: 20, fontWeight: '600' }}>模拟面试</Text>
       <Text style={{ color: theme.muted, fontSize: 12 }}>
         结合公司、JD、简历与考点出题，覆盖概念、编码、系统设计、项目场景
       </Text>

@@ -108,6 +108,9 @@ export function SyncPanel(): React.JSX.Element {
   return (
     <section className="space-y-3">
       <h3 className="text-sm font-medium text-[var(--color-muted)]">手机同步</h3>
+      <p className="text-[10px] text-[var(--color-muted)]">
+        同步由手机端发起。首次配对或切换电脑后，手机会自动全量同步；也可在手机上点「全量同步」。
+      </p>
       <div className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-xs">
         {status && (
           <div className="space-y-1">

@@ -16,7 +16,6 @@ export function OverviewScreen(): React.JSX.Element {
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: theme.bg }} contentContainerStyle={{ padding: 16, gap: 12 }}>
-      <Text style={{ color: theme.text, fontSize: 20, fontWeight: '600' }}>总览</Text>
       <Text style={{ color: theme.muted }}>活跃备考 {overview.activeCampaignCount} / 共 {overview.campaignCount}</Text>
       <Text style={{ color: theme.muted }}>平均掌握度 {(overview.avgMastery * 20).toFixed(0)}%</Text>
       <Text style={{ color: theme.muted }}>盲区 {overview.totalBlindSpots}</Text>
