@@ -1,6 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import type { ChangeSet, RowSnapshot, Tombstone } from '@shared/sync';
-import { syncTableSpec } from './tables';
+import { syncTableSpec, syncTableSpecs } from './tables';
 
 interface OplogRow {
   seq: number;
@@ -101,4 +101,38 @@ export function currentHeadSeq(raw: SQLiteDatabase): number {
     raw.getFirstSync<{ head: number }>(`SELECT coalesce(max(seq), 0) AS head FROM sync_oplog`)
       ?.head ?? 0
   );
+}
+
+/** 全量快照，语义与桌面端 collectFullChangeSet 一致 */
+export function collectFullChangeSet(raw: SQLiteDatabase, deviceId: string): ChangeSet {
+  const snapshots: RowSnapshot[] = [];
+
+  for (const spec of syncTableSpecs()) {
+    const cols = spec.columns.map((c) => `\`${c}\``).join(', ');
+    const rows = raw.getAllSync<Record<string, unknown>>(
+      `SELECT ${cols} FROM \`${spec.name}\``,
+    );
+    for (const row of rows) {
+      snapshots.push({
+        table: spec.name,
+        rowId: String(row[spec.pk]),
+        values: row,
+        changedFields: null,
+        wallMs: Date.now(),
+      });
+    }
+  }
+
+  const incremental = collectChangeSet(raw, deviceId, 0);
+  const rowKeys = new Set(snapshots.map((r) => `${r.table}\u0000${r.rowId}`));
+  const tombstones = incremental.tombstones.filter(
+    (t) => !rowKeys.has(`${t.table}\u0000${t.rowId}`),
+  );
+
+  return {
+    deviceId,
+    headSeq: incremental.headSeq,
+    rows: snapshots,
+    tombstones,
+  };
 }

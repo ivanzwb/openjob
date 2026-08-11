@@ -116,11 +116,13 @@ export async function exchangeWithDesktop(
   deviceId: string,
   sinceSeq: number,
   changes: SyncExchangeRequest['changes'],
+  options?: { full?: boolean },
 ): Promise<SyncExchangeResponse> {
   const body: SyncExchangeRequest = {
     sinceSeq,
     changes,
     clientMs: Date.now(),
+    full: options?.full,
   };
   const payload = JSON.stringify(body);
   const res = await signedFetch(baseUrl, sharedKey, deviceId, '/sync/exchange', {

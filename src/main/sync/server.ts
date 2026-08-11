@@ -11,7 +11,7 @@ import type {
 import { getDeviceIdentity } from './identity';
 import { getRawDb } from '../db';
 import { verifyRequest } from './crypto';
-import { collectChangeSet } from './collect';
+import { collectChangeSet, collectFullChangeSet } from './collect';
 import {
   buildPairingPayload,
   completePairing,
@@ -138,7 +138,9 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         remoteAddress: clientAddress(req),
       });
 
-      const outbound = collectChangeSet(getRawDb(), identity.deviceId, input.sinceSeq);
+      const outbound = input.full
+        ? collectFullChangeSet(getRawDb(), identity.deviceId)
+        : collectChangeSet(getRawDb(), identity.deviceId, input.sinceSeq);
 
       const response: SyncExchangeResponse = {
         changes: outbound,

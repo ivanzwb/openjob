@@ -22,6 +22,7 @@ interface AppContextValue {
   conflicts: FieldConflict[];
   refresh: () => Promise<void>;
   triggerSync: () => Promise<void>;
+  triggerFullSync: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -49,6 +50,23 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
       const result = await syncNow();
       setLastSyncMessage(
         `同步完成：应用 ${result.applied} 条` +
+          (result.conflicts > 0 ? `，${result.conflicts} 处冲突` : ''),
+      );
+      setConflicts(listPendingConflicts());
+    } catch (e) {
+      setLastSyncMessage(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSyncing(false);
+    }
+  }, []);
+
+  const triggerFullSync = useCallback(async () => {
+    if (!isPaired()) return;
+    setSyncing(true);
+    try {
+      const result = await syncNow({ full: true });
+      setLastSyncMessage(
+        `全量同步完成：应用 ${result.applied} 条` +
           (result.conflicts > 0 ? `，${result.conflicts} 处冲突` : ''),
       );
       setConflicts(listPendingConflicts());
@@ -94,8 +112,9 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
       conflicts,
       refresh,
       triggerSync,
+      triggerFullSync,
     }),
-    [ready, paired, peerLabel, syncing, syncStatus, lastSyncMessage, conflicts, refresh, triggerSync],
+    [ready, paired, peerLabel, syncing, syncStatus, lastSyncMessage, conflicts, refresh, triggerSync, triggerFullSync],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

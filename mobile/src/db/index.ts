@@ -5,7 +5,7 @@ import { conflictKey, planMerge, resolutionsToChanges } from '@shared/syncMerge'
 import { MIGRATIONS } from './migrations/bundle';
 import { installSyncTriggers } from '../sync/triggers';
 import { getDeviceIdentity } from '../sync/identity';
-import { collectChangeSet, currentHeadSeq } from '../sync/collect';
+import { collectChangeSet, collectFullChangeSet, currentHeadSeq } from '../sync/collect';
 import { applyAutoChanges } from '../sync/apply';
 import { exchangeWithDesktop, pairWithDesktop } from '../sync/client';
 import { setPeerCreds } from '../remote/rpc';
@@ -121,16 +121,14 @@ export async function pairDesktop(payload: PairingPayload): Promise<void> {
   const result = await pairWithDesktop(payload, identity.deviceId, identity.displayName);
   const now = Date.now();
 
+  // 手机端只保留一个对端；切换桌面时清掉旧配对与水位线
+  sqlite.runSync(`DELETE FROM sync_peer`);
+
   sqlite.runSync(
     `INSERT INTO sync_peer (
       device_id, display_name, platform, shared_key, last_address,
       last_local_seq, last_remote_seq, last_sync_at, paired_at
-    ) VALUES (?, ?, ?, ?, ?, 0, 0, NULL, ?)
-    ON CONFLICT(device_id) DO UPDATE SET
-      display_name = excluded.display_name,
-      shared_key = excluded.shared_key,
-      last_address = excluded.last_address,
-      paired_at = excluded.paired_at`,
+    ) VALUES (?, ?, ?, ?, ?, 0, 0, NULL, ?)`,
     payload.deviceId,
     payload.displayName,
     'desktop',
@@ -140,6 +138,12 @@ export async function pairDesktop(payload: PairingPayload): Promise<void> {
   );
 
   setPeerCreds({ baseUrl, sharedKey: result.sharedKey, deviceId: identity.deviceId });
+}
+
+export function unpairDesktop(): void {
+  const sqlite = getRawDb();
+  sqlite.runSync(`DELETE FROM sync_peer`);
+  setPeerCreds(null);
 }
 
 function saveConflicts(sqlite: SQLiteDatabase, runId: string, conflicts: FieldConflict[]): void {
@@ -162,7 +166,7 @@ function saveConflicts(sqlite: SQLiteDatabase, runId: string, conflicts: FieldCo
   }
 }
 
-export async function syncNow(): Promise<{
+export async function syncNow(options?: { full?: boolean }): Promise<{
   applied: number;
   conflicts: number;
   status: string;
@@ -173,16 +177,20 @@ export async function syncNow(): Promise<{
   const peer = getPeer(sqlite);
   if (!peer?.last_address) throw new Error('尚未配对桌面端');
 
+  const full = options?.full ?? false;
   // 水位线语义:last_local_seq = 本端 oplog 已发送给对方的水位;
   // last_remote_seq = 对端最近上报的 headSeq。
-  // 收集本机待发变更用 last_local_seq,请求对端增量用 last_remote_seq。
-  const local = collectChangeSet(sqlite, identity.deviceId, peer.last_local_seq);
+  // 全量同步扫描全表并请求对端也返回全表快照。
+  const local = full
+    ? collectFullChangeSet(sqlite, identity.deviceId)
+    : collectChangeSet(sqlite, identity.deviceId, peer.last_local_seq);
   const response = await exchangeWithDesktop(
     peer.last_address,
     peer.shared_key,
     identity.deviceId,
-    peer.last_remote_seq,
+    full ? 0 : peer.last_remote_seq,
     local,
+    { full },
   );
 
   const ctx = {

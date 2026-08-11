@@ -137,6 +137,9 @@ export function completePairing(req: PairRequest, remoteAddress: string): PairRe
         platform: req.platform,
         sharedKey: session.sharedKey,
         lastAddress: remoteAddress,
+        lastLocalSeq: 0,
+        lastRemoteSeq: 0,
+        lastSyncAt: null,
         pairedAt: now,
       },
     })

@@ -3,13 +3,13 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import type { PairingPayload } from '@shared/sync';
 import type { ConflictChoice } from '@shared/sync';
-import { listPendingConflictRows, pairDesktop, resolveConflicts, syncNow } from '../db';
+import { listPendingConflictRows, pairDesktop, resolveConflicts, syncNow, unpairDesktop } from '../db';
 import type { PendingConflictRow } from '../db';
 import { useApp } from '../context/AppContext';
 import { theme } from '../theme';
 
 export function SyncScreen(): React.JSX.Element {
-  const { peerLabel, syncStatus, triggerSync, refresh } = useApp();
+  const { peerLabel, syncStatus, triggerSync, triggerFullSync, refresh } = useApp();
   const [conflicts, setConflicts] = useState<PendingConflictRow[]>([]);
   const [scanning, setScanning] = useState(false);
   const [pairError, setPairError] = useState<string | null>(null);
@@ -39,7 +39,7 @@ export function SyncScreen(): React.JSX.Element {
       await pairDesktop(parsed);
       setScanning(false);
       await refresh();
-      await syncNow();
+      await syncNow({ full: true });
       reloadConflicts();
     } catch (e) {
       // Leave the scanner regardless; surface the error in-page instead of

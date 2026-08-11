@@ -1,6 +1,6 @@
 import type { Database } from 'better-sqlite3';
 import type { ChangeSet, RowSnapshot, Tombstone } from '@shared/sync';
-import { syncTableSpec } from './tables';
+import { syncTableSpec, syncTableSpecs } from './tables';
 
 interface OplogRow {
   seq: number;
@@ -144,4 +144,42 @@ export function currentHeadSeq(raw: Database): number {
     head: number;
   };
   return row.head;
+}
+
+/**
+ * 全量快照：扫描所有同步表的当前行，并附带 oplog 中的删除墓碑。
+ * 用于首次配对、切换对端、或显式全量同步——仅靠 oplog 会漏掉
+ * 从其他设备同步过来、未记入本机 oplog 的行。
+ */
+export function collectFullChangeSet(raw: Database, deviceId: string): ChangeSet {
+  const snapshots: RowSnapshot[] = [];
+
+  for (const spec of syncTableSpecs()) {
+    const cols = spec.columns.map((c) => `\`${c}\``).join(', ');
+    const rows = raw
+      .prepare(`SELECT ${cols} FROM \`${spec.name}\``)
+      .all() as Record<string, unknown>[];
+    for (const row of rows) {
+      snapshots.push({
+        table: spec.name,
+        rowId: String(row[spec.pk]),
+        values: row,
+        changedFields: null,
+        wallMs: Date.now(),
+      });
+    }
+  }
+
+  const incremental = collectChangeSet(raw, deviceId, 0);
+  const rowKeys = new Set(snapshots.map((r) => `${r.table}\u0000${r.rowId}`));
+  const tombstones = incremental.tombstones.filter(
+    (t) => !rowKeys.has(`${t.table}\u0000${t.rowId}`),
+  );
+
+  return {
+    deviceId,
+    headSeq: incremental.headSeq,
+    rows: snapshots,
+    tombstones,
+  };
 }

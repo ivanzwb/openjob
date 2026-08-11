@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { CampaignCompareResult, CampaignOverview } from '@shared/ipc';
-import { StreamChat } from '../components/StreamChat';
 import { invoke } from '../ipc';
 
 export function Overview({
@@ -214,22 +213,6 @@ export function Overview({
           )}
         </section>
       )}
-
-      <section className="flex h-[min(520px,70vh)] flex-col rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-        <div className="shrink-0 space-y-1">
-          <h3 className="text-sm font-medium">通用助手</h3>
-          <p className="text-xs text-[var(--color-muted)]">
-            跨考点提问、查面经；针对单个考点的追问请在学习页使用
-          </p>
-        </div>
-        <div className="mt-3 min-h-0 flex-1">
-          <StreamChat
-            compact
-            role="explain"
-            placeholder="试试问一个需要联网才能答准的问题…"
-          />
-        </div>
-      </section>
 
       <section className="space-y-2">
         <h3 className="text-sm font-medium">全部 Campaign</h3>

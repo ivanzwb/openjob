@@ -112,6 +112,8 @@ export interface SyncExchangeRequest {
   sinceSeq: number;
   changes: ChangeSet;
   clientMs: number;
+  /** 为 true 时对端返回全表快照（而非仅 oplog 增量），用于首次配对或切换桌面端 */
+  full?: boolean;
 }
 
 export interface SyncExchangeResponse {
