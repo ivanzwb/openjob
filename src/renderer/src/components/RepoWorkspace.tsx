@@ -196,7 +196,7 @@ export function RepoWorkspace({
         </div>
       </div>
 
-      <div className="flex shrink-0 flex-col gap-3 lg:w-96">
+      <div className="flex shrink-0 flex-col gap-3 lg:w-[min(32rem,32%)] lg:min-w-[18rem]">
         <div className="h-64 overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] lg:h-auto lg:flex-1">
           <CodePanel repoId={repo.id} location={codeLoc} onAnnotationChange={loadCodeMarks} />
         </div>

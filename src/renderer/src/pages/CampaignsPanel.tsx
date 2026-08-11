@@ -35,7 +35,7 @@ export function CampaignsPanel({
   return (
     <TabPanel active={active} className="overflow-hidden">
       {mounted.has('list') && (
-        <TabPanel active={view.kind === 'list'}>
+        <TabPanel active={view.kind === 'list'} className="overflow-y-auto">
           <CampaignList
             onOpen={(id) => setView({ kind: 'detail', id })}
             onCreate={() => setView({ kind: 'create' })}
@@ -43,7 +43,7 @@ export function CampaignsPanel({
         </TabPanel>
       )}
       {mounted.has('create') && (
-        <TabPanel active={view.kind === 'create'}>
+        <TabPanel active={view.kind === 'create'} className="overflow-y-auto">
           <CampaignCreate
             onCreated={(id) => setView({ kind: 'detail', id, autoDiagnose: true })}
             onCancel={() => setView({ kind: 'list' })}

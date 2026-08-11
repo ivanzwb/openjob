@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { invoke } from '../ipc';
+import { PageShell } from '../components/PageShell';
 
 export function CampaignCreate({
   onCreated,
@@ -36,7 +37,7 @@ export function CampaignCreate({
   };
 
   return (
-    <div className="mx-auto w-full max-w-[1600px] space-y-6 p-6">
+    <PageShell className="space-y-6">
       <header>
         <h2 className="text-lg font-semibold">新建备考</h2>
         <p className="mt-1 text-xs text-[var(--color-muted)]">
@@ -94,6 +95,6 @@ export function CampaignCreate({
           取消
         </button>
       </div>
-    </div>
+    </PageShell>
   );
 }

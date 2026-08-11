@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { CampaignCompareResult, CampaignOverview } from '@shared/ipc';
 import { invoke } from '../ipc';
+import { PageShell } from '../components/PageShell';
 
 export function Overview({
   onOpenCampaign,
@@ -49,7 +50,7 @@ export function Overview({
   }
 
   return (
-    <div className="mx-auto w-full max-w-[1600px] space-y-6 p-6">
+    <PageShell className="space-y-6">
       <header>
         <h2 className="text-lg font-semibold">备考总览</h2>
         <p className="mt-1 text-xs text-[var(--color-muted)]">
@@ -236,6 +237,6 @@ export function Overview({
           ))}
         </ul>
       </section>
-    </div>
+    </PageShell>
   );
 }

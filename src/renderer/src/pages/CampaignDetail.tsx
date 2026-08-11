@@ -23,6 +23,7 @@ import { NudgePanel } from '../components/NudgePanel';
 import { QuizPanel } from '../components/QuizPanel';
 import { ReportSourceList } from '../components/ReportSourceList';
 import { TaskStudyPanel } from '../components/TaskStudyPanel';
+import { PageShell } from '../components/PageShell';
 import { invoke } from '../ipc';
 import { useJobFeedback, useJobProgress } from '../ipc/useJobProgress';
 
@@ -340,7 +341,7 @@ export function CampaignDetail({
   };
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-[1600px] flex-col overflow-hidden p-4 lg:p-6">
+    <PageShell fill className="overflow-hidden">
       <header className="shrink-0 space-y-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-1">
@@ -460,7 +461,7 @@ export function CampaignDetail({
             )}
 
             <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-              <div className="grid h-full min-h-0 gap-4 lg:grid-cols-[minmax(420px,2fr)_minmax(0,3fr)]">
+              <div className="grid h-full min-h-0 gap-4 lg:grid-cols-[minmax(320px,36%)_minmax(0,1fr)] xl:grid-cols-[minmax(360px,32%)_minmax(0,1fr)]">
                 <div className="flex min-h-0 min-w-0 flex-col gap-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-[var(--color-muted)]">
@@ -883,6 +884,6 @@ export function CampaignDetail({
           </div>
         )}
       </div>
-    </div>
+    </PageShell>
   );
 }

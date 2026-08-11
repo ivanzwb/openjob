@@ -115,12 +115,12 @@ export default function App(): React.JSX.Element {
             </TabPanel>
           )}
           {mountedTabs.has('repos') && (
-            <TabPanel active={tab === 'repos'} className="overflow-y-auto">
+            <TabPanel active={tab === 'repos'} className="overflow-hidden">
               <Repos />
             </TabPanel>
           )}
           {mountedTabs.has('scripts') && (
-            <TabPanel active={tab === 'scripts'} className="overflow-y-auto">
+            <TabPanel active={tab === 'scripts'} className="overflow-hidden">
               <Scripts />
             </TabPanel>
           )}

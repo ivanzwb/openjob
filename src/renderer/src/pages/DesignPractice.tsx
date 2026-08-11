@@ -10,6 +10,7 @@ import {
   MOCK_INTERVIEW_TYPE_OPTIONS,
 } from '@shared/ipc';
 import { VoiceInputButton } from '../components/VoiceInputButton';
+import { PageShell } from '../components/PageShell';
 import { invoke } from '../ipc';
 
 const ANSWER_PLACEHOLDER: Record<string, string> = {
@@ -76,7 +77,7 @@ export function DesignPractice(): React.JSX.Element {
     MOCK_INTERVIEW_TYPE_OPTIONS.find((o) => o.value === interviewType)?.hint ?? '';
 
   return (
-    <div className="mx-auto w-full max-w-[1600px] space-y-6 p-6">
+    <PageShell className="space-y-6">
       <header>
         <h2 className="text-lg font-semibold">模拟面试</h2>
         <p className="mt-1 text-xs text-[var(--color-muted)]">
@@ -245,6 +246,6 @@ export function DesignPractice(): React.JSX.Element {
           选择 Campaign 和题型后点击「开始模拟」。建议在备考中完成 JD 诊断、关联简历并生成公司情报，题目会更贴近真实面试。
         </p>
       )}
-    </div>
+    </PageShell>
   );
 }

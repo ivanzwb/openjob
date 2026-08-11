@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Repo } from '@shared/entities';
 import type { GitStatus } from '@shared/ipc';
 import { MarkdownContent } from '../components/MarkdownContent';
+import { PageShell } from '../components/PageShell';
 import { RepoWorkspace } from '../components/RepoWorkspace';
 import { useToast } from '../components/Toast';
 import { useJobFeedback, useJobProgress } from '../ipc/useJobProgress';
@@ -110,7 +111,7 @@ export function Repos(): React.JSX.Element {
   const cloneBusy = cloneJob.isRunning;
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-[1600px] flex-col gap-4 p-6 lg:flex-row">
+    <PageShell fill className="gap-4 lg:flex-row">
       <aside className="flex w-full shrink-0 flex-col gap-4 lg:w-72">
         <header>
           <h2 className="text-lg font-semibold">源码仓库</h2>
@@ -236,6 +237,6 @@ export function Repos(): React.JSX.Element {
           </>
         )}
       </section>
-    </div>
+    </PageShell>
   );
 }

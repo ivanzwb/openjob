@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { CampaignSummary } from '@shared/ipc';
 import type { Resume } from '@shared/entities';
 import { invoke } from '../ipc';
+import { PageShell } from '../components/PageShell';
 
 export function CampaignList({
   onOpen,
@@ -78,7 +79,7 @@ export function CampaignList({
   };
 
   return (
-    <div className="mx-auto w-full max-w-[1600px] space-y-6 p-6">
+    <PageShell className="space-y-6">
       <header className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-semibold">备考战役</h2>
@@ -211,6 +212,6 @@ export function CampaignList({
           ))}
         </ul>
       )}
-    </div>
+    </PageShell>
   );
 }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { SpeechSnippetView } from '@shared/ipc';
 import { invoke } from '../ipc';
+import { PageShell } from '../components/PageShell';
 
 export function Scripts(): React.JSX.Element {
   const [snippets, setSnippets] = useState<SpeechSnippetView[]>([]);
@@ -55,7 +56,7 @@ export function Scripts(): React.JSX.Element {
   };
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-[1600px] flex-col gap-4 p-6 lg:flex-row">
+    <PageShell fill className="gap-4 lg:flex-row">
       <aside className="flex w-full shrink-0 flex-col gap-3 lg:w-72">
         <header>
           <h2 className="text-lg font-semibold">话术库</h2>
@@ -154,6 +155,6 @@ export function Scripts(): React.JSX.Element {
           </>
         )}
       </section>
-    </div>
+    </PageShell>
   );
 }

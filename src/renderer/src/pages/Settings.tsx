@@ -8,6 +8,7 @@ import { SecretField } from '../components/SecretField';
 import { SearchQualityPanel } from '../components/SearchQualityPanel';
 import { UpdatePanel } from '../components/UpdatePanel';
 import { SyncPanel } from '../components/SyncPanel';
+import { PageShell } from '../components/PageShell';
 
 const TIER_HINTS: Record<LlmTier, string> = {
   main: '主力档：outline / codeAgent / quiz 与全部未映射的角色都走这一档，必须支持 function calling',
@@ -115,7 +116,7 @@ const runTest = async (tier: LlmTier): Promise<void> => {
 };
 
   return (
-    <div className="mx-auto w-full max-w-[1600px] space-y-8 p-6">
+    <PageShell className="space-y-8">
       <header className="flex items-baseline gap-3">
         <h2 className="text-lg font-semibold">设置</h2>
         {saved && <span className="text-xs text-emerald-400">已保存</span>}
@@ -398,6 +399,6 @@ const runTest = async (tier: LlmTier): Promise<void> => {
           </button>
         </div>
       </section>
-    </div>
+    </PageShell>
   );
 }
