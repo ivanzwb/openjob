@@ -122,9 +122,28 @@ export function SyncScreen(): React.JSX.Element {
       )}
 
       {peerLabel && (
-        <Pressable onPress={() => void triggerSync()} style={{ backgroundColor: theme.accent, padding: 12, borderRadius: 8, alignItems: 'center' }}>
-          <Text style={{ color: '#fff' }}>立即同步</Text>
-        </Pressable>
+        <View style={{ gap: 8 }}>
+          <Pressable onPress={() => void triggerSync()} style={{ backgroundColor: theme.accent, padding: 12, borderRadius: 8, alignItems: 'center' }}>
+            <Text style={{ color: '#fff' }}>立即同步</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => void triggerFullSync()}
+            style={{ backgroundColor: theme.surface, padding: 12, borderRadius: 8, alignItems: 'center', borderWidth: 1, borderColor: theme.border }}
+          >
+            <Text style={{ color: theme.text }}>全量同步</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              unpairDesktop();
+              scannedRef.current = false;
+              setPairError(null);
+              void refresh();
+            }}
+            style={{ padding: 12, borderRadius: 8, alignItems: 'center' }}
+          >
+            <Text style={{ color: theme.muted }}>切换桌面端（重新配对）</Text>
+          </Pressable>
+        </View>
       )}
 
       {conflicts.length > 0 && (
