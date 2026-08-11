@@ -110,6 +110,22 @@ export function isPaired(): boolean {
   return Boolean(raw.getFirstSync(`SELECT 1 FROM sync_peer LIMIT 1`));
 }
 
+/** 自动同步开关（默认开）：凭据与会话之外的本机偏好，跟随数据库迁移，不入同步范围 */
+export function getAutoSync(): boolean {
+  if (!raw) return true;
+  const row = raw.getFirstSync<{ value: string }>(`SELECT value FROM sync_meta WHERE key = 'autoSync'`);
+  return row ? row.value === '1' : true;
+}
+
+export function setAutoSync(on: boolean): void {
+  const sqlite = getRawDb();
+  sqlite.runSync(
+    `INSERT INTO sync_meta (key, value) VALUES ('autoSync', ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    on ? '1' : '0',
+  );
+}
+
 function getPeer(sqlite: SQLiteDatabase): PeerRow | null {
   return sqlite.getFirstSync<PeerRow>(`SELECT * FROM sync_peer LIMIT 1`) ?? null;
 }

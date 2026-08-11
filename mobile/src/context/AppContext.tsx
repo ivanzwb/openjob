@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from 'react';
 import { AppState } from 'react-native';
-import { openDb, syncNow, isPaired, listPendingConflicts, getPeerLabel } from '../db';
+import { openDb, syncNow, isPaired, listPendingConflicts, getPeerLabel, getAutoSync, setAutoSync as persistAutoSync } from '../db';
 import type { FieldConflict } from '@shared/sync';
 
 interface AppContextValue {
@@ -19,6 +19,11 @@ interface AppContextValue {
   syncing: boolean;
   syncStatus: string;
   lastSyncMessage: string | null;
+  /** 最近一次同步是否失败，同步页据此显示警示图标（不弹 alert） */
+  hasSyncError: boolean;
+  /** 自动同步开关：关闭后不再定时同步，也不在回前台时触发 */
+  autoSync: boolean;
+  setAutoSync: (on: boolean) => void;
   conflicts: FieldConflict[];
   /** 每次同步成功后递增，供各屏重新读本地库 */
   dataVersion: number;
@@ -35,6 +40,8 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
   const [peerLabel, setPeerLabel] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [lastSyncMessage, setLastSyncMessage] = useState<string | null>(null);
+  const [hasSyncError, setHasSyncError] = useState(false);
+  const [autoSync, setAutoSyncOn] = useState(true);
   const [conflicts, setConflicts] = useState<FieldConflict[]>([]);
   const [dataVersion, setDataVersion] = useState(0);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -48,6 +55,7 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
     setPaired(isPaired());
     setPeerLabel(getPeerLabel());
     setConflicts(listPendingConflicts());
+    setAutoSyncOn(getAutoSync());
   }, []);
 
   const triggerSync = useCallback(async () => {
@@ -59,10 +67,12 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
         `同步完成：应用 ${result.applied} 条` +
           (result.conflicts > 0 ? `，${result.conflicts} 处冲突` : ''),
       );
+      setHasSyncError(false);
       setConflicts(listPendingConflicts());
       bumpData();
     } catch (e) {
       setLastSyncMessage(e instanceof Error ? e.message : String(e));
+      setHasSyncError(true);
     } finally {
       setSyncing(false);
     }
@@ -77,14 +87,21 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
         `全量同步完成：应用 ${result.applied} 条` +
           (result.conflicts > 0 ? `，${result.conflicts} 处冲突` : ''),
       );
+      setHasSyncError(false);
       setConflicts(listPendingConflicts());
       bumpData();
     } catch (e) {
       setLastSyncMessage(e instanceof Error ? e.message : String(e));
+      setHasSyncError(true);
     } finally {
       setSyncing(false);
     }
   }, [bumpData]);
+
+  const setAutoSync = useCallback((on: boolean) => {
+    setAutoSyncOn(on);
+    persistAutoSync(on);
+  }, []);
 
   useEffect(() => {
     void openDb()
@@ -93,7 +110,7 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
   }, [refresh]);
 
   useEffect(() => {
-    if (!paired) return;
+    if (!paired || !autoSync) return;
     timer.current = setInterval(() => {
       void triggerSync();
     }, 60_000);
@@ -104,7 +121,7 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
       if (timer.current) clearInterval(timer.current);
       sub.remove();
     };
-  }, [paired, triggerSync]);
+  }, [paired, autoSync, triggerSync]);
 
   const syncStatus = syncing
     ? '同步中…'
@@ -118,13 +135,16 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
       syncing,
       syncStatus,
       lastSyncMessage,
+      hasSyncError,
+      autoSync,
+      setAutoSync,
       conflicts,
       dataVersion,
       refresh,
       triggerSync,
       triggerFullSync,
     }),
-    [ready, paired, peerLabel, syncing, syncStatus, lastSyncMessage, conflicts, dataVersion, refresh, triggerSync, triggerFullSync],
+    [ready, paired, peerLabel, syncing, syncStatus, lastSyncMessage, hasSyncError, autoSync, setAutoSync, conflicts, dataVersion, refresh, triggerSync, triggerFullSync],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

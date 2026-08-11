@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Pressable, ScrollView, Switch, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import type { PairingPayload } from '@shared/sync';
 import type { ConflictChoice } from '@shared/sync';
@@ -9,7 +10,7 @@ import { useApp } from '../context/AppContext';
 import { theme } from '../theme';
 
 export function SyncScreen(): React.JSX.Element {
-  const { peerLabel, syncStatus, triggerSync, triggerFullSync, refresh } = useApp();
+  const { peerLabel, syncStatus, hasSyncError, autoSync, setAutoSync, triggerSync, triggerFullSync, refresh } = useApp();
   const [conflicts, setConflicts] = useState<PendingConflictRow[]>([]);
   const [scanning, setScanning] = useState(false);
   const [pairError, setPairError] = useState<string | null>(null);
@@ -98,7 +99,12 @@ export function SyncScreen(): React.JSX.Element {
       <Text style={{ color: theme.muted }}>
         {peerLabel ?? '未配对 — 在桌面端设置中生成二维码'}
       </Text>
-      <Text style={{ color: theme.muted }}>状态: {syncStatus}</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        {hasSyncError && <Ionicons name="alert-circle" size={16} color={theme.danger} />}
+        <Text style={{ color: hasSyncError ? theme.danger : theme.muted }}>
+          状态: {syncStatus}
+        </Text>
+      </View>
 
       {pairError && (
         <View style={{ borderWidth: 1, borderColor: theme.danger, borderRadius: 8, padding: 10, backgroundColor: theme.surface, gap: 6 }}>
@@ -122,6 +128,33 @@ export function SyncScreen(): React.JSX.Element {
 
       {peerLabel && (
         <View style={{ gap: 8 }}>
+          {/* 自动同步开关 */}
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 10,
+              borderWidth: 1,
+              borderColor: theme.border,
+              borderRadius: 8,
+              padding: 12,
+              backgroundColor: theme.surface,
+            }}
+          >
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text style={{ color: theme.text, fontSize: 13, fontWeight: '600' }}>自动同步</Text>
+              <Text style={{ color: theme.muted, fontSize: 11, lineHeight: 16 }}>
+                每 60 秒后台同步一次，回到前台立即同步
+              </Text>
+            </View>
+            <Switch
+              value={autoSync}
+              onValueChange={setAutoSync}
+              trackColor={{ false: theme.border, true: theme.accent }}
+              thumbColor="#fff"
+            />
+          </View>
+
           <Text style={{ color: theme.muted, fontSize: 11, lineHeight: 16 }}>
             同步范围：备考、考点、讲解、计划、话术、源码元数据、会话记录等 SQLite 业务数据。
             {'\n'}不同步：桌面 config.json（模型/API 配置）、secrets、搜索缓存、仓库本地路径；LLM 与克隆走桌面代理。
