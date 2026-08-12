@@ -27,12 +27,15 @@ asarUnpack:
 # 让 electron-builder 按 Electron 的 ABI 重建原生依赖
 npmRebuild: true
 
-# electron-builder 在 dist --publish 时直接把产物发布到 GitHub Release（provider: github）。
+# electron-builder 在构建时直接把产物发布到 GitHub Release（provider: github）。
+# releaseType: release —— 允许挂载到已发布的正式 release（默认 draft 模式会因
+# "existing type not compatible" 跳过上传），且未来打新 tag 时自动创建正式 release 并附带安装包。
 # latest.yml / latest-mac.yml 等更新清单仍会随包生成；运行时更新源由
 # config.update.feedUrl 通过 setFeedURL 覆盖，因此不依赖这里固定的发布地址。
 publish:
   - provider: github
     channel: latest
+    releaseType: release
 
 # 直接复用 devDependency 里已解压的 Electron，跳过「下载 → 解压 → 重命名」。
 # Windows 上 Defender 会在解压后立刻扫描 electron.exe 与各 dll，持有句柄导致

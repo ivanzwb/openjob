@@ -35,6 +35,8 @@ jobs:
       CSC_IDENTITY_AUTO_DISCOVERY: false
       # electron-builder 上传 GitHub Release 时使用
       GH_TOKEN: ${{ github.token }}
+      # 允许往"发布时间超过 2 小时"的既有 release 挂资产（否则补跑/重跑会被跳过上传）
+      EP_GH_IGNORE_TIME: true
 
     steps:
       - name: Checkout
@@ -75,8 +77,10 @@ jobs:
       - name: Typecheck
         run: pnpm run typecheck
 
+      # 显式传 --publish always（pnpm run dist -- args 会在脚本后多插一个 -- 导致参数丢失，
+      # 且 electron-builder v27 起 CI 隐式发布将被移除，显式声明更稳健）
       - name: Package installers
-        run: pnpm run dist -- --publish always
+        run: pnpm run build && pnpm exec electron-builder --publish always
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
