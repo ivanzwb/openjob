@@ -4,14 +4,16 @@ import type { Repo } from '@shared/entities';
 import { RepoQaPanel } from '../components/RepoQaPanel';
 import { getRawDb } from '../db';
 import { listRepos } from '../data/repoLocal';
+import { getRepoFileContent, listRepoFilePaths } from '../data/repoFiles';
 import { useLocalDataReload } from '../hooks/useLocalDataReload';
 import { markdownToPlainText } from '../lib/markdownBlocks';
 import { theme } from '../theme';
 
-type RepoTab = 'summary' | 'qa';
+type RepoTab = 'summary' | 'files' | 'qa';
 
 const TABS: { id: RepoTab; label: string }[] = [
   { id: 'summary', label: '项目摘要' },
+  { id: 'files', label: '源码文件' },
   { id: 'qa', label: '问答' },
 ];
 
@@ -59,6 +61,14 @@ export function ReposScreen(): React.JSX.Element {
     );
   };
 
+  const openFile = (repo: Repo, path: string): void => {
+    const raw = getRepoFileContent(getRawDb(), repo.id, path);
+    setSelectedId(repo.id);
+    setFilePath(path);
+    setContent(raw ?? '（文件未同步）');
+    setSelectedTab('files');
+  };
+
   const openSample = (repo: Repo): void => {
     setSelectedId(repo.id);
     if (repo.summaryMd) {
@@ -74,6 +84,50 @@ export function ReposScreen(): React.JSX.Element {
       return;
     }
     Alert.alert('暂无预览', '请先在桌面端索引该仓库，同步后即可查看摘要与 Repo Map。');
+  };
+
+  const renderFilesTab = (repo: Repo): React.JSX.Element => {
+    if (filePath) {
+      return (
+        <View style={{ gap: 6 }}>
+          <Pressable onPress={() => { setFilePath(''); setContent(''); }}>
+            <Text style={{ color: theme.accent, fontSize: 11 }}>← 返回文件列表</Text>
+          </Pressable>
+          <Text style={{ color: theme.muted, fontSize: 11 }}>{filePath}</Text>
+          <Text style={{ color: theme.text, fontSize: 11, fontFamily: 'monospace', lineHeight: 18 }}>
+            {content.slice(0, 12000)}
+            {content.length > 12000 ? '\n…（已截断）' : ''}
+          </Text>
+        </View>
+      );
+    }
+
+    const paths = listRepoFilePaths(getRawDb(), repo.id);
+    if (paths.length === 0) {
+      return (
+        <Text style={{ color: theme.muted, fontSize: 12 }}>
+          {repo.status === 'ready'
+            ? '暂无同步的源码文件，请在桌面端重新索引后全量同步。'
+            : '仓库索引中，完成后将同步源码快照…'}
+        </Text>
+      );
+    }
+
+    return (
+      <View style={{ gap: 4 }}>
+        <Text style={{ color: theme.muted, fontSize: 11 }}>共 {paths.length} 个文件（来自桌面索引快照）</Text>
+        {paths.slice(0, 80).map((p) => (
+          <Pressable key={p} onPress={() => openFile(repo, p)}>
+            <Text style={{ color: theme.accent, fontSize: 11, fontFamily: 'monospace' }} numberOfLines={1}>
+              {p}
+            </Text>
+          </Pressable>
+        ))}
+        {paths.length > 80 && (
+          <Text style={{ color: theme.muted, fontSize: 10 }}>…另有 {paths.length - 80} 个文件</Text>
+        )}
+      </View>
+    );
   };
 
   const renderSummaryTab = (repo: Repo): React.JSX.Element => {
@@ -130,7 +184,7 @@ export function ReposScreen(): React.JSX.Element {
       </Pressable>
 
       <Text style={{ color: theme.muted, fontSize: 11 }}>
-        仓库列表来自本地同步。克隆与索引请在桌面端完成。
+        仓库列表来自本地同步。克隆与索引在桌面端完成，源码快照同步后可读。
       </Text>
 
       <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -230,7 +284,11 @@ export function ReposScreen(): React.JSX.Element {
             ))}
           </View>
 
-          {selectedTab === 'summary' ? renderSummaryTab(selected) : <RepoQaPanel repo={selected} />}
+          {selectedTab === 'summary'
+            ? renderSummaryTab(selected)
+            : selectedTab === 'files'
+              ? renderFilesTab(selected)
+              : <RepoQaPanel repo={selected} />}
         </View>
       )}
     </ScrollView>

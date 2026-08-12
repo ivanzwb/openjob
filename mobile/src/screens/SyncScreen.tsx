@@ -10,7 +10,7 @@ import { useApp } from '../context/AppContext';
 import { theme } from '../theme';
 
 export function SyncScreen(): React.JSX.Element {
-  const { peerLabel, syncStatus, hasSyncError, autoSync, setAutoSync, triggerSync, triggerFullSync, refresh } = useApp();
+  const { peerLabel, syncStatus, hasSyncError, repoFileSyncNotice, autoSync, setAutoSync, triggerSync, triggerFullSync, refresh } = useApp();
   const [conflicts, setConflicts] = useState<PendingConflictRow[]>([]);
   const [scanning, setScanning] = useState(false);
   const [pairError, setPairError] = useState<string | null>(null);
@@ -113,6 +113,19 @@ export function SyncScreen(): React.JSX.Element {
         </View>
       )}
 
+      {repoFileSyncNotice.skipped && repoFileSyncNotice.message && (
+        <View style={{ borderWidth: 1, borderColor: theme.danger, borderRadius: 8, padding: 10, backgroundColor: theme.surface, gap: 6 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Ionicons name="warning" size={16} color={theme.danger} />
+            <Text style={{ color: theme.danger, fontWeight: '600' }}>代码库文件未同步</Text>
+          </View>
+          <Text style={{ color: theme.text, fontSize: 12, lineHeight: 18 }}>{repoFileSyncNotice.message}</Text>
+          <Text style={{ color: theme.muted, fontSize: 11, lineHeight: 16 }}>
+            请清理手机存储空间后再次同步；其他数据已正常同步。
+          </Text>
+        </View>
+      )}
+
       {!peerLabel && (
         <Pressable
           onPress={() => {
@@ -157,8 +170,8 @@ export function SyncScreen(): React.JSX.Element {
 
           <Text style={{ color: theme.muted, fontSize: 11, lineHeight: 16 }}>
             目标：单用户多端无缝——所有业务数据与设置（含模型/API 配置）全量同步，手机可独立使用，不依赖电脑在线。
-            {'\n'}当前：业务数据与配置已同步；手机可独立完成 JD 诊断、计划、讲解、考我、模拟面试、追问与仓库摘要问答。
-            {'\n'}仍需桌面端：克隆/索引仓库、读取源码文件、Agent 工具调用与联网深度检索。
+            {'\n'}            当前：业务数据与配置已同步；手机可独立完成 JD 诊断、计划、讲解、考我、模拟面试、追问、读源码与仓库 Agent 问答。
+            {'\n'}仍需桌面端：克隆/索引仓库（索引后源码快照会同步到手机）。
             {'\n'}暂不同步：搜索缓存（各端可重建）、仓库本机路径（各端路径不同）。
           </Text>
           <Pressable onPress={() => void triggerSync()} style={{ backgroundColor: theme.accent, padding: 12, borderRadius: 8, alignItems: 'center' }}>

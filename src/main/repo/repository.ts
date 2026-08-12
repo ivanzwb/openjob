@@ -9,6 +9,7 @@ import { getAppPaths } from '../paths';
 import { completeJson } from '../llm/json';
 import { detectLanguages, readFileRange } from './files';
 import { buildRepoMapAsync } from './symbols';
+import { snapshotRepoFiles } from './snapshot';
 import { assertGitAvailable, resolveGitBinary } from './git';
 import { emit } from '../ipc/bridge';
 
@@ -185,6 +186,7 @@ export async function cloneAndIndex(url: string, jobId: string): Promise<void> {
     );
 
     const now = Date.now();
+    const snap = snapshotRepoFiles(id, localPath);
     db.update(schema.repo)
       .set({
         repoMapMd,
@@ -200,7 +202,7 @@ export async function cloneAndIndex(url: string, jobId: string): Promise<void> {
       jobId,
       label,
       progress: 1,
-      message: '仓库已就绪',
+      message: `仓库已就绪（已同步 ${snap.files} 个文件到手机可读缓存）`,
       done: true,
       error: null,
     });

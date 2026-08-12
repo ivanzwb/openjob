@@ -109,7 +109,7 @@ jobs:
       # 显式传 --publish always（pnpm run dist -- args 会在脚本后多插一个 -- 导致参数丢失，
       # 且 electron-builder v27 起 CI 隐式发布将被移除，显式声明更稳健）
       - name: Package installers
-        run: pnpm run build && pnpm exec electron-builder --publish always
+        run: pnpm run build && node scripts/run-electron-builder.mjs --publish always
 
       - name: Verify Windows installer
         if: matrix.os == 'windows-2022'

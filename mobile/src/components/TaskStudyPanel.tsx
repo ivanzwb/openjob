@@ -8,6 +8,8 @@ import { generateQuizQuestion, submitQuizAnswer } from '../data/quizLocal';
 import { useApp } from '../context/AppContext';
 import { useRemoteTask } from '../context/RemoteTaskContext';
 import { theme } from '../theme';
+import { ReadCodePanel } from './ReadCodePanel';
+import { listRepos as listReposFromDb } from '../data/repoLocal';
 
 export function TaskStudyPanel({
   task,
@@ -95,11 +97,18 @@ export function TaskStudyPanel({
   }, [task, runTask, notifyDataChanged]);
 
   if (task.kind === 'readCode') {
-    return (
-      <Text style={{ color: theme.muted, fontSize: 13 }}>
-        读源码任务请在桌面端完成：{task.repoUrl ?? task.repoId}
-      </Text>
-    );
+    if (!task.repoId) {
+      return <Text style={{ color: theme.muted, fontSize: 13 }}>该读源码任务未关联仓库</Text>;
+    }
+    const repo = listReposFromDb(getRawDb()).find((r) => r.id === task.repoId) ?? null;
+    if (!repo) {
+      return (
+        <Text style={{ color: theme.muted, fontSize: 13 }}>
+          仓库未同步：{task.repoUrl ?? task.repoId}
+        </Text>
+      );
+    }
+    return <ReadCodePanel repo={repo} onComplete={onComplete} />;
   }
 
   if (task.kind === 'drill' && task.nodeId) {

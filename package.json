@@ -20,8 +20,8 @@
     "lint": "eslint .",
     "start": "electron-vite preview",
     "db:generate": "drizzle-kit generate",
-    "package": "npm run build && electron-builder --dir",
-    "dist": "npm run build && electron-builder",
+    "package": "npm run build && node scripts/run-electron-builder.mjs --dir",
+    "dist": "npm run build && node scripts/run-electron-builder.mjs",
     "smoke:sync": "tsx scripts/smoke-sync-merge.ts"
   },
   "pnpm": {

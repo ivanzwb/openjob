@@ -4,15 +4,10 @@
  */
 export function deviceLocalInsertDefaults(
   table: string,
-  syncedValues: Record<string, unknown>,
+  _syncedValues: Record<string, unknown>,
 ): Record<string, unknown> {
   if (table === 'repo') {
-    const hasContent = Boolean(syncedValues.summary_md || syncedValues.repo_map_md);
-    return {
-      local_path: '',
-      status: hasContent ? 'ready' : 'pending',
-      indexed_at: null,
-    };
+    return { local_path: '' };
   }
   return {};
 }

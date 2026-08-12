@@ -43,10 +43,10 @@ const SYNCED_TABLES: Array<{ table: Table; deviceLocal?: string[] }> = [
   { table: schema.planDay },
   { table: schema.task },
   { table: schema.quizAttempt },
-  // 克隆产物是本机的：路径、索引状态、索引时间都不能被对端覆盖。
-  // 手机端没有克隆，这几列在它那边始终是空的。
-  { table: schema.repo, deviceLocal: ['local_path', 'status', 'indexed_at'] },
+  // 克隆产物是本机的：路径不能同步。status/indexed_at/summary 等元数据需同步到手机。
+  { table: schema.repo, deviceLocal: ['local_path'] },
   { table: schema.codeRef },
+  { table: schema.repoFile },
   { table: schema.annotation },
   { table: schema.speechSnippet },
   { table: schema.session },

@@ -306,6 +306,26 @@ export const codeRef = sqliteTable(
   (t) => [index('idx_code_ref_repo').on(t.repoId)],
 );
 
+/** 索引时快照的文本文件，供手机端 list_dir / read_file / grep */
+export const repoFile = sqliteTable(
+  'repo_file',
+  {
+    id: text('id').primaryKey(),
+    repoId: text('repo_id')
+      .notNull()
+      .references(() => repo.id, { onDelete: 'cascade' }),
+    filePath: text('file_path').notNull(),
+    content: text('content').notNull(),
+    lineCount: integer('line_count').notNull(),
+    byteSize: integer('byte_size').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (t) => [
+    index('idx_repo_file_repo').on(t.repoId),
+    index('idx_repo_file_path').on(t.repoId, t.filePath),
+  ],
+);
+
 // ---------------------------------------------------------------------------
 // 标记与话术
 // ---------------------------------------------------------------------------

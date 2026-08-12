@@ -7,6 +7,13 @@ import { installSyncTriggers } from '../sync/triggers';
 import { getDeviceIdentity } from '../sync/identity';
 import { collectChangeSet, collectFullChangeSet, currentHeadSeq } from '../sync/collect';
 import { applyAutoChanges } from '../sync/apply';
+import {
+  buildRepoFileSkipMessage,
+  canApplyRepoFileSync,
+  estimateRepoFileBytes,
+  getFreeDiskBytes,
+  partitionRepoFileChanges,
+} from '../sync/repoFileStorage';
 import { exchangeWithDesktop, pairWithDesktop } from '../sync/client';
 import { setPeerCreds } from '../remote/rpc';
 import { hydrateAppSettingsFromDb } from '../config/settings';
@@ -164,6 +171,47 @@ export function unpairDesktop(): void {
   setPeerCreds(null);
 }
 
+function setSyncMeta(sqlite: SQLiteDatabase, key: string, value: string): void {
+  sqlite.runSync(
+    `INSERT INTO sync_meta (key, value) VALUES (?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    key,
+    value,
+  );
+}
+
+function clearRepoFileSyncNotice(sqlite: SQLiteDatabase): void {
+  setSyncMeta(sqlite, 'repoFileSyncSkipped', '0');
+  setSyncMeta(sqlite, 'repoFileSyncMessage', '');
+  setSyncMeta(sqlite, 'repoFilePendingBytes', '0');
+}
+
+function persistRepoFileSyncSkipped(
+  sqlite: SQLiteDatabase,
+  neededBytes: number,
+  freeBytes: number,
+): string {
+  const message = buildRepoFileSkipMessage(neededBytes, freeBytes);
+  setSyncMeta(sqlite, 'repoFileSyncSkipped', '1');
+  setSyncMeta(sqlite, 'repoFileSyncMessage', message);
+  setSyncMeta(sqlite, 'repoFilePendingBytes', String(neededBytes));
+  return message;
+}
+
+export function getRepoFileSyncNotice(): { skipped: boolean; message: string | null } {
+  const sqlite = getRawDb();
+  const skipped = sqlite.getFirstSync<{ value: string }>(
+    `SELECT value FROM sync_meta WHERE key = 'repoFileSyncSkipped'`,
+  );
+  const message = sqlite.getFirstSync<{ value: string }>(
+    `SELECT value FROM sync_meta WHERE key = 'repoFileSyncMessage'`,
+  );
+  return {
+    skipped: skipped?.value === '1',
+    message: message?.value ? message.value : null,
+  };
+}
+
 function saveConflicts(sqlite: SQLiteDatabase, runId: string, conflicts: FieldConflict[]): void {
   for (const c of conflicts) {
     sqlite.runSync(
@@ -189,6 +237,8 @@ export async function syncNow(options?: { full?: boolean }): Promise<{
   conflicts: number;
   status: string;
   runId: string | null;
+  repoFileSkipped?: boolean;
+  repoFileMessage?: string;
 }> {
   const sqlite = await openDb();
   const identity = await getDeviceIdentity(sqlite);
@@ -213,15 +263,29 @@ export async function syncNow(options?: { full?: boolean }): Promise<{
 
   const ctx = {
     clockOffsetMs: Date.now() - response.serverMs,
-    isDeviceLocal: (t: string, c: string) =>
-      t === 'repo' && ['local_path', 'status', 'indexed_at'].includes(c),
+    isDeviceLocal: (t: string, c: string) => t === 'repo' && c === 'local_path',
     primaryKey: () => 'id',
     labelFor: (table: string, rowId: string, values: Record<string, unknown>) =>
       `${table}:${String(values.name ?? values.title ?? rowId)}`,
   };
 
   const plan = planMerge(local, response.changes, ctx);
-  const appliedRemote = applyAutoChanges(sqlite, peer.device_id, plan.auto);
+  const { other, repoFile } = partitionRepoFileChanges(plan.auto);
+  let appliedRemote = applyAutoChanges(sqlite, peer.device_id, other);
+
+  let repoFileSkipped = false;
+  let repoFileMessage: string | undefined;
+  if (repoFile.length > 0) {
+    const neededBytes = estimateRepoFileBytes(repoFile, sqlite);
+    const freeBytes = await getFreeDiskBytes();
+    if (canApplyRepoFileSync(neededBytes, freeBytes)) {
+      appliedRemote += applyAutoChanges(sqlite, peer.device_id, repoFile);
+      clearRepoFileSyncNotice(sqlite);
+    } else {
+      repoFileSkipped = true;
+      repoFileMessage = persistRepoFileSyncSkipped(sqlite, neededBytes, freeBytes);
+    }
+  }
 
   if (plan.auto.some((c) => c.table === 'app_setting')) {
     await hydrateAppSettingsFromDb(sqlite);
@@ -246,7 +310,7 @@ export async function syncNow(options?: { full?: boolean }): Promise<{
     `UPDATE sync_peer SET last_local_seq = ?, last_remote_seq = ?, last_sync_at = ?
      WHERE device_id = ?`,
     currentHeadSeq(sqlite),
-    response.changes.headSeq,
+    repoFileSkipped ? peer.last_remote_seq : response.changes.headSeq,
     Date.now(),
     peer.device_id,
   );
@@ -257,6 +321,7 @@ export async function syncNow(options?: { full?: boolean }): Promise<{
     conflicts: conflictCount,
     status: conflictCount > 0 ? 'conflict' : 'success',
     runId: plan.conflicts.length > 0 ? runId : null,
+    ...(repoFileSkipped ? { repoFileSkipped, repoFileMessage } : {}),
   };
 }
 
