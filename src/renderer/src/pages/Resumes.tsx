@@ -7,6 +7,8 @@ import { invoke } from '../ipc';
 
 type SubTab = 'targets' | 'resumes';
 
+const NEW_RESUME_DRAFT_ID = '__new_resume_draft__';
+
 type ListSelection =
   | { kind: 'resume'; id: string }
   | { kind: 'variant'; id: string };
@@ -45,6 +47,7 @@ export function Resumes(): React.JSX.Element {
   const [selectedResumeId, setSelectedResumeId] = useState<string | null>(null);
   const [resumeFormOpen, setResumeFormOpen] = useState(false);
   const [optimizeTargetId, setOptimizeTargetId] = useState('');
+  const [optimizeBaseResumeId, setOptimizeBaseResumeId] = useState('');
   const [variantDraft, setVariantDraft] = useState('');
   const [exportTemplate, setExportTemplate] = useState<'classic' | 'modern' | 'compact'>('classic');
 
@@ -56,7 +59,10 @@ export function Resumes(): React.JSX.Element {
     const items: SidebarEntry[] = resumes.map((r) => ({
       kind: 'resume',
       id: r.id,
-      label: r.label,
+      label:
+        resumeFormOpen && resumeForm.id === r.id
+          ? resumeForm.label.trim() || r.label
+          : r.label,
       subtitle: '母版',
       updatedAt: r.updatedAt,
     }));
@@ -70,8 +76,27 @@ export function Resumes(): React.JSX.Element {
         variant: v,
       });
     }
-    return items.sort((a, b) => b.updatedAt - a.updatedAt);
-  }, [resumes, variants]);
+    const sorted = items.sort((a, b) => b.updatedAt - a.updatedAt);
+    if (resumeFormOpen && !resumeForm.id) {
+      const target = targets.find((t) => t.id === optimizeTargetId);
+      sorted.unshift({
+        kind: 'resume',
+        id: NEW_RESUME_DRAFT_ID,
+        label: resumeForm.label.trim() || '新建简历',
+        subtitle: target ? `${target.company} · ${target.roleTitle}` : '未保存',
+        updatedAt: Date.now(),
+      });
+    }
+    return sorted;
+  }, [
+    resumes,
+    variants,
+    targets,
+    resumeFormOpen,
+    resumeForm.id,
+    resumeForm.label,
+    optimizeTargetId,
+  ]);
 
   const isEntrySelected = (entry: SidebarEntry): boolean =>
     listSelection?.kind === entry.kind && listSelection.id === entry.id;
@@ -94,6 +119,7 @@ export function Resumes(): React.JSX.Element {
       return r[0]?.id ?? null;
     });
     setListSelection((prev) => {
+      if (prev?.kind === 'resume' && prev.id === NEW_RESUME_DRAFT_ID) return prev;
       if (prev?.kind === 'resume' && r.some((x) => x.id === prev.id)) return prev;
       if (prev?.kind === 'variant' && v.some((x) => x.id === prev.id)) return prev;
       if (r[0]) return { kind: 'resume', id: r[0].id };
@@ -202,22 +228,43 @@ export function Resumes(): React.JSX.Element {
   const openNewResumeForm = (): void => {
     setResumeForm({ id: '', label: '', rawText: '' });
     setResumeFormOpen(true);
+    setListSelection({ kind: 'resume', id: NEW_RESUME_DRAFT_ID });
+    setSelectedResumeId(null);
+    setOptimizeBaseResumeId('');
     setTab('resumes');
   };
 
   const closeResumeForm = (): void => {
+    const wasDraft = listSelection?.kind === 'resume' && listSelection.id === NEW_RESUME_DRAFT_ID;
+    const wasEditId = resumeForm.id;
     setResumeForm({ id: '', label: '', rawText: '' });
     setResumeFormOpen(false);
+    if (wasDraft) {
+      setListSelection(
+        resumes[0] ? { kind: 'resume', id: resumes[0].id } : null,
+      );
+      setSelectedResumeId(resumes[0]?.id ?? null);
+    } else if (wasEditId) {
+      setListSelection({ kind: 'resume', id: wasEditId });
+      setSelectedResumeId(wasEditId);
+    }
   };
 
   const editResume = (r: Resume): void => {
     setResumeForm({ id: r.id, label: r.label, rawText: r.rawText });
     setSelectedResumeId(r.id);
+    setListSelection({ kind: 'resume', id: r.id });
     setResumeFormOpen(true);
     setTab('resumes');
   };
 
   const selectMasterResume = (id: string): void => {
+    if (id === NEW_RESUME_DRAFT_ID) {
+      setListSelection({ kind: 'resume', id: NEW_RESUME_DRAFT_ID });
+      setSelectedResumeId(null);
+      setResumeFormOpen(true);
+      return;
+    }
     setListSelection({ kind: 'resume', id });
     setSelectedResumeId(id);
     setResumeFormOpen(false);
@@ -260,8 +307,11 @@ export function Resumes(): React.JSX.Element {
   };
 
   const runOptimizeFromNewResume = async (): Promise<void> => {
-    if (!resumeForm.rawText.trim()) {
-      setMessage('请先填写或导入母版简历正文');
+    const baseFromList = optimizeBaseResumeId
+      ? resumes.find((r) => r.id === optimizeBaseResumeId)
+      : null;
+    if (!baseFromList && !resumeForm.rawText.trim()) {
+      setMessage('请先填写或导入母版简历正文，或选择已有 base 简历');
       return;
     }
     if (!optimizeTargetId || targets.length === 0) {
@@ -271,17 +321,22 @@ export function Resumes(): React.JSX.Element {
     setBusy(true);
     setMessage(null);
     try {
-      const saved = await invoke('resume:create', {
-        label: resumeForm.label.trim() || '我的简历',
-        rawText: resumeForm.rawText,
-      });
+      const sourceResumeId = baseFromList
+        ? baseFromList.id
+        : (
+            await invoke('resume:create', {
+              label: resumeForm.label.trim() || '我的简历',
+              rawText: resumeForm.rawText,
+            })
+          ).id;
       const v = await invoke('resumeVariant:optimize', {
-        sourceResumeId: saved.id,
+        sourceResumeId,
         jobTargetId: optimizeTargetId,
       });
       setResumeForm({ id: '', label: '', rawText: '' });
       setResumeFormOpen(false);
-      setSelectedResumeId(saved.id);
+      setOptimizeBaseResumeId('');
+      setSelectedResumeId(sourceResumeId);
       setListSelection({ kind: 'variant', id: v.id });
       setActiveVariantId(v.id);
       setVariantDraft(v.contentMd);
@@ -631,8 +686,37 @@ export function Resumes(): React.JSX.Element {
                     placeholder="名称"
                     className="shrink-0 w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm"
                   />
+                  <textarea
+                    value={resumeForm.rawText}
+                    onChange={(e) => setResumeForm((f) => ({ ...f, rawText: e.target.value }))}
+                    readOnly={Boolean(optimizeBaseResumeId)}
+                    placeholder="简历正文（新建 base 简历时填写；或从下方选择已有简历作为优化来源）"
+                    className="min-h-0 flex-1 resize-none rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm leading-relaxed disabled:opacity-80"
+                  />
                   {!resumeForm.id && (
                     <div className="flex shrink-0 flex-wrap items-center gap-2">
+                      <span className="text-xs text-[var(--color-muted)]">优化 base 的简历</span>
+                      <select
+                        value={optimizeBaseResumeId}
+                        onChange={(e) => {
+                          const id = e.target.value;
+                          setOptimizeBaseResumeId(id);
+                          const picked = resumes.find((r) => r.id === id);
+                          if (picked) {
+                            setResumeForm((f) => ({
+                              ...f,
+                              label: f.label || picked.label,
+                              rawText: picked.rawText,
+                            }));
+                          }
+                        }}
+                        className="min-w-[160px] rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1.5 text-sm"
+                      >
+                        <option value="">下方正文（新建）</option>
+                        {resumes.map((r) => (
+                          <option key={r.id} value={r.id}>{r.label}</option>
+                        ))}
+                      </select>
                       <span className="text-xs text-[var(--color-muted)]">目标岗位</span>
                       <select
                         value={optimizeTargetId}
@@ -654,12 +738,6 @@ export function Resumes(): React.JSX.Element {
                       </button>
                     </div>
                   )}
-                  <textarea
-                    value={resumeForm.rawText}
-                    onChange={(e) => setResumeForm((f) => ({ ...f, rawText: e.target.value }))}
-                    placeholder="简历正文"
-                    className="min-h-0 flex-1 resize-none rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm leading-relaxed"
-                  />
                 </div>
               </div>
             ) : selectedResume ? (
@@ -737,7 +815,6 @@ export function Resumes(): React.JSX.Element {
                 {activeVariantId ? (
                   <div className="grid min-h-0 flex-1 lg:grid-cols-2">
                     <div className="min-h-0 overflow-y-auto border-r border-[var(--color-border)] p-4">
-                      <h4 className="mb-2 text-xs font-medium text-[var(--color-muted)]">母版简历</h4>
                       <pre className="whitespace-pre-wrap text-sm leading-relaxed">
                         {activeVariant?.sourceResumeText ?? selectedResume.rawText}
                       </pre>
@@ -758,7 +835,6 @@ export function Resumes(): React.JSX.Element {
                   </div>
                 ) : (
                   <div className="min-h-0 flex-1 overflow-y-auto p-4">
-                    <h4 className="mb-2 text-xs font-medium text-[var(--color-muted)]">母版简历</h4>
                     <pre className="whitespace-pre-wrap text-sm leading-relaxed">{selectedResume.rawText}</pre>
                   </div>
                 )}
