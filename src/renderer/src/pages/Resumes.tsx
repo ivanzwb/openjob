@@ -678,16 +678,16 @@ export function Resumes(): React.JSX.Element {
                     </p>
                   </div>
                   <div className="flex shrink-0 flex-wrap justify-end gap-2">
-                    <button
-                      type="button"
-                      disabled={busy || !activeVariantId}
-                      onClick={() => void saveVariant()}
-                      className="rounded-lg bg-[var(--color-accent)] px-3 py-1.5 text-sm disabled:opacity-40"
-                    >
-                      保存
-                    </button>
                     {activeVariantId && (
                       <>
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => void saveVariant()}
+                          className="rounded-lg bg-[var(--color-accent)] px-3 py-1.5 text-sm disabled:opacity-40"
+                        >
+                          保存
+                        </button>
                         <select
                           value={exportTemplate}
                           onChange={(e) => setExportTemplate(e.target.value as typeof exportTemplate)}
@@ -734,35 +734,34 @@ export function Resumes(): React.JSX.Element {
                     )}
                   </div>
                 </div>
-                <div className="grid min-h-0 flex-1 lg:grid-cols-2">
-                  <div className="min-h-0 overflow-y-auto border-r border-[var(--color-border)] p-4">
-                    <h4 className="mb-2 text-xs font-medium text-[var(--color-muted)]">母版简历</h4>
-                    <pre className="whitespace-pre-wrap text-sm leading-relaxed">
-                      {activeVariant?.sourceResumeText ?? selectedResume.rawText}
-                    </pre>
-                  </div>
-                  <div className="flex min-h-0 flex-col p-4">
-                    <h4 className="mb-2 shrink-0 text-xs font-medium text-[var(--color-muted)]">
-                      优化版简历
-                      {activeVariant?.isUserEdited && (
-                        <span className="ml-2 text-amber-500">已手动编辑</span>
-                      )}
-                    </h4>
-                    {activeVariantId ? (
+                {activeVariantId ? (
+                  <div className="grid min-h-0 flex-1 lg:grid-cols-2">
+                    <div className="min-h-0 overflow-y-auto border-r border-[var(--color-border)] p-4">
+                      <h4 className="mb-2 text-xs font-medium text-[var(--color-muted)]">母版简历</h4>
+                      <pre className="whitespace-pre-wrap text-sm leading-relaxed">
+                        {activeVariant?.sourceResumeText ?? selectedResume.rawText}
+                      </pre>
+                    </div>
+                    <div className="flex min-h-0 flex-col p-4">
+                      <h4 className="mb-2 shrink-0 text-xs font-medium text-[var(--color-muted)]">
+                        优化版简历
+                        {activeVariant?.isUserEdited && (
+                          <span className="ml-2 text-amber-500">已手动编辑</span>
+                        )}
+                      </h4>
                       <textarea
                         value={variantDraft}
                         onChange={(e) => setVariantDraft(e.target.value)}
                         className="min-h-0 flex-1 resize-none rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm leading-relaxed"
                       />
-                    ) : (
-                      <p className="text-sm text-[var(--color-muted)]">
-                        {listSelection?.kind === 'resume'
-                          ? '在「新建简历」中选择目标岗位并生成优化版，或从左侧列表选择已有优化版'
-                          : '选择目标岗位并点击「生成优化版」，或从左侧列表选择已保存的优化版'}
-                      </p>
-                    )}
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                    <h4 className="mb-2 text-xs font-medium text-[var(--color-muted)]">母版简历</h4>
+                    <pre className="whitespace-pre-wrap text-sm leading-relaxed">{selectedResume.rawText}</pre>
+                  </div>
+                )}
               </div>
             ) : (
               <p className="p-4 text-sm text-[var(--color-muted)]">
