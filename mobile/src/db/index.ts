@@ -17,6 +17,7 @@ import {
 import { exchangeWithDesktop, pairWithDesktop } from '../sync/client';
 import { setPeerCreds } from '../remote/rpc';
 import { hydrateAppSettingsFromDb } from '../config/settings';
+import { ensureCriticalSchema, hasTable } from './schemaEnsure';
 
 interface PeerRow {
   device_id: string;
@@ -54,7 +55,16 @@ function runMigrations(sqlite: SQLiteDatabase): void {
     sqlite.getAllSync<{ idx: number }>(`SELECT idx FROM ${MIGRATION_LOG}`).map((r) => r.idx),
   );
   for (let index = 0; index < MIGRATIONS.length; index++) {
-    if (applied.has(index)) continue;
+    if (applied.has(index)) {
+      // 日志已记录但表缺失时（旧 bundle / 迁移中断）仍重跑该条迁移
+      if (index === 6 && !hasTable(sqlite, 'app_setting')) {
+        // fall through
+      } else if (index === 7 && !hasTable(sqlite, 'repo_file')) {
+        // fall through
+      } else {
+        continue;
+      }
+    }
     for (const stmt of MIGRATIONS[index].split('--> statement-breakpoint')) {
       const trimmed = stmt.trim();
       if (!trimmed) continue;
@@ -67,7 +77,8 @@ function runMigrations(sqlite: SQLiteDatabase): void {
       }
     }
     sqlite.runSync(
-      `INSERT INTO ${MIGRATION_LOG} (idx, tag, applied_at) VALUES (?, ?, ?)`,
+      `INSERT INTO ${MIGRATION_LOG} (idx, tag, applied_at) VALUES (?, ?, ?)
+       ON CONFLICT(idx) DO UPDATE SET applied_at = excluded.applied_at`,
       index,
       `migration_${index}`,
       Date.now(),
@@ -101,6 +112,7 @@ export async function openDb(): Promise<SQLiteDatabase> {
   raw = openDatabaseSync('openjob.db');
   raw.execSync('PRAGMA foreign_keys = ON;');
   runMigrations(raw);
+  ensureCriticalSchema(raw);
   const identity = await getDeviceIdentity(raw);
   installSyncTriggers(raw, identity.deviceId);
 
