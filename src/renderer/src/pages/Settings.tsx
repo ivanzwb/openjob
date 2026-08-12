@@ -20,7 +20,7 @@ const ROLE_HINTS: Record<LlmRole, string> = {
   explain: '生成三档讲解，调用最频繁，是成本大头',
   codeAgent: '源码检索与理解，agent 循环对工具遵循率要求高',
   quiz: '出题与评分，需要稳定的评判尺度',
-  resumeOptimize: '简历定向优化，输出结构化分段与改动说明',
+  resumeOptimize: '简历定向优化：仅基于母版改写表述与结构，不编造事实',
 };
 
 const COVERAGE_TYPES: CoverageType[] = ['deepDive', 'gap', 'landmine', 'extra'];

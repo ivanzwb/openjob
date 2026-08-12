@@ -381,7 +381,7 @@ export function Resumes(): React.JSX.Element {
       <header>
         <h2 className="text-lg font-semibold">简历</h2>
         <p className="mt-1 text-xs text-[var(--color-muted)]">
-          管理目标岗位与母版简历，生成针对岗位的优化版并导出 PDF
+          管理目标岗位与母版简历；优化版仅改写表述与结构，事实必须来自母版，不编造经历
         </p>
       </header>
 
