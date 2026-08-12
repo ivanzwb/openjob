@@ -1,7 +1,8 @@
 # OpenJob — 面试备考 Agent 设计方案
 
-> 状态：设计定稿，待实施
-> 最后更新：2026-08-11
+> 状态：持续实施中（桌面端 + 手机端已可用）
+> 最后更新：2026-08-12
+> 快速上手见仓库根目录 [README.md](../README.md)
 
 ---
 
@@ -610,6 +611,8 @@ interface SearchConfig {
 
 ```
 openJob/
+├── README.md                       # 项目介绍、构建与同步说明
+├── LICENSE                         # Apache License 2.0
 ├── docs/
 │   └── DESIGN.md
 ├── package.json
@@ -677,22 +680,23 @@ openJob/
             └── ipc/                # 类型安全的 IPC 客户端封装
 ```
 
-手机端（`mobile/`，Expo + React Native + expo-sqlite）与桌面端共享 `src/shared/` 类型，作为局域网同步的另一个对端，结构如下：
+手机端（`mobile/`，Expo + React Native + expo-sqlite）与桌面端共享 `src/shared/` 类型，作为局域网同步的另一个对端。配对并全量同步后，手机可**离线独立运行** LLM 链路（诊断、讲解、考我、模拟面试、读源码与仓库 Agent），不依赖桌面 RPC 代理；克隆与 tree-sitter 索引仍在桌面端完成，索引后的 `repo_file` 快照同步到手机。
 
 ```
 mobile/
 └── src/
     ├── db/
-    │   ├── schema.ts              # 与桌面同构的表定义（手写维护，靠 smoke 保障一致）
-    │   └── index.ts               # 打开数据库、迁移、装触发器、加载对端凭据
-    ├── data/
-    │   └── queries.ts             # 只读查询（手机不跑 Agent，只浏览/打卡）
+    │   ├── migrations/            # 与桌面同构迁移（bundle 脚本打包）
+    │   └── index.ts               # 打开数据库、迁移、装触发器、同步编排
+    ├── data/                      # 本地 CRUD 与 LLM 业务逻辑
+    ├── llm/                       # 手机端直连 LLM（chat / json / agent）
     ├── sync/
     │   ├── client.ts              # 配对/心跳/变更集交换的 HTTP 客户端（带签名）
+    │   ├── repoFileStorage.ts     # repo_file 同步前存储空间检查
     │   ├── triggers.ts            # 变更捕获触发器，语义与桌面端完全一致
-    │   └── merge.ts               # 复用 shared/syncMerge 的合并/冲突解析
+    │   └── apply.ts               # 变更集落库
     ├── components/                # 通用 UI 组件
-    └── screens/                   # 页面（Sync / Overview / …）
+    └── screens/                   # 页面（Sync / Campaigns / Repos / …）
 ```
 
 **安全基线**：渲染进程开启 `contextIsolation`、关闭 `nodeIntegration`，仅通过 preload 暴露白名单 IPC 方法。这既是 Electron 安全规范，也强制了「UI 不碰 IO」的分层。
@@ -701,7 +705,7 @@ mobile/
 
 ### 5.7 桌面 ↔ 手机同步
 
-桌面端（Electron 主进程）内置局域网 HTTP 同步服务，手机端（React Native）通过扫码配对后定期/按需交换增量。手机是**纯对端**：不跑 Agent、不建索引，只读数据 + 轻量打卡，所有变更都通过同一套机制回流桌面。
+桌面端（Electron 主进程）内置局域网 HTTP 同步服务，手机端（React Native）通过扫码配对后定期/按需交换增量。手机是**对等同步端**：本地可完整备考，变更通过同一套 oplog 机制回流桌面；仓库克隆与索引仅在桌面执行。
 
 **变更捕获（两端对称）**：每张同步表配三个 SQLite 触发器（插入/更新/删除），把变更写成 `sync_oplog` 一行（表、行 ID、操作、墙钟、设备 ID、改动列）。关键约束：
 
@@ -722,7 +726,8 @@ mobile/
 
 - 同一行不同列改动 → 自动按列合并
 - 同一列改成不同值 / 删除与修改冲突 → 挂起为冲突，手机端弹 UI 让用户选本端还是对端
-- 手机专属列（`local_path`、`status` 等）在合并时被剔除，不接受对端值
+- 手机专属列（如 `repo.local_path`）在合并时被剔除，不接受对端值
+- `repo_file`（源码快照）同步优先级最低；手机端在落库前检查可用存储，不足则跳过并在同步页提示
 
 **安全**：配对交换 ECDH 派生共享密钥；每个请求带 HMAC 签名（设备 ID + 时间戳 + 路径 + body），防局域网内重放与伪造。
 
@@ -1104,3 +1109,9 @@ plugin-react 5.x。TypeScript 7（原生 Go 移植版）与 typescript-eslint �
 | 盲区 | 真题匹配不到任何知识点节点 = 图谱预测失败处，信息价值最高 |
 | repo map | tree-sitter 生成的全仓库符号骨架，压缩为几千 token 作导航 |
 | 话术库 | 所有链路的终点产出，「面试时能说出口的话」 |
+
+---
+
+## 附：许可证
+
+本项目源代码采用 [Apache License 2.0](../LICENSE)。第三方依赖（如 Expo、Electron）各自遵循其许可证。
