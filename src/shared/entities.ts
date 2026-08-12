@@ -49,6 +49,29 @@ export interface Resume {
   rawText: string;
   parsed: ResumeParsed | null;
   createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export interface JobTarget {
+  id: Id;
+  company: string;
+  roleTitle: string;
+  jdRaw: string;
+  jdParsed: JdParsed | null;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export interface ResumeVariant {
+  id: Id;
+  sourceResumeId: Id;
+  jobTargetId: Id;
+  label: string;
+  contentMd: string;
+  changelogMd: string;
+  isUserEdited: boolean;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
 }
 
 export interface ResumeParsed {
@@ -77,6 +100,7 @@ export interface Campaign {
   roleTitle: string;
   jdRaw: string;
   jdParsed: JdParsed | null;
+  jobTargetId: Id | null;
   resumeId: Id | null;
   /** 面试日期，驱动整个日程编排 */
   interviewDate: DateOnly | null;

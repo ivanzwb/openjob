@@ -33,6 +33,43 @@ export function ensureCriticalSchema(sqlite: SQLiteDatabase): void {
   sqlite.execSync(
     `CREATE INDEX IF NOT EXISTS idx_repo_file_path ON repo_file (repo_id, file_path);`,
   );
+
+  sqlite.execSync(`
+    CREATE TABLE IF NOT EXISTS job_target (
+      id text PRIMARY KEY NOT NULL,
+      company text NOT NULL,
+      role_title text NOT NULL,
+      jd_raw text NOT NULL,
+      jd_parsed text,
+      created_at integer NOT NULL,
+      updated_at integer NOT NULL
+    );
+  `);
+  sqlite.execSync(
+    `CREATE INDEX IF NOT EXISTS idx_job_target_company ON job_target (company, role_title);`,
+  );
+
+  sqlite.execSync(`
+    CREATE TABLE IF NOT EXISTS resume_variant (
+      id text PRIMARY KEY NOT NULL,
+      source_resume_id text NOT NULL,
+      job_target_id text NOT NULL,
+      label text NOT NULL,
+      content_md text NOT NULL,
+      changelog_md text DEFAULT '' NOT NULL,
+      is_user_edited integer DEFAULT 0 NOT NULL,
+      created_at integer NOT NULL,
+      updated_at integer NOT NULL,
+      FOREIGN KEY (source_resume_id) REFERENCES resume(id) ON UPDATE no action ON DELETE cascade,
+      FOREIGN KEY (job_target_id) REFERENCES job_target(id) ON UPDATE no action ON DELETE cascade
+    );
+  `);
+  sqlite.execSync(
+    `CREATE INDEX IF NOT EXISTS idx_resume_variant_target ON resume_variant (job_target_id);`,
+  );
+  sqlite.execSync(
+    `CREATE INDEX IF NOT EXISTS idx_resume_variant_source ON resume_variant (source_resume_id);`,
+  );
 }
 
 export function hasTable(sqlite: SQLiteDatabase, table: string): boolean {

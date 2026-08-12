@@ -43,7 +43,47 @@ export const resume = sqliteTable('resume', {
   rawText: text('raw_text').notNull(),
   parsed: text('parsed', { mode: 'json' }).$type<ResumeParsed>(),
   createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
 });
+
+/** 目标岗位：公司 + 岗位 + JD，简历优化与备考共用 */
+export const jobTarget = sqliteTable(
+  'job_target',
+  {
+    id: text('id').primaryKey(),
+    company: text('company').notNull(),
+    roleTitle: text('role_title').notNull(),
+    jdRaw: text('jd_raw').notNull(),
+    jdParsed: text('jd_parsed', { mode: 'json' }).$type<JdParsed>(),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (t) => [index('idx_job_target_company').on(t.company, t.roleTitle)],
+);
+
+/** 针对某目标岗位的简历优化版 */
+export const resumeVariant = sqliteTable(
+  'resume_variant',
+  {
+    id: text('id').primaryKey(),
+    sourceResumeId: text('source_resume_id')
+      .notNull()
+      .references(() => resume.id, { onDelete: 'cascade' }),
+    jobTargetId: text('job_target_id')
+      .notNull()
+      .references(() => jobTarget.id, { onDelete: 'cascade' }),
+    label: text('label').notNull(),
+    contentMd: text('content_md').notNull(),
+    changelogMd: text('changelog_md').default('').notNull(),
+    isUserEdited: integer('is_user_edited', { mode: 'boolean' }).notNull().default(false),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (t) => [
+    index('idx_resume_variant_target').on(t.jobTargetId),
+    index('idx_resume_variant_source').on(t.sourceResumeId),
+  ],
+);
 
 export const campaign = sqliteTable('campaign', {
   id: text('id').primaryKey(),
@@ -51,6 +91,7 @@ export const campaign = sqliteTable('campaign', {
   roleTitle: text('role_title').notNull(),
   jdRaw: text('jd_raw').notNull(),
   jdParsed: text('jd_parsed', { mode: 'json' }).$type<JdParsed>(),
+  jobTargetId: text('job_target_id').references(() => jobTarget.id, { onDelete: 'set null' }),
   resumeId: text('resume_id').references(() => resume.id, { onDelete: 'set null' }),
   interviewDate: text('interview_date'),
   dailyMinutes: integer('daily_minutes'),

@@ -19,6 +19,7 @@ import { getDb, schema } from '../db';
 import { attachPriorityReason, computePriority } from '../diagnosis/priority';
 import { countCrossCampaignReports } from '../diagnosis/prior';
 import { sortNodesByStudyOrder } from './edges';
+import { createJobTarget, getJobTarget, updateJobTarget } from '../jobTarget/repository';
 
 function rowToCampaign(row: typeof schema.campaign.$inferSelect): Campaign {
   return {
@@ -27,6 +28,7 @@ function rowToCampaign(row: typeof schema.campaign.$inferSelect): Campaign {
     roleTitle: row.roleTitle,
     jdRaw: row.jdRaw,
     jdParsed: row.jdParsed ?? null,
+    jobTargetId: row.jobTargetId,
     resumeId: row.resumeId,
     interviewDate: row.interviewDate,
     dailyMinutes: row.dailyMinutes,
@@ -43,6 +45,7 @@ function rowToResume(row: typeof schema.resume.$inferSelect): Resume {
     rawText: row.rawText,
     parsed: row.parsed ?? null,
     createdAt: row.createdAt,
+    updatedAt: row.updatedAt ?? row.createdAt,
   };
 }
 
@@ -197,12 +200,34 @@ export function createCampaign(input: CreateCampaignInput): Campaign {
   const db = getDb();
   const now = Date.now();
   const id = randomUUID();
+
+  let jobTargetId = input.jobTargetId ?? null;
+  let company = input.company?.trim() ?? '';
+  let roleTitle = input.roleTitle?.trim() ?? '未命名岗位';
+  let jdRaw = input.jdRaw?.trim() ?? '';
+  let jdParsed: JdParsed | null = null;
+
+  if (jobTargetId) {
+    const t = getJobTarget(jobTargetId);
+    company = t.company;
+    roleTitle = t.roleTitle;
+    jdRaw = t.jdRaw;
+    jdParsed = t.jdParsed;
+  } else if (company && jdRaw) {
+    const t = createJobTarget({ company, roleTitle, jdRaw });
+    jobTargetId = t.id;
+    jdParsed = t.jdParsed;
+  } else {
+    throw new Error('请选择目标岗位，或填写公司与 JD');
+  }
+
   const row = {
     id,
-    company: input.company.trim(),
-    roleTitle: input.roleTitle.trim(),
-    jdRaw: input.jdRaw.trim(),
-    jdParsed: null,
+    company,
+    roleTitle,
+    jdRaw,
+    jdParsed,
+    jobTargetId,
     resumeId: null,
     interviewDate: null,
     dailyMinutes: null,
@@ -236,6 +261,20 @@ export function updateCampaign(input: UpdateCampaignInput): Campaign {
     updatedAt: Date.now(),
   };
 
+  if (
+    existing.jobTargetId &&
+    (patch.company !== existing.company ||
+      patch.roleTitle !== existing.roleTitle ||
+      patch.jdRaw !== existing.jdRaw)
+  ) {
+    updateJobTarget({
+      id: existing.jobTargetId,
+      company: patch.company,
+      roleTitle: patch.roleTitle,
+      jdRaw: patch.jdRaw,
+    });
+  }
+
   db.update(schema.campaign).set(patch).where(eq(schema.campaign.id, input.id)).run();
   return rowToCampaign({ ...existing, ...patch });
 }
@@ -255,15 +294,31 @@ export function listResumes(): Resume[] {
 
 export function createResume(label: string, rawText: string): Resume {
   const db = getDb();
+  const now = Date.now();
   const row = {
     id: randomUUID(),
     label: label.trim(),
     rawText: rawText.trim(),
     parsed: null,
-    createdAt: Date.now(),
+    createdAt: now,
+    updatedAt: now,
   };
   db.insert(schema.resume).values(row).run();
   return rowToResume(row);
+}
+
+export function updateResume(id: string, label?: string, rawText?: string): Resume {
+  const db = getDb();
+  const existing = db.select().from(schema.resume).where(eq(schema.resume.id, id)).get();
+  if (!existing) throw new Error('简历不存在');
+  const now = Date.now();
+  const patch = {
+    label: label?.trim() ?? existing.label,
+    rawText: rawText?.trim() ?? existing.rawText,
+    updatedAt: now,
+  };
+  db.update(schema.resume).set(patch).where(eq(schema.resume.id, id)).run();
+  return rowToResume({ ...existing, ...patch });
 }
 
 export function deleteResume(id: string): void {

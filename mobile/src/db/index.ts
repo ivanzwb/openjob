@@ -56,10 +56,11 @@ function runMigrations(sqlite: SQLiteDatabase): void {
   );
   for (let index = 0; index < MIGRATIONS.length; index++) {
     if (applied.has(index)) {
-      // 日志已记录但表缺失时（旧 bundle / 迁移中断）仍重跑该条迁移
       if (index === 6 && !hasTable(sqlite, 'app_setting')) {
         // fall through
       } else if (index === 7 && !hasTable(sqlite, 'repo_file')) {
+        // fall through
+      } else if (index === 8 && !hasTable(sqlite, 'job_target')) {
         // fall through
       } else {
         continue;

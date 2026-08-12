@@ -33,6 +33,7 @@ import type {
   CompanyIntel,
   Explanation,
   InterviewReport,
+  JobTarget,
   KnowledgeNode,
   PlanDay,
   QuizAttempt,
@@ -41,6 +42,7 @@ import type {
   SpeechSnippet,
   Task,
   Annotation,
+  JdParsed,
 } from './entities';
 import type { ConflictChoice, FieldConflict, PairingPayload, SyncRunSummary, SyncStatus } from './sync';
 
@@ -287,9 +289,11 @@ export interface InterviewReportView {
 }
 
 export interface CreateCampaignInput {
-  company: string;
-  roleTitle: string;
-  jdRaw: string;
+  /** 优先：选择已有目标岗位 */
+  jobTargetId?: string;
+  company?: string;
+  roleTitle?: string;
+  jdRaw?: string;
 }
 
 export interface UpdateCampaignInput {
@@ -306,6 +310,64 @@ export interface UpdateCampaignInput {
 export interface CreateResumeInput {
   label: string;
   rawText: string;
+}
+
+export interface UpdateResumeInput {
+  id: string;
+  label?: string;
+  rawText?: string;
+}
+
+export interface CreateJobTargetInput {
+  company: string;
+  roleTitle: string;
+  jdRaw: string;
+}
+
+export interface UpdateJobTargetInput {
+  id: string;
+  company?: string;
+  roleTitle?: string;
+  jdRaw?: string;
+  jdParsed?: JdParsed | null;
+}
+
+export interface ResumeVariantView {
+  id: string;
+  sourceResumeId: string;
+  jobTargetId: string;
+  label: string;
+  contentMd: string;
+  changelogMd: string;
+  isUserEdited: boolean;
+  createdAt: number;
+  updatedAt: number;
+  company: string;
+  roleTitle: string;
+  sourceResumeLabel: string;
+  sourceResumeText: string;
+}
+
+export interface UpdateResumeVariantInput {
+  id: string;
+  label?: string;
+  contentMd?: string;
+  changelogMd?: string;
+}
+
+export interface ResumeVariantExportInput {
+  id: string;
+  template: 'classic' | 'modern' | 'compact';
+}
+
+export interface ResumeVariantExportResult {
+  saved: boolean;
+  path: string | null;
+}
+
+export interface OptimizeResumeInput {
+  sourceResumeId: string;
+  jobTargetId: string;
 }
 
 export interface CreateNodeInput {
@@ -763,9 +825,26 @@ export interface IpcInvokeMap {
 
   'resume:list': { req: void; res: Resume[] };
   'resume:create': { req: CreateResumeInput; res: Resume };
+  'resume:update': { req: UpdateResumeInput; res: Resume };
   'resume:delete': { req: { id: string }; res: void };
   /** 弹出文件选择框导入简历（pdf/docx/txt/md），取消或失败时返回 null */
   'resume:importFile': { req: void; res: Resume | null };
+
+  'jobTarget:list': { req: void; res: JobTarget[] };
+  'jobTarget:get': { req: { id: string }; res: JobTarget };
+  'jobTarget:create': { req: CreateJobTargetInput; res: JobTarget };
+  'jobTarget:update': { req: UpdateJobTargetInput; res: JobTarget };
+  'jobTarget:delete': { req: { id: string }; res: void };
+
+  'resumeVariant:list': {
+    req: { jobTargetId?: string; sourceResumeId?: string } | void;
+    res: ResumeVariantView[];
+  };
+  'resumeVariant:get': { req: { id: string }; res: ResumeVariantView };
+  'resumeVariant:optimize': { req: OptimizeResumeInput; res: ResumeVariantView };
+  'resumeVariant:update': { req: UpdateResumeVariantInput; res: ResumeVariantView };
+  'resumeVariant:delete': { req: { id: string }; res: void };
+  'resumeVariant:exportPdf': { req: ResumeVariantExportInput; res: ResumeVariantExportResult };
 
   /** 解析 JD 并生成两层知识点树，进度通过 job:progress 推送 */
   'diagnosis:fromJd': { req: { campaignId: string }; res: DiagnosisJobStarted };
@@ -923,8 +1002,20 @@ export const IPC_INVOKE_CHANNELS = [
   'campaign:delete',
   'resume:list',
   'resume:create',
+  'resume:update',
   'resume:delete',
   'resume:importFile',
+  'jobTarget:list',
+  'jobTarget:get',
+  'jobTarget:create',
+  'jobTarget:update',
+  'jobTarget:delete',
+  'resumeVariant:list',
+  'resumeVariant:get',
+  'resumeVariant:optimize',
+  'resumeVariant:update',
+  'resumeVariant:delete',
+  'resumeVariant:exportPdf',
   'diagnosis:fromJd',
   'diagnosis:attachResume',
   'diagnosis:expandNode',

@@ -33,6 +33,10 @@ export function getDb(): Db {
   db = drizzle(raw, { schema });
   migrate(db, { migrationsFolder: migrationsFolder() });
 
+  import('../jobTarget/backfill').then(({ backfillJobTargetsFromCampaigns }) => {
+    backfillJobTargetsFromCampaigns();
+  }).catch(() => {});
+
   // 迁移之后才装：触发器要写 sync_oplog / sync_meta，这两张表由迁移创建
   initSyncLayer(raw);
 

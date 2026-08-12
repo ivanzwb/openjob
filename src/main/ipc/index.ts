@@ -11,7 +11,23 @@ import {
   listCampaigns,
   listResumes,
   updateCampaign,
+  updateResume,
 } from '../campaign/repository';
+import {
+  createJobTarget,
+  deleteJobTarget,
+  getJobTarget,
+  listJobTargets,
+  updateJobTarget,
+} from '../jobTarget/repository';
+import { optimizeResumeForJobTarget } from '../resume/optimize';
+import { exportResumeVariantPdf } from '../resume/pdf';
+import {
+  deleteResumeVariant,
+  getResumeVariant,
+  listResumeVariants,
+  updateResumeVariant,
+} from '../resume/variantRepository';
 import { createNode, deleteNode, updateNode } from '../campaign/nodes';
 import { createEdge, deleteEdge, listEdges } from '../campaign/edges';
 import { applyHistorySignals, getCampaignNudges } from '../insights';
@@ -132,9 +148,41 @@ export function registerIpcHandlers(): void {
 
   handle('resume:list', () => listResumes());
   handle('resume:create', (input) => createResume(input.label, input.rawText));
+  handle('resume:update', (input) => updateResume(input.id, input.label, input.rawText));
   handle('resume:importFile', () => importResumeFromFile());
   handle('resume:delete', ({ id }) => {
     deleteResume(id);
+  });
+
+  handle('jobTarget:list', () => listJobTargets());
+  handle('jobTarget:get', ({ id }) => getJobTarget(id));
+  handle('jobTarget:create', (input) => createJobTarget(input));
+  handle('jobTarget:update', (input) => updateJobTarget(input));
+  handle('jobTarget:delete', ({ id }) => {
+    deleteJobTarget(id);
+  });
+
+  handle('resumeVariant:list', (input) =>
+    listResumeVariants(
+      input && typeof input === 'object'
+        ? {
+            jobTargetId: (input as { jobTargetId?: string }).jobTargetId,
+            sourceResumeId: (input as { sourceResumeId?: string }).sourceResumeId,
+          }
+        : undefined,
+    ),
+  );
+  handle('resumeVariant:get', ({ id }) => getResumeVariant(id));
+  handle('resumeVariant:optimize', (input) =>
+    optimizeResumeForJobTarget(input.sourceResumeId, input.jobTargetId),
+  );
+  handle('resumeVariant:update', (input) => updateResumeVariant(input));
+  handle('resumeVariant:delete', ({ id }) => {
+    deleteResumeVariant(id);
+  });
+  handle('resumeVariant:exportPdf', async (input) => {
+    const variant = getResumeVariant(input.id);
+    return exportResumeVariantPdf(variant, input.template);
   });
 
   handle('diagnosis:fromJd', ({ campaignId }) => ({

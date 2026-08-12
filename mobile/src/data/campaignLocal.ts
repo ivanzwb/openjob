@@ -62,6 +62,7 @@ export function getCampaign(db: SQLiteDatabase, campaignId: string): Campaign {
     role_title: string;
     jd_raw: string;
     jd_parsed: string | null;
+    job_target_id: string | null;
     resume_id: string | null;
     interview_date: string | null;
     daily_minutes: number | null;
@@ -76,6 +77,7 @@ export function getCampaign(db: SQLiteDatabase, campaignId: string): Campaign {
     roleTitle: row.role_title,
     jdRaw: row.jd_raw,
     jdParsed: row.jd_parsed ? (JSON.parse(row.jd_parsed) as Campaign['jdParsed']) : null,
+    jobTargetId: row.job_target_id,
     resumeId: row.resume_id,
     interviewDate: row.interview_date,
     dailyMinutes: row.daily_minutes,
@@ -92,6 +94,7 @@ export function getResume(db: SQLiteDatabase, resumeId: string): Resume {
     raw_text: string;
     parsed: string | null;
     created_at: number;
+    updated_at: number;
   }>(`SELECT * FROM resume WHERE id = ?`, resumeId);
   if (!row) throw new Error('简历不存在');
   return {
@@ -100,6 +103,7 @@ export function getResume(db: SQLiteDatabase, resumeId: string): Resume {
     rawText: row.raw_text,
     parsed: row.parsed ? (JSON.parse(row.parsed) as Resume['parsed']) : null,
     createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 

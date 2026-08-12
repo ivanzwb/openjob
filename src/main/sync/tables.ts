@@ -32,6 +32,8 @@ export interface SyncTableSpec {
 const SYNCED_TABLES: Array<{ table: Table; deviceLocal?: string[] }> = [
   { table: schema.appSetting },
   { table: schema.resume },
+  { table: schema.jobTarget },
+  { table: schema.resumeVariant },
   { table: schema.campaign },
   { table: schema.knowledgeNode },
   { table: schema.nodeEdge },
