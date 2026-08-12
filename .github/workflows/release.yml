@@ -17,7 +17,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: windows-latest
+          # windows-latest 镜像已升级到 VS 18，pnpm 内置的 node-gyp v11.5 无法解析其版本号，
+          # 导致 better-sqlite3 的 Electron 重编译找不到 Visual Studio —— 固定 VS 2022 镜像
+          - os: windows-2022
             artifact: windows
           - os: macos-latest
             artifact: macos
@@ -56,6 +58,13 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      # Electron 43 起 npm 包不再带 postinstall（package.json 的 scripts 已移除），
+      # pnpm install / pnpm rebuild 都不会自动解出二进制；electron-builder.yml 的
+      # electronDist: node_modules/electron/dist 依赖它存在。手动跑一次 install.js
+      # 下载并解压（幂等，已存在则跳过）
+      - name: Provision Electron binary
+        run: node node_modules/electron/install.js
 
       - name: Typecheck
         run: pnpm run typecheck
