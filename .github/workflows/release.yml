@@ -5,6 +5,10 @@ on:
     tags: ['v*']
   workflow_dispatch:
 
+# electron-builder 需要向 GitHub Release 上传安装包产物
+permissions:
+  contents: write
+
 concurrency:
   group: release-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -29,6 +33,8 @@ jobs:
     env:
       # CI 无签名证书，跳过自动发现以免 macOS 打包失败
       CSC_IDENTITY_AUTO_DISCOVERY: false
+      # electron-builder 上传 GitHub Release 时使用
+      GH_TOKEN: ${{ github.token }}
 
     steps:
       - name: Checkout
@@ -70,7 +76,7 @@ jobs:
         run: pnpm run typecheck
 
       - name: Package installers
-        run: pnpm run dist
+        run: pnpm run dist -- --publish always
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

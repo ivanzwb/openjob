@@ -27,12 +27,11 @@ asarUnpack:
 # 让 electron-builder 按 Electron 的 ABI 重建原生依赖
 npmRebuild: true
 
-# 只为生成 latest.yml（electron-updater 的更新清单），不实际上传。
-# 真正的更新源在运行时由 config.update.feedUrl 通过 setFeedURL 覆盖，
-# 因为这个项目不绑定固定的发布地址。
+# electron-builder 在 dist --publish 时直接把产物发布到 GitHub Release（provider: github）。
+# latest.yml / latest-mac.yml 等更新清单仍会随包生成；运行时更新源由
+# config.update.feedUrl 通过 setFeedURL 覆盖，因此不依赖这里固定的发布地址。
 publish:
-  - provider: generic
-    url: https://localhost/openjob/
+  - provider: github
     channel: latest
 
 # 直接复用 devDependency 里已解压的 Electron，跳过「下载 → 解压 → 重命名」。
