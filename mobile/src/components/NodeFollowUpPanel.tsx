@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import type { ChatMessage } from '@shared/ipc';
-import { invokeRemote, textFromStreamEvents } from '../remote/rpc';
+import { completeChat } from '../llm/chat';
 import { useRemoteTask } from '../context/RemoteTaskContext';
 import { theme } from '../theme';
 
@@ -9,7 +8,6 @@ type Msg = { role: 'user' | 'assistant'; text: string };
 
 /** 考点学习内的多轮追问 */
 export function NodeFollowUpPanel({
-  campaignId,
   nodeId,
   nodeName,
 }: {
@@ -31,22 +29,13 @@ export function NodeFollowUpPanel({
     setMessages(nextMessages);
     const systemPrompt =
       `用户正在备考，当前学习的考点是「${nodeName}」（nodeId: ${nodeId}）。` +
-      '请围绕该考点回答追问：澄清概念、对比易混点、补充面试深挖角度。' +
-      '回答适合口述；必要时可用知识图谱工具查询或更新掌握度。';
+      '请围绕该考点回答追问：澄清概念、对比易混点、补充面试深挖角度。回答适合口述。';
     try {
       await runTask('追问', async () => {
-        const chatMessages: ChatMessage[] = [
+        const reply = await completeChat('explain', [
           { role: 'system', content: systemPrompt },
           ...nextMessages.map((m) => ({ role: m.role, content: m.text })),
-        ];
-        const { events } = await invokeRemote('llm:chat', {
-          role: 'explain',
-          messages: chatMessages,
-          campaignId,
-          allowWebSearch: true,
-          sessionKind: 'nodeFollowUp',
-        });
-        const { text: reply } = textFromStreamEvents(events);
+        ]);
         setMessages((m) => [...m, { role: 'assistant', text: reply || '（无回复）' }]);
       });
     } catch (e) {
@@ -62,7 +51,7 @@ export function NodeFollowUpPanel({
       <ScrollView style={{ maxHeight: 280 }} contentContainerStyle={{ gap: 10 }}>
         {messages.length === 0 ? (
           <Text style={{ color: theme.muted, fontSize: 12 }}>
-            对「{nodeName}」有什么想追问的？可联网、可结合知识图谱
+            对「{nodeName}」有什么想追问的？手机端直连 LLM 回答。
           </Text>
         ) : (
           messages.map((m, i) => (

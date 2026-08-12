@@ -31,7 +31,8 @@ jobs:
             artifact: linux
 
     env:
-      # CI 无签名证书，跳过自动发现以免 macOS 打包失败
+      # No Developer ID certificate in CI — mac.identity: '-' in electron-builder.yml
+      # enables ad-hoc signing so Apple Silicon Gatekeeper does not report "damaged".
       CSC_IDENTITY_AUTO_DISCOVERY: false
       # electron-builder 上传 GitHub Release 时使用
       GH_TOKEN: ${{ github.token }}
@@ -53,6 +54,30 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      - name: Cache electron-builder toolchains (Windows)
+        if: matrix.os == 'windows-2022'
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.LOCALAPPDATA }}\electron-builder\Cache
+          key: electron-builder-win-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: electron-builder-win-
+
+      - name: Cache electron-builder toolchains (macOS)
+        if: matrix.os == 'macos-latest'
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/electron-builder
+          key: electron-builder-macos-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: electron-builder-macos-
+
+      - name: Cache electron-builder toolchains (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/electron-builder
+          key: electron-builder-linux-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: electron-builder-linux-
+
       - name: Install Linux build dependencies
         if: matrix.os == 'ubuntu-latest'
         run: |
@@ -66,6 +91,10 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Repair NSIS toolchain cache
+        if: matrix.os == 'windows-2022'
+        run: node scripts/ensure-nsis-cache.mjs
 
       # Electron 43 起 npm 包不再带 postinstall（package.json 的 scripts 已移除），
       # pnpm install / pnpm rebuild 都不会自动解出二进制；electron-builder.yml 的
@@ -82,6 +111,10 @@ jobs:
       - name: Package installers
         run: pnpm run build && pnpm exec electron-builder --publish always
 
+      - name: Verify Windows installer
+        if: matrix.os == 'windows-2022'
+        run: node scripts/verify-windows-installer.mjs
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -93,5 +126,6 @@ jobs:
             dist/*.deb
             dist/*.yml
             dist/*.blockmap
+            dist/*.zip
           if-no-files-found: error
           retention-days: 30

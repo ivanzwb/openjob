@@ -489,6 +489,14 @@ export const syncConflict = sqliteTable(
   (t) => [index('idx_sync_conflict_run').on(t.runId, t.resolution)],
 );
 
+/** 跨端同步的应用配置与密钥（明文 JSON，依赖同步通道加密） */
+export const appSetting = sqliteTable('app_setting', {
+  id: text('id').primaryKey(),
+  configJson: text('config_json').notNull(),
+  secretsJson: text('secrets_json').notNull().default('{}'),
+  updatedAt: integer('updated_at').notNull(),
+});
+
 /** 本机身份等单例配置 */
 export const syncMeta = sqliteTable('sync_meta', {
   key: text('key').primaryKey(),

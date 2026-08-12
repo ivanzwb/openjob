@@ -25,9 +25,10 @@ interface AppContextValue {
   autoSync: boolean;
   setAutoSync: (on: boolean) => void;
   conflicts: FieldConflict[];
-  /** 每次同步成功后递增，供各屏重新读本地库 */
+  /** 每次同步或本地数据变更后递增，供各屏重新读本地库 */
   dataVersion: number;
   refresh: () => Promise<void>;
+  notifyDataChanged: () => void;
   triggerSync: () => Promise<void>;
   triggerFullSync: () => Promise<void>;
 }
@@ -141,10 +142,11 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
       conflicts,
       dataVersion,
       refresh,
+      notifyDataChanged: bumpData,
       triggerSync,
       triggerFullSync,
     }),
-    [ready, paired, peerLabel, syncing, syncStatus, lastSyncMessage, hasSyncError, autoSync, setAutoSync, conflicts, dataVersion, refresh, triggerSync, triggerFullSync],
+    [ready, paired, peerLabel, syncing, syncStatus, lastSyncMessage, hasSyncError, autoSync, setAutoSync, conflicts, dataVersion, refresh, bumpData, triggerSync, triggerFullSync],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

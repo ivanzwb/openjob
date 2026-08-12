@@ -1,5 +1,7 @@
 appId: com.openjob.app
 productName: OpenJob
+# Avoid spaces in release filenames — some download tools / AV scanners mishandle them.
+artifactName: '${productName}-Setup-${version}.${ext}'
 directories:
   output: dist
   buildResources: build
@@ -60,6 +62,18 @@ mac:
     - target: dmg
       arch: [arm64, x64]
   category: public.app-category.education
+  # CI has no Developer ID cert. Ad-hoc signing prevents the misleading
+  # "app is damaged" Gatekeeper error on Apple Silicon (unsigned builds are
+  # rejected outright). Users still see the dismissable "unidentified developer"
+  # prompt on first launch.
+  identity: '-'
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  gatekeeperAssess: false
+
+dmg:
+  sign: false
 
 linux:
   target:

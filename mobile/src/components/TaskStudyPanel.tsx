@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
-import type { Explanation } from '@shared/entities';
 import type { QuizSubmitResult, TaskView } from '@shared/ipc';
-import { invokeRemote } from '../remote/rpc';
+import { getRawDb } from '../db';
+import { getExplanation } from '../data/study';
+import { generateExplanation, generateFallbackScript } from '../data/explainGen';
+import { generateQuizQuestion, submitQuizAnswer } from '../data/quizLocal';
+import { useApp } from '../context/AppContext';
 import { useRemoteTask } from '../context/RemoteTaskContext';
 import { theme } from '../theme';
 
@@ -14,6 +17,7 @@ export function TaskStudyPanel({
   onComplete?: () => void;
 }): React.JSX.Element {
   const { runTask } = useRemoteTask();
+  const { notifyDataChanged } = useApp();
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [question, setQuestion] = useState<string | null>(null);
@@ -32,12 +36,8 @@ export function TaskStudyPanel({
       setQuestion(null);
       setQuizResult(null);
       setAnswer('');
-      void invokeRemote<
-        'quiz:question',
-        { nodeId: string },
-        { nodeId: string; nodeName: string; question: string }
-      >('quiz:question', { nodeId: task.nodeId })
-        .then(({ result }) => {
+      void generateQuizQuestion(getRawDb(), task.nodeId)
+        .then((result) => {
           if (!cancelled) setQuestion(result.question);
         })
         .catch((e) => {
@@ -62,33 +62,27 @@ export function TaskStudyPanel({
     void (async () => {
       try {
         const tier = task.kind === 'fallbackScript' ? 'oneliner' : 'spoken';
-        const { result: cached } = await invokeRemote<
-          'explain:get',
-          { nodeId: string; tier: string },
-          Explanation | null
-        >('explain:get', { nodeId: task.nodeId!, tier });
+        const cached = getExplanation(getRawDb(), task.nodeId!, tier as 'oneliner' | 'spoken');
         if (cancelled) return;
         if (cached?.contentMd) {
           setContent(cached.contentMd);
           return;
         }
         if (task.kind === 'fallbackScript') {
-          const { result } = await invokeRemote<'explain:fallback', { nodeId: string }, Explanation>(
-            'explain:fallback',
-            { nodeId: task.nodeId! },
-          );
-          if (!cancelled) setContent(result.contentMd);
+          const result = await generateFallbackScript(getRawDb(), task.nodeId!);
+          if (!cancelled) {
+            setContent(result.contentMd);
+            notifyDataChanged();
+          }
           return;
         }
-        const generated = await runTask('生成讲解', async () => {
-          const { result } = await invokeRemote<
-            'explain:generate',
-            { nodeId: string; tier: string },
-            Explanation
-          >('explain:generate', { nodeId: task.nodeId!, tier });
-          return result;
-        });
-        if (!cancelled) setContent(generated.contentMd);
+        const generated = await runTask('生成讲解', async () =>
+          generateExplanation(getRawDb(), task.nodeId!, tier as 'spoken'),
+        );
+        if (!cancelled) {
+          setContent(generated.contentMd);
+          notifyDataChanged();
+        }
       } catch (e) {
         if (!cancelled) setContent(e instanceof Error ? e.message : String(e));
       } finally {
@@ -98,7 +92,7 @@ export function TaskStudyPanel({
     return () => {
       cancelled = true;
     };
-  }, [task, runTask]);
+  }, [task, runTask, notifyDataChanged]);
 
   if (task.kind === 'readCode') {
     return (
@@ -135,16 +129,14 @@ export function TaskStudyPanel({
               onPress={() => {
                 if (!task.nodeId || !question || !answer.trim()) return;
                 void runTask('考我评分', async () => {
-                  const { result } = await invokeRemote<
-                    'quiz:submit',
-                    { nodeId: string; question: string; userAnswer: string },
-                    QuizSubmitResult
-                  >('quiz:submit', {
-                    nodeId: task.nodeId!,
+                  const result = await submitQuizAnswer(
+                    getRawDb(),
+                    task.nodeId!,
                     question,
-                    userAnswer: answer.trim(),
-                  });
+                    answer.trim(),
+                  );
                   setQuizResult(result);
+                  notifyDataChanged();
                   onComplete?.();
                 });
               }}

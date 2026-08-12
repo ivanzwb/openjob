@@ -9,6 +9,7 @@ import { collectChangeSet, collectFullChangeSet, currentHeadSeq } from '../sync/
 import { applyAutoChanges } from '../sync/apply';
 import { exchangeWithDesktop, pairWithDesktop } from '../sync/client';
 import { setPeerCreds } from '../remote/rpc';
+import { hydrateAppSettingsFromDb } from '../config/settings';
 
 interface PeerRow {
   device_id: string;
@@ -102,6 +103,7 @@ export async function openDb(): Promise<SQLiteDatabase> {
     identity.deviceId,
   );
   loadPeerCreds(raw);
+  await hydrateAppSettingsFromDb(raw);
   return raw;
 }
 
@@ -220,6 +222,10 @@ export async function syncNow(options?: { full?: boolean }): Promise<{
 
   const plan = planMerge(local, response.changes, ctx);
   const appliedRemote = applyAutoChanges(sqlite, peer.device_id, plan.auto);
+
+  if (plan.auto.some((c) => c.table === 'app_setting')) {
+    await hydrateAppSettingsFromDb(sqlite);
+  }
 
   const runId = Crypto.randomUUID();
   if (plan.conflicts.length > 0) {

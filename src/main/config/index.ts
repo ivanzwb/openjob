@@ -131,6 +131,7 @@ export function updateConfig(next: AppConfig): AppConfig {
   const merged = mergeDefaults(next);
   cache = merged;
   writeFileSync(file(), JSON.stringify(merged, null, 2), 'utf8');
+  import('./syncMirror').then(({ mirrorAppSettings }) => mirrorAppSettings()).catch(() => {});
   return merged;
 }
 

@@ -1,6 +1,8 @@
 import type { QuizSubmitResult } from '@shared/ipc';
 import { ExplanationStudyPanel } from './ExplanationStudyPanel';
-import { invokeRemote } from '../remote/rpc';
+import { getRawDb } from '../db';
+import { generateQuizQuestion, submitQuizAnswer } from '../data/quizLocal';
+import { useApp } from '../context/AppContext';
 import { useRemoteTask } from '../context/RemoteTaskContext';
 import { theme } from '../theme';
 import { useEffect, useState } from 'react';
@@ -16,6 +18,7 @@ export function NodeStudyPanel({
   mode: 'explain' | 'drill';
 }): React.JSX.Element {
   const { runTask } = useRemoteTask();
+  const { notifyDataChanged } = useApp();
   const [loading, setLoading] = useState(false);
   const [question, setQuestion] = useState<string | null>(null);
   const [answer, setAnswer] = useState('');
@@ -30,12 +33,8 @@ export function NodeStudyPanel({
     setQuizResult(null);
     setAnswer('');
     setError(null);
-    void invokeRemote<
-      'quiz:question',
-      { nodeId: string },
-      { nodeId: string; nodeName: string; question: string }
-    >('quiz:question', { nodeId })
-      .then(({ result }) => {
+    void generateQuizQuestion(getRawDb(), nodeId)
+      .then((result) => {
         if (!cancelled) setQuestion(result.question);
       })
       .catch((e) => {
@@ -59,6 +58,19 @@ export function NodeStudyPanel({
 
   if (error) {
     return <Text style={{ color: '#f87171', fontSize: 13 }}>{error}</Text>;
+  }
+
+  async function submitQuiz(): Promise<void> {
+    if (!question || !answer.trim()) return;
+    try {
+      const result = await runTask('考我评分', async () =>
+        submitQuizAnswer(getRawDb(), nodeId, question, answer.trim()),
+      );
+      setQuizResult(result);
+      notifyDataChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
   }
 
   return (
@@ -104,21 +116,4 @@ export function NodeStudyPanel({
       )}
     </View>
   );
-
-  async function submitQuiz(): Promise<void> {
-    if (!question || !answer.trim()) return;
-    try {
-      const result = await runTask('考我评分', async () => {
-        const { result: scored } = await invokeRemote<
-          'quiz:submit',
-          { nodeId: string; question: string; userAnswer: string },
-          QuizSubmitResult
-        >('quiz:submit', { nodeId, question, userAnswer: answer.trim() });
-        return scored;
-      });
-      setQuizResult(result);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    }
-  }
 }

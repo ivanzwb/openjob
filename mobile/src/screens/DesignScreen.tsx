@@ -5,7 +5,7 @@ import { MOCK_INTERVIEW_TYPE_LABELS, MOCK_INTERVIEW_TYPE_OPTIONS } from '@shared
 import type { CampaignSummary } from '@shared/ipc';
 import { getRawDb } from '../db';
 import { listCampaigns } from '../data/queries';
-import { invokeRemote } from '../remote/rpc';
+import { generateDesignCase, submitDesignAnswer } from '../data/designLocal';
 import { useApp } from '../context/AppContext';
 import { useRemoteTask } from '../context/RemoteTaskContext';
 import { useLocalDataReload } from '../hooks/useLocalDataReload';
@@ -16,7 +16,7 @@ function campaignLabel(c: CampaignSummary): string {
 }
 
 export function DesignScreen(): React.JSX.Element {
-  const { triggerSync } = useApp();
+  const { notifyDataChanged } = useApp();
   const { runTask, active } = useRemoteTask();
   const [campaigns, setCampaigns] = useState<CampaignSummary[]>([]);
   const [campaignId, setCampaignId] = useState('');
@@ -39,8 +39,8 @@ export function DesignScreen(): React.JSX.Element {
   const loadCase = async () => {
     try {
       await runTask('模拟面试出题', async () => {
-        const { result: res } = await invokeRemote('design:case', { campaignId, interviewType });
-        setDesignCase(res as DesignCaseResult);
+        const res = await generateDesignCase(getRawDb(), campaignId, interviewType);
+        setDesignCase(res);
         setResult(null);
         setAnswer('');
       });
@@ -53,15 +53,16 @@ export function DesignScreen(): React.JSX.Element {
     if (!designCase) return;
     try {
       await runTask('模拟面试评分', async () => {
-        const { result: res } = await invokeRemote('design:submit', {
+        const res = await submitDesignAnswer(
+          getRawDb(),
           campaignId,
-          caseTitle: designCase.title,
-          scenarioMd: designCase.scenarioMd,
-          userAnswer: answer,
-          interviewType: designCase.interviewType,
-        });
-        setResult(res as DesignSubmitResult);
-        await triggerSync();
+          designCase.title,
+          designCase.scenarioMd,
+          answer,
+          designCase.interviewType,
+        );
+        setResult(res);
+        notifyDataChanged();
       });
     } catch (e) {
       alert(e instanceof Error ? e.message : String(e));
@@ -146,7 +147,7 @@ export function DesignScreen(): React.JSX.Element {
           opacity: busy || !campaignId ? 0.6 : 1,
         }}
       >
-        <Text style={{ color: '#fff' }}>{busy ? '生成中…' : '开始模拟（桌面代理）'}</Text>
+        <Text style={{ color: '#fff' }}>{busy ? '生成中…' : '开始模拟'}</Text>
       </Pressable>
 
       {designCase && (

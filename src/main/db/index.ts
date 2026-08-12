@@ -36,6 +36,8 @@ export function getDb(): Db {
   // 迁移之后才装：触发器要写 sync_oplog / sync_meta，这两张表由迁移创建
   initSyncLayer(raw);
 
+  import('../config/syncMirror').then(({ ensureAppSettingsMirrored }) => ensureAppSettingsMirrored()).catch(() => {});
+
   return db;
 }
 

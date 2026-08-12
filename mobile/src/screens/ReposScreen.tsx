@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import type { RepoReadFileResult } from '@shared/ipc';
+import { Alert, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import type { Repo } from '@shared/entities';
 import { RepoQaPanel } from '../components/RepoQaPanel';
-import { invokeRemote, jobResultFromEvents } from '../remote/rpc';
-import { useApp } from '../context/AppContext';
-import { useRemoteTask } from '../context/RemoteTaskContext';
+import { getRawDb } from '../db';
+import { listRepos } from '../data/repoLocal';
 import { useLocalDataReload } from '../hooks/useLocalDataReload';
 import { markdownToPlainText } from '../lib/markdownBlocks';
 import { theme } from '../theme';
@@ -18,8 +16,6 @@ const TABS: { id: RepoTab; label: string }[] = [
 ];
 
 export function ReposScreen(): React.JSX.Element {
-  const { triggerSync } = useApp();
-  const { runTask, active } = useRemoteTask();
   const [repos, setRepos] = useState<Repo[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedTab, setSelectedTab] = useState<RepoTab>('summary');
@@ -27,25 +23,27 @@ export function ReposScreen(): React.JSX.Element {
   const [filePath, setFilePath] = useState('');
   const [content, setContent] = useState('');
 
-  const busy = Boolean(active);
-  const cloning = active?.label === '克隆并索引仓库';
   const selected = repos.find((r) => r.id === selectedId) ?? null;
 
-  const loadRepos = async (): Promise<Repo[]> => {
-    const { result } = await invokeRemote('repo:list');
-    const list = result as Repo[];
+  const loadRepos = useCallback((): Repo[] => {
+    const list = listRepos(getRawDb());
     setRepos(list);
-    if (list.length && !selectedId) setSelectedId(list[0]!.id);
+    setSelectedId((prev) => {
+      if (prev && list.some((r) => r.id === prev)) return prev;
+      return list[0]?.id ?? null;
+    });
     return list;
-  };
-
-  useEffect(() => {
-    void loadRepos().catch((e) => alert(e instanceof Error ? e.message : String(e)));
   }, []);
 
-  useLocalDataReload(useCallback(() => {
-    void loadRepos().catch(() => undefined);
-  }, []));
+  useEffect(() => {
+    try {
+      loadRepos();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    }
+  }, [loadRepos]);
+
+  useLocalDataReload(loadRepos);
 
   useEffect(() => {
     setFilePath('');
@@ -53,70 +51,21 @@ export function ReposScreen(): React.JSX.Element {
     setSelectedTab('summary');
   }, [selectedId]);
 
-  const reload = async (): Promise<void> => {
-    try {
-      await runTask('刷新仓库', async () => {
-        await loadRepos();
-        return '仓库列表已更新';
-      });
-    } catch {
-      // toast handled by runTask
-    }
+  const addRepo = (): void => {
+    if (!cloneUrl.trim()) return;
+    Alert.alert(
+      '需在桌面端添加',
+      '克隆与索引仓库需要本机文件系统，请在桌面端添加仓库后同步到手机。',
+    );
   };
 
-  const addRepo = async (): Promise<void> => {
-    const url = cloneUrl.trim();
-    if (!url || cloning) return;
-    try {
-      await runTask('克隆并索引仓库', async () => {
-        const { events } = await invokeRemote('repo:add', { url });
-        const { message, error } = jobResultFromEvents(events);
-        if (error) throw new Error(error);
-        return message;
-      });
-      setCloneUrl('');
-      await triggerSync();
-      const list = await loadRepos();
-      const added = list.find((r) => r.url === url) ?? list[list.length - 1];
-      if (added) setSelectedId(added.id);
-    } catch {
-      // toast handled by runTask
-    }
-  };
-
-  const openFile = async (repoId: string, path: string): Promise<void> => {
-    try {
-      await runTask('读取文件', async () => {
-        const { result } = await invokeRemote('repo:readFile', { repoId, filePath: path });
-        const file = result as RepoReadFileResult;
-        setFilePath(path);
-        setContent(file.content);
-        setSelectedTab('summary');
-        return `已加载 ${path}`;
-      }, { toastSuccess: false });
-    } catch {
-      // toast handled by runTask
-    }
-  };
-
-  const readFileQuiet = async (repoId: string, path: string): Promise<boolean> => {
-    try {
-      const { result } = await invokeRemote('repo:readFile', { repoId, filePath: path });
-      const file = result as RepoReadFileResult;
-      setFilePath(path);
-      setContent(file.content);
-      setSelectedTab('summary');
-      return true;
-    } catch {
-      return false;
-    }
-  };
-
-  const openSample = async (repo: Repo): Promise<void> => {
+  const openSample = (repo: Repo): void => {
     setSelectedId(repo.id);
-    const candidates = ['README.md', 'readme.md', 'package.json', 'go.mod', 'Cargo.toml'];
-    for (const path of candidates) {
-      if (await readFileQuiet(repo.id, path)) return;
+    if (repo.summaryMd) {
+      setFilePath(`${repo.url} · 项目摘要`);
+      setContent(markdownToPlainText(repo.summaryMd).slice(0, 8000));
+      setSelectedTab('summary');
+      return;
     }
     if (repo.repoMapMd) {
       setFilePath(`${repo.url} · repo map`);
@@ -124,7 +73,7 @@ export function ReposScreen(): React.JSX.Element {
       setSelectedTab('summary');
       return;
     }
-    alert('未能读取示例文件，请先在桌面端索引仓库');
+    Alert.alert('暂无预览', '请先在桌面端索引该仓库，同步后即可查看摘要与 Repo Map。');
   };
 
   const renderSummaryTab = (repo: Repo): React.JSX.Element => {
@@ -162,12 +111,12 @@ export function ReposScreen(): React.JSX.Element {
       <View style={{ gap: 8 }}>
         <Text style={{ color: theme.muted, fontSize: 12 }}>
           {repo.status === 'ready'
-            ? '暂无项目摘要，可打开示例文件预览仓库内容。'
+            ? '暂无项目摘要，可打开已同步的摘要或 Repo Map 预览。'
             : '仓库索引中，完成后将显示项目摘要…'}
         </Text>
         {repo.status === 'ready' && (
-          <Pressable onPress={() => void openSample(repo)}>
-            <Text style={{ color: theme.accent, fontSize: 12 }}>打开示例文件</Text>
+          <Pressable onPress={() => openSample(repo)}>
+            <Text style={{ color: theme.accent, fontSize: 12 }}>打开预览</Text>
           </Pressable>
         )}
       </View>
@@ -176,9 +125,13 @@ export function ReposScreen(): React.JSX.Element {
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: theme.bg }} contentContainerStyle={{ padding: 16, gap: 10 }}>
-      <Pressable onPress={() => void reload()}>
-        <Text style={{ color: theme.accent }}>{busy && !cloning ? '刷新中…' : '刷新仓库（桌面代理）'}</Text>
+      <Pressable onPress={loadRepos}>
+        <Text style={{ color: theme.accent }}>刷新列表</Text>
       </Pressable>
+
+      <Text style={{ color: theme.muted, fontSize: 11 }}>
+        仓库列表来自本地同步。克隆与索引请在桌面端完成。
+      </Text>
 
       <View style={{ flexDirection: 'row', gap: 8 }}>
         <TextInput
@@ -187,7 +140,6 @@ export function ReposScreen(): React.JSX.Element {
           placeholder="https://github.com/..."
           placeholderTextColor={theme.muted}
           autoCapitalize="none"
-          editable={!cloning}
           style={{
             flex: 1,
             color: theme.text,
@@ -200,19 +152,25 @@ export function ReposScreen(): React.JSX.Element {
           }}
         />
         <Pressable
-          onPress={() => void addRepo()}
-          disabled={cloning || !cloneUrl.trim()}
+          onPress={addRepo}
+          disabled={!cloneUrl.trim()}
           style={{
-            backgroundColor: theme.accent,
+            backgroundColor: theme.surface,
             paddingHorizontal: 14,
             justifyContent: 'center',
             borderRadius: 8,
-            opacity: cloning || !cloneUrl.trim() ? 0.5 : 1,
+            borderWidth: 1,
+            borderColor: theme.border,
+            opacity: !cloneUrl.trim() ? 0.5 : 1,
           }}
         >
-          <Text style={{ color: '#fff', fontSize: 12 }}>{cloning ? '克隆中…' : '添加'}</Text>
+          <Text style={{ color: theme.text, fontSize: 12 }}>添加</Text>
         </Pressable>
       </View>
+
+      {repos.length === 0 && (
+        <Text style={{ color: theme.muted, fontSize: 13 }}>暂无仓库，请在桌面端添加后同步</Text>
+      )}
 
       {repos.map((r) => (
         <Pressable
@@ -227,7 +185,9 @@ export function ReposScreen(): React.JSX.Element {
             gap: 4,
           }}
         >
-          <Text style={{ color: theme.text, fontSize: 12 }} numberOfLines={2}>{r.url}</Text>
+          <Text style={{ color: theme.text, fontSize: 12 }} numberOfLines={2}>
+            {r.url}
+          </Text>
           <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
             <Text
               style={{
@@ -242,8 +202,8 @@ export function ReposScreen(): React.JSX.Element {
             )}
           </View>
           {selectedId === r.id && (
-            <Pressable onPress={() => void openSample(r)}>
-              <Text style={{ color: theme.accent, fontSize: 11 }}>打开示例文件</Text>
+            <Pressable onPress={() => openSample(r)}>
+              <Text style={{ color: theme.accent, fontSize: 11 }}>打开预览</Text>
             </Pressable>
           )}
         </Pressable>

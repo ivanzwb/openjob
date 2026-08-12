@@ -2,9 +2,18 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, Text, TextInput, View } from 'react-native';
 import type { Annotation, Explanation } from '@shared/entities';
 import type { ExplanationTier } from '@shared/enums';
-import type { ExplainElaborateResult } from '@shared/ipc';
 import { annotationMarkSummary, sortMarksByContentPosition } from '@shared/annotationMarkList';
-import { invokeRemote } from '../remote/rpc';
+import { getRawDb } from '../db';
+import {
+  createAnnotation,
+  deleteAnnotation,
+  getExplanation,
+  listAnnotations,
+  toggleBookmark as toggleBookmarkLocal,
+  updateExplanation,
+} from '../data/study';
+import { elaborateExplanationSelection, generateExplanation } from '../data/explainGen';
+import { useApp } from '../context/AppContext';
 import { useRemoteTask } from '../context/RemoteTaskContext';
 import { useToast } from './Toast';
 import { theme } from '../theme';
@@ -45,6 +54,7 @@ export function ExplanationStudyPanel({
   tier?: ExplanationTier;
 }): React.JSX.Element {
   const { runTask } = useRemoteTask();
+  const { notifyDataChanged } = useApp();
   const toast = useToast();
   const [tier, setTier] = useState<ExplanationTier>(initialTier);
   const [content, setContent] = useState<Explanation | null>(null);
@@ -95,11 +105,7 @@ export function ExplanationStudyPanel({
   );
 
   const loadAnnotations = useCallback(async (explanationId: string) => {
-    const { result } = await invokeRemote<
-      'annotation:list',
-      { targetType: 'explanation'; targetId: string },
-      Annotation[]
-    >('annotation:list', { targetType: 'explanation', targetId: explanationId });
+    const result = listAnnotations(getRawDb(), 'explanation', explanationId);
     setAnnotations(result);
   }, []);
 
@@ -113,11 +119,7 @@ export function ExplanationStudyPanel({
       setModalMode(null);
       try {
         if (!forceGenerate) {
-          const { result: cached } = await invokeRemote<
-            'explain:get',
-            { nodeId: string; tier: ExplanationTier },
-            Explanation | null
-          >('explain:get', { nodeId, tier: t });
+          const cached = getExplanation(getRawDb(), nodeId, t);
           if (cached?.contentMd) {
             setContent(cached);
             setDraftMd(cached.contentMd);
@@ -125,24 +127,20 @@ export function ExplanationStudyPanel({
             return;
           }
         }
-        const generated = await runTask('生成讲解', async () => {
-          const { result } = await invokeRemote<
-            'explain:generate',
-            { nodeId: string; tier: ExplanationTier },
-            Explanation
-          >('explain:generate', { nodeId, tier: t });
-          return result;
-        });
+        const generated = await runTask('生成讲解', async () =>
+          generateExplanation(getRawDb(), nodeId, t),
+        );
         setContent(generated);
         setDraftMd(generated.contentMd);
         await loadAnnotations(generated.id);
+        notifyDataChanged();
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       } finally {
         setLoading(false);
       }
     },
-    [nodeId, runTask, loadAnnotations],
+    [nodeId, runTask, loadAnnotations, notifyDataChanged],
   );
 
   useEffect(() => {
@@ -223,11 +221,7 @@ export function ExplanationStudyPanel({
   const saveFullEdit = async (): Promise<void> => {
     if (!content) return;
     try {
-      const { result } = await invokeRemote<
-        'explain:update',
-        { id: string; contentMd: string },
-        Explanation
-      >('explain:update', { id: content.id, contentMd: draftMd });
+      const result = await updateExplanation(getRawDb(), content.id, draftMd);
       setContent(result);
       setDraftMd(result.contentMd);
       setEditing(false);
@@ -255,10 +249,7 @@ export function ExplanationStudyPanel({
   const toggleBookmark = async (): Promise<void> => {
     if (!content) return;
     try {
-      await invokeRemote('annotation:toggleBookmark', {
-        targetType: 'explanation',
-        targetId: content.id,
-      });
+      await toggleBookmarkLocal(getRawDb(), 'explanation', content.id);
       await loadAnnotations(content.id);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -272,8 +263,8 @@ export function ExplanationStudyPanel({
       const trimmed = phrase.trim().slice(0, 500);
       const start = selectionStart ?? phraseSelectionStart(content.contentMd, trimmed);
       const existing = findHighlightMark(phrase, highlightMarks, start);
-      if (existing) await invokeRemote('annotation:delete', { id: existing.id });
-      await invokeRemote('annotation:create', {
+      if (existing) await deleteAnnotation(getRawDb(), existing.id);
+      await createAnnotation(getRawDb(), {
         targetType: 'explanation',
         targetId: content.id,
         kind: 'highlight',
@@ -297,7 +288,7 @@ export function ExplanationStudyPanel({
     if (!mark) return;
     setBusy(true);
     try {
-      await invokeRemote('annotation:delete', { id: mark.id });
+      await deleteAnnotation(getRawDb(), mark.id);
       await loadAnnotations(content.id);
       setModalMode(null);
       showToast('高亮已清除');
@@ -313,7 +304,7 @@ export function ExplanationStudyPanel({
     setBusy(true);
     try {
       const trimmed = phrase.trim().slice(0, 500);
-      await invokeRemote('annotation:create', {
+      await createAnnotation(getRawDb(), {
         targetType: 'explanation',
         targetId: content.id,
         kind: 'note',
@@ -336,11 +327,7 @@ export function ExplanationStudyPanel({
     setBusy(true);
     try {
       const nextMd = replaceExcerpt(content.contentMd, phrase, modalDraft);
-      const { result } = await invokeRemote<
-        'explain:update',
-        { id: string; contentMd: string },
-        Explanation
-      >('explain:update', { id: content.id, contentMd: nextMd });
+      const result = await updateExplanation(getRawDb(), content.id, nextMd);
       setContent(result);
       setDraftMd(result.contentMd);
       setModalMode(null);
@@ -359,24 +346,10 @@ export function ExplanationStudyPanel({
     if (!text || !content) return;
     setBusy(true);
     try {
-      const { result } = await runTask('细化讲解', async () =>
-        invokeRemote<
-          'explain:elaborate',
-          {
-            nodeId: string;
-            tier: ExplanationTier;
-            selectedText: string;
-            contextMd?: string;
-          },
-          ExplainElaborateResult
-        >('explain:elaborate', {
-          nodeId,
-          tier,
-          selectedText: text,
-          contextMd: content.contentMd,
-        }),
+      const result = await runTask('细化讲解', async () =>
+        elaborateExplanationSelection(getRawDb(), nodeId, tier, text, content.contentMd),
       );
-      await invokeRemote('annotation:create', {
+      await createAnnotation(getRawDb(), {
         targetType: 'explanation',
         targetId: content.id,
         kind: 'elaboration',
@@ -397,7 +370,7 @@ export function ExplanationStudyPanel({
     if (!viewMarker || !content) return;
     setBusy(true);
     try {
-      await invokeRemote('annotation:delete', { id: viewMarker.id });
+      await deleteAnnotation(getRawDb(), viewMarker.id);
       await loadAnnotations(content.id);
       setModalMode(null);
       setViewMarker(null);

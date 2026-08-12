@@ -196,3 +196,42 @@ export const DEFAULT_CONFIG: AppConfig = {
     checkOnStartup: true,
   },
 };
+
+/** 与磁盘/同步 JSON 合并默认值（不含桌面 legacy 迁移逻辑） */
+export function mergeAppConfig(loaded: Partial<AppConfig> | null | undefined): AppConfig {
+  const base = structuredClone(DEFAULT_CONFIG);
+  if (!loaded) return base;
+  return {
+    version: loaded.version ?? base.version,
+    llm: {
+      providers: loaded.llm?.providers?.length ? loaded.llm.providers : base.llm.providers,
+      tiers: {
+        main: { ...base.llm.tiers.main, ...loaded.llm?.tiers?.main },
+        cheap: { ...base.llm.tiers.cheap, ...loaded.llm?.tiers?.cheap },
+      },
+      roles: { ...base.llm.roles, ...loaded.llm?.roles },
+      embedding: { ...base.llm.embedding, ...loaded.llm?.embedding },
+    },
+    search: {
+      providers: {
+        bocha: { ...base.search.providers.bocha, ...loaded.search?.providers?.bocha },
+        tavily: { ...base.search.providers.tavily, ...loaded.search?.providers?.tavily },
+      },
+      routing: loaded.search?.routing?.length ? loaded.search.routing : base.search.routing,
+      defaultProvider: loaded.search?.defaultProvider ?? base.search.defaultProvider,
+      domainCredibility: {
+        ...base.search.domainCredibility,
+        ...loaded.search?.domainCredibility,
+      },
+      cacheTtlDays: { ...base.search.cacheTtlDays, ...loaded.search?.cacheTtlDays },
+      techDocStaleDays: loaded.search?.techDocStaleDays ?? base.search.techDocStaleDays,
+    },
+    priority: {
+      ...base.priority,
+      ...loaded.priority,
+      coverageBoost: { ...base.priority.coverageBoost, ...loaded.priority?.coverageBoost },
+      targetMastery: { ...base.priority.targetMastery, ...loaded.priority?.targetMastery },
+    },
+    update: { ...base.update, ...loaded.update },
+  };
+}

@@ -156,8 +156,10 @@ export function SyncScreen(): React.JSX.Element {
           </View>
 
           <Text style={{ color: theme.muted, fontSize: 11, lineHeight: 16 }}>
-            同步范围：备考、考点、讲解、计划、话术、源码元数据、会话记录等 SQLite 业务数据。
-            {'\n'}不同步：桌面 config.json（模型/API 配置）、secrets、搜索缓存、仓库本地路径；LLM 与克隆走桌面代理。
+            目标：单用户多端无缝——所有业务数据与设置（含模型/API 配置）全量同步，手机可独立使用，不依赖电脑在线。
+            {'\n'}当前：业务数据与配置已同步；手机可独立完成 JD 诊断、计划、讲解、考我、模拟面试、追问与仓库摘要问答。
+            {'\n'}仍需桌面端：克隆/索引仓库、读取源码文件、Agent 工具调用与联网深度检索。
+            {'\n'}暂不同步：搜索缓存（各端可重建）、仓库本机路径（各端路径不同）。
           </Text>
           <Pressable onPress={() => void triggerSync()} style={{ backgroundColor: theme.accent, padding: 12, borderRadius: 8, alignItems: 'center' }}>
             <Text style={{ color: '#fff' }}>立即同步</Text>

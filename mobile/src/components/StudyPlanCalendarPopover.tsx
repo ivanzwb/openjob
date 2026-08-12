@@ -5,7 +5,7 @@ import { StudyPlanCalendar, todayLocal } from './StudyPlanCalendar';
 import { getRawDb } from '../db';
 import { getTodayPlan, listPlanDates } from '../data/queries';
 import { completeTask, skipTask } from '../data/mutations';
-import { invokeRemote } from '../remote/rpc';
+import { deferToday } from '../data/planLocal';
 import { theme } from '../theme';
 
 export function StudyPlanCalendarPopover({
@@ -98,7 +98,7 @@ export function StudyPlanCalendarPopover({
   const defer = async (): Promise<void> => {
     setDeferring(true);
     try {
-      await invokeRemote('plan:deferToday', { campaignId });
+      await deferToday(getRawDb(), campaignId);
       await refresh();
     } finally {
       setDeferring(false);

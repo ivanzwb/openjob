@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import type { CampaignSummary, KnowledgeNodeView, PlanGenerateResult, TaskView } from '@shared/ipc';
+import type { CampaignSummary, KnowledgeNodeView, TaskView } from '@shared/ipc';
 import { nodeIdsForPlanFilter } from '@shared/planFilter';
 import { KeepAlivePanel } from '../components/KeepAlivePanel';
 import { NodeFollowUpPanel } from '../components/NodeFollowUpPanel';
@@ -9,7 +9,8 @@ import { StudyPlanCalendarPopover } from '../components/StudyPlanCalendarPopover
 import { getRawDb } from '../db';
 import { getCampaignDetail, getTodayPlan, listCampaigns } from '../data/queries';
 import { createCampaign } from '../data/mutations';
-import { invokeRemote, jobResultFromEvents } from '../remote/rpc';
+import { diagnoseFetchIntel, diagnoseFromJd } from '../data/diagnosisLocal';
+import { generatePlan } from '../data/planLocal';
 import { useApp } from '../context/AppContext';
 import { useRemoteTask } from '../context/RemoteTaskContext';
 import { useLocalDataReload } from '../hooks/useLocalDataReload';
@@ -20,7 +21,7 @@ function CampaignListView({
 }: {
   onOpenDetail: (id: string) => void;
 }): React.JSX.Element {
-  const { triggerSync } = useApp();
+  const { triggerSync, notifyDataChanged } = useApp();
   const [campaigns, setCampaigns] = useState<CampaignSummary[]>([]);
   const [company, setCompany] = useState('');
   const [role, setRole] = useState('');
@@ -68,7 +69,7 @@ function CampaignDetailView({
   id: string;
   onBack: () => void;
 }): React.JSX.Element {
-  const { triggerSync } = useApp();
+  const { triggerSync, notifyDataChanged } = useApp();
   const { runTask, active } = useRemoteTask();
   const [detail, setDetail] = useState(() => getCampaignDetail(getRawDb(), id));
   const [selectedNode, setSelectedNode] = useState<KnowledgeNodeView | null>(null);
@@ -111,12 +112,8 @@ function CampaignDetailView({
 
   const diagnose = async () => {
     try {
-      await runTask('JD 诊断', async () => {
-        const { events } = await invokeRemote('diagnosis:fromJd', { campaignId: id });
-        const { message, error } = jobResultFromEvents(events);
-        if (error) throw new Error(error);
-        return message;
-      });
+      await runTask('JD 诊断', async () => diagnoseFromJd(getRawDb(), id));
+      notifyDataChanged();
       await triggerSync();
       reload();
     } catch {
@@ -126,12 +123,8 @@ function CampaignDetailView({
 
   const fetchIntel = async () => {
     try {
-      await runTask('公司情报', async () => {
-        const { events } = await invokeRemote('diagnosis:fetchIntel', { campaignId: id });
-        const { message, error } = jobResultFromEvents(events);
-        if (error) throw new Error(error);
-        return message;
-      });
+      await runTask('公司情报', async () => diagnoseFetchIntel(getRawDb(), id));
+      notifyDataChanged();
       await triggerSync();
       reload();
     } catch {
@@ -139,20 +132,18 @@ function CampaignDetailView({
     }
   };
 
-  const generatePlan = async () => {
+  const generatePlanAction = async () => {
     try {
-      const res = await runTask('生成计划', async () => {
-        const { result } = await invokeRemote<
-          'plan:generate',
-          { campaignId: string; interviewDate?: string; dailyMinutes?: number },
-          PlanGenerateResult
-        >('plan:generate', {
-          campaignId: id,
-          interviewDate: interviewDate || undefined,
-          dailyMinutes: Number(dailyMinutes) || 90,
-        });
+      await runTask('生成计划', async () => {
+        const result = await generatePlan(
+          getRawDb(),
+          id,
+          interviewDate || undefined,
+          Number(dailyMinutes) || 90,
+        );
         return `已生成 ${result.daysCreated} 天计划、${result.tasksCreated} 个任务`;
       });
+      notifyDataChanged();
       await triggerSync();
       reload();
       setReloadTick((t) => t + 1);
@@ -306,7 +297,7 @@ function CampaignDetailView({
       onInterviewDateChange={setInterviewDate}
       onDailyMinutesChange={setDailyMinutes}
       planMsg={null}
-      onGeneratePlan={generatePlan}
+      onGeneratePlan={generatePlanAction}
       filterDate={calendarFilterDate}
       onFilterDateChange={setCalendarFilterDate}
       onOpenTask={openTaskInStudy}

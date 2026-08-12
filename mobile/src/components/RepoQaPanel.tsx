@@ -1,20 +1,23 @@
 import { useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import type { ChatMessage } from '@shared/ipc';
-import type { EvidenceKind } from '@shared/enums';
 import type { Repo } from '@shared/entities';
-import { invokeRemote, streamResultFromEvents } from '../remote/rpc';
+import { completeChat } from '../llm/chat';
 import { useRemoteTask } from '../context/RemoteTaskContext';
 import { markdownToPlainText } from '../lib/markdownBlocks';
 import { SourceBadge } from './SourceBadge';
 import { theme } from '../theme';
 
+function repoContext(repo: Repo): string {
+  const parts = [`仓库 URL：${repo.url}`];
+  if (repo.summaryMd) parts.push(`## 项目摘要\n${repo.summaryMd.slice(0, 6000)}`);
+  if (repo.repoMapMd) parts.push(`## Repo Map（节选）\n${repo.repoMapMd.slice(0, 6000)}`);
+  return parts.join('\n\n');
+}
+
 export function RepoQaPanel({ repo }: { repo: Repo }): React.JSX.Element {
   const { runTask, active } = useRemoteTask();
   const [input, setInput] = useState('');
   const [answer, setAnswer] = useState('');
-  const [evidenceKind, setEvidenceKind] = useState<EvidenceKind>('model');
-  const [allowWebSearch, setAllowWebSearch] = useState(true);
   const busy = active?.label === '源码问答';
 
   const submit = async (): Promise<void> => {
@@ -23,19 +26,20 @@ export function RepoQaPanel({ repo }: { repo: Repo }): React.JSX.Element {
     setInput('');
     setAnswer('');
     try {
-      await runTask('源码问答', async () => {
-        const messages: ChatMessage[] = [{ role: 'user', content: text }];
-        const { events } = await invokeRemote('llm:chat', {
-          role: 'codeAgent',
-          repoId: repo.id,
-          allowWebSearch,
-          messages,
-        });
-        const result = streamResultFromEvents(events);
-        if (result.error) throw new Error(result.error);
-        setEvidenceKind(result.evidenceKind);
-        setAnswer(result.text);
-      }, { toastSuccess: false });
+      await runTask(
+        '源码问答',
+        async () => {
+          const system =
+            `你正在分析已索引的代码仓库。手机端无法读取本地文件，请仅依据下方摘要与 Repo Map 回答。\n` +
+            `若信息不足，说明需要桌面端打开具体文件，不要编造 path:line。\n\n${repoContext(repo)}`;
+          const reply = await completeChat('codeAgent', [
+            { role: 'system', content: system },
+            { role: 'user', content: text },
+          ]);
+          setAnswer(reply);
+        },
+        { toastSuccess: false },
+      );
     } catch {
       // toast handled by runTask
     }
@@ -46,6 +50,9 @@ export function RepoQaPanel({ repo }: { repo: Repo }): React.JSX.Element {
   return (
     <View style={{ gap: 8 }}>
       <Text style={{ color: theme.text, fontWeight: '600', fontSize: 13 }}>源码问答</Text>
+      <Text style={{ color: theme.muted, fontSize: 11 }}>
+        基于已同步的项目摘要与 Repo Map 回答（无本地读文件）。
+      </Text>
       {repo.status !== 'ready' ? (
         <Text style={{ color: theme.muted, fontSize: 12 }}>仓库索引中，完成后可开始问答…</Text>
       ) : (
@@ -62,34 +69,20 @@ export function RepoQaPanel({ repo }: { repo: Repo }): React.JSX.Element {
           >
             {busy && !displayText ? (
               <>
-                <SourceBadge kind={evidenceKind} />
-                <Text style={{ color: theme.muted, fontSize: 12 }}>正在检索代码并生成回答…</Text>
+                <SourceBadge kind="model" />
+                <Text style={{ color: theme.muted, fontSize: 12 }}>正在生成回答…</Text>
               </>
             ) : displayText ? (
               <>
-                <SourceBadge kind={evidenceKind} />
+                <SourceBadge kind="model" />
                 <Text style={{ color: theme.text, fontSize: 13, lineHeight: 20 }}>{displayText}</Text>
               </>
             ) : (
               <Text style={{ color: theme.muted, fontSize: 12 }}>
-                问启动流程、核心模块、关键数据结构… 回答会带 path:line 引用。
+                问启动流程、核心模块、目录结构… 回答基于同步过来的摘要。
               </Text>
             )}
           </ScrollView>
-
-          <Pressable onPress={() => setAllowWebSearch((v) => !v)} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <View
-              style={{
-                width: 18,
-                height: 18,
-                borderRadius: 4,
-                borderWidth: 1,
-                borderColor: theme.border,
-                backgroundColor: allowWebSearch ? theme.accent : 'transparent',
-              }}
-            />
-            <Text style={{ color: theme.muted, fontSize: 12 }}>允许联网（查设计意图）</Text>
-          </Pressable>
 
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <TextInput

@@ -47,6 +47,7 @@ export function setSecret(ref: string, value: string): void {
   if (!value) {
     delete data.entries[ref];
     persist(data);
+    syncMirrorAfterSecretChange();
     return;
   }
 
@@ -55,6 +56,7 @@ export function setSecret(ref: string, value: string): void {
     : Buffer.from(value, 'utf8').toString('base64');
   data.encrypted = canEncrypt;
   persist(data);
+  syncMirrorAfterSecretChange();
 }
 
 export function getSecret(ref: string): string | null {
@@ -81,6 +83,23 @@ export function deleteSecret(ref: string): void {
   const data = load();
   delete data.entries[ref];
   persist(data);
+  syncMirrorAfterSecretChange();
+}
+
+/** 导出明文密钥供 app_setting 同步（同步通道本身已加密） */
+export function exportSecretsPlain(): Record<string, string> {
+  const data = load();
+  const out: Record<string, string> = {};
+  for (const ref of Object.keys(data.entries)) {
+    const val = getSecret(ref);
+    if (val) out[ref] = val;
+  }
+  return out;
+}
+
+function syncMirrorAfterSecretChange(): void {
+  // 延迟加载，避免 secrets ↔ syncMirror ↔ getConfig 环
+  import('./syncMirror').then(({ mirrorAppSettings }) => mirrorAppSettings()).catch(() => {});
 }
 
 /** safeStorage 不可用时（部分 Linux 桌面环境）需要在 UI 上提示用户 */

@@ -30,6 +30,7 @@ export interface SyncTableSpec {
  * - sync_* 自身不参与同步，否则会递归
  */
 const SYNCED_TABLES: Array<{ table: Table; deviceLocal?: string[] }> = [
+  { table: schema.appSetting },
   { table: schema.resume },
   { table: schema.campaign },
   { table: schema.knowledgeNode },
