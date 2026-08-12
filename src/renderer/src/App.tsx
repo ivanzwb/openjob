@@ -15,8 +15,8 @@ type Tab = 'overview' | 'campaigns' | 'resumes' | 'design' | 'repos' | 'scripts'
 
 const TABS: Array<{ key: Tab; label: string }> = [
   { key: 'overview', label: '总览' },
-  { key: 'campaigns', label: '备考' },
   { key: 'resumes', label: '简历' },
+  { key: 'campaigns', label: '备考' },
   { key: 'design', label: '模拟面试' },
   { key: 'repos', label: '源码' },
   { key: 'scripts', label: '话术' },
@@ -108,13 +108,13 @@ export default function App(): React.JSX.Element {
               />
             </TabPanel>
           )}
-          {mountedTabs.has('campaigns') && (
-            <CampaignsPanel active={tab === 'campaigns'} view={view} setView={setView} />
-          )}
           {mountedTabs.has('resumes') && (
             <TabPanel active={tab === 'resumes'} className="overflow-hidden">
               <Resumes />
             </TabPanel>
+          )}
+          {mountedTabs.has('campaigns') && (
+            <CampaignsPanel active={tab === 'campaigns'} view={view} setView={setView} />
           )}
           {mountedTabs.has('design') && (
             <TabPanel active={tab === 'design'} className="overflow-y-auto">
