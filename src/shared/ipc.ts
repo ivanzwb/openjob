@@ -316,6 +316,7 @@ export interface UpdateResumeInput {
   id: string;
   label?: string;
   rawText?: string;
+  previewStyle?: string;
 }
 
 export interface CreateJobTargetInput {
@@ -339,6 +340,7 @@ export interface ResumeVariantView {
   label: string;
   contentMd: string;
   changelogMd: string;
+  previewStyle: string | null;
   isUserEdited: boolean;
   createdAt: number;
   updatedAt: number;
@@ -353,14 +355,23 @@ export interface UpdateResumeVariantInput {
   label?: string;
   contentMd?: string;
   changelogMd?: string;
+  previewStyle?: string;
 }
 
-export interface ResumeVariantExportInput {
-  id: string;
-  template: 'classic' | 'modern' | 'compact';
+/**
+ * 母版与优化版共用的 PDF 导出入参。
+ * 正文与样式由渲染进程直接给出，导出结果与预览一致，不受未保存改动影响。
+ */
+export interface ResumeExportInput {
+  /** 文件名，不含扩展名 */
+  fileStem: string;
+  contentMd: string;
+  previewStyle: string;
+  headline: string;
+  subtitle?: string;
 }
 
-export interface ResumeVariantExportResult {
+export interface ResumeExportResult {
   saved: boolean;
   path: string | null;
 }
@@ -829,6 +840,7 @@ export interface IpcInvokeMap {
   'resume:delete': { req: { id: string }; res: void };
   /** 弹出文件选择框导入简历（pdf/docx/txt/md），取消或失败时返回 null */
   'resume:importFile': { req: void; res: Resume | null };
+  'resume:exportPdf': { req: ResumeExportInput; res: ResumeExportResult };
 
   'jobTarget:list': { req: void; res: JobTarget[] };
   'jobTarget:get': { req: { id: string }; res: JobTarget };
@@ -844,7 +856,6 @@ export interface IpcInvokeMap {
   'resumeVariant:optimize': { req: OptimizeResumeInput; res: ResumeVariantView };
   'resumeVariant:update': { req: UpdateResumeVariantInput; res: ResumeVariantView };
   'resumeVariant:delete': { req: { id: string }; res: void };
-  'resumeVariant:exportPdf': { req: ResumeVariantExportInput; res: ResumeVariantExportResult };
 
   /** 解析 JD 并生成两层知识点树，进度通过 job:progress 推送 */
   'diagnosis:fromJd': { req: { campaignId: string }; res: DiagnosisJobStarted };
@@ -1005,6 +1016,7 @@ export const IPC_INVOKE_CHANNELS = [
   'resume:update',
   'resume:delete',
   'resume:importFile',
+  'resume:exportPdf',
   'jobTarget:list',
   'jobTarget:get',
   'jobTarget:create',
@@ -1015,7 +1027,6 @@ export const IPC_INVOKE_CHANNELS = [
   'resumeVariant:optimize',
   'resumeVariant:update',
   'resumeVariant:delete',
-  'resumeVariant:exportPdf',
   'diagnosis:fromJd',
   'diagnosis:attachResume',
   'diagnosis:expandNode',

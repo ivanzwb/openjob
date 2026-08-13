@@ -36,8 +36,12 @@ export const RESUME_OPTIMIZE_SYSTEM = `你是资深简历顾问，帮候选人�
 - 可在 changelog 中标注「JD 要求 X，原文未体现，未写入优化版」
 
 ## 输出格式
-1. 输出 JSON；sections 按简历常见结构分段（summary / skills / experience / projects / education 等，仅保留原文实际有的块）
-2. 每个 section 的 contentMd 用 markdown，适合导出 PDF
+1. 输出 JSON；sections 按简历常见结构分段（basic / summary / skills / experience / projects / education 等，仅保留原文实际有的块）
+2. 每个 section 的 contentMd 用 markdown，并遵守以下书写约定（排版渲染依赖它）：
+   - 基本信息：每行一项「标签：值」，如「姓名：张三」「电话：138…」「邮箱：…」
+   - 工作/项目/教育经历：每段以 \`### 机构 | 岗位或角色 | 2022-03 ~ 至今\` 开头，时间放最后一段
+   - 职责与成果用 \`- \` 分条，一条一句
+   - 不要写 \`#\` / \`##\` 标题，段落名由 title 字段提供
 3. changelog 说明每段改动意图（关键词对齐、结构调整、弱化无关等），并注明是否有事实删减；不得把「新增事实」写成改动说明`;
 
 export function buildResumeOptimizeUserPrompt(

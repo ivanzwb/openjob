@@ -14,6 +14,7 @@ function rowToVariant(row: typeof schema.resumeVariant.$inferSelect): ResumeVari
     label: row.label,
     contentMd: row.contentMd,
     changelogMd: row.changelogMd,
+    previewStyle: row.previewStyle ?? null,
     isUserEdited: row.isUserEdited,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -124,7 +125,11 @@ export function updateResumeVariant(input: UpdateResumeVariantInput): ResumeVari
       label: input.label?.trim() ?? existing.label,
       contentMd: input.contentMd?.trim() ?? existing.contentMd,
       changelogMd: input.changelogMd ?? existing.changelogMd,
-      isUserEdited: input.contentMd !== undefined ? true : existing.isUserEdited,
+      previewStyle: input.previewStyle !== undefined ? input.previewStyle : existing.previewStyle,
+      isUserEdited:
+        input.contentMd !== undefined || input.previewStyle !== undefined
+          ? true
+          : existing.isUserEdited,
       updatedAt: now,
     })
     .where(eq(schema.resumeVariant.id, input.id))

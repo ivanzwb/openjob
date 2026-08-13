@@ -7,10 +7,10 @@ import {
   RESUME_OPTIMIZE_SYSTEM,
 } from '@shared/resume/prompts';
 import { completeJson } from '../llm/json';
+import type { getResumeVariant } from './variantRepository';
 import {
   createResumeVariantRecord,
   getJobTargetForOptimize,
-  getResumeVariant,
   getSourceResumeText,
 } from './variantRepository';
 

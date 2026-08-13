@@ -42,6 +42,8 @@ export const resume = sqliteTable('resume', {
   label: text('label').notNull(),
   rawText: text('raw_text').notNull(),
   parsed: text('parsed', { mode: 'json' }).$type<ResumeParsed>(),
+  /** 排版模板等预览样式，JSON 字符串；null 表示用默认模板 */
+  previewStyle: text('preview_style'),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
 });
@@ -75,6 +77,7 @@ export const resumeVariant = sqliteTable(
     label: text('label').notNull(),
     contentMd: text('content_md').notNull(),
     changelogMd: text('changelog_md').default('').notNull(),
+    previewStyle: text('preview_style'),
     isUserEdited: integer('is_user_edited', { mode: 'boolean' }).notNull().default(false),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),

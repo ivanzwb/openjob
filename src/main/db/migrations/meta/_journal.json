@@ -64,6 +64,20 @@
       "when": 1786730000000,
       "tag": "0008_job_target_resume_variant",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1786810000000,
+      "tag": "0009_resume_variant_preview_style",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1786890000000,
+      "tag": "0010_resume_preview_style",
+      "breakpoints": true
     }
   ]
 }

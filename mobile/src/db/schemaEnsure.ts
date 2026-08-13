@@ -70,6 +70,18 @@ export function ensureCriticalSchema(sqlite: SQLiteDatabase): void {
   sqlite.execSync(
     `CREATE INDEX IF NOT EXISTS idx_resume_variant_source ON resume_variant (source_resume_id);`,
   );
+
+  try {
+    sqlite.execSync(`ALTER TABLE resume_variant ADD COLUMN preview_style text`);
+  } catch {
+    // column already exists
+  }
+
+  try {
+    sqlite.execSync(`ALTER TABLE resume ADD COLUMN preview_style text`);
+  } catch {
+    // column already exists
+  }
 }
 
 export function hasTable(sqlite: SQLiteDatabase, table: string): boolean {
@@ -78,4 +90,9 @@ export function hasTable(sqlite: SQLiteDatabase, table: string): boolean {
     table,
   );
   return Boolean(row?.name);
+}
+
+export function columnExists(sqlite: SQLiteDatabase, table: string, column: string): boolean {
+  const rows = sqlite.getAllSync<{ name: string }>(`PRAGMA table_info(${table})`);
+  return rows.some((r) => r.name === column);
 }

@@ -48,6 +48,8 @@ export interface Resume {
   label: string;
   rawText: string;
   parsed: ResumeParsed | null;
+  /** 排版模板等预览样式，JSON 字符串；null 表示用默认模板 */
+  previewStyle: string | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
@@ -69,6 +71,7 @@ export interface ResumeVariant {
   label: string;
   contentMd: string;
   changelogMd: string;
+  previewStyle: string | null;
   isUserEdited: boolean;
   createdAt: Timestamp;
   updatedAt: Timestamp;

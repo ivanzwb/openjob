@@ -21,7 +21,7 @@ import {
   updateJobTarget,
 } from '../jobTarget/repository';
 import { optimizeResumeForJobTarget } from '../resume/optimize';
-import { exportResumeVariantPdf } from '../resume/pdf';
+import { exportResumePdf } from '../resume/pdf';
 import {
   deleteResumeVariant,
   getResumeVariant,
@@ -148,11 +148,12 @@ export function registerIpcHandlers(): void {
 
   handle('resume:list', () => listResumes());
   handle('resume:create', (input) => createResume(input.label, input.rawText));
-  handle('resume:update', (input) => updateResume(input.id, input.label, input.rawText));
+  handle('resume:update', (input) => updateResume(input));
   handle('resume:importFile', () => importResumeFromFile());
   handle('resume:delete', ({ id }) => {
     deleteResume(id);
   });
+  handle('resume:exportPdf', (input) => exportResumePdf(input));
 
   handle('jobTarget:list', () => listJobTargets());
   handle('jobTarget:get', ({ id }) => getJobTarget(id));
@@ -179,10 +180,6 @@ export function registerIpcHandlers(): void {
   handle('resumeVariant:update', (input) => updateResumeVariant(input));
   handle('resumeVariant:delete', ({ id }) => {
     deleteResumeVariant(id);
-  });
-  handle('resumeVariant:exportPdf', async (input) => {
-    const variant = getResumeVariant(input.id);
-    return exportResumeVariantPdf(variant, input.template);
   });
 
   handle('diagnosis:fromJd', ({ campaignId }) => ({

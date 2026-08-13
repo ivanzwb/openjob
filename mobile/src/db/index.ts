@@ -17,7 +17,7 @@ import {
 import { exchangeWithDesktop, pairWithDesktop } from '../sync/client';
 import { setPeerCreds } from '../remote/rpc';
 import { hydrateAppSettingsFromDb } from '../config/settings';
-import { ensureCriticalSchema, hasTable } from './schemaEnsure';
+import { columnExists, ensureCriticalSchema, hasTable } from './schemaEnsure';
 
 interface PeerRow {
   device_id: string;
@@ -61,6 +61,10 @@ function runMigrations(sqlite: SQLiteDatabase): void {
       } else if (index === 7 && !hasTable(sqlite, 'repo_file')) {
         // fall through
       } else if (index === 8 && !hasTable(sqlite, 'job_target')) {
+        // fall through
+      } else if (index === 9 && !columnExists(sqlite, 'resume_variant', 'preview_style')) {
+        // fall through
+      } else if (index === 10 && !columnExists(sqlite, 'resume', 'preview_style')) {
         // fall through
       } else {
         continue;

@@ -13,6 +13,7 @@ import type {
   CreateCampaignInput,
   KnowledgeNodeView,
   UpdateCampaignInput,
+  UpdateResumeInput,
   BlindSpotQuestion,
 } from '@shared/ipc';
 import { getDb, schema } from '../db';
@@ -44,6 +45,7 @@ function rowToResume(row: typeof schema.resume.$inferSelect): Resume {
     label: row.label,
     rawText: row.rawText,
     parsed: row.parsed ?? null,
+    previewStyle: row.previewStyle ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt ?? row.createdAt,
   };
@@ -300,6 +302,7 @@ export function createResume(label: string, rawText: string): Resume {
     label: label.trim(),
     rawText: rawText.trim(),
     parsed: null,
+    previewStyle: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -307,17 +310,18 @@ export function createResume(label: string, rawText: string): Resume {
   return rowToResume(row);
 }
 
-export function updateResume(id: string, label?: string, rawText?: string): Resume {
+export function updateResume(input: UpdateResumeInput): Resume {
   const db = getDb();
-  const existing = db.select().from(schema.resume).where(eq(schema.resume.id, id)).get();
+  const existing = db.select().from(schema.resume).where(eq(schema.resume.id, input.id)).get();
   if (!existing) throw new Error('简历不存在');
   const now = Date.now();
   const patch = {
-    label: label?.trim() ?? existing.label,
-    rawText: rawText?.trim() ?? existing.rawText,
+    label: input.label?.trim() ?? existing.label,
+    rawText: input.rawText?.trim() ?? existing.rawText,
+    previewStyle: input.previewStyle ?? existing.previewStyle,
     updatedAt: now,
   };
-  db.update(schema.resume).set(patch).where(eq(schema.resume.id, id)).run();
+  db.update(schema.resume).set(patch).where(eq(schema.resume.id, input.id)).run();
   return rowToResume({ ...existing, ...patch });
 }
 
