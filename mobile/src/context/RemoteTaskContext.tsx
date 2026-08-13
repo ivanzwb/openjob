@@ -84,6 +84,8 @@ function subscribe(key: string, listener: () => void): () => void {
 export interface RunTaskOptions {
   /** 关掉成功提示，比如结果已经直接体现在界面上 */
   toastSuccess?: boolean;
+  /** 成功提示文案。结果是 id 这类不该给用户看的东西时必须给一个 */
+  successMessage?: string;
 }
 
 /**
@@ -108,8 +110,8 @@ export function runTask<T>(
       const result = await fn();
       update(key, { running: false, error: null, hasResult: true, result });
       if (options?.toastSuccess !== false) {
-        const message = typeof result === 'string' && result.trim() ? result : `${label}完成`;
-        notifier?.(message, 'success');
+        const fromResult = typeof result === 'string' && result.trim() ? result : `${label}完成`;
+        notifier?.(options?.successMessage ?? fromResult, 'success');
       }
       return result;
     } catch (err) {
@@ -157,6 +159,8 @@ export function useTaskResult<T>(key: string, adopt: (result: T) => void): void 
   useEffect(() => {
     if (!hasResult) return;
     const snapshot = stateOf(key);
+    // 同一个 key 可能有第二个消费者：结果已被取走就别再拿着 null 去 adopt
+    if (!snapshot.hasResult) return;
     update(key, { hasResult: false, result: null });
     adoptRef.current(snapshot.result as T);
   }, [key, hasResult]);

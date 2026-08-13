@@ -44,12 +44,18 @@ function CampaignListView({
 
   const create = (): void => {
     const input = { company, role, jd };
-    void runTask(CREATE_CAMPAIGN_KEY, '创建备考', async () => {
-      const id = await createCampaign(getRawDb(), input.company, input.role, input.jd);
-      notifyDataChanged();
-      await triggerSync().catch(() => undefined);
-      return id;
-    }).catch(() => undefined);
+    void runTask(
+      CREATE_CAMPAIGN_KEY,
+      '创建备考',
+      async () => {
+        const id = await createCampaign(getRawDb(), input.company, input.role, input.jd);
+        notifyDataChanged();
+        await triggerSync().catch(() => undefined);
+        return id;
+      },
+      // 结果是新备考的 id，给用户看的得另写一句
+      { successMessage: '备考已创建' },
+    ).catch(() => undefined);
   };
 
   return (
@@ -98,14 +104,13 @@ function CampaignDetailView({
   const [dailyMinutes, setDailyMinutes] = useState(String(detail.campaign.dailyMinutes ?? 90));
   const [calendarFilterDate, setCalendarFilterDate] = useState<string | null>(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
-  const [reloadTick, setReloadTick] = useState(0);
 
+  // setDetail 每次都换新对象，重渲染由它带动，不需要额外的计数器
   const reload = useCallback(() => {
     const next = getCampaignDetail(getRawDb(), id);
     setDetail(next);
     setInterviewDate(next.campaign.interviewDate ?? '');
     setDailyMinutes(String(next.campaign.dailyMinutes ?? 90));
-    setReloadTick((t) => t + 1);
   }, [id]);
 
   useLocalDataReload(reload);
@@ -114,13 +119,13 @@ function CampaignDetailView({
   const visibleNodeIds = useMemo(() => {
     if (!calendarFilterDate || !filterPlan) return null;
     return nodeIdsForPlanFilter(detail.nodes, filterPlan.tasks);
-  }, [calendarFilterDate, filterPlan, detail.nodes, reloadTick]);
+  }, [calendarFilterDate, filterPlan, detail.nodes]);
   const visibleNodes = useMemo(() => {
     if (!visibleNodeIds || visibleNodeIds.size === 0) {
       return calendarFilterDate ? [] : detail.nodes;
     }
     return detail.nodes.filter((n) => visibleNodeIds.has(n.id));
-  }, [calendarFilterDate, detail.nodes, visibleNodeIds, reloadTick]);
+  }, [calendarFilterDate, detail.nodes, visibleNodeIds]);
 
   const openTaskInStudy = (task: TaskView): void => {
     if (!task.nodeId) return;
@@ -166,13 +171,10 @@ function CampaignDetailView({
     }).catch(() => undefined);
   };
 
-  // 诊断/情报会长出新考点，跑完后补一次读库
+  // 诊断/情报会长出新考点，跑完后补一次读库。
+  // planKey 的结果由日历弹窗认领（一个 key 只能被领走一次），它会回调 onTasksChanged 触发这里的 reload
   useTaskResult(diagnoseKey, reload);
   useTaskResult(intelKey, reload);
-  useTaskResult(planKey, () => {
-    reload();
-    setReloadTick((t) => t + 1);
-  });
 
   return (
     <>
@@ -331,7 +333,6 @@ function CampaignDetailView({
       onTasksChanged={async () => {
         await triggerSync();
         reload();
-        setReloadTick((t) => t + 1);
       }}
     />
     </>

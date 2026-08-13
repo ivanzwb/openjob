@@ -121,11 +121,17 @@ export function ResumesScreen(): React.JSX.Element {
   const create = (): void => {
     const label = newLabel;
     const text = newText;
-    void runTask(CREATE_KEY, '新建简历', async () => {
-      const created = await createResumeFromText(getRawDb(), label, text);
-      await triggerSync();
-      return created;
-    }).catch(() => undefined);
+    void runTask(
+      CREATE_KEY,
+      '新建简历',
+      async () => {
+        const created = await createResumeFromText(getRawDb(), label, text);
+        await triggerSync();
+        return created;
+      },
+      // 结果是新简历的 id，给用户看的得另写一句
+      { successMessage: '简历已创建' },
+    ).catch(() => undefined);
   };
 
   const remove = (entry: ResumeEntry): void => {
