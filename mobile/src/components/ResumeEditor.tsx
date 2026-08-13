@@ -12,7 +12,7 @@ import { getRawDb } from '../db';
 import { updateResumeEntry, type ResumeEntry } from '../data/resumeLocal';
 import { polishResume, structureResume } from '../data/resumeAi';
 import { useApp } from '../context/AppContext';
-import { useRemoteTask } from '../context/RemoteTaskContext';
+import { runTask, useTaskResult, useTaskState } from '../context/RemoteTaskContext';
 import { theme } from '../theme';
 import { ResumeSectionForm, type SectionPolish } from './ResumeSectionForm';
 import { ResumePreviewModal } from './ResumePreviewModal';
@@ -37,7 +37,10 @@ export function ResumeEditor({
   onBack: () => void;
 }): React.JSX.Element {
   const { triggerSync, notifyDataChanged } = useApp();
-  const { runTask } = useRemoteTask();
+  /** 同一份简历用同一组任务标识：退出编辑器、切页再回来都能接回未跑完的 AI 任务 */
+  const taskScope = `${entry.kind}:${entry.id}`;
+  const structureKey = `resume:aiStructure:${taskScope}`;
+  const { running: structuring } = useTaskState(structureKey);
 
   const [doc, setDoc] = useState<ResumeDocument>(() => parseMarkdownToDocument(entry.contentMd));
   const [label, setLabel] = useState(entry.label);
@@ -89,6 +92,28 @@ export function ResumeEditor({
       if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, [contentMd, label, persist]);
+
+  // AI 任务在后台跑完时组件可能已经卸载，所以结果直接落库，回来后从库里读到的就是新内容
+  const latestRef = useRef({ contentMd, label, doc });
+  useEffect(() => {
+    latestRef.current = { contentMd, label, doc };
+  });
+
+  const persistAiContent = useCallback(
+    async (nextMd: string) => {
+      const nextLabel = latestRef.current.label;
+      // 落库前先掐掉待写的自动保存，否则旧内容会盖回 AI 结果
+      if (timerRef.current) clearTimeout(timerRef.current);
+      pendingRef.current = null;
+      await updateResumeEntry(getRawDb(), entry.kind, entry.id, {
+        contentMd: nextMd,
+        ...(entry.kind === 'resume' ? { label: nextLabel } : {}),
+      });
+      savedRef.current = { contentMd: nextMd, label: nextLabel };
+      notifyDataChanged();
+    },
+    [entry.id, entry.kind, notifyDataChanged],
+  );
 
   const flush = useCallback(() => {
     const pending = pendingRef.current;
@@ -142,16 +167,34 @@ export function ResumeEditor({
     })();
   };
 
-  const polish: SectionPolish = async ({ contentMd: sectionMd, instruction, scopeLabel }) =>
-    polishResume({
-      resumeMd: contentMd,
-      sectionKey: activeKey,
-      scopeLabel,
-      contentMd: sectionMd,
-      instruction,
+  const polish: SectionPolish = ({ contentMd: sectionMd, instruction, scopeLabel, taskKey, mergeSection }) => {
+    const sectionKey = activeKey;
+    return runTask(taskKey, 'AI 优化', async () => {
+      const polished = await polishResume({
+        resumeMd: latestRef.current.contentMd,
+        sectionKey,
+        scopeLabel,
+        contentMd: sectionMd,
+        instruction,
+      });
+      const nextDoc: ResumeDocument = {
+        sections: latestRef.current.doc.sections.map((s) =>
+          s.key === sectionKey ? { ...s, contentMd: mergeSection(polished) } : s,
+        ),
+      };
+      await persistAiContent(documentToMarkdown(nextDoc));
+      return polished;
     });
+  };
+
+  // AI 识别整体换掉正文：结果先落库，再刷新界面并重建表单本地状态
+  useTaskResult<string>(structureKey, (md) => {
+    setDoc(parseMarkdownToDocument(md));
+    setFormNonce((n) => n + 1);
+  });
 
   const runStructure = (): void => {
+    if (structuring) return;
     if (!contentMd.trim()) {
       Alert.alert('AI 识别', '简历还没有内容');
       return;
@@ -161,15 +204,12 @@ export function ResumeEditor({
       {
         text: '开始',
         onPress: () => {
-          void (async () => {
-            try {
-              const md = await runTask('AI 识别', async () => structureResume(contentMd));
-              setDoc(parseMarkdownToDocument(md));
-              setFormNonce((n) => n + 1);
-            } catch {
-              // toast handled by runTask
-            }
-          })();
+          void runTask(structureKey, 'AI 识别', async () => {
+            const md = await structureResume(latestRef.current.contentMd);
+            const normalized = documentToMarkdown(parseMarkdownToDocument(md));
+            await persistAiContent(normalized);
+            return normalized;
+          }).catch(() => undefined);
         },
       },
     ]);
@@ -216,15 +256,17 @@ export function ResumeEditor({
           </Text>
           <Pressable
             onPress={runStructure}
+            disabled={structuring}
             style={{
               borderWidth: 1,
               borderColor: theme.border,
               borderRadius: 8,
               paddingHorizontal: 10,
               paddingVertical: 6,
+              opacity: structuring ? 0.5 : 1,
             }}
           >
-            <Text style={{ color: theme.muted, fontSize: 12 }}>AI 识别</Text>
+            <Text style={{ color: theme.muted, fontSize: 12 }}>{structuring ? '识别中…' : 'AI 识别'}</Text>
           </Pressable>
           <Pressable
             onPress={() => {
@@ -295,6 +337,7 @@ export function ResumeEditor({
           key={`${activeSection.key}-${formNonce}`}
           section={activeSection}
           polish={polish}
+          taskKeyPrefix={`resume:polish:${taskScope}:${activeSection.key}`}
           onContentChange={(value) => setSectionContent(activeSection.key, value)}
         />
       </ScrollView>
@@ -306,6 +349,7 @@ export function ResumeEditor({
           onStyleChange={changeStyle}
           meta={{ headline: entry.kind === 'resume' ? label : entry.headline }}
           fileStem={entry.fileStem}
+          taskKey={`resume:exportPdf:${taskScope}`}
           onClose={() => setPreviewOpen(false)}
           onMessage={(message) => Alert.alert('导出 PDF', message)}
         />

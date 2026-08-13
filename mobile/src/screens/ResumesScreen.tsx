@@ -8,7 +8,7 @@ import {
   type ResumeEntry,
 } from '../data/resumeLocal';
 import { useApp } from '../context/AppContext';
-import { useRemoteTask } from '../context/RemoteTaskContext';
+import { runTask, useTaskResult, useTaskState } from '../context/RemoteTaskContext';
 import { useLocalDataReload } from '../hooks/useLocalDataReload';
 import { ResumeEditor } from '../components/ResumeEditor';
 import { theme } from '../theme';
@@ -17,9 +17,86 @@ function entryKey(entry: ResumeEntry): string {
   return `${entry.kind}:${entry.id}`;
 }
 
+const CREATE_KEY = 'resume:create';
+const deleteKeyOf = (entry: ResumeEntry): string => `resume:delete:${entryKey(entry)}`;
+
+/** 删除是按简历计的任务，单独成组件才能各自显示「删除中…」 */
+function ResumeRow({
+  entry,
+  onOpen,
+  onDelete,
+}: {
+  entry: ResumeEntry;
+  onOpen: () => void;
+  onDelete: () => void;
+}): React.JSX.Element {
+  const { running: removing } = useTaskState(deleteKeyOf(entry));
+
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        alignItems: 'stretch',
+        gap: 8,
+      }}
+    >
+      <Pressable
+        onPress={onOpen}
+        style={{
+          flex: 1,
+          borderWidth: 1,
+          borderColor: theme.border,
+          borderRadius: 10,
+          backgroundColor: theme.surface,
+          padding: 12,
+          gap: 4,
+          opacity: removing ? 0.5 : 1,
+        }}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <Text style={{ flex: 1, color: theme.text, fontSize: 14, fontWeight: '600' }} numberOfLines={1}>
+            {entry.label}
+          </Text>
+          <Text
+            style={{
+              color: entry.kind === 'resume' ? theme.accent : theme.muted,
+              fontSize: 10,
+              borderWidth: 1,
+              borderColor: theme.border,
+              borderRadius: 999,
+              paddingHorizontal: 6,
+              paddingVertical: 1,
+            }}
+          >
+            {entry.kind === 'resume' ? '母版' : '优化版'}
+          </Text>
+        </View>
+        <Text style={{ color: theme.muted, fontSize: 11 }} numberOfLines={1}>
+          {entry.subtitle}
+        </Text>
+      </Pressable>
+      <Pressable
+        onPress={onDelete}
+        disabled={removing}
+        style={{
+          justifyContent: 'center',
+          paddingHorizontal: 12,
+          borderWidth: 1,
+          borderColor: theme.border,
+          borderRadius: 10,
+          backgroundColor: theme.surface,
+          opacity: removing ? 0.5 : 1,
+        }}
+      >
+        <Text style={{ color: theme.danger, fontSize: 11 }}>{removing ? '删除中…' : '删除'}</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 export function ResumesScreen(): React.JSX.Element {
-  const { triggerSync } = useApp();
-  const { runTask } = useRemoteTask();
+  const { triggerSync, notifyDataChanged } = useApp();
+  const { running: creating } = useTaskState(CREATE_KEY);
   const [entries, setEntries] = useState<ResumeEntry[]>([]);
   const [openedKey, setOpenedKey] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -32,21 +109,23 @@ export function ResumesScreen(): React.JSX.Element {
 
   const opened = openedKey ? (entries.find((e) => entryKey(e) === openedKey) ?? null) : null;
 
-  const create = async (): Promise<void> => {
-    try {
-      const id = await runTask('新建简历', async () => {
-        const created = await createResumeFromText(getRawDb(), newLabel, newText);
-        await triggerSync();
-        return created;
-      });
-      setCreateOpen(false);
-      setNewLabel('');
-      setNewText('');
-      reload();
-      setOpenedKey(`resume:${id}`);
-    } catch {
-      // toast handled by runTask
-    }
+  // 新建在任务里落库，跑完后不管界面有没有被重建，回到这页都能看到并直接进编辑器
+  useTaskResult<string>(CREATE_KEY, (id) => {
+    setCreateOpen(false);
+    setNewLabel('');
+    setNewText('');
+    reload();
+    setOpenedKey(`resume:${id}`);
+  });
+
+  const create = (): void => {
+    const label = newLabel;
+    const text = newText;
+    void runTask(CREATE_KEY, '新建简历', async () => {
+      const created = await createResumeFromText(getRawDb(), label, text);
+      await triggerSync();
+      return created;
+    }).catch(() => undefined);
   };
 
   const remove = (entry: ResumeEntry): void => {
@@ -61,19 +140,13 @@ export function ResumesScreen(): React.JSX.Element {
           text: '删除',
           style: 'destructive',
           onPress: () => {
-            void (async () => {
-              try {
-                await runTask('删除简历', async () => {
-                  await deleteResumeEntry(getRawDb(), entry.kind, entry.id);
-                  await triggerSync();
-                  return '已删除';
-                });
-                if (openedKey === entryKey(entry)) setOpenedKey(null);
-                reload();
-              } catch {
-                // toast handled by runTask
-              }
-            })();
+            void runTask(deleteKeyOf(entry), '删除简历', async () => {
+              await deleteResumeEntry(getRawDb(), entry.kind, entry.id);
+              // 先让列表刷新（被删的那份打开着也会自动退回列表），再补一次同步
+              notifyDataChanged();
+              await triggerSync();
+              return entryKey(entry);
+            }).catch(() => undefined);
           },
         },
       ],
@@ -120,62 +193,12 @@ export function ResumesScreen(): React.JSX.Element {
           </Text>
         ) : (
           entries.map((entry) => (
-            <View
+            <ResumeRow
               key={entryKey(entry)}
-              style={{
-                flexDirection: 'row',
-                alignItems: 'stretch',
-                gap: 8,
-              }}
-            >
-              <Pressable
-                onPress={() => setOpenedKey(entryKey(entry))}
-                style={{
-                  flex: 1,
-                  borderWidth: 1,
-                  borderColor: theme.border,
-                  borderRadius: 10,
-                  backgroundColor: theme.surface,
-                  padding: 12,
-                  gap: 4,
-                }}
-              >
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Text style={{ flex: 1, color: theme.text, fontSize: 14, fontWeight: '600' }} numberOfLines={1}>
-                    {entry.label}
-                  </Text>
-                  <Text
-                    style={{
-                      color: entry.kind === 'resume' ? theme.accent : theme.muted,
-                      fontSize: 10,
-                      borderWidth: 1,
-                      borderColor: theme.border,
-                      borderRadius: 999,
-                      paddingHorizontal: 6,
-                      paddingVertical: 1,
-                    }}
-                  >
-                    {entry.kind === 'resume' ? '母版' : '优化版'}
-                  </Text>
-                </View>
-                <Text style={{ color: theme.muted, fontSize: 11 }} numberOfLines={1}>
-                  {entry.subtitle}
-                </Text>
-              </Pressable>
-              <Pressable
-                onPress={() => remove(entry)}
-                style={{
-                  justifyContent: 'center',
-                  paddingHorizontal: 12,
-                  borderWidth: 1,
-                  borderColor: theme.border,
-                  borderRadius: 10,
-                  backgroundColor: theme.surface,
-                }}
-              >
-                <Text style={{ color: theme.danger, fontSize: 11 }}>删除</Text>
-              </Pressable>
-            </View>
+              entry={entry}
+              onOpen={() => setOpenedKey(entryKey(entry))}
+              onDelete={() => remove(entry)}
+            />
           ))
         )}
       </ScrollView>
@@ -237,17 +260,17 @@ export function ResumesScreen(): React.JSX.Element {
                 <Text style={{ color: theme.muted, fontSize: 12 }}>取消</Text>
               </Pressable>
               <Pressable
-                onPress={() => void create()}
-                disabled={!newText.trim()}
+                onPress={create}
+                disabled={!newText.trim() || creating}
                 style={{
                   backgroundColor: theme.accent,
                   borderRadius: 8,
                   paddingHorizontal: 14,
                   paddingVertical: 8,
-                  opacity: newText.trim() ? 1 : 0.4,
+                  opacity: newText.trim() && !creating ? 1 : 0.4,
                 }}
               >
-                <Text style={{ color: '#fff', fontSize: 12 }}>创建并编辑</Text>
+                <Text style={{ color: '#fff', fontSize: 12 }}>{creating ? '创建中…' : '创建并编辑'}</Text>
               </Pressable>
             </View>
           </View>

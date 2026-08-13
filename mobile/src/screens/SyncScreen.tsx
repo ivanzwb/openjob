@@ -7,10 +7,39 @@ import type { ConflictChoice } from '@shared/sync';
 import { listPendingConflictRows, pairDesktop, resolveConflicts, unpairDesktop } from '../db';
 import type { PendingConflictRow } from '../db';
 import { useApp } from '../context/AppContext';
+import { runTask, useTaskState } from '../context/RemoteTaskContext';
 import { theme } from '../theme';
 
+function ConflictActions({
+  row,
+  onResolve,
+}: {
+  row: PendingConflictRow;
+  onResolve: (row: PendingConflictRow, choice: ConflictChoice) => void;
+}): React.JSX.Element {
+  const { running } = useTaskState(`conflict:${row.id}`);
+  return (
+    <View style={{ flexDirection: 'row', gap: 8 }}>
+      <Pressable
+        onPress={() => onResolve(row, 'local')}
+        disabled={running}
+        style={{ flex: 1, backgroundColor: theme.accent, padding: 8, borderRadius: 6, alignItems: 'center', opacity: running ? 0.6 : 1 }}
+      >
+        <Text style={{ color: '#fff', fontSize: 11 }}>{running ? '处理中…' : '保留本机'}</Text>
+      </Pressable>
+      <Pressable
+        onPress={() => onResolve(row, 'remote')}
+        disabled={running}
+        style={{ flex: 1, backgroundColor: theme.surface, padding: 8, borderRadius: 6, alignItems: 'center', borderWidth: 1, borderColor: theme.border, opacity: running ? 0.6 : 1 }}
+      >
+        <Text style={{ color: theme.text, fontSize: 11 }}>{running ? '处理中…' : '采用对方'}</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 export function SyncScreen(): React.JSX.Element {
-  const { peerLabel, syncStatus, hasSyncError, repoFileSyncNotice, autoSync, setAutoSync, triggerSync, triggerFullSync, refresh } = useApp();
+  const { peerLabel, syncing, syncStatus, hasSyncError, repoFileSyncNotice, autoSync, setAutoSync, triggerSync, triggerFullSync, refresh } = useApp();
   const [conflicts, setConflicts] = useState<PendingConflictRow[]>([]);
   const [scanning, setScanning] = useState(false);
   const [pairError, setPairError] = useState<string | null>(null);
@@ -50,12 +79,17 @@ export function SyncScreen(): React.JSX.Element {
     }
   };
 
-  const resolve = async (row: PendingConflictRow, choice: ConflictChoice) => {
-    await resolveConflicts(row.runId, [
-      { table: row.table, rowId: row.rowId, field: row.field, choice },
-    ]);
-    await triggerSync();
-    reloadConflicts();
+  // 冲突处理按行记：处理中切走再回来，这一行还是在处理中
+  const resolve = (row: PendingConflictRow, choice: ConflictChoice): void => {
+    void runTask(`conflict:${row.id}`, '处理冲突', async () => {
+      await resolveConflicts(row.runId, [
+        { table: row.table, rowId: row.rowId, field: row.field, choice },
+      ]);
+      await triggerSync();
+      return '冲突已处理';
+    })
+      .then(() => reloadConflicts())
+      .catch(() => undefined);
   };
 
   if (scanning) {
@@ -174,14 +208,19 @@ export function SyncScreen(): React.JSX.Element {
             {'\n'}仍需桌面端：克隆/索引仓库（索引后源码快照会同步到手机）。
             {'\n'}暂不同步：搜索缓存（各端可重建）、仓库本机路径（各端路径不同）。
           </Text>
-          <Pressable onPress={() => void triggerSync()} style={{ backgroundColor: theme.accent, padding: 12, borderRadius: 8, alignItems: 'center' }}>
-            <Text style={{ color: '#fff' }}>立即同步</Text>
+          <Pressable
+            onPress={() => void triggerSync()}
+            disabled={syncing}
+            style={{ backgroundColor: theme.accent, padding: 12, borderRadius: 8, alignItems: 'center', opacity: syncing ? 0.6 : 1 }}
+          >
+            <Text style={{ color: '#fff' }}>{syncing ? '同步中…' : '立即同步'}</Text>
           </Pressable>
           <Pressable
             onPress={() => void triggerFullSync()}
-            style={{ backgroundColor: theme.surface, padding: 12, borderRadius: 8, alignItems: 'center', borderWidth: 1, borderColor: theme.border }}
+            disabled={syncing}
+            style={{ backgroundColor: theme.surface, padding: 12, borderRadius: 8, alignItems: 'center', borderWidth: 1, borderColor: theme.border, opacity: syncing ? 0.6 : 1 }}
           >
-            <Text style={{ color: theme.text }}>全量同步</Text>
+            <Text style={{ color: theme.text }}>{syncing ? '同步中…' : '全量同步'}</Text>
           </Pressable>
           <Pressable
             onPress={() => {
@@ -206,14 +245,7 @@ export function SyncScreen(): React.JSX.Element {
               <Text style={{ color: theme.muted, fontSize: 10 }} numberOfLines={3}>
                 {c.field}: local={JSON.stringify(c.localValue)} / remote={JSON.stringify(c.remoteValue)}
               </Text>
-              <View style={{ flexDirection: 'row', gap: 8 }}>
-                <Pressable onPress={() => void resolve(c, 'local')} style={{ flex: 1, backgroundColor: theme.accent, padding: 8, borderRadius: 6, alignItems: 'center' }}>
-                  <Text style={{ color: '#fff', fontSize: 11 }}>保留本机</Text>
-                </Pressable>
-                <Pressable onPress={() => void resolve(c, 'remote')} style={{ flex: 1, backgroundColor: theme.surface, padding: 8, borderRadius: 6, alignItems: 'center', borderWidth: 1, borderColor: theme.border }}>
-                  <Text style={{ color: theme.text, fontSize: 11 }}>采用对方</Text>
-                </Pressable>
-              </View>
+              <ConflictActions row={c} onResolve={resolve} />
             </View>
           ))}
         </View>

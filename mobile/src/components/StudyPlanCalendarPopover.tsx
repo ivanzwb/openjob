@@ -6,6 +6,7 @@ import { getRawDb } from '../db';
 import { getTodayPlan, listPlanDates } from '../data/queries';
 import { completeTask, skipTask } from '../data/mutations';
 import { deferToday } from '../data/planLocal';
+import { runTask, useTaskResult, useTaskState } from '../context/RemoteTaskContext';
 import { theme } from '../theme';
 
 export function StudyPlanCalendarPopover({
@@ -19,11 +20,11 @@ export function StudyPlanCalendarPopover({
   onDailyMinutesChange,
   planMsg,
   onGeneratePlan,
+  planTaskKey,
   filterDate,
   onFilterDateChange,
   onOpenTask,
   onTasksChanged,
-  busy,
 }: {
   open: boolean;
   onClose: () => void;
@@ -34,18 +35,20 @@ export function StudyPlanCalendarPopover({
   onInterviewDateChange: (value: string) => void;
   onDailyMinutesChange: (value: string) => void;
   planMsg: string | null;
-  onGeneratePlan: () => Promise<void>;
+  onGeneratePlan: () => void;
+  /** 生成计划的任务标识由上层给出，关掉弹窗再打开仍能看到进度 */
+  planTaskKey: string;
   filterDate: string | null;
   onFilterDateChange: (date: string | null) => void;
   onOpenTask: (task: TaskView) => void;
   onTasksChanged: () => void | Promise<void>;
-  busy: boolean;
 }): React.JSX.Element {
   const [setupOpen, setSetupOpen] = useState(false);
-  const [generating, setGenerating] = useState(false);
-  const [deferring, setDeferring] = useState(false);
   const [viewMonth, setViewMonth] = useState(() => new Date());
   const [tick, setTick] = useState(0);
+  const deferKey = `campaign:${campaignId}:planDefer`;
+  const { running: generating } = useTaskState(planTaskKey);
+  const { running: deferring } = useTaskState(deferKey);
 
   const dateOptions = useMemo(
     () => (open ? listPlanDates(getRawDb(), campaignId) : []),
@@ -74,35 +77,36 @@ export function StudyPlanCalendarPopover({
     await onTasksChanged();
   };
 
-  const runGenerate = async (): Promise<void> => {
-    setGenerating(true);
-    try {
-      await onGeneratePlan();
-      setSetupOpen(false);
-      refresh();
-    } finally {
-      setGenerating(false);
-    }
+  // 生成与顺延都在全局任务里跑：关掉弹窗、切页再回来都能接上
+  useTaskResult(planTaskKey, () => {
+    setSetupOpen(false);
+    void refresh();
+  });
+  useTaskResult(deferKey, () => void refresh());
+
+  const complete = (taskId: string): void => {
+    void runTask(`task:complete:${taskId}`, '完成任务', async () => {
+      await completeTask(getRawDb(), taskId);
+      return '已完成';
+    })
+      .then(() => refresh())
+      .catch(() => undefined);
   };
 
-  const complete = async (taskId: string): Promise<void> => {
-    await completeTask(getRawDb(), taskId);
-    await refresh();
+  const skip = (taskId: string): void => {
+    void runTask(`task:skip:${taskId}`, '跳过任务', async () => {
+      await skipTask(getRawDb(), taskId);
+      return '已跳过';
+    })
+      .then(() => refresh())
+      .catch(() => undefined);
   };
 
-  const skip = async (taskId: string): Promise<void> => {
-    await skipTask(getRawDb(), taskId);
-    await refresh();
-  };
-
-  const defer = async (): Promise<void> => {
-    setDeferring(true);
-    try {
+  const defer = (): void => {
+    void runTask(deferKey, '顺延', async () => {
       await deferToday(getRawDb(), campaignId);
-      await refresh();
-    } finally {
-      setDeferring(false);
-    }
+      return '今天未完成的任务已顺延';
+    }).catch(() => undefined);
   };
 
   return (
@@ -161,14 +165,14 @@ export function StudyPlanCalendarPopover({
                   style={inputStyle}
                 />
                 <Pressable
-                  onPress={() => void runGenerate()}
-                  disabled={busy || generating || nodeCount === 0}
+                  onPress={onGeneratePlan}
+                  disabled={generating || nodeCount === 0}
                   style={{
                     backgroundColor: '#047857',
                     padding: 10,
                     borderRadius: 8,
                     alignItems: 'center',
-                    opacity: busy || generating || nodeCount === 0 ? 0.6 : 1,
+                    opacity: generating || nodeCount === 0 ? 0.6 : 1,
                   }}
                 >
                   <Text style={{ color: '#fff' }}>
@@ -204,7 +208,7 @@ export function StudyPlanCalendarPopover({
                       {filterDate === todayLocal() &&
                         filterPlan.planDay &&
                         filterPlan.completedCount < filterPlan.totalCount && (
-                          <Pressable disabled={deferring} onPress={() => void defer()}>
+                          <Pressable disabled={deferring} onPress={defer}>
                             <Text style={{ color: theme.accent, fontSize: 11 }}>
                               {deferring ? '顺延中…' : '顺延'}
                             </Text>
@@ -222,8 +226,8 @@ export function StudyPlanCalendarPopover({
                             onOpenTask(t);
                             onClose();
                           }}
-                          onComplete={() => void complete(t.id)}
-                          onSkip={() => void skip(t.id)}
+                          onComplete={() => complete(t.id)}
+                          onSkip={() => skip(t.id)}
                         />
                       ))
                     )}
@@ -254,6 +258,8 @@ function DayTaskRow({
   const done = task.status === 'done';
   const skipped = task.status === 'skipped';
   const canOpen = Boolean(task.nodeId) && !done && !skipped;
+  const { running: completing } = useTaskState(`task:complete:${task.id}`);
+  const { running: skipping } = useTaskState(`task:skip:${task.id}`);
 
   return (
     <View
@@ -280,11 +286,15 @@ function DayTaskRow({
       </Pressable>
       {!done && !skipped && (
         <View style={{ flexDirection: 'row', gap: 12 }}>
-          <Pressable onPress={onComplete}>
-            <Text style={{ color: theme.accent, fontSize: 11 }}>完成</Text>
+          <Pressable onPress={onComplete} disabled={completing || skipping}>
+            <Text style={{ color: theme.accent, fontSize: 11, opacity: completing || skipping ? 0.5 : 1 }}>
+              {completing ? '处理中…' : '完成'}
+            </Text>
           </Pressable>
-          <Pressable onPress={onSkip}>
-            <Text style={{ color: theme.muted, fontSize: 11 }}>跳过</Text>
+          <Pressable onPress={onSkip} disabled={completing || skipping}>
+            <Text style={{ color: theme.muted, fontSize: 11, opacity: completing || skipping ? 0.5 : 1 }}>
+              {skipping ? '处理中…' : '跳过'}
+            </Text>
           </Pressable>
         </View>
       )}

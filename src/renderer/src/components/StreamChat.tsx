@@ -11,6 +11,7 @@ import { ToolTrace } from './ToolTrace';
  * 流式对话组件，支持会话历史落库与回看。
  */
 export function StreamChat({
+  streamKey,
   role = 'explain',
   systemPrompt,
   placeholder = '问点什么…',
@@ -18,6 +19,8 @@ export function StreamChat({
   campaignId,
   compact = false,
 }: {
+  /** 这一路流的稳定标识：面板被卸载后按它接回，生成中的回答不会丢 */
+  streamKey: string;
   role?: LlmRole;
   systemPrompt?: string;
   placeholder?: string;
@@ -61,7 +64,14 @@ export function StreamChat({
     [loadSessions],
   );
 
-  const { state, send, cancel, reset, setSessionId } = useStream(null, handleDone);
+  const { state, send, cancel, reset, setSessionId } = useStream(streamKey, null, handleDone);
+
+  // 上一次的回答还留在流里（比如生成时切走过），把这一会话的消息补回来
+  useEffect(() => {
+    const sessionId = state.sessionId;
+    if (!sessionId || history.length > 0) return;
+    void invoke('session:getMessages', { sessionId }).then(setHistory);
+  }, [state.sessionId, history.length]);
 
   const loadHistory = useCallback(
     async (sessionId: string) => {

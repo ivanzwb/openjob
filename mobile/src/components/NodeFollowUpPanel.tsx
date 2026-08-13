@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { completeChat } from '../llm/chat';
-import { useRemoteTask } from '../context/RemoteTaskContext';
+import { runTask, useTaskResult, useTaskState } from '../context/RemoteTaskContext';
 import { theme } from '../theme';
 
 type Msg = { role: 'user' | 'assistant'; text: string };
@@ -15,13 +15,16 @@ export function NodeFollowUpPanel({
   nodeId: string;
   nodeName: string;
 }): React.JSX.Element {
-  const { runTask, active } = useRemoteTask();
+  // 按考点记这轮追问：切页、换 Tab 再回来还能看到「回答中…」和已经答完的内容
+  const taskKey = `node:followUp:${nodeId}`;
+  const { running: busy, error } = useTaskState(taskKey);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
 
-  const busy = active?.label === '追问';
+  // 任务返回整段对话，重新挂载后一次补齐提问与回答
+  useTaskResult<Msg[]>(taskKey, setMessages);
 
-  const send = async () => {
+  const send = (): void => {
     const text = input.trim();
     if (!text || busy) return;
     setInput('');
@@ -30,20 +33,18 @@ export function NodeFollowUpPanel({
     const systemPrompt =
       `用户正在备考，当前学习的考点是「${nodeName}」（nodeId: ${nodeId}）。` +
       '请围绕该考点回答追问：澄清概念、对比易混点、补充面试深挖角度。回答适合口述。';
-    try {
-      await runTask('追问', async () => {
+    void runTask(
+      taskKey,
+      '追问',
+      async () => {
         const reply = await completeChat('explain', [
           { role: 'system', content: systemPrompt },
           ...nextMessages.map((m) => ({ role: m.role, content: m.text })),
         ]);
-        setMessages((m) => [...m, { role: 'assistant', text: reply || '（无回复）' }]);
-      });
-    } catch (e) {
-      setMessages((m) => [
-        ...m,
-        { role: 'assistant', text: `错误: ${e instanceof Error ? e.message : String(e)}` },
-      ]);
-    }
+        return [...nextMessages, { role: 'assistant' as const, text: reply || '（无回复）' }];
+      },
+      { toastSuccess: false },
+    ).catch(() => undefined);
   };
 
   return (
@@ -71,6 +72,8 @@ export function NodeFollowUpPanel({
             </View>
           ))
         )}
+        {busy && <Text style={{ color: theme.muted, fontSize: 12 }}>回答中…</Text>}
+        {error !== null && <Text style={{ color: theme.danger, fontSize: 12 }}>{error}</Text>}
       </ScrollView>
       <View style={{ flexDirection: 'row', gap: 8 }}>
         <TextInput
@@ -92,7 +95,8 @@ export function NodeFollowUpPanel({
           }}
         />
         <Pressable
-          onPress={() => void send()}
+          onPress={send}
+          disabled={busy || !input.trim()}
           style={{
             backgroundColor: theme.accent,
             paddingHorizontal: 14,

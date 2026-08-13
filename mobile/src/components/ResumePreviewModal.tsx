@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
@@ -9,6 +8,7 @@ import type { ResumeDocument } from '@shared/resume/document';
 import { buildResumeDocumentHtml } from '@shared/resume/renderHtml';
 import type { ResumePreviewStyle } from '@shared/resume/previewStyle';
 import { RESUME_TEMPLATES, RESUME_TEMPLATE_META } from '@shared/resume/templates';
+import { runTask, useTaskState } from '../context/RemoteTaskContext';
 import { theme } from '../theme';
 
 /** A4 在 72 PPI 下的点数，expo-print 默认是美式 Letter，必须显式传 */
@@ -37,6 +37,7 @@ export function ResumePreviewModal({
   onStyleChange,
   meta,
   fileStem,
+  taskKey,
   onClose,
   onMessage,
 }: {
@@ -45,40 +46,44 @@ export function ResumePreviewModal({
   onStyleChange: (style: ResumePreviewStyle) => void;
   meta: { headline: string; subtitle?: string };
   fileStem: string;
+  /** 导出任务标识，关掉预览再打开仍能看到还在导出 */
+  taskKey: string;
   onClose: () => void;
   onMessage: (message: string) => void;
 }): React.JSX.Element {
   const insets = useSafeAreaInsets();
-  const [exporting, setExporting] = useState(false);
+  const { running: exporting } = useTaskState(taskKey);
 
   const previewHtml = buildResumeDocumentHtml(resumeDocument, style, {
     ...meta,
     viewportWidth: PAGE_CSS_WIDTH,
   });
 
-  const exportPdf = async (): Promise<void> => {
-    setExporting(true);
-    try {
-      const { uri } = await Print.printToFileAsync({
-        html: buildResumeDocumentHtml(resumeDocument, style, meta),
-        width: A4_WIDTH_PT,
-        height: A4_HEIGHT_PT,
-      });
-      const fileUri = renameForShare(uri, fileStem);
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(fileUri, {
-          UTI: '.pdf',
-          mimeType: 'application/pdf',
-          dialogTitle: '导出简历 PDF',
+  const exportPdf = (): void => {
+    const html = buildResumeDocumentHtml(resumeDocument, style, meta);
+    void runTask(
+      taskKey,
+      '导出 PDF',
+      async () => {
+        const { uri } = await Print.printToFileAsync({
+          html,
+          width: A4_WIDTH_PT,
+          height: A4_HEIGHT_PT,
         });
-      } else {
+        const fileUri = renameForShare(uri, fileStem);
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(fileUri, {
+            UTI: '.pdf',
+            mimeType: 'application/pdf',
+            dialogTitle: '导出简历 PDF',
+          });
+          return '已导出 PDF';
+        }
         onMessage(`已生成 PDF：${fileUri}`);
-      }
-    } catch (e) {
-      onMessage(e instanceof Error ? e.message : String(e));
-    } finally {
-      setExporting(false);
-    }
+        return '已生成 PDF';
+      },
+      { toastSuccess: false },
+    ).catch(() => undefined);
   };
 
   return (
@@ -101,7 +106,7 @@ export function ResumePreviewModal({
             预览 · {RESUME_TEMPLATE_META[style.template].label}
           </Text>
           <Pressable
-            onPress={() => void exportPdf()}
+            onPress={exportPdf}
             disabled={exporting}
             style={{
               backgroundColor: theme.accent,

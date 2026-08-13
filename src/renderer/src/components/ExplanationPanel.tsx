@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import type { Explanation } from '@shared/entities';
 import type { ExplanationTier } from '@shared/enums';
 import { invoke } from '../ipc';
+import { isTaskRunning, runTask, useTask, useTaskResult } from '../ipc/taskStore';
 import {
   DEFAULT_HIGHLIGHT_COLOR,
   HighlightColorPicker,
@@ -284,27 +285,70 @@ export function ExplanationPanel({
 }): React.JSX.Element {
   const [tier, setTier] = useState<ExplanationTier>(defaultTier);
   const [content, setContent] = useState<Explanation | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [selection, setSelection] = useState<SelectionAnchor | null>(null);
   const [showFloatingMenu, setShowFloatingMenu] = useState(false);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [regenerating, setRegenerating] = useState(false);
   const [toolbarPanel, setToolbarPanel] = useState<'none' | ActionPanelMode>('none');
   const [popoverAnchor, setPopoverAnchor] = useState<SelectionAnchor | null>(null);
   const [editDraft, setEditDraft] = useState('');
   const [noteDraft, setNoteDraft] = useState('');
   const [highlightColor, setHighlightColor] = useState(DEFAULT_HIGHLIGHT_COLOR);
-  const [editSaving, setEditSaving] = useState(false);
-  const [noteSaving, setNoteSaving] = useState(false);
-  const [highlightSaving, setHighlightSaving] = useState(false);
-  const [clearHighlightSaving, setClearHighlightSaving] = useState(false);
   const [focusMarkId, setFocusMarkId] = useState<string | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const selectionRef = useRef<SelectionAnchor | null>(null);
   const toast = useToast();
 
   const activeTier = fallbackMode ? 'oneliner' : tier;
+
+  /**
+   * 讲解生成与划词动作都记在按考点取的任务 key 上。
+   * 换考点、换学习模式会卸载这个面板：
+   * 生成中回来仍显示「生成讲解中…」，而且同一档不会因为重挂载再生成一次。
+   */
+  const tierSlot = fallbackMode ? 'fallback' : tier;
+  const loadKey = `explain:load:${nodeId}:${tierSlot}`;
+  const regenerateKey = `explain:regenerate:${nodeId}:${tierSlot}`;
+  const elaborateKey = `explain:elaborate:${nodeId}`;
+  const speechKey = `explain:speech:${nodeId}`;
+  const editKey = `explain:edit:${nodeId}`;
+  const noteKey = `explain:note:${nodeId}`;
+  const highlightKey = `explain:highlight:${nodeId}`;
+  const clearHighlightKey = `explain:clearHighlight:${nodeId}`;
+  const loadTask = useTask(loadKey);
+  const regenerateTask = useTask(regenerateKey);
+  const elaborateTask = useTask(elaborateKey);
+  const speechTask = useTask(speechKey);
+  const editTask = useTask(editKey);
+  const noteTask = useTask(noteKey);
+  const highlightTask = useTask(highlightKey);
+  const clearHighlightTask = useTask(clearHighlightKey);
+
+  const loading = loadTask.running;
+  const regenerating = regenerateTask.running;
+  const editSaving = editTask.running;
+  const noteSaving = noteTask.running;
+  const highlightSaving = highlightTask.running;
+  const clearHighlightSaving = clearHighlightTask.running;
+  const busy = elaborateTask.running
+    ? 'elaborate'
+    : speechTask.running
+      ? 'speech'
+      : highlightTask.running
+        ? 'highlight'
+        : editTask.running || noteTask.running || clearHighlightTask.running
+          ? 'other'
+          : null;
+  const error =
+    loadTask.error ??
+    regenerateTask.error ??
+    elaborateTask.error ??
+    speechTask.error ??
+    editTask.error ??
+    noteTask.error ??
+    highlightTask.error ??
+    clearHighlightTask.error;
+
+  useTaskResult<Explanation>(loadKey, setContent);
+  useTaskResult<Explanation>(regenerateKey, setContent);
   const isUserEdited = content?.modelUsed === 'user-edit';
   const hasSelection = Boolean(selection);
 
@@ -416,100 +460,66 @@ export function ExplanationPanel({
     };
   }, [focusMarkId, content?.contentMd, annotation.marks]);
 
-  const load = async (t: ExplanationTier, forceGenerate = false): Promise<void> => {
-    setLoading(true);
-    setError(null);
-    clearSelection();
-    try {
-      if (!forceGenerate) {
+  // 已有就直接用，没有才生成；runTask 会按 key 去重，重挂载不会重复调模型
+  const loadOnce = useCallback(
+    (t: ExplanationTier, key: string) =>
+      runTask(key, async () => {
         const cached = await invoke('explain:get', { nodeId, tier: t });
-        if (cached) {
-          setContent(cached);
-          return;
-        }
-      }
-      const generated = fallbackMode
-        ? await invoke('explain:fallback', { nodeId })
-        : await invoke('explain:generate', { nodeId, tier: t });
-      setContent(generated);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
-    }
+        if (cached) return cached;
+        return fallbackMode
+          ? invoke('explain:fallback', { nodeId })
+          : invoke('explain:generate', { nodeId, tier: t });
+      }),
+    [nodeId, fallbackMode],
+  );
+
+  const load = (t: ExplanationTier): void => {
+    clearSelection();
+    void loadOnce(t, `explain:load:${nodeId}:${fallbackMode ? 'fallback' : t}`).catch(
+      () => undefined,
+    );
   };
 
   useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      setLoading(true);
-      setError(null);
-      clearSelection();
-      try {
-        const t = fallbackMode ? 'oneliner' : tier;
-        const cached = await invoke('explain:get', { nodeId, tier: t });
-        if (cancelled) return;
-        if (cached) {
-          setContent(cached);
-          return;
-        }
-        const generated = fallbackMode
-          ? await invoke('explain:fallback', { nodeId })
-          : await invoke('explain:generate', { nodeId, tier: t });
-        if (!cancelled) setContent(generated);
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [nodeId, tier, fallbackMode, clearSelection]);
+    // 已有内容或已经在跑，就不要再发一次；否则拉取或生成当前这一档
+    if (isTaskRunning(loadKey)) return;
+    void loadOnce(fallbackMode ? 'oneliner' : tier, loadKey).catch(() => undefined);
+  }, [loadKey, loadOnce, fallbackMode, tier]);
 
-  const patchContent = async (nextMd: string): Promise<void> => {
-    if (!content) return;
+  const patchContent = async (nextMd: string): Promise<Explanation> => {
+    if (!content) throw new Error('讲解尚未加载');
     const updated = await invoke('explain:update', { id: content.id, contentMd: nextMd });
     setContent(updated);
     toast('已手动修订', { variant: 'warning' });
+    return updated;
   };
 
-  const regenerateFull = async (): Promise<void> => {
+  const regenerateFull = (): void => {
     const tierLabel = TIERS.find((t) => t.id === activeTier)?.label ?? activeTier;
     const message = isUserEdited
       ? `你已手动修改过讲解。重新生成将覆盖当前「${tierLabel}」内容，确定继续？`
       : `重新生成将覆盖当前「${tierLabel}」讲解内容，确定继续？`;
     if (!confirm(message)) return;
 
-    setRegenerating(true);
-    setError(null);
     clearSelection();
-    try {
-      await load(activeTier, true);
-    } finally {
-      setRegenerating(false);
-    }
+    void runTask(regenerateKey, () =>
+      fallbackMode
+        ? invoke('explain:fallback', { nodeId })
+        : invoke('explain:generate', { nodeId, tier: activeTier }),
+    ).catch(() => undefined);
   };
 
   const currentSelection = (): SelectionAnchor | null =>
     popoverAnchor ?? selectionRef.current ?? selection;
 
-  const runOnSelection = async (
-    key: string,
-    fn: (sel: SelectionAnchor) => Promise<void>,
-  ): Promise<void> => {
+  /** 划词类动作：选区在点下的那一刻取好，之后即使面板被卸载也照样跑完并落库 */
+  const runOnSelection = (taskKey: string, fn: (sel: SelectionAnchor) => Promise<void>): void => {
     const sel = currentSelection();
     if (!sel || !content) return;
-    setBusy(key);
-    setError(null);
-    try {
+    void runTask(taskKey, async () => {
       await fn(sel);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(null);
-    }
+      return null;
+    }).catch(() => undefined);
   };
 
   const clearSelectedHighlight = (): void => {
@@ -517,15 +527,10 @@ export function ExplanationPanel({
     if (!sel) return;
     const mark = findHighlightMark(sel.text, highlightMarks, sel.selectionStart);
     if (!mark) return;
-    void runOnSelection('clear-highlight', async () => {
-      setClearHighlightSaving(true);
-      try {
-        await annotation.deleteMark(mark.id);
-        toast('已清除高亮', { variant: 'success' });
-        clearSelection();
-      } finally {
-        setClearHighlightSaving(false);
-      }
+    runOnSelection(clearHighlightKey, async () => {
+      await annotation.deleteMark(mark.id);
+      toast('已清除高亮', { variant: 'success' });
+      clearSelection();
     });
   };
 
@@ -584,7 +589,7 @@ export function ExplanationPanel({
                 type="button"
                 disabled={!hasSelection || Boolean(busy)}
                 onClick={() => {
-                  void runOnSelection('elaborate', async (sel) => {
+                  runOnSelection(elaborateKey, async (sel) => {
                     const res = await invoke('explain:elaborate', {
                       nodeId,
                       tier: activeTier,
@@ -604,7 +609,7 @@ export function ExplanationPanel({
                 type="button"
                 disabled={!hasSelection || Boolean(busy)}
                 onClick={() => {
-                  void runOnSelection('speech', async (sel) => {
+                  runOnSelection(speechKey, async (sel) => {
                     await invoke('speech:saveFromNode', {
                       nodeId,
                       contentMd: sel.text,
@@ -638,7 +643,7 @@ export function ExplanationPanel({
                         type="button"
                         onClick={() => {
                           setTier(t.id);
-                          void load(t.id);
+                          load(t.id);
                         }}
                         className={`rounded px-2 py-1 text-xs ${
                           tier === t.id
@@ -655,7 +660,7 @@ export function ExplanationPanel({
                 <button
                   type="button"
                   disabled={regenerating}
-                  onClick={() => void regenerateFull()}
+                  onClick={regenerateFull}
                   className={toolbarBtn}
                 >
                   {regenerating ? '重新生成中…' : '重新生成'}
@@ -691,7 +696,7 @@ export function ExplanationPanel({
           onNote={() => openActionPanel('note')}
           onHighlight={() => openActionPanel('highlight')}
           onElaborate={() => {
-            void runOnSelection('elaborate', async (sel) => {
+            runOnSelection(elaborateKey, async (sel) => {
               const res = await invoke('explain:elaborate', {
                 nodeId,
                 tier: activeTier,
@@ -704,7 +709,7 @@ export function ExplanationPanel({
             });
           }}
           onSaveSpeech={() => {
-            void runOnSelection('speech', async (sel) => {
+            runOnSelection(speechKey, async (sel) => {
               await invoke('speech:saveFromNode', {
                 nodeId,
                 contentMd: sel.text,
@@ -734,41 +739,29 @@ export function ExplanationPanel({
           onHighlightColorChange={setHighlightColor}
           onClose={closeActionPanel}
           onSaveEdit={() => {
-            void runOnSelection('edit', async (sel) => {
-              setEditSaving(true);
-              try {
-                const next = replaceExcerpt(content.contentMd, sel.text, editDraft);
-                await patchContent(next);
-                clearSelection();
-              } finally {
-                setEditSaving(false);
-              }
+            const draft = editDraft;
+            const contentMd = content.contentMd;
+            runOnSelection(editKey, async (sel) => {
+              await patchContent(replaceExcerpt(contentMd, sel.text, draft));
+              clearSelection();
             });
           }}
           onSaveNote={() => {
-            void runOnSelection('note', async (sel) => {
-              setNoteSaving(true);
-              try {
-                await annotation.addNoteOnSelection(sel.text, noteDraft);
-                clearSelection();
-              } finally {
-                setNoteSaving(false);
-              }
+            const draft = noteDraft;
+            runOnSelection(noteKey, async (sel) => {
+              await annotation.addNoteOnSelection(sel.text, draft);
+              clearSelection();
             });
           }}
           onSaveHighlight={() => {
-            void runOnSelection('highlight', async (sel) => {
-              setHighlightSaving(true);
-              try {
-                const existing = findHighlightMark(sel.text, highlightMarks, sel.selectionStart);
-                if (existing) {
-                  await annotation.deleteMark(existing.id);
-                }
-                await annotation.highlightText(sel.text, highlightColor, sel.selectionStart);
-                clearSelection();
-              } finally {
-                setHighlightSaving(false);
+            const color = highlightColor;
+            runOnSelection(highlightKey, async (sel) => {
+              const existing = findHighlightMark(sel.text, highlightMarks, sel.selectionStart);
+              if (existing) {
+                await annotation.deleteMark(existing.id);
               }
+              await annotation.highlightText(sel.text, color, sel.selectionStart);
+              clearSelection();
             });
           }}
           onClearHighlight={clearSelectedHighlight}

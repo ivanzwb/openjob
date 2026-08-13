@@ -7,7 +7,7 @@ import { getRawDb } from '../db';
 import { listCampaigns } from '../data/queries';
 import { generateDesignCase, submitDesignAnswer } from '../data/designLocal';
 import { useApp } from '../context/AppContext';
-import { useRemoteTask } from '../context/RemoteTaskContext';
+import { runTask, useTaskResult, useTaskState } from '../context/RemoteTaskContext';
 import { useLocalDataReload } from '../hooks/useLocalDataReload';
 import { theme } from '../theme';
 
@@ -17,7 +17,6 @@ function campaignLabel(c: CampaignSummary): string {
 
 export function DesignScreen(): React.JSX.Element {
   const { notifyDataChanged } = useApp();
-  const { runTask, active } = useRemoteTask();
   const [campaigns, setCampaigns] = useState<CampaignSummary[]>([]);
   const [campaignId, setCampaignId] = useState('');
   const [interviewType, setInterviewType] = useState<MockInterviewType>('mixed');
@@ -36,40 +35,42 @@ export function DesignScreen(): React.JSX.Element {
 
   useLocalDataReload(reload);
 
-  const loadCase = async () => {
-    try {
-      await runTask('模拟面试出题', async () => {
-        const res = await generateDesignCase(getRawDb(), campaignId, interviewType);
-        setDesignCase(res);
-        setResult(null);
-        setAnswer('');
-      });
-    } catch (e) {
-      alert(e instanceof Error ? e.message : String(e));
-    }
+  // 出题与评分按 Campaign 记：切到别的 Tab 再回来，题目和评分都还在
+  const caseKey = `design:case:${campaignId}`;
+  const submitKey = `design:submit:${campaignId}`;
+  const { running: loadingCase, error: caseError } = useTaskState(caseKey);
+  const { running: submitting, error: submitError } = useTaskState(submitKey);
+
+  useTaskResult<DesignCaseResult>(caseKey, (res) => {
+    setDesignCase(res);
+    setResult(null);
+    setAnswer('');
+  });
+  useTaskResult<DesignSubmitResult>(submitKey, setResult);
+
+  const loadCase = (): void => {
+    const input = { campaignId, interviewType };
+    void runTask(caseKey, '模拟面试出题', () =>
+      generateDesignCase(getRawDb(), input.campaignId, input.interviewType),
+    ).catch(() => undefined);
   };
 
-  const submit = async () => {
+  const submit = (): void => {
     if (!designCase) return;
-    try {
-      await runTask('模拟面试评分', async () => {
-        const res = await submitDesignAnswer(
-          getRawDb(),
-          campaignId,
-          designCase.title,
-          designCase.scenarioMd,
-          answer,
-          designCase.interviewType,
-        );
-        setResult(res);
-        notifyDataChanged();
-      });
-    } catch (e) {
-      alert(e instanceof Error ? e.message : String(e));
-    }
+    const input = { campaignId, designCase, answer };
+    void runTask(submitKey, '模拟面试评分', async () => {
+      const res = await submitDesignAnswer(
+        getRawDb(),
+        input.campaignId,
+        input.designCase.title,
+        input.designCase.scenarioMd,
+        input.answer,
+        input.designCase.interviewType,
+      );
+      notifyDataChanged();
+      return res;
+    }).catch(() => undefined);
   };
-
-  const busy = Boolean(active);
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: theme.bg }} contentContainerStyle={{ padding: 16, gap: 10 }}>
@@ -137,18 +138,19 @@ export function DesignScreen(): React.JSX.Element {
       </ScrollView>
 
       <Pressable
-        onPress={() => void loadCase()}
-        disabled={busy || !campaignId}
+        onPress={loadCase}
+        disabled={loadingCase || !campaignId}
         style={{
           backgroundColor: theme.accent,
           padding: 12,
           borderRadius: 8,
           alignItems: 'center',
-          opacity: busy || !campaignId ? 0.6 : 1,
+          opacity: loadingCase || !campaignId ? 0.6 : 1,
         }}
       >
-        <Text style={{ color: '#fff' }}>{busy ? '生成中…' : '开始模拟'}</Text>
+        <Text style={{ color: '#fff' }}>{loadingCase ? '出题中…' : '开始模拟'}</Text>
       </Pressable>
+      {caseError !== null && <Text style={{ color: theme.danger, fontSize: 12 }}>{caseError}</Text>}
 
       {designCase && (
         <View style={{ gap: 8 }}>
@@ -184,18 +186,19 @@ export function DesignScreen(): React.JSX.Element {
             }}
           />
           <Pressable
-            onPress={() => void submit()}
-            disabled={busy || !answer.trim()}
+            onPress={submit}
+            disabled={submitting || !answer.trim()}
             style={{
               backgroundColor: theme.accent,
               padding: 12,
               borderRadius: 8,
               alignItems: 'center',
-              opacity: busy || !answer.trim() ? 0.6 : 1,
+              opacity: submitting || !answer.trim() ? 0.6 : 1,
             }}
           >
-            <Text style={{ color: '#fff' }}>提交评分</Text>
+            <Text style={{ color: '#fff' }}>{submitting ? '评分中…' : '提交评分'}</Text>
           </Pressable>
+          {submitError !== null && <Text style={{ color: theme.danger, fontSize: 12 }}>{submitError}</Text>}
         </View>
       )}
 

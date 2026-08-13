@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ResumeSection, ResumeSectionKey } from '@shared/resume/document';
+import { useTask, useTaskResult } from '../ipc/taskStore';
 import type { SectionEntry, SectionField } from '@shared/resume/sectionModel';
 import {
   createEmptyEntry,
@@ -60,6 +61,10 @@ export interface SectionPolishRequest {
   instruction: string;
   /** 定位到具体条目，如「腾讯科技 | 前端工程师」 */
   scopeLabel?: string;
+  /** 把模型返回的这一小块文本合回整块模块正文，供上层落库 */
+  mergeSection: (polished: string) => string;
+  /** 这个文本框的稳定任务标识：换页、重建表单后仍能接回同一次优化 */
+  taskKey: string;
 }
 
 /** 由上层注入：带着整份简历上下文去请求模型，返回优化后的这一块正文 */
@@ -68,6 +73,7 @@ export type SectionPolish = (req: SectionPolishRequest) => Promise<string>;
 /**
  * 大文本框 + AI 优化：优化以整份简历为上下文，可附加用户要求，
  * 结果直接替换文本框内容，替换前的版本留一次撤销机会。
+ * 优化过程记在全局任务仓库里，切走再回来还能看到「优化中…」与结果。
  */
 function PolishTextarea({
   value,
@@ -77,6 +83,8 @@ function PolishTextarea({
   minHeightClass,
   polish,
   scopeLabel,
+  taskKey,
+  mergeSection,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -85,27 +93,40 @@ function PolishTextarea({
   minHeightClass: string;
   polish?: SectionPolish;
   scopeLabel?: string;
+  taskKey: string;
+  /** 由各表单给出：把优化后的文本合回整块模块正文 */
+  mergeSection: (polished: string) => string;
 }): React.JSX.Element {
   const [open, setOpen] = useState(false);
   const [instruction, setInstruction] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
   const [undoValue, setUndoValue] = useState<string | null>(null);
+  const { running: busy, error } = useTask(taskKey);
 
-  const run = async (): Promise<void> => {
-    if (!polish || busy) return;
-    setBusy(true);
-    setError('');
-    try {
-      const next = await polish({ contentMd: value, instruction: instruction.trim(), scopeLabel });
-      setUndoValue(value);
+  const valueRef = useRef(value);
+  const mergeRef = useRef(mergeSection);
+  useEffect(() => {
+    valueRef.current = value;
+    mergeRef.current = mergeSection;
+  });
+
+  // 跑完时表单可能已经重建过，这里补上结果；内容已一致就只收起面板
+  useTaskResult<string>(taskKey, (next) => {
+    if (next !== valueRef.current) {
+      setUndoValue(valueRef.current);
       onChange(next);
-      setOpen(false);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
     }
+    setOpen(false);
+  });
+
+  const run = (): void => {
+    if (!polish || busy) return;
+    void polish({
+      contentMd: valueRef.current,
+      instruction: instruction.trim(),
+      scopeLabel,
+      taskKey,
+      mergeSection: (polished) => mergeRef.current(polished),
+    }).catch(() => undefined);
   };
 
   return (
@@ -129,10 +150,11 @@ function PolishTextarea({
             <button
               type="button"
               className={GHOST_BTN}
+              disabled={busy}
               title="基于整份简历和你的要求优化这一块内容"
               onClick={() => setOpen((v) => !v)}
             >
-              AI 优化
+              {busy ? '优化中…' : 'AI 优化'}
             </button>
           </div>
         )}
@@ -145,7 +167,7 @@ function PolishTextarea({
             autoFocus
             onChange={(e) => setInstruction(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') void run();
+              if (e.key === 'Enter') run();
             }}
             placeholder="想怎么改？如：更突出量化成果、精简到 4 条、贴合后端岗位（可留空）"
             className={INPUT}
@@ -154,7 +176,7 @@ function PolishTextarea({
             <button
               type="button"
               disabled={busy}
-              onClick={() => void run()}
+              onClick={run}
               className="rounded-lg bg-[var(--color-accent)] px-3 py-1.5 text-xs text-white disabled:opacity-40"
             >
               {busy ? '优化中…' : '开始优化'}
@@ -171,9 +193,10 @@ function PolishTextarea({
               只改这一块，事实取自简历原文
             </span>
           </div>
-          {error && <p className="text-xs text-red-400">{error}</p>}
         </div>
       )}
+
+      {error && <p className="mb-1 text-xs text-red-400">{error}</p>}
 
       <textarea
         value={value}
@@ -328,6 +351,8 @@ function EntryCard({
   total,
   labels,
   polish,
+  taskKey,
+  mergeSection,
   onChange,
   onMove,
   onRemove,
@@ -337,6 +362,8 @@ function EntryCard({
   total: number;
   labels: { org: string; role: string; title: string };
   polish?: SectionPolish;
+  taskKey: string;
+  mergeSection: (polished: string) => string;
   onChange: (patch: Partial<SectionEntry>) => void;
   onMove: (delta: number) => void;
   onRemove: () => void;
@@ -427,6 +454,8 @@ function EntryCard({
         placeholder={'业务背景、团队规模、技术栈可直接成段写。\n分条请用 - 开头，例如：\n- 主导 xx 重构，首屏耗时从 3.2s 降到 1.1s'}
         minHeightClass="min-h-[220px]"
         polish={polish}
+        taskKey={taskKey}
+        mergeSection={mergeSection}
         scopeLabel={
           [entry.org.trim(), entry.role.trim()].filter(Boolean).join(' | ') ||
           `${labels.title} ${index + 1}`
@@ -439,16 +468,22 @@ function EntryCard({
 function EntriesForm({
   section,
   polish,
+  taskKeyPrefix,
   onContentChange,
 }: {
   section: ResumeSection;
   polish?: SectionPolish;
+  taskKeyPrefix: string;
   onContentChange: (contentMd: string) => void;
 }): React.JSX.Element {
   const labels = entryLabels(section.key);
   const [entries, setEntries] = useState<SectionEntry[]>(() => {
     const parsed = parseEntriesSection(section.contentMd);
     return parsed.length > 0 ? parsed : [createEmptyEntry()];
+  });
+  const entriesRef = useRef(entries);
+  useEffect(() => {
+    entriesRef.current = entries;
   });
 
   const apply = (next: SectionEntry[]): void => {
@@ -466,6 +501,14 @@ function EntriesForm({
           total={entries.length}
           labels={labels}
           polish={polish}
+          taskKey={`${taskKeyPrefix}:${section.key}:entry-${index}`}
+          mergeSection={(polished) =>
+            serializeEntriesSection(
+              entriesRef.current.map((e, i) =>
+                i === index ? { ...e, description: polished } : e,
+              ),
+            )
+          }
           onChange={(patch) =>
             apply(entries.map((e, i) => (i === index ? { ...e, ...patch } : e)))
           }
@@ -488,10 +531,12 @@ function EntriesForm({
 function TextForm({
   section,
   polish,
+  taskKeyPrefix,
   onContentChange,
 }: {
   section: ResumeSection;
   polish?: SectionPolish;
+  taskKeyPrefix: string;
   onContentChange: (contentMd: string) => void;
 }): React.JSX.Element {
   return (
@@ -501,6 +546,8 @@ function TextForm({
       placeholder={'整段文字直接写，分条请用 - 开头，例如：\n- 5 年前端经验，主导过 3 个中大型项目从 0 到 1'}
       minHeightClass="min-h-[60vh]"
       polish={polish}
+      taskKey={`${taskKeyPrefix}:${section.key}:text`}
+      mergeSection={(polished) => polished}
     />
   );
 }
@@ -508,10 +555,13 @@ function TextForm({
 export function ResumeSectionForm({
   section,
   polish,
+  taskKeyPrefix,
   onContentChange,
 }: {
   section: ResumeSection;
   polish?: SectionPolish;
+  /** 优化任务 key 的前缀，由上层按简历给出 */
+  taskKeyPrefix: string;
   onContentChange: (contentMd: string) => void;
 }): React.JSX.Element {
   switch (formKindForSection(section.key)) {
@@ -520,8 +570,22 @@ export function ResumeSectionForm({
     case 'bullets':
       return <BulletsForm section={section} onContentChange={onContentChange} />;
     case 'entries':
-      return <EntriesForm section={section} polish={polish} onContentChange={onContentChange} />;
+      return (
+        <EntriesForm
+          section={section}
+          polish={polish}
+          taskKeyPrefix={taskKeyPrefix}
+          onContentChange={onContentChange}
+        />
+      );
     default:
-      return <TextForm section={section} polish={polish} onContentChange={onContentChange} />;
+      return (
+        <TextForm
+          section={section}
+          polish={polish}
+          taskKeyPrefix={taskKeyPrefix}
+          onContentChange={onContentChange}
+        />
+      );
   }
 }

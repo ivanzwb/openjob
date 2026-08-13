@@ -4,9 +4,11 @@ import type { GitStatus } from '@shared/ipc';
 import { MarkdownContent } from '../components/MarkdownContent';
 import { PageShell } from '../components/PageShell';
 import { RepoWorkspace } from '../components/RepoWorkspace';
+import { TaskButton } from '../components/TaskButton';
 import { useToast } from '../components/Toast';
 import { useJobFeedback, useJobProgress } from '../ipc/useJobProgress';
 import { invoke } from '../ipc';
+import { runTask } from '../ipc/taskStore';
 
 type RepoTab = 'summary' | 'qa';
 
@@ -103,11 +105,14 @@ export function Repos(): React.JSX.Element {
     }
   };
 
-  const remove = async (id: string): Promise<void> => {
+  const remove = (id: string): void => {
     if (!confirm('确定删除该仓库及本地 clone？')) return;
-    await invoke('repo:delete', { id });
-    if (selectedId === id) setSelectedId(null);
-    refresh();
+    void runTask(`repo:delete:${id}`, () => invoke('repo:delete', { id }))
+      .then(() => {
+        if (selectedId === id) setSelectedId(null);
+        refresh();
+      })
+      .catch((err: unknown) => alert(err instanceof Error ? err.message : String(err)));
   };
 
   const selected = repos.find((r) => r.id === selectedId) ?? null;
@@ -192,13 +197,14 @@ export function Repos(): React.JSX.Element {
                     {r.languages.length > 0 && <span>{r.languages.join(', ')}</span>}
                   </div>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => void remove(r.id)}
-                  className="mt-1 text-xs text-[var(--color-muted)] hover:text-red-400"
+                <TaskButton
+                  taskKey={`repo:delete:${r.id}`}
+                  onClick={() => remove(r.id)}
+                  runningLabel="删除中…"
+                  className="mt-1 text-xs text-[var(--color-muted)] hover:text-red-400 disabled:opacity-50"
                 >
                   删除
-                </button>
+                </TaskButton>
               </li>
             ))
           )}

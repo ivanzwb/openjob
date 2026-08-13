@@ -3,6 +3,7 @@ import type { Repo } from '@shared/entities';
 import type { AnnotationView } from '@shared/ipc';
 import { useStream } from '../ipc/useStream';
 import { invoke } from '../ipc';
+import { runTask, useTask, useTaskResult } from '../ipc/taskStore';
 import { CodePanel } from './CodePanel';
 import type { CodeLocation } from './MarkdownContent';
 import { MarkdownContent } from './MarkdownContent';
@@ -19,8 +20,12 @@ export function RepoWorkspace({
   const [input, setInput] = useState('');
   const [allowWebSearch, setAllowWebSearch] = useState(true);
   const [codeLoc, setCodeLoc] = useState<CodeLocation | null>(null);
-  const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  // 离开「问答」页签会卸载这里，存话术的状态因此放到全局任务仓库
+  const saveSpeechKey = `repo:saveSpeech:${repo.id}`;
+  const { running: saving, error: saveError } = useTask(saveSpeechKey);
+  useTaskResult(saveSpeechKey, () => setSaved(true));
   const [, setHistory] = useState<Array<{ role: 'user' | 'assistant'; text: string }>>([]);
   const [codeMarks, setCodeMarks] = useState<AnnotationView[]>([]);
 
@@ -39,7 +44,11 @@ export function RepoWorkspace({
     });
   };
 
-  const { state, send, cancel, reset, setSessionId } = useStream(null, handleDone);
+  const { state, send, cancel, reset, setSessionId } = useStream(
+    `repoQa:${repo.id}`,
+    null,
+    handleDone,
+  );
 
   const submit = (): void => {
     const text = input.trim();
@@ -62,15 +71,12 @@ export function RepoWorkspace({
     });
   };
 
-  const saveSpeech = async (): Promise<void> => {
+  const saveSpeech = (): void => {
     if (!state.text.trim()) return;
-    setSaving(true);
-    try {
-      await invoke('speech:save', { repoId: repo.id, contentMd: state.text, tier: 'spoken' });
-      setSaved(true);
-    } finally {
-      setSaving(false);
-    }
+    const contentMd = state.text;
+    void runTask(saveSpeechKey, () =>
+      invoke('speech:save', { repoId: repo.id, contentMd, tier: 'spoken' }),
+    ).catch(() => undefined);
   };
 
   const openCitation = (filePath?: string, startLine?: number, endLine?: number): void => {
@@ -141,12 +147,13 @@ export function RepoWorkspace({
                 <>
                   <button
                     type="button"
-                    onClick={() => void saveSpeech()}
+                    onClick={saveSpeech}
                     disabled={saving}
                     className="hover:text-[var(--color-fg)] disabled:opacity-40"
                   >
                     {saved ? '已存入话术库' : saving ? '保存中…' : '存入话术库'}
                   </button>
+                  {saveError && <span className="text-red-400">{saveError}</span>}
                   <button
                     type="button"
                     onClick={() => {

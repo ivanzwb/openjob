@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 import type { ResumeSection } from '@shared/resume/document';
 import type { SectionEntry, SectionField } from '@shared/resume/sectionModel';
@@ -13,6 +13,7 @@ import {
   serializeEntriesSection,
   serializeFieldsSection,
 } from '@shared/resume/sectionModel';
+import { useTaskState, useTaskResult } from '../context/RemoteTaskContext';
 import { theme } from '../theme';
 
 /** 由上层注入：带整份简历上下文去请求模型，返回优化后的这一块正文 */
@@ -20,6 +21,10 @@ export type SectionPolish = (req: {
   contentMd: string;
   instruction: string;
   scopeLabel?: string;
+  /** 把模型返回的这一小块文本合回整块模块正文，供上层落库 */
+  mergeSection: (polished: string) => string;
+  /** 这个文本框的稳定任务标识：退出编辑器再进来还能接回同一次优化 */
+  taskKey: string;
 }) => Promise<string>;
 
 const INPUT = {
@@ -75,6 +80,7 @@ function GhostButton({
 /**
  * 大文本框 + AI 优化：优化以整份简历为上下文，可附加用户要求，
  * 结果直接替换内容，替换前的版本留一次撤销机会。
+ * 优化过程记在全局任务仓库里，切页、退出编辑器再回来仍看得到「优化中…」与结果。
  */
 function PolishTextarea({
   value,
@@ -84,6 +90,8 @@ function PolishTextarea({
   minHeight,
   polish,
   scopeLabel,
+  taskKey,
+  mergeSection,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -92,27 +100,40 @@ function PolishTextarea({
   minHeight: number;
   polish?: SectionPolish;
   scopeLabel?: string;
+  taskKey: string;
+  /** 由各表单给出：把优化后的文本合回整块模块正文 */
+  mergeSection: (polished: string) => string;
 }): React.JSX.Element {
   const [open, setOpen] = useState(false);
   const [instruction, setInstruction] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
   const [undoValue, setUndoValue] = useState<string | null>(null);
+  const { running: busy, error } = useTaskState(taskKey);
 
-  const run = async (): Promise<void> => {
-    if (!polish || busy) return;
-    setBusy(true);
-    setError('');
-    try {
-      const next = await polish({ contentMd: value, instruction: instruction.trim(), scopeLabel });
-      setUndoValue(value);
+  const valueRef = useRef(value);
+  const mergeRef = useRef(mergeSection);
+  useEffect(() => {
+    valueRef.current = value;
+    mergeRef.current = mergeSection;
+  });
+
+  // 跑完时表单可能已经重建过，这里补上结果；内容已一致就只收起面板
+  useTaskResult<string>(taskKey, (next) => {
+    if (next !== valueRef.current) {
+      setUndoValue(valueRef.current);
       onChange(next);
-      setOpen(false);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
     }
+    setOpen(false);
+  });
+
+  const run = (): void => {
+    if (!polish || busy) return;
+    void polish({
+      contentMd: valueRef.current,
+      instruction: instruction.trim(),
+      scopeLabel,
+      taskKey,
+      mergeSection: (polished) => mergeRef.current(polished),
+    }).catch(() => undefined);
   };
 
   return (
@@ -130,7 +151,7 @@ function PolishTextarea({
                 }}
               />
             )}
-            <GhostButton label="AI 优化" onPress={() => setOpen((v) => !v)} />
+            <GhostButton label={busy ? '优化中…' : 'AI 优化'} onPress={() => setOpen((v) => !v)} />
           </View>
         )}
       </View>
@@ -155,7 +176,7 @@ function PolishTextarea({
           />
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <Pressable
-              onPress={() => void run()}
+              onPress={run}
               disabled={busy}
               style={{
                 backgroundColor: theme.accent,
@@ -170,7 +191,7 @@ function PolishTextarea({
             <GhostButton label="取消" onPress={() => setOpen(false)} disabled={busy} />
             <Text style={{ color: theme.muted, fontSize: 10, flex: 1 }}>只改这一块，事实取自简历原文</Text>
           </View>
-          {Boolean(error) && <Text style={{ color: theme.danger, fontSize: 11 }}>{error}</Text>}
+          {error !== null && <Text style={{ color: theme.danger, fontSize: 11 }}>{error}</Text>}
         </View>
       )}
 
@@ -289,10 +310,12 @@ function BulletsForm({
 function EntriesForm({
   section,
   polish,
+  taskKeyPrefix,
   onContentChange,
 }: {
   section: ResumeSection;
   polish?: SectionPolish;
+  taskKeyPrefix: string;
   onContentChange: (contentMd: string) => void;
 }): React.JSX.Element {
   const labels = ENTRY_LABELS[section.key] ?? { org: '名称', role: '角色', title: '条目' };
@@ -391,6 +414,12 @@ function EntriesForm({
               minHeight={130}
               polish={polish}
               scopeLabel={[entry.org, entry.role].filter(Boolean).join(' | ') || undefined}
+              taskKey={`${taskKeyPrefix}:entry:${index}`}
+              mergeSection={(polished) =>
+                serializeEntriesSection(
+                  entries.map((e, i) => (i === index ? { ...e, description: polished } : e)),
+                )
+              }
             />
           </View>
         );
@@ -403,10 +432,13 @@ function EntriesForm({
 export function ResumeSectionForm({
   section,
   polish,
+  taskKeyPrefix,
   onContentChange,
 }: {
   section: ResumeSection;
   polish?: SectionPolish;
+  /** 该模块的任务前缀，例如 resume:polish:12:experience */
+  taskKeyPrefix: string;
   onContentChange: (contentMd: string) => void;
 }): React.JSX.Element {
   switch (formKindForSection(section.key)) {
@@ -415,7 +447,14 @@ export function ResumeSectionForm({
     case 'bullets':
       return <BulletsForm section={section} onContentChange={onContentChange} />;
     case 'entries':
-      return <EntriesForm section={section} polish={polish} onContentChange={onContentChange} />;
+      return (
+        <EntriesForm
+          section={section}
+          polish={polish}
+          taskKeyPrefix={taskKeyPrefix}
+          onContentChange={onContentChange}
+        />
+      );
     default:
       return (
         <PolishTextarea
@@ -424,6 +463,8 @@ export function ResumeSectionForm({
           placeholder={'整段文字直接写，分条请用 - 开头'}
           minHeight={220}
           polish={polish}
+          taskKey={`${taskKeyPrefix}:text`}
+          mergeSection={(polished) => polished}
         />
       );
   }

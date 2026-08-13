@@ -5,7 +5,7 @@ import { getRawDb } from '../db';
 import { listSpeechSnippets } from '../data/queries';
 import { deleteSpeech, updateSpeech } from '../data/mutations';
 import { useApp } from '../context/AppContext';
-import { useRemoteTask } from '../context/RemoteTaskContext';
+import { runTask, useTaskResult, useTaskState } from '../context/RemoteTaskContext';
 import { useLocalDataReload } from '../hooks/useLocalDataReload';
 import { markdownToPlainText } from '../lib/markdownBlocks';
 import { theme } from '../theme';
@@ -22,9 +22,36 @@ function selectSnippet(s: SpeechSnippetView): { id: string; draft: string; mode:
   return { id: s.id, draft: s.contentMd, mode: 'preview' };
 }
 
+/** 列表里的删除按钮：每条各自跟着自己的删除任务，关掉弹窗再打开也还在删 */
+function SnippetDeleteButton({
+  snippetId,
+  onPress,
+}: {
+  snippetId: string;
+  onPress: () => void;
+}): React.JSX.Element {
+  const { running } = useTaskState(`speech:delete:${snippetId}`);
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={running}
+      style={{
+        justifyContent: 'center',
+        paddingHorizontal: 10,
+        borderWidth: 1,
+        borderColor: theme.border,
+        borderRadius: 8,
+        backgroundColor: theme.bg,
+        opacity: running ? 0.5 : 1,
+      }}
+    >
+      <Text style={{ color: theme.danger, fontSize: 11 }}>{running ? '删除中…' : '删除'}</Text>
+    </Pressable>
+  );
+}
+
 export function ScriptsScreen(): React.JSX.Element {
-  const { triggerSync } = useApp();
-  const { runTask } = useRemoteTask();
+  const { triggerSync, notifyDataChanged } = useApp();
   const [items, setItems] = useState<SpeechSnippetView[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [panelMode, setPanelMode] = useState<PanelMode>('preview');
@@ -65,19 +92,24 @@ export function ScriptsScreen(): React.JSX.Element {
     setPanelMode(next.mode);
   };
 
-  const save = async (): Promise<void> => {
-    if (!selected || !dirty) return;
-    try {
-      await runTask('保存话术', async () => {
-        await updateSpeech(getRawDb(), selected.id, draft);
-        await triggerSync();
-        reload();
-        setPanelMode('preview');
-        return '话术已保存';
-      });
-    } catch {
-      // toast handled by runTask
-    }
+  const saveKey = selected ? `speech:save:${selected.id}` : 'speech:save:none';
+  const { running: saving } = useTaskState(saveKey);
+  const { running: removingSelected } = useTaskState(
+    selected ? `speech:delete:${selected.id}` : 'speech:delete:none',
+  );
+
+  // 保存成功后切回预览；这一步即使保存跑完时页面被重建也不会丢
+  useTaskResult(saveKey, () => setPanelMode('preview'));
+
+  const save = (): void => {
+    if (!selected || !dirty || saving) return;
+    const target = { id: selected.id, contentMd: draft };
+    void runTask(saveKey, '保存话术', async () => {
+      await updateSpeech(getRawDb(), target.id, target.contentMd);
+      notifyDataChanged();
+      await triggerSync().catch(() => undefined);
+      return '话术已保存';
+    }).catch(() => undefined);
   };
 
   const remove = (snippet: SpeechSnippetView): void => {
@@ -87,18 +119,12 @@ export function ScriptsScreen(): React.JSX.Element {
         text: '删除',
         style: 'destructive',
         onPress: () => {
-          void (async () => {
-            try {
-              await runTask('删除话术', async () => {
-                await deleteSpeech(getRawDb(), snippet.id);
-                await triggerSync();
-                reload();
-                return '已删除';
-              });
-            } catch {
-              // toast handled by runTask
-            }
-          })();
+          void runTask(`speech:delete:${snippet.id}`, '删除话术', async () => {
+            await deleteSpeech(getRawDb(), snippet.id);
+            notifyDataChanged();
+            await triggerSync().catch(() => undefined);
+            return '已删除';
+          }).catch(() => undefined);
         },
       },
     ]);
@@ -186,23 +212,25 @@ export function ScriptsScreen(): React.JSX.Element {
                   </Text>
                 </View>
                 <View style={{ flexDirection: 'row', gap: 8 }}>
-                  <Pressable onPress={() => remove(selected)}>
-                    <Text style={{ color: theme.danger, fontSize: 12 }}>删除</Text>
+                  <Pressable onPress={() => remove(selected)} disabled={removingSelected}>
+                    <Text style={{ color: theme.danger, fontSize: 12, opacity: removingSelected ? 0.5 : 1 }}>
+                      {removingSelected ? '删除中…' : '删除'}
+                    </Text>
                   </Pressable>
                   {panelMode === 'edit' && (
                     <Pressable
-                      onPress={() => void save()}
-                      disabled={!dirty}
+                      onPress={save}
+                      disabled={!dirty || saving}
                       style={{
                         backgroundColor: theme.accent,
                         paddingHorizontal: 12,
                         paddingVertical: 6,
                         borderRadius: 8,
-                        opacity: dirty ? 1 : 0.4,
+                        opacity: dirty && !saving ? 1 : 0.4,
                       }}
                     >
                       <Text style={{ color: '#fff', fontSize: 12 }}>
-                        {selected.isUserEdited ? '保存修改' : '保存为自己的话'}
+                        {saving ? '保存中…' : selected.isUserEdited ? '保存修改' : '保存为自己的话'}
                       </Text>
                     </Pressable>
                   )}
@@ -305,19 +333,7 @@ export function ScriptsScreen(): React.JSX.Element {
                         {markdownToPlainText(s.contentMd)}
                       </Text>
                     </Pressable>
-                    <Pressable
-                      onPress={() => remove(s)}
-                      style={{
-                        justifyContent: 'center',
-                        paddingHorizontal: 10,
-                        borderWidth: 1,
-                        borderColor: theme.border,
-                        borderRadius: 8,
-                        backgroundColor: theme.bg,
-                      }}
-                    >
-                      <Text style={{ color: theme.danger, fontSize: 11 }}>删除</Text>
-                    </Pressable>
+                    <SnippetDeleteButton snippetId={s.id} onPress={() => remove(s)} />
                   </View>
                 ))}
               </View>

@@ -3,6 +3,8 @@ import QRCodeSVG from 'react-qr-code';
 import type { FieldConflict, PairingPayload, SyncRunSummary, SyncStatus } from '@shared/sync';
 import type { ConflictChoice } from '@shared/sync';
 import { invoke, onEvent } from '../ipc';
+import { runTask } from '../ipc/taskStore';
+import { TaskButton } from './TaskButton';
 
 export function SyncPanel(): React.JSX.Element {
   const [status, setStatus] = useState<SyncStatus | null>(null);
@@ -11,7 +13,6 @@ export function SyncPanel(): React.JSX.Element {
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [conflicts, setConflicts] = useState<FieldConflict[]>([]);
   const [choices, setChoices] = useState<Record<string, ConflictChoice>>({});
-  const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -48,61 +49,64 @@ export function SyncPanel(): React.JSX.Element {
     };
   }, [refresh]);
 
-  const beginPairing = async (): Promise<void> => {
-    setBusy(true);
-    try {
+  const beginPairing = (): void => {
+    void runTask('sync:beginPairing', async () => {
       const res = await invoke('sync:beginPairing', undefined);
-      setPairing(res.payload);
       await refresh();
-    } finally {
-      setBusy(false);
-    }
+      return res.payload;
+    })
+      .then(setPairing)
+      .catch(() => undefined);
   };
 
-  const cancelPairing = async (): Promise<void> => {
-    await invoke('sync:cancelPairing', undefined);
-    setPairing(null);
-    await refresh();
+  const cancelPairing = (): void => {
+    void runTask('sync:cancelPairing', async () => {
+      await invoke('sync:cancelPairing', undefined);
+      await refresh();
+    })
+      .then(() => setPairing(null))
+      .catch(() => undefined);
   };
 
-  const removePeer = async (deviceId: string): Promise<void> => {
-    await invoke('sync:removePeer', { deviceId });
-    await refresh();
+  const removePeer = (deviceId: string): void => {
+    void runTask(`sync:removePeer:${deviceId}`, async () => {
+      await invoke('sync:removePeer', { deviceId });
+      await refresh();
+    }).catch(() => undefined);
   };
 
-  const rollback = async (backupFile: string): Promise<void> => {
+  const rollback = (backupFile: string): void => {
     if (!confirm(`确定回退到备份 ${backupFile}？当前数据会先自动留一份快照。`)) return;
-    setBusy(true);
-    try {
+    void runTask(`sync:rollback:${backupFile}`, async () => {
       await invoke('sync:rollback', { backupFile });
-      setMessage('已回退到所选备份');
       await refresh();
-    } finally {
-      setBusy(false);
-    }
+    })
+      .then(() => setMessage('已回退到所选备份'))
+      .catch(() => undefined);
   };
 
   const conflictKey = (c: FieldConflict): string => `${c.table}\u0000${c.rowId}\u0000${c.field}`;
 
-  const submitConflicts = async (): Promise<void> => {
+  const submitConflicts = (): void => {
     if (!activeRunId) return;
-    setBusy(true);
-    try {
-      const payload = conflicts.map((c) => ({
-        table: c.table,
-        rowId: c.rowId,
-        field: c.field,
-        choice: choices[conflictKey(c)] ?? 'local',
-      }));
-      await invoke('sync:resolveConflicts', { runId: activeRunId, choices: payload });
-      setActiveRunId(null);
-      setConflicts([]);
-      setChoices({});
-      setMessage('冲突已处理');
+    const runId = activeRunId;
+    const payload = conflicts.map((c) => ({
+      table: c.table,
+      rowId: c.rowId,
+      field: c.field,
+      choice: choices[conflictKey(c)] ?? 'local',
+    }));
+    void runTask(`sync:resolveConflicts:${runId}`, async () => {
+      await invoke('sync:resolveConflicts', { runId, choices: payload });
       await refresh();
-    } finally {
-      setBusy(false);
-    }
+    })
+      .then(() => {
+        setActiveRunId(null);
+        setConflicts([]);
+        setChoices({});
+        setMessage('冲突已处理');
+      })
+      .catch(() => undefined);
   };
 
   return (
@@ -138,13 +142,14 @@ export function SyncPanel(): React.JSX.Element {
                         ? ` · 上次同步 ${new Date(p.lastSyncAt).toLocaleString()}`
                         : ' · 尚未同步'}
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => void removePeer(p.deviceId)}
-                      className="rounded border border-[var(--color-border)] px-2 py-0.5 hover:text-red-300"
+                    <TaskButton
+                      taskKey={`sync:removePeer:${p.deviceId}`}
+                      onClick={() => removePeer(p.deviceId)}
+                      className="rounded border border-[var(--color-border)] px-2 py-0.5 hover:text-red-300 disabled:opacity-50"
+                      runningLabel="移除中…"
                     >
                       移除
-                    </button>
+                    </TaskButton>
                   </li>
                 ))}
               </ul>
@@ -154,23 +159,23 @@ export function SyncPanel(): React.JSX.Element {
 
         <div className="flex flex-wrap gap-2">
           {!pairing ? (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void beginPairing()}
+            <TaskButton
+              taskKey="sync:beginPairing"
+              onClick={beginPairing}
               className="rounded border border-[var(--color-border)] px-3 py-1.5 hover:text-[var(--color-fg)] disabled:opacity-50"
+              runningLabel="生成中…"
             >
               生成配对码
-            </button>
+            </TaskButton>
           ) : (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void cancelPairing()}
-              className="rounded border border-[var(--color-border)] px-3 py-1.5 hover:text-[var(--color-fg)]"
+            <TaskButton
+              taskKey="sync:cancelPairing"
+              onClick={cancelPairing}
+              className="rounded border border-[var(--color-border)] px-3 py-1.5 hover:text-[var(--color-fg)] disabled:opacity-50"
+              runningLabel="取消中…"
             >
               取消配对
-            </button>
+            </TaskButton>
           )}
         </div>
 
@@ -229,14 +234,14 @@ export function SyncPanel(): React.JSX.Element {
                 );
               })}
             </ul>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void submitConflicts()}
+            <TaskButton
+              taskKey={`sync:resolveConflicts:${activeRunId}`}
+              onClick={submitConflicts}
               className="rounded border border-[var(--color-border)] px-3 py-1.5 hover:text-[var(--color-fg)] disabled:opacity-50"
+              runningLabel="处理中…"
             >
               应用选择
-            </button>
+            </TaskButton>
           </div>
         )}
 
@@ -264,13 +269,14 @@ export function SyncPanel(): React.JSX.Element {
                     </button>
                   )}
                   {run.backupFile && (
-                    <button
-                      type="button"
-                      onClick={() => void rollback(run.backupFile!)}
-                      className="rounded border border-[var(--color-border)] px-2 py-0.5 hover:text-amber-200"
+                    <TaskButton
+                      taskKey={`sync:rollback:${run.backupFile}`}
+                      onClick={() => rollback(run.backupFile!)}
+                      className="rounded border border-[var(--color-border)] px-2 py-0.5 hover:text-amber-200 disabled:opacity-50"
+                      runningLabel="回退中…"
                     >
                       回退
-                    </button>
+                    </TaskButton>
                   )}
                 </li>
               ))}

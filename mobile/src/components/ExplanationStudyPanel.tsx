@@ -14,8 +14,7 @@ import {
 } from '../data/study';
 import { elaborateExplanationSelection, generateExplanation } from '../data/explainGen';
 import { useApp } from '../context/AppContext';
-import { useRemoteTask } from '../context/RemoteTaskContext';
-import { useToast } from './Toast';
+import { isTaskRunning, runTask, useTaskResult, useTaskState } from '../context/RemoteTaskContext';
 import { theme } from '../theme';
 import { AnnotatedExplanationText } from './AnnotatedExplanationText';
 import {
@@ -53,14 +52,10 @@ export function ExplanationStudyPanel({
   nodeName: string;
   tier?: ExplanationTier;
 }): React.JSX.Element {
-  const { runTask } = useRemoteTask();
   const { notifyDataChanged } = useApp();
-  const toast = useToast();
   const [tier, setTier] = useState<ExplanationTier>(initialTier);
   const [content, setContent] = useState<Explanation | null>(null);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [draftMd, setDraftMd] = useState('');
   const [phrase, setPhrase] = useState('');
@@ -70,7 +65,36 @@ export function ExplanationStudyPanel({
   const [highlightColor, setHighlightColor] = useState<string>(DEFAULT_HIGHLIGHT_COLOR);
   const [viewMarker, setViewMarker] = useState<Annotation | null>(null);
   const [focusedMarkId, setFocusedMarkId] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+
+  // 按「考点 + 档位」记讲解任务，按考点记标注类操作：
+  // 切页、换档位、关掉弹窗再回来，都能看到还在跑，也不会重复发起同一件事
+  const loadKey = `explain:load:${nodeId}:${tier}`;
+  const regenerateKey = `explain:regenerate:${nodeId}:${tier}`;
+  const elaborateKey = `explain:elaborate:${nodeId}:${tier}`;
+  const fullEditKey = `explain:fullEdit:${nodeId}`;
+  const bookmarkKey = `explain:bookmark:${nodeId}`;
+  const highlightKey = `explain:highlight:${nodeId}`;
+  const clearHighlightKey = `explain:clearHighlight:${nodeId}`;
+  const noteKey = `explain:note:${nodeId}`;
+  const excerptKey = `explain:excerpt:${nodeId}`;
+  const deleteMarkKey = `explain:deleteMark:${nodeId}`;
+
+  const { running: generating, error: loadError } = useTaskState(loadKey);
+  const { running: regenerating, error: regenerateError } = useTaskState(regenerateKey);
+  const { running: elaborating } = useTaskState(elaborateKey);
+  const { running: savingFullEdit } = useTaskState(fullEditKey);
+  const { running: savingHighlight } = useTaskState(highlightKey);
+  const { running: clearingHighlight } = useTaskState(clearHighlightKey);
+  const { running: savingNote } = useTaskState(noteKey);
+  const { running: savingExcerpt } = useTaskState(excerptKey);
+  const { running: deletingMark } = useTaskState(deleteMarkKey);
+  const busy =
+    elaborating ||
+    savingHighlight ||
+    clearingHighlight ||
+    savingNote ||
+    savingExcerpt ||
+    deletingMark;
 
   const bookmarked = annotations.some((a) => a.kind === 'bookmark');
   const highlightMarks = annotations.filter((a) => a.kind === 'highlight');
@@ -97,55 +121,41 @@ export function ExplanationStudyPanel({
     [phrase, highlightMarks, selectionStart],
   );
 
-  const showToast = useCallback(
-    (msg: string) => {
-      toast(msg, { variant: 'success' });
-    },
-    [toast],
-  );
-
-  const loadAnnotations = useCallback(async (explanationId: string) => {
-    const result = listAnnotations(getRawDb(), 'explanation', explanationId);
-    setAnnotations(result);
+  const loadAnnotations = useCallback((explanationId: string) => {
+    setAnnotations(listAnnotations(getRawDb(), 'explanation', explanationId));
   }, []);
 
-  const loadExplanation = useCallback(
-    async (t: ExplanationTier, forceGenerate = false): Promise<void> => {
-      setLoading(true);
-      setError(null);
-      setPhrase('');
-      setSelectionStart(undefined);
-      setEditing(false);
-      setModalMode(null);
-      try {
-        if (!forceGenerate) {
-          const cached = getExplanation(getRawDb(), nodeId, t);
-          if (cached?.contentMd) {
-            setContent(cached);
-            setDraftMd(cached.contentMd);
-            await loadAnnotations(cached.id);
-            return;
-          }
-        }
-        const generated = await runTask('生成讲解', async () =>
-          generateExplanation(getRawDb(), nodeId, t),
-        );
-        setContent(generated);
-        setDraftMd(generated.contentMd);
-        await loadAnnotations(generated.id);
-        notifyDataChanged();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
-      } finally {
-        setLoading(false);
-      }
+  const adopt = useCallback(
+    (explanation: Explanation) => {
+      setContent(explanation);
+      setDraftMd(explanation.contentMd);
+      loadAnnotations(explanation.id);
     },
-    [nodeId, runTask, loadAnnotations, notifyDataChanged],
+    [loadAnnotations],
   );
 
+  // 生成结果由 generateExplanation 自己落库，所以重新挂载时先读库，读不到才去生成
+  useTaskResult<Explanation>(loadKey, adopt);
+  useTaskResult<Explanation>(regenerateKey, adopt);
+
   useEffect(() => {
-    void loadExplanation(tier);
-  }, [nodeId, tier, loadExplanation]);
+    setPhrase('');
+    setSelectionStart(undefined);
+    setEditing(false);
+    setModalMode(null);
+    const cached = getExplanation(getRawDb(), nodeId, tier);
+    if (cached?.contentMd) {
+      adopt(cached);
+      return;
+    }
+    setContent(null);
+    if (isTaskRunning(loadKey)) return;
+    void runTask(loadKey, '生成讲解', async () => {
+      const generated = await generateExplanation(getRawDb(), nodeId, tier);
+      notifyDataChanged();
+      return generated;
+    }).catch(() => undefined);
+  }, [nodeId, tier, loadKey, adopt, notifyDataChanged]);
 
   const openModal = (mode: ActionModalMode): void => {
     if (!phrase.trim() && mode !== 'viewMarker') return;
@@ -218,18 +228,18 @@ export function ExplanationStudyPanel({
     );
   };
 
-  const saveFullEdit = async (): Promise<void> => {
+  const saveFullEdit = (): void => {
     if (!content) return;
-    try {
-      const result = await updateExplanation(getRawDb(), content.id, draftMd);
-      setContent(result);
-      setDraftMd(result.contentMd);
-      setEditing(false);
-      showToast('讲解已保存');
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    }
+    const target = { id: content.id, contentMd: draftMd };
+    void runTask(fullEditKey, '保存讲解', () =>
+      updateExplanation(getRawDb(), target.id, target.contentMd),
+    ).catch(() => undefined);
   };
+
+  useTaskResult<Explanation>(fullEditKey, (result) => {
+    adopt(result);
+    setEditing(false);
+  });
 
   const confirmRegenerate = (): void => {
     const tierLabel = TIERS.find((t) => t.id === tier)?.label ?? tier;
@@ -241,153 +251,167 @@ export function ExplanationStudyPanel({
         : `重新生成将覆盖当前「${tierLabel}」讲解内容，确定继续？`,
       [
         { text: '取消', style: 'cancel' },
-        { text: '继续', style: 'destructive', onPress: () => void loadExplanation(tier, true) },
+        {
+          text: '继续',
+          style: 'destructive',
+          onPress: () => {
+            void runTask(regenerateKey, '重新生成讲解', async () => {
+              const generated = await generateExplanation(getRawDb(), nodeId, tier);
+              notifyDataChanged();
+              return generated;
+            }).catch(() => undefined);
+          },
+        },
       ],
     );
   };
 
-  const toggleBookmark = async (): Promise<void> => {
+  const toggleBookmark = (): void => {
     if (!content) return;
-    try {
-      await toggleBookmarkLocal(getRawDb(), 'explanation', content.id);
-      await loadAnnotations(content.id);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    }
+    const explanationId = content.id;
+    void runTask(bookmarkKey, '收藏', async () => {
+      await toggleBookmarkLocal(getRawDb(), 'explanation', explanationId);
+      return '已更新收藏';
+    })
+      .then(() => loadAnnotations(explanationId))
+      .catch(() => undefined);
   };
 
-  const saveHighlight = async (): Promise<void> => {
+  const saveHighlight = (): void => {
     if (!content || !phrase.trim()) return;
-    setBusy(true);
-    try {
-      const trimmed = phrase.trim().slice(0, 500);
-      const start = selectionStart ?? phraseSelectionStart(content.contentMd, trimmed);
-      const existing = findHighlightMark(phrase, highlightMarks, start);
+    const explanationId = content.id;
+    const trimmed = phrase.trim().slice(0, 500);
+    const start = selectionStart ?? phraseSelectionStart(content.contentMd, trimmed);
+    const existing = findHighlightMark(phrase, highlightMarks, start);
+    void runTask(highlightKey, '高亮', async () => {
       if (existing) await deleteAnnotation(getRawDb(), existing.id);
       await createAnnotation(getRawDb(), {
         targetType: 'explanation',
-        targetId: content.id,
+        targetId: explanationId,
         kind: 'highlight',
         selectedText: trimmed,
         highlightColor,
         ...(start !== undefined ? { selectionStart: start } : {}),
       });
-      await loadAnnotations(content.id);
-      setModalMode(null);
-      showToast(existing ? '高亮已更新' : '已添加高亮');
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
+      return existing ? '高亮已更新' : '已添加高亮';
+    })
+      .then(() => {
+        loadAnnotations(explanationId);
+        setModalMode(null);
+      })
+      .catch(() => undefined);
   };
 
-  const clearHighlight = async (): Promise<void> => {
+  const clearHighlight = (): void => {
     if (!content) return;
+    const explanationId = content.id;
     const mark = findHighlightMark(phrase, highlightMarks, selectionStart);
     if (!mark) return;
-    setBusy(true);
-    try {
+    void runTask(clearHighlightKey, '清除高亮', async () => {
       await deleteAnnotation(getRawDb(), mark.id);
-      await loadAnnotations(content.id);
-      setModalMode(null);
-      showToast('高亮已清除');
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
+      return '高亮已清除';
+    })
+      .then(() => {
+        loadAnnotations(explanationId);
+        setModalMode(null);
+      })
+      .catch(() => undefined);
   };
 
-  const saveNote = async (): Promise<void> => {
+  const saveNote = (): void => {
     if (!content || !modalDraft.trim()) return;
-    setBusy(true);
-    try {
-      const trimmed = phrase.trim().slice(0, 500);
+    const explanationId = content.id;
+    const trimmed = phrase.trim().slice(0, 500);
+    const noteMd = modalDraft.trim();
+    void runTask(noteKey, '记笔记', async () => {
       await createAnnotation(getRawDb(), {
         targetType: 'explanation',
-        targetId: content.id,
+        targetId: explanationId,
         kind: 'note',
-        noteMd: modalDraft.trim(),
+        noteMd,
         ...(trimmed ? { selectedText: trimmed } : {}),
       });
-      await loadAnnotations(content.id);
-      setModalMode(null);
-      setModalDraft('');
-      showToast('笔记已保存');
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
+      return '笔记已保存';
+    })
+      .then(() => {
+        loadAnnotations(explanationId);
+        setModalMode(null);
+        setModalDraft('');
+      })
+      .catch(() => undefined);
   };
 
-  const saveEditExcerpt = async (): Promise<void> => {
+  const saveEditExcerpt = (): void => {
     if (!content || !phrase.trim() || !modalDraft.trim()) return;
-    setBusy(true);
-    try {
-      const nextMd = replaceExcerpt(content.contentMd, phrase, modalDraft);
-      const result = await updateExplanation(getRawDb(), content.id, nextMd);
-      setContent(result);
-      setDraftMd(result.contentMd);
-      setModalMode(null);
-      setPhrase('');
-      setSelectionStart(undefined);
-      showToast('讲解已更新');
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
+    const target = { id: content.id, contentMd: content.contentMd, phrase, draft: modalDraft };
+    void runTask(excerptKey, '编辑词句', () =>
+      updateExplanation(
+        getRawDb(),
+        target.id,
+        replaceExcerpt(target.contentMd, target.phrase, target.draft),
+      ),
+    )
+      .then((result) => {
+        adopt(result);
+        setModalMode(null);
+        setPhrase('');
+        setSelectionStart(undefined);
+      })
+      .catch(() => undefined);
   };
 
-  const saveElaboration = async (): Promise<void> => {
+  const saveElaboration = (): void => {
     const text = phrase.trim();
     if (!text || !content) return;
-    setBusy(true);
-    try {
-      const result = await runTask('细化讲解', async () =>
-        elaborateExplanationSelection(getRawDb(), nodeId, tier, text, content.contentMd),
+    const target = { id: content.id, contentMd: content.contentMd };
+    // 细化要请求模型，落库放在任务里：切走再回来，标记已经在正文上了
+    void runTask(elaborateKey, '细化讲解', async () => {
+      const result = await elaborateExplanationSelection(
+        getRawDb(),
+        nodeId,
+        tier,
+        text,
+        target.contentMd,
       );
       await createAnnotation(getRawDb(), {
         targetType: 'explanation',
-        targetId: content.id,
+        targetId: target.id,
         kind: 'elaboration',
         noteMd: result.elaborationMd,
         selectedText: result.selectedText.slice(0, 500),
       });
-      await loadAnnotations(content.id);
-      setModalMode(null);
-      showToast('细化讲解已保存');
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
+      return '细化讲解已保存';
+    }).catch(() => undefined);
   };
 
-  const deleteMarker = async (): Promise<void> => {
+  useTaskResult(elaborateKey, () => {
+    if (content) loadAnnotations(content.id);
+    setModalMode(null);
+  });
+
+  const deleteMarker = (): void => {
     if (!viewMarker || !content) return;
-    setBusy(true);
-    try {
-      await deleteAnnotation(getRawDb(), viewMarker.id);
-      await loadAnnotations(content.id);
-      setModalMode(null);
-      setViewMarker(null);
-      showToast('标记已删除');
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
+    const explanationId = content.id;
+    const markId = viewMarker.id;
+    void runTask(deleteMarkKey, '删除标记', async () => {
+      await deleteAnnotation(getRawDb(), markId);
+      return '标记已删除';
+    })
+      .then(() => {
+        loadAnnotations(explanationId);
+        setModalMode(null);
+        setViewMarker(null);
+      })
+      .catch(() => undefined);
   };
 
-  if (loading) {
-    return <Text style={{ color: theme.muted, fontSize: 13 }}>加载讲解…</Text>;
+  if (!content && (generating || regenerating)) {
+    return <Text style={{ color: theme.muted, fontSize: 13 }}>生成讲解中…</Text>;
   }
 
-  if (error) {
-    return <Text style={{ color: theme.danger, fontSize: 13 }}>{error}</Text>;
+  const failure = loadError ?? regenerateError;
+  if (!content && failure !== null) {
+    return <Text style={{ color: theme.danger, fontSize: 13 }}>{failure}</Text>;
   }
 
   if (!content) {
@@ -414,7 +438,7 @@ export function ExplanationStudyPanel({
       </View>
 
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-        <Pressable onPress={() => void toggleBookmark()} style={btnGhost}>
+        <Pressable onPress={toggleBookmark} style={btnGhost}>
           <Text style={{ color: bookmarked ? '#fbbf24' : theme.muted, fontSize: 12 }}>
             {bookmarked ? '★ 已收藏' : '☆ 收藏'}
           </Text>
@@ -429,8 +453,10 @@ export function ExplanationStudyPanel({
             <Pressable onPress={() => setEditing(true)} style={btnGhost}>
               <Text style={{ color: theme.accent, fontSize: 12 }}>编辑全文</Text>
             </Pressable>
-            <Pressable onPress={confirmRegenerate} style={btnGhost}>
-              <Text style={{ color: theme.muted, fontSize: 12 }}>重新生成</Text>
+            <Pressable onPress={confirmRegenerate} disabled={regenerating} style={btnGhost}>
+              <Text style={{ color: theme.muted, fontSize: 12, opacity: regenerating ? 0.5 : 1 }}>
+                {regenerating ? '重新生成中…' : '重新生成'}
+              </Text>
             </Pressable>
           </>
         )}
@@ -456,10 +482,17 @@ export function ExplanationStudyPanel({
           />
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <Pressable
-              onPress={() => void saveFullEdit()}
-              style={{ backgroundColor: theme.accent, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 }}
+              onPress={saveFullEdit}
+              disabled={savingFullEdit}
+              style={{
+                backgroundColor: theme.accent,
+                paddingHorizontal: 12,
+                paddingVertical: 8,
+                borderRadius: 8,
+                opacity: savingFullEdit ? 0.5 : 1,
+              }}
             >
-              <Text style={{ color: '#fff', fontSize: 12 }}>保存修改</Text>
+              <Text style={{ color: '#fff', fontSize: 12 }}>{savingFullEdit ? '保存中…' : '保存修改'}</Text>
             </Pressable>
             <Pressable
               onPress={() => {
@@ -555,12 +588,12 @@ export function ExplanationStudyPanel({
           setModalMode(null);
           setViewMarker(null);
         }}
-        onSaveHighlight={() => void saveHighlight()}
-        onClearHighlight={() => void clearHighlight()}
-        onSaveNote={() => void saveNote()}
-        onSaveEdit={() => void saveEditExcerpt()}
-        onSaveElaboration={() => void saveElaboration()}
-        onDeleteMarker={() => void deleteMarker()}
+        onSaveHighlight={saveHighlight}
+        onClearHighlight={clearHighlight}
+        onSaveNote={saveNote}
+        onSaveEdit={saveEditExcerpt}
+        onSaveElaboration={saveElaboration}
+        onDeleteMarker={deleteMarker}
       />
     </View>
   );

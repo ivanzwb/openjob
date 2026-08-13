@@ -12,9 +12,11 @@ import { createCampaign } from '../data/mutations';
 import { diagnoseFetchIntel, diagnoseFromJd } from '../data/diagnosisLocal';
 import { generatePlan } from '../data/planLocal';
 import { useApp } from '../context/AppContext';
-import { useRemoteTask } from '../context/RemoteTaskContext';
+import { runTask, useTaskResult, useTaskState } from '../context/RemoteTaskContext';
 import { useLocalDataReload } from '../hooks/useLocalDataReload';
 import { theme } from '../theme';
+
+const CREATE_CAMPAIGN_KEY = 'campaign:create';
 
 function CampaignListView({
   onOpenDetail,
@@ -22,6 +24,7 @@ function CampaignListView({
   onOpenDetail: (id: string) => void;
 }): React.JSX.Element {
   const { triggerSync, notifyDataChanged } = useApp();
+  const { running: creating } = useTaskState(CREATE_CAMPAIGN_KEY);
   const [campaigns, setCampaigns] = useState<CampaignSummary[]>([]);
   const [company, setCompany] = useState('');
   const [role, setRole] = useState('');
@@ -31,14 +34,22 @@ function CampaignListView({
 
   useLocalDataReload(reload);
 
-  const create = async () => {
-    const id = await createCampaign(getRawDb(), company, role, jd);
+  // 创建在任务里落库，跑完后即使这页被重建也能接着打开详情
+  useTaskResult<string>(CREATE_CAMPAIGN_KEY, (id) => {
     setCompany('');
     setRole('');
     setJd('');
-    reload();
-    await triggerSync();
     onOpenDetail(id);
+  });
+
+  const create = (): void => {
+    const input = { company, role, jd };
+    void runTask(CREATE_CAMPAIGN_KEY, '创建备考', async () => {
+      const id = await createCampaign(getRawDb(), input.company, input.role, input.jd);
+      notifyDataChanged();
+      await triggerSync().catch(() => undefined);
+      return id;
+    }).catch(() => undefined);
   };
 
   return (
@@ -46,8 +57,12 @@ function CampaignListView({
       <TextInput placeholder="公司" placeholderTextColor={theme.muted} value={company} onChangeText={setCompany} style={inputStyle} />
       <TextInput placeholder="岗位" placeholderTextColor={theme.muted} value={role} onChangeText={setRole} style={inputStyle} />
       <TextInput placeholder="JD" placeholderTextColor={theme.muted} value={jd} onChangeText={setJd} multiline style={[inputStyle, { minHeight: 80 }]} />
-      <Pressable onPress={() => void create()} style={btnStyle}>
-        <Text style={{ color: '#fff' }}>创建</Text>
+      <Pressable
+        onPress={create}
+        disabled={creating}
+        style={[btnStyle, { opacity: creating ? 0.6 : 1 }]}
+      >
+        <Text style={{ color: '#fff' }}>{creating ? '创建中…' : '创建'}</Text>
       </Pressable>
       {campaigns.length === 0 && (
         <Text style={{ color: theme.muted, fontSize: 13 }}>暂无备考，可在上方创建或从桌面端同步</Text>
@@ -70,7 +85,12 @@ function CampaignDetailView({
   onBack: () => void;
 }): React.JSX.Element {
   const { triggerSync, notifyDataChanged } = useApp();
-  const { runTask, active } = useRemoteTask();
+  // 三个动作各有自己的 key：切页、返回列表再进来都能看到它还在跑
+  const diagnoseKey = `campaign:${id}:diagnose`;
+  const intelKey = `campaign:${id}:intel`;
+  const planKey = `campaign:${id}:planGenerate`;
+  const { running: diagnosing } = useTaskState(diagnoseKey);
+  const { running: fetchingIntel } = useTaskState(intelKey);
   const [detail, setDetail] = useState(() => getCampaignDetail(getRawDb(), id));
   const [selectedNode, setSelectedNode] = useState<KnowledgeNodeView | null>(null);
   const [nodeStudyMode, setNodeStudyMode] = useState<'explain' | 'drill' | 'followUp'>('explain');
@@ -110,49 +130,49 @@ function CampaignDetailView({
     setNodeStudyMode(task.kind === 'drill' ? 'drill' : 'explain');
   };
 
-  const diagnose = async () => {
-    try {
-      await runTask('JD 诊断', async () => diagnoseFromJd(getRawDb(), id));
-      notifyDataChanged();
-      await triggerSync();
-      reload();
-    } catch {
-      // toast handled by runTask
-    }
+  // 结果都写进了 SQLite，任务里通知一次数据变化，界面无论在不在都会重新读库
+  const afterWrite = useCallback(async () => {
+    notifyDataChanged();
+    await triggerSync().catch(() => undefined);
+  }, [notifyDataChanged, triggerSync]);
+
+  const diagnose = (): void => {
+    void runTask(diagnoseKey, 'JD 诊断', async () => {
+      const res = await diagnoseFromJd(getRawDb(), id);
+      await afterWrite();
+      return res;
+    }).catch(() => undefined);
   };
 
-  const fetchIntel = async () => {
-    try {
-      await runTask('公司情报', async () => diagnoseFetchIntel(getRawDb(), id));
-      notifyDataChanged();
-      await triggerSync();
-      reload();
-    } catch {
-      // toast handled by runTask
-    }
+  const fetchIntel = (): void => {
+    void runTask(intelKey, '公司情报', async () => {
+      const res = await diagnoseFetchIntel(getRawDb(), id);
+      await afterWrite();
+      return res;
+    }).catch(() => undefined);
   };
 
-  const generatePlanAction = async () => {
-    try {
-      await runTask('生成计划', async () => {
-        const result = await generatePlan(
-          getRawDb(),
-          id,
-          interviewDate || undefined,
-          Number(dailyMinutes) || 90,
-        );
-        return `已生成 ${result.daysCreated} 天计划、${result.tasksCreated} 个任务`;
-      });
-      notifyDataChanged();
-      await triggerSync();
-      reload();
-      setReloadTick((t) => t + 1);
-    } catch {
-      // toast handled by runTask
-    }
+  const generatePlanAction = (): Promise<unknown> => {
+    const input = { interviewDate, dailyMinutes };
+    return runTask(planKey, '生成计划', async () => {
+      const result = await generatePlan(
+        getRawDb(),
+        id,
+        input.interviewDate || undefined,
+        Number(input.dailyMinutes) || 90,
+      );
+      await afterWrite();
+      return `已生成 ${result.daysCreated} 天计划、${result.tasksCreated} 个任务`;
+    }).catch(() => undefined);
   };
 
-  const busy = Boolean(active);
+  // 诊断/情报会长出新考点，跑完后补一次读库
+  useTaskResult(diagnoseKey, reload);
+  useTaskResult(intelKey, reload);
+  useTaskResult(planKey, () => {
+    reload();
+    setReloadTick((t) => t + 1);
+  });
 
   return (
     <>
@@ -166,18 +186,24 @@ function CampaignDetailView({
 
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
         <Pressable
-          onPress={() => void diagnose()}
-          disabled={busy}
-          style={{ backgroundColor: theme.accent, padding: 10, borderRadius: 8, opacity: busy ? 0.6 : 1 }}
+          onPress={diagnose}
+          disabled={diagnosing}
+          style={{ backgroundColor: theme.accent, padding: 10, borderRadius: 8, opacity: diagnosing ? 0.6 : 1 }}
         >
-          <Text style={{ color: '#fff', fontSize: 12 }}>{active?.label === 'JD 诊断' ? '诊断中…' : 'JD 诊断'}</Text>
+          <Text style={{ color: '#fff', fontSize: 12 }}>{diagnosing ? '诊断中…' : 'JD 诊断'}</Text>
         </Pressable>
         <Pressable
-          onPress={() => void fetchIntel()}
-          disabled={busy}
-          style={{ borderWidth: 1, borderColor: theme.border, padding: 10, borderRadius: 8, opacity: busy ? 0.6 : 1 }}
+          onPress={fetchIntel}
+          disabled={fetchingIntel}
+          style={{
+            borderWidth: 1,
+            borderColor: theme.border,
+            padding: 10,
+            borderRadius: 8,
+            opacity: fetchingIntel ? 0.6 : 1,
+          }}
         >
-          <Text style={{ color: theme.text, fontSize: 12 }}>{active?.label === '公司情报' ? '生成中…' : '公司情报'}</Text>
+          <Text style={{ color: theme.text, fontSize: 12 }}>{fetchingIntel ? '生成中…' : '公司情报'}</Text>
         </Pressable>
       </View>
 
@@ -298,6 +324,7 @@ function CampaignDetailView({
       onDailyMinutesChange={setDailyMinutes}
       planMsg={null}
       onGeneratePlan={generatePlanAction}
+      planTaskKey={planKey}
       filterDate={calendarFilterDate}
       onFilterDateChange={setCalendarFilterDate}
       onOpenTask={openTaskInStudy}
@@ -306,7 +333,6 @@ function CampaignDetailView({
         reload();
         setReloadTick((t) => t + 1);
       }}
-      busy={busy}
     />
     </>
   );

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { invoke } from '../ipc';
+import { runTask, useTask } from '../ipc/taskStore';
 
 /**
  * API Key 输入。Key 只进不出——写入后主进程经 safeStorage 加密落盘，
@@ -16,7 +17,11 @@ export function SecretField({
 }): React.JSX.Element {
   const [configured, setConfigured] = useState(false);
   const [draft, setDraft] = useState('');
-  const [busy, setBusy] = useState(false);
+  // 按 secretRef 记：切页回来仍显示保存/删除进行中
+  const saveKey = `config:setSecret:${secretRef}`;
+  const deleteKey = `config:deleteSecret:${secretRef}`;
+  const { running: saving } = useTask(saveKey);
+  const { running: removing } = useTask(deleteKey);
 
   const refresh = (): void => {
     void invoke('config:hasSecret', { ref: secretRef }).then(setConfigured);
@@ -24,26 +29,21 @@ export function SecretField({
 
   useEffect(refresh, [secretRef]);
 
-  const save = async (): Promise<void> => {
-    if (!draft.trim()) return;
-    setBusy(true);
-    try {
-      await invoke('config:setSecret', { ref: secretRef, value: draft.trim() });
-      setDraft('');
-      refresh();
-    } finally {
-      setBusy(false);
-    }
+  const save = (): void => {
+    const value = draft.trim();
+    if (!value) return;
+    void runTask(saveKey, () => invoke('config:setSecret', { ref: secretRef, value }))
+      .then(() => {
+        setDraft('');
+        refresh();
+      })
+      .catch(() => undefined);
   };
 
-  const remove = async (): Promise<void> => {
-    setBusy(true);
-    try {
-      await invoke('config:deleteSecret', { ref: secretRef });
-      refresh();
-    } finally {
-      setBusy(false);
-    }
+  const remove = (): void => {
+    void runTask(deleteKey, () => invoke('config:deleteSecret', { ref: secretRef }))
+      .then(refresh)
+      .catch(() => undefined);
   };
 
   return (
@@ -70,20 +70,20 @@ export function SecretField({
         />
         <button
           type="button"
-          onClick={() => void save()}
-          disabled={busy || !draft.trim()}
+          onClick={save}
+          disabled={saving || removing || !draft.trim()}
           className="rounded bg-[var(--color-accent)] px-3 py-1.5 text-sm disabled:opacity-40"
         >
-          保存
+          {saving ? '保存中…' : '保存'}
         </button>
         {configured && (
           <button
             type="button"
-            onClick={() => void remove()}
-            disabled={busy}
-            className="rounded border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-muted)] hover:text-red-400"
+            onClick={remove}
+            disabled={saving || removing}
+            className="rounded border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-muted)] hover:text-red-400 disabled:opacity-40"
           >
-            删除
+            {removing ? '删除中…' : '删除'}
           </button>
         )}
       </div>

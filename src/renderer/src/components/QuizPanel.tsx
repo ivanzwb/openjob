@@ -2,7 +2,13 @@ import { useState } from 'react';
 import { VoiceInputButton } from './VoiceInputButton';
 import type { QuizSubmitResult } from '@shared/ipc';
 import { invoke } from '../ipc';
+import { runTask, useTask, useTaskResult } from '../ipc/taskStore';
 
+/**
+ * 考我：出题与评分都记在按考点取的任务 key 上。
+ * 切到别的学习模式或别的考点会卸载这个面板，回来时按钮仍显示进行中，
+ * 期间跑完的题目/评分也会补上。
+ */
 export function QuizPanel({
   nodeId,
   nodeName,
@@ -15,40 +21,37 @@ export function QuizPanel({
   const [question, setQuestion] = useState<string | null>(null);
   const [answer, setAnswer] = useState('');
   const [result, setResult] = useState<QuizSubmitResult | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  const start = async (): Promise<void> => {
-    setLoading(true);
-    setError(null);
+  const questionKey = `quiz:question:${nodeId}`;
+  const submitKey = `quiz:submit:${nodeId}`;
+  const questionTask = useTask(questionKey);
+  const submitTask = useTask(submitKey);
+  const loading = questionTask.running || submitTask.running;
+  const error = questionTask.error ?? submitTask.error;
+
+  useTaskResult<string>(questionKey, (q) => {
+    setQuestion(q);
     setResult(null);
-    try {
+  });
+  useTaskResult<QuizSubmitResult>(submitKey, (res) => {
+    setResult(res);
+    onDone?.();
+  });
+
+  const start = (): void => {
+    void runTask(questionKey, async () => {
       const q = await invoke('quiz:question', { nodeId });
-      setQuestion(q.question);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
-    }
+      return q.question;
+    }).catch(() => undefined);
   };
 
-  const submit = async (): Promise<void> => {
+  const submit = (): void => {
     if (!question || !answer.trim()) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await invoke('quiz:submit', {
-        nodeId,
-        question,
-        userAnswer: answer.trim(),
-      });
-      setResult(res);
-      onDone?.();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
-    }
+    const asked = question;
+    const said = answer.trim();
+    void runTask(submitKey, () =>
+      invoke('quiz:submit', { nodeId, question: asked, userAnswer: said }),
+    ).catch(() => undefined);
   };
 
   return (
@@ -58,11 +61,11 @@ export function QuizPanel({
       {!question && !result && (
         <button
           type="button"
-          onClick={() => void start()}
+          onClick={start}
           disabled={loading}
           className="rounded bg-[var(--color-accent)] px-3 py-1.5 text-sm disabled:opacity-40"
         >
-          {loading ? '出题中…' : '开始出题'}
+          {questionTask.running ? '出题中…' : '开始出题'}
         </button>
       )}
 
@@ -81,11 +84,11 @@ export function QuizPanel({
           <VoiceInputButton currentText={answer} onTextChange={setAnswer} />
           <button
             type="button"
-            onClick={() => void submit()}
+            onClick={submit}
             disabled={loading || !answer.trim()}
             className="rounded bg-[var(--color-accent)] px-3 py-1.5 text-sm disabled:opacity-40"
           >
-            {loading ? '评分中…' : '提交答案'}
+            {submitTask.running ? '评分中…' : '提交答案'}
           </button>
         </>
       )}

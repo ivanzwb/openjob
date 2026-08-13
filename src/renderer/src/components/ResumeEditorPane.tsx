@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { documentToMarkdown, parseMarkdownToDocument } from '@shared/resume/document';
-import type { ResumeDocument } from '@shared/resume/document';
+import type { ResumeDocument, ResumeSectionKey } from '@shared/resume/document';
 import { parsePreviewStyle, serializePreviewStyle } from '@shared/resume/previewStyle';
 import type { ResumePreviewStyle } from '@shared/resume/previewStyle';
 import { invoke } from '../ipc';
+import { runTask, useTask, useTaskResult } from '../ipc/taskStore';
 import { ResumeDocumentEditor } from './ResumeDocumentEditor';
 import { ResumePreviewDialog } from './ResumePreviewDialog';
 import { ResumeTemplatePicker } from './ResumeTemplatePicker';
+import { TaskButton } from './TaskButton';
+import type { SectionPolishRequest } from './ResumeSectionForm';
 
 export interface ResumeEditorSavePayload {
   contentMd: string;
@@ -21,9 +24,13 @@ const AUTOSAVE_DELAY_MS = 800;
  * 母版与优化版共用的编辑面板：名称/工具栏 + 模块表单 + 预览弹窗。
  * 编辑即保存，没有保存按钮；正文与模板是面板内部状态，
  * 调用方用 key 区分简历，切换时自然重置草稿。
+ *
+ * AI 识别与 AI 优化都挂在按简历取的任务 key 上，并在任务内部直接落库：
+ * 切走简历、换页、关掉面板都不影响它跑完，回来时按钮态与内容都对得上。
  */
 export function ResumeEditorPane({
   kind,
+  taskScope,
   initialContentMd,
   initialPreviewStyle,
   initialLabel,
@@ -34,6 +41,8 @@ export function ResumeEditorPane({
   onMessage,
 }: {
   kind: 'resume' | 'variant';
+  /** 这份简历的稳定标识，用来给 AI 任务取 key */
+  taskScope: string;
   initialContentMd: string;
   initialPreviewStyle: string | null;
   initialLabel: string;
@@ -53,10 +62,14 @@ export function ResumeEditorPane({
   const [label, setLabel] = useState(initialLabel);
   const [activeSectionIndex, setActiveSectionIndex] = useState(0);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [structuring, setStructuring] = useState(false);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
   // AI 重排后表单要按新内容重建，靠它换掉 key
   const [documentNonce, setDocumentNonce] = useState(0);
+
+  const structureKey = `resume:aiStructure:${taskScope}`;
+  const polishKeyPrefix = `resume:aiPolish:${taskScope}`;
+  const exportKey = `resume:exportPdf:${taskScope}`;
+  const { running: structuring, error: structureError } = useTask(structureKey);
 
   const previewMeta: { headline: string; subtitle?: string } = variantMeta ?? { headline: label };
 
@@ -80,9 +93,14 @@ export function ResumeEditorPane({
 
   const onSaveRef = useRef(onSave);
   const pendingRef = useRef<ResumeEditorSavePayload | null>(null);
+  // AI 任务跑完时可能已经卸载，用 ref 记住最后一次的正文与文档，落库不会写回旧内容
+  const payloadRef = useRef(payload);
+  const documentRef = useRef(resumeDocument);
   useEffect(() => {
     onSaveRef.current = onSave;
     pendingRef.current = dirty ? payload : null;
+    payloadRef.current = payload;
+    documentRef.current = resumeDocument;
   });
 
   useEffect(() => {
@@ -110,48 +128,75 @@ export function ResumeEditorPane({
     };
   }, []);
 
-  const aiStructure = async (): Promise<void> => {
-    setStructuring(true);
-    try {
-      const res = await invoke('resume:aiStructure', { contentMd: payload.contentMd });
-      setResumeDocument(parseMarkdownToDocument(res.contentMd));
-      setDocumentNonce((n) => n + 1);
-      setActiveSectionIndex(0);
-      onMessage('已按 AI 识别结果重排模块');
-    } catch (e) {
-      onMessage(e instanceof Error ? e.message : String(e));
-    } finally {
-      setStructuring(false);
-    }
+  /**
+   * 把 AI 产出的正文写进库，并在面板还挂着时同步到表单。
+   * 卸载后 setState 是空操作，但库已经写好，下次打开这份简历就能看到。
+   */
+  const persistContent = async (contentMd: string): Promise<void> => {
+    const next = { ...payloadRef.current, contentMd };
+    payloadRef.current = next;
+    setSaved(next);
+    await onSaveRef.current(next);
   };
 
-  const polishSection = async (req: {
-    sectionKey: string;
-    contentMd: string;
-    instruction: string;
-    scopeLabel?: string;
-  }): Promise<string> => {
-    const res = await invoke('resume:aiPolish', {
-      resumeMd: payload.contentMd,
-      sectionKey: req.sectionKey,
-      scopeLabel: req.scopeLabel,
-      contentMd: req.contentMd,
-      instruction: req.instruction,
+  const aiStructure = (): void => {
+    void runTask(structureKey, async () => {
+      const res = await invoke('resume:aiStructure', { contentMd: payloadRef.current.contentMd });
+      const normalized = documentToMarkdown(parseMarkdownToDocument(res.contentMd));
+      await persistContent(normalized);
+      return normalized;
+    }).catch(() => undefined);
+  };
+
+  useTaskResult<string>(structureKey, (contentMd) => {
+    setResumeDocument(parseMarkdownToDocument(contentMd));
+    setDocumentNonce((n) => n + 1);
+    setActiveSectionIndex(0);
+    onMessage('已按 AI 识别结果重排模块');
+  });
+
+  /**
+   * 单块润色：模型只返回这一小块文本，由表单给出的 mergeSection 合回模块正文后落库。
+   * 任务 key 由表单按「简历 + 模块 + 文本框」拼出，切走再回来仍是同一个任务。
+   */
+  const polishSection = (
+    req: SectionPolishRequest & { sectionKey: ResumeSectionKey },
+  ): Promise<string> =>
+    runTask(req.taskKey, async () => {
+      const res = await invoke('resume:aiPolish', {
+        resumeMd: payloadRef.current.contentMd,
+        sectionKey: req.sectionKey,
+        scopeLabel: req.scopeLabel,
+        contentMd: req.contentMd,
+        instruction: req.instruction,
+      });
+      const merged = {
+        sections: documentRef.current.sections.map((s) =>
+          s.key === req.sectionKey ? { ...s, contentMd: req.mergeSection(res.contentMd) } : s,
+        ),
+      };
+      documentRef.current = merged;
+      setResumeDocument(merged);
+      await persistContent(documentToMarkdown(merged));
+      return res.contentMd;
     });
-    return res.contentMd;
-  };
 
-  const exportPdf = async (): Promise<void> => {
+  const exportPdf = (): void => {
     const stem = variantMeta ? variantMeta.subtitle : label.trim() || '母版';
-    const res = await invoke('resume:exportPdf', {
-      fileStem: `OpenJob-Resume-${stem}`,
-      contentMd: payload.contentMd,
-      previewStyle: payload.previewStyle,
-      headline: previewMeta.headline,
-      subtitle: previewMeta.subtitle,
-    });
-    onMessage(res.saved ? `已导出：${res.path}` : '已取消导出');
+    const meta = previewMeta;
+    void runTask(exportKey, async () => {
+      const res = await invoke('resume:exportPdf', {
+        fileStem: `OpenJob-Resume-${stem}`,
+        contentMd: payloadRef.current.contentMd,
+        previewStyle: payloadRef.current.previewStyle,
+        headline: meta.headline,
+        subtitle: meta.subtitle,
+      });
+      return res.saved ? `已导出：${res.path}` : '已取消导出';
+    }).catch(() => undefined);
   };
+
+  useTaskResult<string>(exportKey, onMessage);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -173,14 +218,16 @@ export function ResumeEditorPane({
             {saveState !== 'idle' && (
               <span className="ml-2">{saveState === 'saving' ? '保存中…' : '已自动保存'}</span>
             )}
+            {structuring && <span className="ml-2">AI 识别进行中…</span>}
           </p>
+          {structureError && <p className="mt-1 text-xs text-red-400">{structureError}</p>}
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
           <button
             type="button"
             disabled={structuring}
             title="内容归类不对时，用模型重新分到各模块；只归类不改写"
-            onClick={() => void aiStructure()}
+            onClick={aiStructure}
             className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm disabled:opacity-40"
           >
             {structuring ? '识别中…' : 'AI 识别'}
@@ -198,13 +245,14 @@ export function ResumeEditorPane({
           >
             预览
           </button>
-          <button
-            type="button"
-            onClick={() => void exportPdf()}
-            className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm"
+          <TaskButton
+            taskKey={exportKey}
+            onClick={exportPdf}
+            runningLabel="导出中…"
+            className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm disabled:opacity-40"
           >
             导出 PDF
-          </button>
+          </TaskButton>
         </div>
       </div>
 
@@ -214,6 +262,7 @@ export function ResumeEditorPane({
         onDocumentChange={setResumeDocument}
         onActiveSectionChange={setActiveSectionIndex}
         onPolish={polishSection}
+        polishTaskKeyPrefix={polishKeyPrefix}
         documentKey={String(documentNonce)}
       />
 

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { CampaignSummary } from '@shared/ipc';
 import { invoke } from '../ipc';
+import { runTask } from '../ipc/taskStore';
 import { PageShell } from '../components/PageShell';
+import { TaskButton } from '../components/TaskButton';
 
 export function CampaignList({
   onOpen,
@@ -31,10 +33,11 @@ export function CampaignList({
     };
   }, []);
 
-  const remove = async (id: string): Promise<void> => {
+  const remove = (id: string): void => {
     if (!confirm('确定删除这场备考？')) return;
-    await invoke('campaign:delete', { id });
-    refresh();
+    void runTask(`campaign:delete:${id}`, () => invoke('campaign:delete', { id }))
+      .then(refresh)
+      .catch(() => undefined);
   };
 
   return (
@@ -78,13 +81,14 @@ export function CampaignList({
                   {c.hasResume ? ' · 已挂简历' : ''}
                 </div>
               </button>
-              <button
-                type="button"
-                onClick={() => void remove(c.id)}
-                className="text-xs text-[var(--color-muted)] hover:text-red-400"
+              <TaskButton
+                taskKey={`campaign:delete:${c.id}`}
+                onClick={() => remove(c.id)}
+                runningLabel="删除中…"
+                className="text-xs text-[var(--color-muted)] hover:text-red-400 disabled:opacity-50"
               >
                 删除
-              </button>
+              </TaskButton>
             </li>
           ))}
         </ul>

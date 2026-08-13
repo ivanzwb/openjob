@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { CampaignCompareResult, CampaignOverview } from '@shared/ipc';
 import { invoke } from '../ipc';
+import { runTask, useTask, useTaskResult } from '../ipc/taskStore';
 import { PageShell } from '../components/PageShell';
 
 export function Overview({
@@ -13,7 +14,11 @@ export function Overview({
   const [compareA, setCompareA] = useState('');
   const [compareB, setCompareB] = useState('');
   const [compareResult, setCompareResult] = useState<CampaignCompareResult | null>(null);
-  const [comparing, setComparing] = useState(false);
+
+  // 对比按两个 Campaign 取 key：切页回来仍显示进行中，跑完的结果也补得上
+  const compareKey = `campaign:compare:${compareA}:${compareB}`;
+  const { running: comparing, error: compareError } = useTask(compareKey);
+  useTaskResult<CampaignCompareResult>(compareKey, setCompareResult);
 
   const refresh = useCallback(() => {
     void invoke('campaign:getOverview', undefined)
@@ -31,18 +36,11 @@ export function Overview({
     refresh();
   }, [refresh]);
 
-  const runCompare = async (): Promise<void> => {
+  const runCompare = (): void => {
     if (!compareA || !compareB || compareA === compareB) return;
-    setComparing(true);
-    try {
-      const res = await invoke('campaign:compare', {
-        campaignIdA: compareA,
-        campaignIdB: compareB,
-      });
-      setCompareResult(res);
-    } finally {
-      setComparing(false);
-    }
+    void runTask(compareKey, () =>
+      invoke('campaign:compare', { campaignIdA: compareA, campaignIdB: compareB }),
+    ).catch(() => undefined);
   };
 
   if (loading || !data) {
@@ -157,11 +155,12 @@ export function Overview({
           <button
             type="button"
             disabled={comparing || !compareA || !compareB || compareA === compareB}
-            onClick={() => void runCompare()}
+            onClick={runCompare}
             className="rounded border border-[var(--color-border)] px-3 py-1 text-xs disabled:opacity-40"
           >
             {comparing ? '对比中…' : '开始对比'}
           </button>
+          {compareError && <p className="text-xs text-red-400">{compareError}</p>}
           {compareResult && (
             <div className="space-y-3 border-t border-[var(--color-border)] pt-3 text-sm">
               <p className="text-xs text-[var(--color-muted)]">

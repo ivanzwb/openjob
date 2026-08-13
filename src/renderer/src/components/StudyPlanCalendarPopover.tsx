@@ -3,6 +3,7 @@ import type { PlanDateOption, TaskView, TodayPlan } from '@shared/ipc';
 import { PlanDecisionLog } from './PlanDecisionLog';
 import { StudyPlanCalendar, todayLocal } from './StudyPlanCalendar';
 import { invoke } from '../ipc';
+import { runTask, useTask } from '../ipc/taskStore';
 
 export function StudyPlanCalendarPopover({
   open,
@@ -39,9 +40,14 @@ export function StudyPlanCalendarPopover({
   const [plan, setPlan] = useState<TodayPlan | null>(null);
   const [viewMonth, setViewMonth] = useState(() => new Date());
   const [setupOpen, setSetupOpen] = useState(false);
-  const [generating, setGenerating] = useState(false);
-  const [deferring, setDeferring] = useState(false);
   const [prevFilterDate, setPrevFilterDate] = useState(filterDate);
+
+  // 关掉弹窗会卸载这里的一切，所以生成/顺延的状态放到全局任务仓库，
+  // 再打开时按钮还能显示进行中。生成计划与页面用的是同一个 key。
+  const generateKey = `campaign:${campaignId}:planGenerate`;
+  const deferKey = `campaign:${campaignId}:planDefer`;
+  const { running: generating } = useTask(generateKey);
+  const { running: deferring, error: deferError } = useTask(deferKey);
 
   const taskCountByDate = useMemo(
     () => new Map(dateOptions.map((d) => [d.date, d.taskCount])),
@@ -98,15 +104,11 @@ export function StudyPlanCalendarPopover({
     if (filterDate) loadPlan(filterDate);
   };
 
+  // onGeneratePlan 自己已经登记在 generateKey 上，这里只等它结束后刷新日历
   const runGenerate = async (): Promise<void> => {
-    setGenerating(true);
-    try {
-      await onGeneratePlan();
-      loadDates();
-      setSetupOpen(false);
-    } finally {
-      setGenerating(false);
-    }
+    await onGeneratePlan();
+    loadDates();
+    setSetupOpen(false);
   };
 
   const complete = async (taskId: string): Promise<void> => {
@@ -119,14 +121,12 @@ export function StudyPlanCalendarPopover({
     refresh();
   };
 
-  const defer = async (): Promise<void> => {
-    setDeferring(true);
-    try {
+  const defer = (): void => {
+    void runTask(deferKey, async () => {
       await invoke('plan:deferToday', { campaignId });
       refresh();
-    } finally {
-      setDeferring(false);
-    }
+      return '已顺延';
+    }).catch(() => undefined);
   };
 
   if (!open) return null;
@@ -240,13 +240,14 @@ export function StudyPlanCalendarPopover({
                     <button
                       type="button"
                       disabled={deferring}
-                      onClick={() => void defer()}
+                      onClick={defer}
                       className="text-sky-400 hover:underline disabled:opacity-40"
                     >
                       {deferring ? '顺延中…' : '顺延'}
                     </button>
                   )}
                 </div>
+                {deferError && <p className="text-[10px] text-red-400">{deferError}</p>}
                 {plan.tasks.length === 0 ? (
                   <p className="text-[10px] text-[var(--color-muted)]">该日无任务</p>
                 ) : (

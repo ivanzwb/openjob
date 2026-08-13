@@ -2,7 +2,9 @@ import { useCallback, useEffect, useState } from 'react';
 import type { SpeechSnippetView } from '@shared/ipc';
 import { MarkdownContent } from '../components/MarkdownContent';
 import { invoke } from '../ipc';
+import { runTask, useTask, useTaskResult } from '../ipc/taskStore';
 import { PageShell } from '../components/PageShell';
+import { TaskButton } from '../components/TaskButton';
 
 type PanelMode = 'preview' | 'edit';
 
@@ -11,7 +13,6 @@ export function Scripts(): React.JSX.Element {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [panelMode, setPanelMode] = useState<PanelMode>('preview');
-  const [saving, setSaving] = useState(false);
   const [exportMsg, setExportMsg] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
@@ -53,32 +54,40 @@ export function Scripts(): React.JSX.Element {
     setPanelMode(mode);
   };
 
-  const save = async (): Promise<void> => {
-    if (!selected) return;
-    setSaving(true);
-    try {
-      await invoke('speech:update', { id: selected.id, contentMd: draft });
-      refresh();
-      setPanelMode('preview');
-    } finally {
-      setSaving(false);
-    }
-  };
+  // 保存与导出都按 key 记：切到别的页面再回来，进行中的状态还在
+  const saveKey = `speech:update:${selected?.id ?? 'none'}`;
+  const { running: saving } = useTask(saveKey);
 
-  const remove = async (id: string): Promise<void> => {
-    if (!confirm('确定删除这条话术？')) return;
-    await invoke('speech:delete', { id });
+  useTaskResult(saveKey, () => {
     refresh();
+    setPanelMode('preview');
+  });
+
+  const save = (): void => {
+    if (!selected) return;
+    const payload = { id: selected.id, contentMd: draft };
+    void runTask(saveKey, () => invoke('speech:update', payload)).catch(() => undefined);
   };
 
-  const exportSnippets = async (format: 'markdown' | 'anki' | 'pdf'): Promise<void> => {
+  const remove = (id: string): void => {
+    if (!confirm('确定删除这条话术？')) return;
+    void runTask(`speech:delete:${id}`, () => invoke('speech:delete', { id }))
+      .then(() => refresh())
+      .catch(() => undefined);
+  };
+
+  const exportSnippets = (format: 'markdown' | 'anki' | 'pdf'): void => {
     setExportMsg(null);
-    const res = await invoke('speech:export', { format });
-    if (res.saved && res.path) {
-      setExportMsg(`已导出 ${res.count} 条到 ${res.path}`);
-    } else if (!res.saved && res.count === 0) {
-      setExportMsg('没有可导出的话术');
-    }
+    void runTask(`speech:export:${format}`, async () => {
+      const res = await invoke('speech:export', { format });
+      if (res.saved && res.path) return `已导出 ${res.count} 条到 ${res.path}`;
+      if (!res.saved && res.count === 0) return '没有可导出的话术';
+      return '';
+    })
+      .then((msg) => {
+        if (msg) setExportMsg(msg);
+      })
+      .catch((e: unknown) => setExportMsg(e instanceof Error ? e.message : String(e)));
   };
 
   return (
@@ -92,27 +101,23 @@ export function Scripts(): React.JSX.Element {
         </header>
 
         <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => void exportSnippets('markdown')}
-            className="rounded border border-[var(--color-border)] px-2 py-1 text-xs"
-          >
-            导出 Markdown
-          </button>
-          <button
-            type="button"
-            onClick={() => void exportSnippets('anki')}
-            className="rounded border border-[var(--color-border)] px-2 py-1 text-xs"
-          >
-            导出 Anki
-          </button>
-          <button
-            type="button"
-            onClick={() => void exportSnippets('pdf')}
-            className="rounded border border-[var(--color-border)] px-2 py-1 text-xs"
-          >
-            导出 PDF
-          </button>
+          {(
+            [
+              ['markdown', '导出 Markdown'],
+              ['anki', '导出 Anki'],
+              ['pdf', '导出 PDF'],
+            ] as const
+          ).map(([format, label]) => (
+            <TaskButton
+              key={format}
+              taskKey={`speech:export:${format}`}
+              onClick={() => exportSnippets(format)}
+              runningLabel="导出中…"
+              className="rounded border border-[var(--color-border)] px-2 py-1 text-xs disabled:opacity-50"
+            >
+              {label}
+            </TaskButton>
+          ))}
         </div>
         {exportMsg && <p className="text-xs text-emerald-400">{exportMsg}</p>}
 
@@ -136,14 +141,15 @@ export function Scripts(): React.JSX.Element {
                     {s.contentMd.slice(0, 80)}
                   </div>
                 </button>
-                <button
-                  type="button"
+                <TaskButton
+                  taskKey={`speech:delete:${s.id}`}
+                  onClick={() => remove(s.id)}
+                  runningLabel="删除中"
                   title="删除这条话术"
-                  onClick={() => void remove(s.id)}
-                  className="flex w-11 shrink-0 items-center justify-center self-stretch rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] text-[10px] text-red-400 hover:bg-red-500/10 hover:text-red-400"
+                  className="flex w-11 shrink-0 items-center justify-center self-stretch rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] text-[10px] text-red-400 hover:bg-red-500/10 hover:text-red-400 disabled:opacity-50"
                 >
                   删除
-                </button>
+                </TaskButton>
               </li>
             ))
           )}
@@ -179,7 +185,7 @@ export function Scripts(): React.JSX.Element {
                 <button
                   type="button"
                   disabled={saving || !dirty}
-                  onClick={() => void save()}
+                  onClick={save}
                   className="rounded bg-[var(--color-accent)] px-3 py-1 text-xs disabled:opacity-40"
                 >
                   {saving ? '保存中…' : selected.isUserEdited ? '保存修改' : '保存为自己的话'}

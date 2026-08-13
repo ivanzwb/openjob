@@ -4,19 +4,22 @@ import type { Repo } from '@shared/entities';
 import { getRawDb } from '../db';
 import { countRepoFiles } from '../data/repoFiles';
 import { completeRepoAgentChat } from '../llm/agentChat';
-import { useRemoteTask } from '../context/RemoteTaskContext';
+import { runTask, useTaskResult, useTaskState } from '../context/RemoteTaskContext';
 import { markdownToPlainText } from '../lib/markdownBlocks';
 import { SourceBadge } from './SourceBadge';
 import { theme } from '../theme';
 
 export function RepoQaPanel({ repo }: { repo: Repo }): React.JSX.Element {
-  const { runTask, active } = useRemoteTask();
+  // 按仓库记这次问答：切页回来能接着看回答，答完也不会丢
+  const taskKey = `repo:qa:${repo.id}`;
+  const { running: busy, error } = useTaskState(taskKey);
   const [input, setInput] = useState('');
   const [answer, setAnswer] = useState('');
-  const busy = active?.label === '源码问答';
   const syncedFiles = countRepoFiles(getRawDb(), repo.id);
 
-  const submit = async (): Promise<void> => {
+  useTaskResult<string>(taskKey, setAnswer);
+
+  const submit = (): void => {
     const text = input.trim();
     if (!text || busy || repo.status !== 'ready') return;
     if (syncedFiles === 0) {
@@ -25,20 +28,12 @@ export function RepoQaPanel({ repo }: { repo: Repo }): React.JSX.Element {
     }
     setInput('');
     setAnswer('');
-    try {
-      await runTask(
-        '源码问答',
-        async () => {
-          const reply = await completeRepoAgentChat(getRawDb(), repo, [
-            { role: 'user', content: text },
-          ]);
-          setAnswer(reply);
-        },
-        { toastSuccess: false },
-      );
-    } catch {
-      // toast handled by runTask
-    }
+    void runTask(
+      taskKey,
+      '源码问答',
+      () => completeRepoAgentChat(getRawDb(), repo, [{ role: 'user', content: text }]),
+      { toastSuccess: false },
+    ).catch(() => undefined);
   };
 
   const displayText = answer.trim() ? markdownToPlainText(answer) : '';
@@ -78,6 +73,7 @@ export function RepoQaPanel({ repo }: { repo: Repo }): React.JSX.Element {
                 问启动流程、核心模块、目录结构… Agent 会读已同步的源码回答。
               </Text>
             )}
+            {error !== null && <Text style={{ color: theme.danger, fontSize: 12 }}>{error}</Text>}
           </ScrollView>
 
           <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -99,7 +95,7 @@ export function RepoQaPanel({ repo }: { repo: Repo }): React.JSX.Element {
               }}
             />
             <Pressable
-              onPress={() => void submit()}
+              onPress={submit}
               disabled={busy || !input.trim()}
               style={{
                 backgroundColor: theme.accent,
@@ -109,7 +105,7 @@ export function RepoQaPanel({ repo }: { repo: Repo }): React.JSX.Element {
                 opacity: busy || !input.trim() ? 0.5 : 1,
               }}
             >
-              <Text style={{ color: '#fff', fontSize: 12 }}>发送</Text>
+              <Text style={{ color: '#fff', fontSize: 12 }}>{busy ? '回答中…' : '发送'}</Text>
             </Pressable>
           </View>
         </>

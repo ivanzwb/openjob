@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type {
   CampaignSummary,
   DesignCaseResult,
@@ -12,6 +12,7 @@ import {
 import { VoiceInputButton } from '../components/VoiceInputButton';
 import { PageShell } from '../components/PageShell';
 import { invoke } from '../ipc';
+import { runTask, useTask, useTaskResult } from '../ipc/taskStore';
 
 const ANSWER_PLACEHOLDER: Record<string, string> = {
   concept: '先给结论，再讲原理，最后补充 trade-off 和实际踩坑…',
@@ -27,8 +28,14 @@ export function DesignPractice(): React.JSX.Element {
   const [designCase, setDesignCase] = useState<DesignCaseResult | null>(null);
   const [answer, setAnswer] = useState('');
   const [result, setResult] = useState<DesignSubmitResult | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+
+  // 出题与评分按 Campaign 取 key，切页/切 Campaign 回来还能接上同一次
+  const caseKey = `design:case:${campaignId}`;
+  const submitKey = `design:submit:${campaignId}`;
+  const caseTask = useTask(caseKey);
+  const submitTask = useTask(submitKey);
+  const loading = caseTask.running || submitTask.running;
+  const error = caseTask.error ?? submitTask.error;
 
   useEffect(() => {
     void invoke('campaign:list', undefined).then((list) => {
@@ -37,40 +44,33 @@ export function DesignPractice(): React.JSX.Element {
     });
   }, []);
 
-  const start = useCallback(async (): Promise<void> => {
-    if (!campaignId) return;
-    setLoading(true);
-    setError(null);
+  useTaskResult<DesignCaseResult>(caseKey, (c) => {
+    setDesignCase(c);
     setResult(null);
     setAnswer('');
-    try {
-      const c = await invoke('design:case', { campaignId, interviewType });
-      setDesignCase(c);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
-    }
-  }, [campaignId, interviewType]);
+  });
+  useTaskResult<DesignSubmitResult>(submitKey, setResult);
 
-  const submit = async (): Promise<void> => {
+  const start = (): void => {
+    if (!campaignId) return;
+    void runTask(caseKey, () => invoke('design:case', { campaignId, interviewType })).catch(
+      () => undefined,
+    );
+  };
+
+  const submit = (): void => {
     if (!designCase || !answer.trim()) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await invoke('design:submit', {
-        campaignId: designCase.campaignId,
-        caseTitle: designCase.title,
-        scenarioMd: designCase.scenarioMd,
-        userAnswer: answer.trim(),
-        interviewType: designCase.interviewType,
-      });
-      setResult(res);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
-    }
+    const current = designCase;
+    const said = answer.trim();
+    void runTask(submitKey, () =>
+      invoke('design:submit', {
+        campaignId: current.campaignId,
+        caseTitle: current.title,
+        scenarioMd: current.scenarioMd,
+        userAnswer: said,
+        interviewType: current.interviewType,
+      }),
+    ).catch(() => undefined);
   };
 
   const typeHint =
@@ -133,10 +133,10 @@ export function DesignPractice(): React.JSX.Element {
         <button
           type="button"
           disabled={!campaignId || loading}
-          onClick={() => void start()}
+          onClick={start}
           className="rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm disabled:opacity-40"
         >
-          {loading && !designCase ? '出题中…' : designCase ? '换一题' : '开始模拟'}
+          {caseTask.running ? '出题中…' : designCase ? '换一题' : '开始模拟'}
         </button>
       </div>
 
@@ -199,10 +199,10 @@ export function DesignPractice(): React.JSX.Element {
                 <button
                   type="button"
                   disabled={loading || !answer.trim()}
-                  onClick={() => void submit()}
+                  onClick={submit}
                   className="ml-auto rounded bg-emerald-700 px-4 py-2 text-sm disabled:opacity-40"
                 >
-                  {loading ? '评分中…' : '提交回答'}
+                  {submitTask.running ? '评分中…' : '提交回答'}
                 </button>
               </div>
             </>

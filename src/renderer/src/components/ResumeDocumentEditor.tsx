@@ -14,6 +14,7 @@ export function ResumeDocumentEditor({
   onDocumentChange,
   onActiveSectionChange,
   onPolish,
+  polishTaskKeyPrefix,
   documentKey,
 }: {
   document: ResumeDocument;
@@ -22,6 +23,8 @@ export function ResumeDocumentEditor({
   onActiveSectionChange: (index: number) => void;
   /** 大文本框上的「AI 优化」，由上层带整份简历上下文去请求模型 */
   onPolish?: (req: SectionPolishRequest & { sectionKey: ResumeSectionKey }) => Promise<string>;
+  /** 优化任务 key 的前缀，按简历取，跨页面保留按钮状态 */
+  polishTaskKeyPrefix: string;
   /** 切换简历时用它强制重建表单，避免沿用上一份的本地草稿 */
   documentKey?: string;
 }): React.JSX.Element {
@@ -82,6 +85,7 @@ export function ResumeDocumentEditor({
             polish={
               onPolish ? (req) => onPolish({ ...req, sectionKey: activeSection.key }) : undefined
             }
+            taskKeyPrefix={polishTaskKeyPrefix}
             onContentChange={updateContent}
           />
         </div>

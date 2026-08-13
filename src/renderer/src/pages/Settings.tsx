@@ -4,6 +4,7 @@ import { DEFAULT_PRIORITY_WEIGHTS } from '@shared/config';
 import { LLM_ROLES, LLM_TIERS, type CoverageType, type LlmRole, type LlmTier } from '@shared/enums';
 import type { ProviderTestResult } from '@shared/ipc';
 import { invoke } from '../ipc';
+import { runTask, useTask, useTaskResult } from '../ipc/taskStore';
 import { SecretField } from '../components/SecretField';
 import { SearchQualityPanel } from '../components/SearchQualityPanel';
 import { UpdatePanel } from '../components/UpdatePanel';
@@ -60,10 +61,75 @@ function ExpField({
   );
 }
 
+/**
+ * 一个模型档位：档位配置 + 连通性测试。
+ * 测试状态记在按档位取的任务 key 上，切页回来仍显示「测试中…」，结果也会补上。
+ */
+function TierCard({
+  tier,
+  tierConfig,
+  providers,
+  onChange,
+}: {
+  tier: LlmTier;
+  tierConfig: AppConfig['llm']['tiers'][LlmTier];
+  providers: AppConfig['llm']['providers'];
+  onChange: (patch: Partial<AppConfig['llm']['tiers'][LlmTier]>) => void;
+}): React.JSX.Element {
+  const taskKey = `llm:testTier:${tier}`;
+  const { running, error } = useTask(taskKey);
+  const [test, setTest] = useState<ProviderTestResult | null>(null);
+  useTaskResult<ProviderTestResult>(taskKey, setTest);
+
+  return (
+    <div className="space-y-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+      <div className="flex items-baseline gap-2">
+        <code className="text-sm text-sky-300">{tier}</code>
+        <span className="text-xs text-[var(--color-muted)]">{TIER_HINTS[tier]}</span>
+      </div>
+      <div className="flex gap-2">
+        <select
+          value={tierConfig.providerId}
+          onChange={(e) => onChange({ providerId: e.target.value })}
+          className="rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1.5 text-sm outline-none"
+        >
+          {providers.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.label}
+            </option>
+          ))}
+        </select>
+        <input
+          value={tierConfig.model}
+          onChange={(e) => onChange({ model: e.target.value })}
+          placeholder="模型名，如 deepseek-chat"
+          className="flex-1 rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2.5 py-1.5 text-sm outline-none focus:border-[var(--color-accent)]"
+        />
+        <button
+          type="button"
+          onClick={() =>
+            void runTask(taskKey, () => invoke('llm:testTier', { tier })).catch(() => undefined)
+          }
+          disabled={running}
+          className="rounded border border-[var(--color-border)] px-3 py-1.5 text-sm disabled:opacity-40"
+        >
+          {running ? '测试中…' : '测试'}
+        </button>
+      </div>
+      {error && <p className="text-xs text-red-400">{error}</p>}
+      {test && (
+        <p className={`text-xs ${test.ok ? 'text-emerald-400' : 'text-red-400'}`}>
+          {test.ok ? `${test.latencyMs}ms · ` : ''}
+          {test.message}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function Settings(): React.JSX.Element {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [saved, setSaved] = useState(false);
-  const [tests, setTests] = useState<Partial<Record<LlmTier, ProviderTestResult | 'running'>>>({});
   const [dbInfo, setDbInfo] = useState<{ ok: boolean; tables: number; path: string } | null>(null);
 
   useEffect(() => {
@@ -109,12 +175,6 @@ const updateEmbedding = (patch: Partial<AppConfig['llm']['embedding']>): void =>
   const updateUpdater = (patch: Partial<UpdateConfig>): void => {
     void persist({ ...config, update: { ...config.update, ...patch } });
   };
-
-const runTest = async (tier: LlmTier): Promise<void> => {
-  setTests((t) => ({ ...t, [tier]: 'running' }));
-  const result = await invoke('llm:testTier', { tier });
-  setTests((t) => ({ ...t, [tier]: result }));
-};
 
   return (
     <PageShell className="space-y-8">
@@ -162,54 +222,15 @@ const runTest = async (tier: LlmTier): Promise<void> => {
           </p>
         </div>
 
-        {LLM_TIERS.map((tier) => {
-          const tc = config.llm.tiers[tier];
-          const test = tests[tier];
-          return (
-            <div
-              key={tier}
-              className="space-y-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
-            >
-              <div className="flex items-baseline gap-2">
-                <code className="text-sm text-sky-300">{tier}</code>
-                <span className="text-xs text-[var(--color-muted)]">{TIER_HINTS[tier]}</span>
-              </div>
-              <div className="flex gap-2">
-                <select
-                  value={tc.providerId}
-                  onChange={(e) => updateTier(tier, { providerId: e.target.value })}
-                  className="rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1.5 text-sm outline-none"
-                >
-                  {config.llm.providers.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.label}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  value={tc.model}
-                  onChange={(e) => updateTier(tier, { model: e.target.value })}
-                  placeholder="模型名，如 deepseek-chat"
-                  className="flex-1 rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2.5 py-1.5 text-sm outline-none focus:border-[var(--color-accent)]"
-                />
-                <button
-                  type="button"
-                  onClick={() => void runTest(tier)}
-                  disabled={test === 'running'}
-                  className="rounded border border-[var(--color-border)] px-3 py-1.5 text-sm disabled:opacity-40"
-                >
-                  {test === 'running' ? '测试中…' : '测试'}
-                </button>
-              </div>
-              {test && test !== 'running' && (
-                <p className={`text-xs ${test.ok ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {test.ok ? `${test.latencyMs}ms · ` : ''}
-                  {test.message}
-                </p>
-              )}
-            </div>
-          );
-        })}
+        {LLM_TIERS.map((tier) => (
+          <TierCard
+            key={tier}
+            tier={tier}
+            tierConfig={config.llm.tiers[tier]}
+            providers={config.llm.providers}
+            onChange={(patch) => updateTier(tier, patch)}
+          />
+        ))}
       </section>
 
       <section className="space-y-3">

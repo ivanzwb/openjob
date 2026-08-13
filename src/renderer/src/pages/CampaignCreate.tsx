@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { JobTarget } from '@shared/entities';
 import { invoke } from '../ipc';
+import { runTask, useTask, useTaskResult } from '../ipc/taskStore';
 import { PageShell } from '../components/PageShell';
 
 export function CampaignCreate({
@@ -12,8 +13,10 @@ export function CampaignCreate({
 }): React.JSX.Element {
   const [targets, setTargets] = useState<JobTarget[]>([]);
   const [jobTargetId, setJobTargetId] = useState('');
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 按岗位记：创建过程中切走再回来，按钮还是「创建中…」，也不会重复建一份
+  const createKey = `campaign:create:${jobTargetId}`;
+  const { running: busy, error: createError } = useTask(createKey);
 
   useEffect(() => {
     void invoke('jobTarget:list', undefined).then((list) => {
@@ -22,22 +25,16 @@ export function CampaignCreate({
     });
   }, []);
 
-  const submit = async (): Promise<void> => {
+  const submit = (): void => {
     if (!jobTargetId) {
       setError('请选择目标岗位，或在「简历 → 目标岗位」中新建');
       return;
     }
-    setBusy(true);
     setError(null);
-    try {
-      const c = await invoke('campaign:create', { jobTargetId });
-      onCreated(c.id);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
+    void runTask(createKey, () => invoke('campaign:create', { jobTargetId })).catch(() => undefined);
   };
+
+  useTaskResult<{ id: string }>(createKey, (created) => onCreated(created.id));
 
   const selected = targets.find((t) => t.id === jobTargetId);
 
@@ -71,12 +68,12 @@ export function CampaignCreate({
         </div>
       )}
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {(error ?? createError) && <p className="text-sm text-red-400">{error ?? createError}</p>}
 
       <div className="flex gap-2">
         <button
           type="button"
-          onClick={() => void submit()}
+          onClick={submit}
           disabled={busy || !jobTargetId}
           className="rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm font-medium disabled:opacity-40"
         >

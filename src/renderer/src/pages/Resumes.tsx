@@ -4,7 +4,9 @@ import type { ResumeVariantView } from '@shared/ipc';
 import type { ResumeEditorSavePayload } from '../components/ResumeEditorPane';
 import { ResumeEditorPane } from '../components/ResumeEditorPane';
 import { PageShell } from '../components/PageShell';
+import { TaskButton } from '../components/TaskButton';
 import { invoke } from '../ipc';
+import { runTask, useTask, useTaskResult } from '../ipc/taskStore';
 
 type SubTab = 'targets' | 'resumes';
 
@@ -38,7 +40,6 @@ export function Resumes(): React.JSX.Element {
   const [variants, setVariants] = useState<ResumeVariantView[]>([]);
   const [listSelection, setListSelection] = useState<ListSelection | null>(null);
   const [activeVariantId, setActiveVariantId] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   const [targetForm, setTargetForm] = useState({ id: '', company: '', roleTitle: '', jdRaw: '' });
@@ -138,36 +139,47 @@ export function Resumes(): React.JSX.Element {
     setActiveVariantId(null);
   }
 
-  const saveTarget = async (): Promise<void> => {
-    setBusy(true);
+  // 这些动作都按 key 记在全局任务仓库里：切到别的页面再回来，
+  // 还在跑的按钮仍然是「进行中」，跑完的结果也会补进界面
+  const saveTargetKey = `jobTarget:save:${targetForm.id || 'new'}`;
+  const createResumeKey = 'resume:create';
+  const importResumeKey = 'resume:import';
+  const optimizeKey = `resumeVariant:optimize:${optimizeBaseResumeId || 'new'}:${optimizeTargetId}`;
+  const { running: savingTarget, error: saveTargetError } = useTask(saveTargetKey);
+  const { running: creatingResume, error: createResumeError } = useTask(createResumeKey);
+  const { running: importingResume, error: importResumeError } = useTask(importResumeKey);
+  const { running: optimizing, error: optimizeError } = useTask(optimizeKey);
+
+  // 任务失败原因留在仓库里，切页回来还能看到，所以直接读它而不复制进 state
+  const taskFailure = saveTargetError ?? createResumeError ?? importResumeError ?? optimizeError;
+
+  const saveTarget = (): void => {
     setMessage(null);
-    try {
-      let saved: JobTarget;
-      if (targetForm.id) {
-        saved = await invoke('jobTarget:update', {
-          id: targetForm.id,
-          company: targetForm.company,
-          roleTitle: targetForm.roleTitle,
-          jdRaw: targetForm.jdRaw,
-        });
-      } else {
-        saved = await invoke('jobTarget:create', {
-          company: targetForm.company,
-          roleTitle: targetForm.roleTitle,
-          jdRaw: targetForm.jdRaw,
-        });
-      }
-      setTargetForm({ id: '', company: '', roleTitle: '', jdRaw: '' });
-      setTargetFormOpen(false);
-      setSelectedTargetId(saved.id);
+    const form = targetForm;
+    void runTask(saveTargetKey, async () => {
+      const saved: JobTarget = form.id
+        ? await invoke('jobTarget:update', {
+            id: form.id,
+            company: form.company,
+            roleTitle: form.roleTitle,
+            jdRaw: form.jdRaw,
+          })
+        : await invoke('jobTarget:create', {
+            company: form.company,
+            roleTitle: form.roleTitle,
+            jdRaw: form.jdRaw,
+          });
       await refreshAll();
-      setMessage('目标岗位已保存');
-    } catch (e) {
-      setMessage(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
+      return saved;
+    }).catch(() => undefined);
   };
+
+  useTaskResult<JobTarget>(saveTargetKey, (saved) => {
+    setTargetForm({ id: '', company: '', roleTitle: '', jdRaw: '' });
+    setTargetFormOpen(false);
+    setSelectedTargetId(saved.id);
+    setMessage('目标岗位已保存');
+  });
 
   const openNewTargetForm = (): void => {
     setTargetForm({ id: '', company: '', roleTitle: '', jdRaw: '' });
@@ -198,26 +210,23 @@ export function Resumes(): React.JSX.Element {
     setTargetForm({ id: '', company: '', roleTitle: '', jdRaw: '' });
   };
 
-  const saveResume = async (): Promise<void> => {
-    setBusy(true);
+  const saveResume = (): void => {
     setMessage(null);
-    try {
-      const saved = await invoke('resume:create', {
-        label: resumeForm.label,
-        rawText: resumeForm.rawText,
-      });
-      setResumeForm({ label: '', rawText: '' });
-      setResumeFormOpen(false);
-      setSelectedResumeId(saved.id);
-      setListSelection({ kind: 'resume', id: saved.id });
+    const form = resumeForm;
+    void runTask(createResumeKey, async () => {
+      const saved = await invoke('resume:create', { label: form.label, rawText: form.rawText });
       await refreshAll();
-      setMessage('简历已保存');
-    } catch (e) {
-      setMessage(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
+      return saved;
+    }).catch(() => undefined);
   };
+
+  useTaskResult<Resume>(createResumeKey, (saved) => {
+    setResumeForm({ label: '', rawText: '' });
+    setResumeFormOpen(false);
+    setSelectedResumeId(saved.id);
+    setListSelection({ kind: 'resume', id: saved.id });
+    setMessage('简历已保存');
+  });
 
   const openNewResumeForm = (): void => {
     setResumeForm({ label: '', rawText: '' });
@@ -262,27 +271,25 @@ export function Resumes(): React.JSX.Element {
     else selectVariantEntry(entry.variant);
   };
 
-  const importResume = async (): Promise<void> => {
-    setBusy(true);
+  const importResume = (): void => {
     setMessage(null);
-    try {
+    void runTask(importResumeKey, async () => {
       const r = await invoke('resume:importFile', undefined);
-      if (r) {
-        setSelectedResumeId(r.id);
-        setListSelection({ kind: 'resume', id: r.id });
-        setResumeFormOpen(false);
-        setResumeForm({ label: '', rawText: '' });
-        await refreshAll();
-        setMessage(`已导入：${r.label}`);
-      }
-    } catch (e) {
-      setMessage(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
+      if (r) await refreshAll();
+      return r;
+    }).catch(() => undefined);
   };
 
-  const runOptimizeFromNewResume = async (): Promise<void> => {
+  useTaskResult<Resume | null>(importResumeKey, (r) => {
+    if (!r) return;
+    setSelectedResumeId(r.id);
+    setListSelection({ kind: 'resume', id: r.id });
+    setResumeFormOpen(false);
+    setResumeForm({ label: '', rawText: '' });
+    setMessage(`已导入：${r.label}`);
+  });
+
+  const runOptimizeFromNewResume = (): void => {
     const baseFromList = optimizeBaseResumeId
       ? resumes.find((r) => r.id === optimizeBaseResumeId)
       : null;
@@ -294,35 +301,35 @@ export function Resumes(): React.JSX.Element {
       setMessage('请选择目标岗位');
       return;
     }
-    setBusy(true);
     setMessage(null);
-    try {
-      const sourceResumeId = baseFromList
-        ? baseFromList.id
-        : (
-            await invoke('resume:create', {
-              label: resumeForm.label.trim() || '我的简历',
-              rawText: resumeForm.rawText,
-            })
-          ).id;
-      const v = await invoke('resumeVariant:optimize', {
+    const input = { baseId: baseFromList?.id ?? null, form: resumeForm, targetId: optimizeTargetId };
+    void runTask(optimizeKey, async () => {
+      const sourceResumeId =
+        input.baseId ??
+        (
+          await invoke('resume:create', {
+            label: input.form.label.trim() || '我的简历',
+            rawText: input.form.rawText,
+          })
+        ).id;
+      const variant = await invoke('resumeVariant:optimize', {
         sourceResumeId,
-        jobTargetId: optimizeTargetId,
+        jobTargetId: input.targetId,
       });
-      setResumeForm({ label: '', rawText: '' });
-      setResumeFormOpen(false);
-      setOptimizeBaseResumeId('');
-      setSelectedResumeId(sourceResumeId);
-      setListSelection({ kind: 'variant', id: v.id });
-      setActiveVariantId(v.id);
       await refreshAll();
-      setMessage('优化版已生成');
-    } catch (e) {
-      setMessage(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
+      return { sourceResumeId, variantId: variant.id };
+    }).catch(() => undefined);
   };
+
+  useTaskResult<{ sourceResumeId: string; variantId: string }>(optimizeKey, (done) => {
+    setResumeForm({ label: '', rawText: '' });
+    setResumeFormOpen(false);
+    setOptimizeBaseResumeId('');
+    setSelectedResumeId(done.sourceResumeId);
+    setListSelection({ kind: 'variant', id: done.variantId });
+    setActiveVariantId(done.variantId);
+    setMessage('优化版已生成');
+  });
 
   /** 编辑器自动保存的落库入口：成功时不打扰用户，失败才提示并抛回给编辑器 */
   const saveEditorDocument = async (payload: ResumeEditorSavePayload): Promise<void> => {
@@ -349,60 +356,56 @@ export function Resumes(): React.JSX.Element {
     }
   };
 
-  const deleteTarget = async (id: string): Promise<void> => {
+  const deleteTarget = (id: string): void => {
     if (!confirm('确定删除此目标岗位？')) return;
-    setBusy(true);
     setMessage(null);
-    try {
+    void runTask(`jobTarget:delete:${id}`, async () => {
       await invoke('jobTarget:delete', { id });
-      if (targetForm.id === id) closeTargetForm();
-      if (selectedTargetId === id) setSelectedTargetId(null);
       await refreshAll();
-      setMessage('目标岗位已删除');
-    } catch (e) {
-      setMessage(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
+      return '目标岗位已删除';
+    })
+      .then((msg) => {
+        if (targetForm.id === id) closeTargetForm();
+        if (selectedTargetId === id) setSelectedTargetId(null);
+        setMessage(msg);
+      })
+      .catch((e: unknown) => setMessage(e instanceof Error ? e.message : String(e)));
   };
 
-  const deleteResume = async (id: string): Promise<void> => {
+  const deleteResume = (id: string): void => {
     if (!confirm('确定删除此简历？由它生成的优化版会保留为独立简历。')) return;
-    setBusy(true);
     setMessage(null);
-    try {
+    void runTask(`resume:delete:${id}`, async () => {
       await invoke('resume:delete', { id });
-      if (selectedResumeId === id) {
-        setSelectedResumeId(null);
-        setListSelection(null);
-      }
       await refreshAll();
-      setMessage('简历已删除');
-    } catch (e) {
-      setMessage(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
+      return '简历已删除';
+    })
+      .then((msg) => {
+        if (selectedResumeId === id) {
+          setSelectedResumeId(null);
+          setListSelection(null);
+        }
+        setMessage(msg);
+      })
+      .catch((e: unknown) => setMessage(e instanceof Error ? e.message : String(e)));
   };
 
-  const deleteVariant = async (id: string): Promise<void> => {
+  const deleteVariant = (id: string): void => {
     if (!confirm('确定删除此优化版？')) return;
-    setBusy(true);
     setMessage(null);
-    try {
+    void runTask(`resumeVariant:delete:${id}`, async () => {
       await invoke('resumeVariant:delete', { id });
-      if (activeVariantId === id) setActiveVariantId(null);
-      if (listSelection?.kind === 'variant' && listSelection.id === id) {
-        if (selectedResumeId) setListSelection({ kind: 'resume', id: selectedResumeId });
-        else setListSelection(null);
-      }
       await refreshAll();
-      setMessage('优化版已删除');
-    } catch (e) {
-      setMessage(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
+      return '优化版已删除';
+    })
+      .then((msg) => {
+        if (activeVariantId === id) setActiveVariantId(null);
+        if (listSelection?.kind === 'variant' && listSelection.id === id) {
+          setListSelection(selectedResumeId ? { kind: 'resume', id: selectedResumeId } : null);
+        }
+        setMessage(msg);
+      })
+      .catch((e: unknown) => setMessage(e instanceof Error ? e.message : String(e)));
   };
 
   return (
@@ -436,7 +439,11 @@ export function Resumes(): React.JSX.Element {
         ))}
       </nav>
 
-      {message && <p className="text-xs text-[var(--color-muted)]">{message}</p>}
+      {(taskFailure ?? message) && (
+        <p className={`text-xs ${taskFailure ? 'text-red-400' : 'text-[var(--color-muted)]'}`}>
+          {taskFailure ?? message}
+        </p>
+      )}
 
       {tab === 'targets' && (
         <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[240px_1fr]">
@@ -491,11 +498,11 @@ export function Resumes(): React.JSX.Element {
                   <div className="flex shrink-0 gap-2">
                     <button
                       type="button"
-                      disabled={busy}
-                      onClick={() => void saveTarget()}
+                      disabled={savingTarget}
+                      onClick={saveTarget}
                       className="rounded-lg bg-[var(--color-accent)] px-3 py-1.5 text-sm disabled:opacity-40"
                     >
-                      保存
+                      {savingTarget ? '保存中…' : '保存'}
                     </button>
                     <button
                       type="button"
@@ -548,13 +555,14 @@ export function Resumes(): React.JSX.Element {
                     >
                       编辑
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => void deleteTarget(selectedTarget.id)}
-                      className="rounded-lg border border-red-400/50 px-3 py-1.5 text-sm text-red-400"
+                    <TaskButton
+                      taskKey={`jobTarget:delete:${selectedTarget.id}`}
+                      onClick={() => deleteTarget(selectedTarget.id)}
+                      runningLabel="删除中…"
+                      className="rounded-lg border border-red-400/50 px-3 py-1.5 text-sm text-red-400 disabled:opacity-40"
                     >
                       删除
-                    </button>
+                    </TaskButton>
                   </div>
                 </div>
                 <div className="min-h-0 flex-1 overflow-y-auto p-4">
@@ -608,19 +616,23 @@ export function Resumes(): React.JSX.Element {
                       </div>
                     </button>
                     {entry.id !== NEW_RESUME_DRAFT_ID && (
-                      <button
-                        type="button"
-                        title="删除"
-                        disabled={busy}
-                        onClick={() =>
-                          void (entry.kind === 'variant'
-                            ? deleteVariant(entry.id)
-                            : deleteResume(entry.id))
+                      <TaskButton
+                        taskKey={
+                          entry.kind === 'variant'
+                            ? `resumeVariant:delete:${entry.id}`
+                            : `resume:delete:${entry.id}`
                         }
-                        className="absolute right-2 top-2 rounded px-1.5 py-0.5 text-xs text-[var(--color-muted)] opacity-0 transition-opacity hover:text-red-400 focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-30"
+                        onClick={() =>
+                          entry.kind === 'variant' ? deleteVariant(entry.id) : deleteResume(entry.id)
+                        }
+                        runningLabel="删除中…"
+                        title="删除"
+                        className="absolute right-2 top-2 rounded px-1.5 py-0.5 text-xs text-[var(--color-muted)] transition-opacity hover:text-red-400 focus-visible:opacity-100 group-hover:opacity-100"
+                        // 平时靠悬停显形，删除中要一直看得见进度
+                        idleClassName="opacity-0"
                       >
                         删除
-                      </button>
+                      </TaskButton>
                     )}
                   </div>
                 ))
@@ -641,11 +653,11 @@ export function Resumes(): React.JSX.Element {
                   <div className="flex shrink-0 flex-wrap justify-end gap-2">
                     <button
                       type="button"
-                      disabled={busy}
-                      onClick={() => void saveResume()}
+                      disabled={creatingResume}
+                      onClick={saveResume}
                       className="rounded-lg bg-[var(--color-accent)] px-3 py-1.5 text-sm disabled:opacity-40"
                     >
-                      保存
+                      {creatingResume ? '保存中…' : '保存'}
                     </button>
                     <button
                       type="button"
@@ -656,11 +668,11 @@ export function Resumes(): React.JSX.Element {
                     </button>
                     <button
                       type="button"
-                      disabled={busy}
-                      onClick={() => void importResume()}
-                      className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm"
+                      disabled={importingResume}
+                      onClick={importResume}
+                      className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm disabled:opacity-40"
                     >
-                      导入文件
+                      {importingResume ? '导入中…' : '导入文件'}
                     </button>
                   </div>
                 </div>
@@ -714,11 +726,11 @@ export function Resumes(): React.JSX.Element {
                     </select>
                     <button
                       type="button"
-                      disabled={busy || !optimizeTargetId || targets.length === 0}
-                      onClick={() => void runOptimizeFromNewResume()}
+                      disabled={optimizing || !optimizeTargetId || targets.length === 0}
+                      onClick={runOptimizeFromNewResume}
                       className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm disabled:opacity-40"
                     >
-                      生成优化版
+                      {optimizing ? '生成中…' : '生成优化版'}
                     </button>
                   </div>
                 </div>
@@ -727,6 +739,7 @@ export function Resumes(): React.JSX.Element {
               <ResumeEditorPane
                 key={`variant-${activeVariant.id}`}
                 kind="variant"
+                taskScope={`variant:${activeVariant.id}`}
                 initialContentMd={activeVariant.contentMd}
                 initialPreviewStyle={activeVariant.previewStyle}
                 initialLabel={activeVariant.label}
@@ -747,6 +760,7 @@ export function Resumes(): React.JSX.Element {
               <ResumeEditorPane
                 key={`resume-${selectedResume.id}`}
                 kind="resume"
+                taskScope={`resume:${selectedResume.id}`}
                 initialContentMd={selectedResume.rawText}
                 initialPreviewStyle={selectedResume.previewStyle}
                 initialLabel={selectedResume.label}

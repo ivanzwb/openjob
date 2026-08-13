@@ -26,6 +26,7 @@ import { TaskStudyPanel } from '../components/TaskStudyPanel';
 import { PageShell } from '../components/PageShell';
 import { invoke } from '../ipc';
 import { useJobFeedback, useJobProgress } from '../ipc/useJobProgress';
+import { runTask, useTask, useTaskResult } from '../ipc/taskStore';
 
 export function CampaignDetail({
   id,
@@ -46,7 +47,6 @@ export function CampaignDetail({
   const [newResumeLabel, setNewResumeLabel] = useState('我的简历');
   const [newResumeText, setNewResumeText] = useState('');
   const [showResumeForm, setShowResumeForm] = useState(false);
-  const [importingResume, setImportingResume] = useState(false);
   const [interviewDate, setInterviewDate] = useState('');
   const [dailyMinutes, setDailyMinutes] = useState('90');
   const [planMsg, setPlanMsg] = useState<string | null>(null);
@@ -56,8 +56,6 @@ export function CampaignDetail({
   const [edges, setEdges] = useState<NodeEdgeView[]>([]);
   const [showEdges, setShowEdges] = useState(false);
   const [nudges, setNudges] = useState<Nudge[]>([]);
-  const [applyingHistory, setApplyingHistory] = useState(false);
-  const [webIngesting, setWebIngesting] = useState(false);
   const [reports, setReports] = useState<InterviewReportView[]>([]);
   const [showReports, setShowReports] = useState(false);
   const [annotations, setAnnotations] = useState<AnnotationView[]>([]);
@@ -73,6 +71,42 @@ export function CampaignDetail({
   const intelJob = useJobFeedback('公司情报');
   const resumeJob = useJobFeedback('简历交叉分析');
   const expandJob = useJobFeedback('细化考点');
+
+  // 这些动作跑在渲染进程里，状态挂在按战役取的 key 上：
+  // 切到别的页签、关掉弹窗再回来，按钮仍显示进行中，结果也会补上
+  const ingestWebKey = `campaign:${id}:ingestWeb`;
+  const ingestPastedKey = `campaign:${id}:ingestReport:pasted`;
+  const ingestDebriefKey = `campaign:${id}:ingestReport:selfDebrief`;
+  const importResumeKey = `campaign:${id}:importResume`;
+  const createResumeKey = `campaign:${id}:createResume`;
+  const applyHistoryKey = `campaign:${id}:applyHistory`;
+  const planGenerateKey = `campaign:${id}:planGenerate`;
+  const ingestWebTask = useTask(ingestWebKey);
+  const ingestPastedTask = useTask(ingestPastedKey);
+  const ingestDebriefTask = useTask(ingestDebriefKey);
+  const importResumeTask = useTask(importResumeKey);
+  const createResumeTask = useTask(createResumeKey);
+  const applyHistoryTask = useTask(applyHistoryKey);
+  const planTask = useTask(planGenerateKey);
+  const webIngesting = ingestWebTask.running;
+  const importingResume = importResumeTask.running;
+  const applyingHistory = applyHistoryTask.running;
+
+  // 摄入/导入类动作的结果与错误都走同一条提示，跑完再回来也看得到
+  useTaskResult<string>(ingestWebKey, setIngestMsg);
+  useTaskResult<string>(ingestPastedKey, setIngestMsg);
+  useTaskResult<string>(ingestDebriefKey, setIngestMsg);
+  useTaskResult<string>(importResumeKey, setIngestMsg);
+  useTaskResult<string>(createResumeKey, setIngestMsg);
+  useTaskResult<string>(applyHistoryKey, setPlanMsg);
+  useTaskResult<string>(planGenerateKey, setPlanMsg);
+  const taskError =
+    ingestWebTask.error ??
+    ingestPastedTask.error ??
+    ingestDebriefTask.error ??
+    importResumeTask.error ??
+    createResumeTask.error;
+  const planError = applyHistoryTask.error ?? planTask.error;
 
   // filterDate 清空时渲染期同步清空 plan，避免 effect 内同步 setState
   if (prevCalendarFilterDate !== calendarFilterDate) {
@@ -141,27 +175,31 @@ export function CampaignDetail({
   };
 
   /** 从文件导入简历到简历库；attach=true 时随即关联到当前战役并触发交叉分析 */
-  const importResumeFile = async (attach: boolean): Promise<void> => {
-    setImportingResume(true);
-    try {
+  const importResumeFile = (attach: boolean): void => {
+    void runTask(importResumeKey, async () => {
       const r = await invoke('resume:importFile', undefined);
-      if (!r) return; // 用户取消
+      if (!r) return '已取消导入';
       refresh();
       if (attach) await attachResume(r.id);
-    } finally {
-      setImportingResume(false);
-    }
+      return `已导入：${r.label}`;
+    }).catch(() => undefined);
   };
 
-  const createAndAttachResume = async (): Promise<void> => {
+  const createAndAttachResume = (): void => {
     if (!newResumeText.trim()) return;
-    const r = await invoke('resume:create', {
-      label: newResumeLabel.trim() || '我的简历',
-      rawText: newResumeText.trim(),
-    });
-    setShowResumeForm(false);
-    setNewResumeText('');
-    await attachResume(r.id);
+    void runTask(createResumeKey, async () => {
+      const r = await invoke('resume:create', {
+        label: newResumeLabel.trim() || '我的简历',
+        rawText: newResumeText.trim(),
+      });
+      await attachResume(r.id);
+      return `已保存并交叉分析：${r.label}`;
+    })
+      .then(() => {
+        setShowResumeForm(false);
+        setNewResumeText('');
+      })
+      .catch(() => undefined);
   };
 
   const expandNode = async (nodeId: string): Promise<void> => {
@@ -179,30 +217,34 @@ export function CampaignDetail({
     await invoke('diagnosis:fetchIntel', { campaignId: id });
   };
 
-  const ingestReport = async (sourceType: 'pasted' | 'selfDebrief'): Promise<void> => {
+  const ingestReport = (sourceType: 'pasted' | 'selfDebrief'): void => {
     const raw = sourceType === 'selfDebrief' ? debriefText : reportText;
     if (!raw.trim()) return;
     setIngestMsg(null);
-    try {
-      const res = await invoke('diagnosis:ingestReport', {
-        campaignId: id,
-        rawText: raw.trim(),
-        sourceType,
-      });
-      setIngestMsg(
-        `提取 ${res.questionsExtracted} 题，更新 ${res.nodesUpdated} 个考点` +
+    void runTask(
+      sourceType === 'selfDebrief' ? ingestDebriefKey : ingestPastedKey,
+      async () => {
+        const res = await invoke('diagnosis:ingestReport', {
+          campaignId: id,
+          rawText: raw.trim(),
+          sourceType,
+        });
+        refresh();
+        return (
+          `提取 ${res.questionsExtracted} 题，更新 ${res.nodesUpdated} 个考点` +
           (res.blindSpotsCreated ? `，新增 ${res.blindSpotsCreated} 个盲区考点` : '') +
           (res.crossCampaignUpdated ? `，跨 Campaign 修正 ${res.crossCampaignUpdated} 处` : '') +
           (res.unverifiedCount
             ? `；${res.corroboratedCount} 处多源印证、${res.unverifiedCount} 处单一来源（权重减半）`
-            : ''),
-      );
-      if (sourceType === 'selfDebrief') setDebriefText('');
-      else setReportText('');
-      refresh();
-    } catch (err) {
-      setIngestMsg(err instanceof Error ? err.message : String(err));
-    }
+            : '')
+        );
+      },
+    )
+      .then(() => {
+        if (sourceType === 'selfDebrief') setDebriefText('');
+        else setReportText('');
+      })
+      .catch(() => undefined);
   };
 
   const deleteNode = async (nodeId: string): Promise<void> => {
@@ -243,20 +285,15 @@ export function CampaignDetail({
     setEdges((prev) => prev.filter((e) => e.id !== edgeId));
   };
 
-  const applyHistory = async (): Promise<void> => {
-    setApplyingHistory(true);
-    try {
+  const applyHistory = (): void => {
+    void runTask(applyHistoryKey, async () => {
       const res = await invoke('insight:applyHistory', { campaignId: id });
       setNudges(res.nudges);
-      setPlanMsg(
-        res.boosted + res.eased === 0
-          ? '历史信号暂无可回写的内容'
-          : `已生成 ${res.boosted} 处提权、${res.eased} 处拆小，优先级已刷新`,
-      );
       refresh();
-    } finally {
-      setApplyingHistory(false);
-    }
+      return res.boosted + res.eased === 0
+        ? '历史信号暂无可回写的内容'
+        : `已生成 ${res.boosted} 处提权、${res.eased} 处拆小，优先级已刷新`;
+    }).catch(() => undefined);
   };
 
   const createChildNode = async (
@@ -268,21 +305,16 @@ export function CampaignDetail({
     refresh();
   };
 
-  const ingestWeb = async (): Promise<void> => {
+  const ingestWeb = (): void => {
     setIngestMsg(null);
-    setWebIngesting(true);
-    try {
+    void runTask(ingestWebKey, async () => {
       const res = await invoke('diagnosis:ingestWeb', { campaignId: id });
-      setIngestMsg(
-        `联网摄入 ${res.reports.length} 篇（抓取 ${res.sourcesFetched} 页），` +
-          `提取 ${res.totalQuestions} 题，更新 ${res.totalNodesUpdated} 个考点`,
-      );
       refresh();
-    } catch (err) {
-      setIngestMsg(err instanceof Error ? err.message : String(err));
-    } finally {
-      setWebIngesting(false);
-    }
+      return (
+        `联网摄入 ${res.reports.length} 篇（抓取 ${res.sourcesFetched} 页），` +
+        `提取 ${res.totalQuestions} 题，更新 ${res.totalNodesUpdated} 个考点`
+      );
+    }).catch(() => undefined);
   };
 
   const toggleBookmark = async (nodeId: string): Promise<void> => {
@@ -295,21 +327,19 @@ export function CampaignDetail({
 
   const generatePlan = async (): Promise<void> => {
     setPlanMsg(null);
-    try {
+    await runTask(planGenerateKey, async () => {
       const res = await invoke('plan:generate', {
         campaignId: id,
         interviewDate: interviewDate || undefined,
         dailyMinutes: Number(dailyMinutes) || 90,
       });
-      setPlanMsg(
-        `已生成 ${res.daysCreated} 天计划、${res.tasksCreated} 个任务` +
-          (res.overflowFallbacks ? `（含 ${res.overflowFallbacks} 个兜底话术）` : ''),
-      );
       setPlanLogKey((k) => k + 1);
       refresh();
-    } catch (err) {
-      setPlanMsg(err instanceof Error ? err.message : String(err));
-    }
+      return (
+        `已生成 ${res.daysCreated} 天计划、${res.tasksCreated} 个任务` +
+        (res.overflowFallbacks ? `（含 ${res.overflowFallbacks} 个兜底话术）` : '')
+      );
+    }).catch(() => undefined);
   };
 
   const visibleNodeIds = useMemo(() => {
@@ -470,7 +500,7 @@ export function CampaignDetail({
                   <button
                     type="button"
                     disabled={webIngesting || Boolean(job)}
-                    onClick={() => void ingestWeb()}
+                    onClick={ingestWeb}
                     className="rounded border border-sky-800 bg-sky-950/40 px-3 py-1.5 text-xs text-sky-300 disabled:opacity-40"
                   >
                     {webIngesting ? '搜索摄入中…' : '搜索摄入面经'}
@@ -484,11 +514,11 @@ export function CampaignDetail({
                   />
                   <button
                     type="button"
-                    disabled={!reportText.trim() || Boolean(job)}
-                    onClick={() => void ingestReport('pasted')}
+                    disabled={!reportText.trim() || ingestPastedTask.running || Boolean(job)}
+                    onClick={() => ingestReport('pasted')}
                     className="rounded border border-[var(--color-border)] px-3 py-1 text-xs disabled:opacity-40"
                   >
-                    摄入面经
+                    {ingestPastedTask.running ? '摄入中…' : '摄入面经'}
                   </button>
                   {detail.reportCount > 0 && (
                     <button
@@ -507,6 +537,7 @@ export function CampaignDetail({
                       {ingestMsg}
                     </p>
                   )}
+                  {taskError && <p className="text-xs text-red-400">{taskError}</p>}
                 </div>
               </section>
 
@@ -525,11 +556,11 @@ export function CampaignDetail({
                   />
                   <button
                     type="button"
-                    disabled={!debriefText.trim() || Boolean(job)}
-                    onClick={() => void ingestReport('selfDebrief')}
+                    disabled={!debriefText.trim() || ingestDebriefTask.running || Boolean(job)}
+                    onClick={() => ingestReport('selfDebrief')}
                     className="rounded bg-emerald-700 px-3 py-1.5 text-xs disabled:opacity-40"
                   >
-                    提交复盘
+                    {ingestDebriefTask.running ? '提交中…' : '提交复盘'}
                   </button>
                 </div>
               </section>
@@ -609,7 +640,7 @@ export function CampaignDetail({
                         dailyMinutes={dailyMinutes}
                         onInterviewDateChange={setInterviewDate}
                         onDailyMinutesChange={setDailyMinutes}
-                        planMsg={planMsg}
+                        planMsg={planError ?? planMsg}
                         planLogKey={planLogKey}
                         onGeneratePlan={generatePlan}
                         filterDate={calendarFilterDate}
@@ -776,7 +807,7 @@ export function CampaignDetail({
                     <NudgePanel
                       nudges={nudges}
                       applying={applyingHistory}
-                      onApplyHistory={() => void applyHistory()}
+                      onApplyHistory={applyHistory}
                     />
                   </div>
                 </section>
@@ -797,7 +828,7 @@ export function CampaignDetail({
                       <button
                         type="button"
                         disabled={importingResume}
-                        onClick={() => void importResumeFile(true)}
+                        onClick={() => importResumeFile(true)}
                         className="text-xs text-sky-400 hover:underline disabled:opacity-40"
                       >
                         {importingResume ? '导入中…' : '从文件导入以替换'}
@@ -826,7 +857,7 @@ export function CampaignDetail({
                         <button
                           type="button"
                           disabled={importingResume}
-                          onClick={() => void importResumeFile(true)}
+                          onClick={() => importResumeFile(true)}
                           className="text-xs text-sky-400 hover:underline disabled:opacity-40"
                         >
                           {importingResume ? '导入中…' : '从文件导入'}
@@ -855,11 +886,11 @@ export function CampaignDetail({
                           />
                           <button
                             type="button"
-                            disabled={Boolean(job)}
-                            onClick={() => void createAndAttachResume()}
+                            disabled={createResumeTask.running || Boolean(job)}
+                            onClick={createAndAttachResume}
                             className="rounded bg-[var(--color-accent)] px-3 py-1 text-xs disabled:opacity-40"
                           >
-                            保存并交叉分析
+                            {createResumeTask.running ? '保存中…' : '保存并交叉分析'}
                           </button>
                         </div>
                       )}

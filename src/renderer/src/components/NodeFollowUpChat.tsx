@@ -19,6 +19,7 @@ export function NodeFollowUpChat({
     <div className="flex h-full min-h-[280px] flex-col">
       <StreamChat
         key={nodeId}
+        streamKey={`chat:node:${nodeId}`}
         compact
         role="explain"
         campaignId={campaignId}
