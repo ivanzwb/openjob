@@ -17,7 +17,7 @@ import {
 import { exchangeWithDesktop, pairWithDesktop } from '../sync/client';
 import { setPeerCreds } from '../remote/rpc';
 import { hydrateAppSettingsFromDb } from '../config/settings';
-import { columnExists, ensureCriticalSchema, hasTable } from './schemaEnsure';
+import { columnExists, columnIsNotNull, ensureCriticalSchema, hasTable } from './schemaEnsure';
 
 interface PeerRow {
   device_id: string;
@@ -66,6 +66,8 @@ function runMigrations(sqlite: SQLiteDatabase): void {
         // fall through
       } else if (index === 10 && !columnExists(sqlite, 'resume', 'preview_style')) {
         // fall through
+      } else if (index === 11 && columnIsNotNull(sqlite, 'resume_variant', 'source_resume_id')) {
+        // 建表 SQL 被容错跳过时,优化版还挂着 NOT NULL + CASCADE,重放这次重建
       } else {
         continue;
       }

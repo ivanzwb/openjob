@@ -64,11 +64,9 @@ function toVariantView(row: typeof schema.resumeVariant.$inferSelect): ResumeVar
     .from(schema.jobTarget)
     .where(eq(schema.jobTarget.id, row.jobTargetId))
     .get();
-  const resume = db
-    .select()
-    .from(schema.resume)
-    .where(eq(schema.resume.id, row.sourceResumeId))
-    .get();
+  const resume = row.sourceResumeId
+    ? db.select().from(schema.resume).where(eq(schema.resume.id, row.sourceResumeId)).get()
+    : undefined;
   const variant = rowToVariant(row);
   return {
     ...variant,

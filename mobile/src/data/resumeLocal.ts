@@ -80,7 +80,7 @@ export function listResumeEntries(db: SQLiteDatabase): ResumeEntry[] {
       kind: 'variant',
       id: row.id,
       label: target || row.label,
-      subtitle: row.source_label ? `源自 ${row.source_label}` : '优化版',
+      subtitle: row.source_label ? `源自 ${row.source_label}` : '母版已删除',
       contentMd: row.content_md,
       previewStyle: row.preview_style,
       updatedAt: row.updated_at,
@@ -192,8 +192,9 @@ export async function deleteResumeEntry(
   const identity = await getDeviceIdentity(db);
   writingAs(db, identity.deviceId, () => {
     if (kind === 'resume') {
+      // 优化版是独立的一份简历，母版删掉只断开来源
       db.runSync(`UPDATE campaign SET resume_id = NULL WHERE resume_id = ?`, id);
-      db.runSync(`DELETE FROM resume_variant WHERE source_resume_id = ?`, id);
+      db.runSync(`UPDATE resume_variant SET source_resume_id = NULL WHERE source_resume_id = ?`, id);
       db.runSync(`DELETE FROM resume WHERE id = ?`, id);
       return;
     }

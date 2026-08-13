@@ -66,7 +66,8 @@ export interface JobTarget {
 
 export interface ResumeVariant {
   id: Id;
-  sourceResumeId: Id;
+  /** 生成时的母版；母版被删后置空，优化版自己独立存在 */
+  sourceResumeId: Id | null;
   jobTargetId: Id;
   label: string;
   contentMd: string;

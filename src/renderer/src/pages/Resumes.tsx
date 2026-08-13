@@ -78,7 +78,7 @@ export function Resumes(): React.JSX.Element {
         kind: 'variant',
         id: v.id,
         label: `${v.company} · ${v.roleTitle}`,
-        subtitle: `来自 ${v.sourceResumeLabel}`,
+        subtitle: v.sourceResumeLabel ? `来自 ${v.sourceResumeLabel}` : '母版已删除',
         updatedAt: v.updatedAt,
         variant: v,
       });
@@ -365,7 +365,7 @@ export function Resumes(): React.JSX.Element {
   };
 
   const deleteResume = async (id: string): Promise<void> => {
-    if (!confirm('确定删除此简历？关联的优化版也会一并删除。')) return;
+    if (!confirm('确定删除此简历？由它生成的优化版会保留为独立简历。')) return;
     setBusy(true);
     setMessage(null);
     try {
@@ -729,7 +729,11 @@ export function Resumes(): React.JSX.Element {
                 initialPreviewStyle={activeVariant.previewStyle}
                 initialLabel={activeVariant.label}
                 heading={`${activeVariant.company} · ${activeVariant.roleTitle}`}
-                subtitle={`来自 ${activeVariant.sourceResumeLabel}`}
+                subtitle={
+                  activeVariant.sourceResumeLabel
+                    ? `来自 ${activeVariant.sourceResumeLabel}`
+                    : '母版已删除，这份优化版独立保留'
+                }
                 variantMeta={{
                   headline: activeVariant.label,
                   subtitle: `${activeVariant.company} · ${activeVariant.roleTitle}`,

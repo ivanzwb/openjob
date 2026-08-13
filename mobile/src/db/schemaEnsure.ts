@@ -52,7 +52,7 @@ export function ensureCriticalSchema(sqlite: SQLiteDatabase): void {
   sqlite.execSync(`
     CREATE TABLE IF NOT EXISTS resume_variant (
       id text PRIMARY KEY NOT NULL,
-      source_resume_id text NOT NULL,
+      source_resume_id text,
       job_target_id text NOT NULL,
       label text NOT NULL,
       content_md text NOT NULL,
@@ -60,7 +60,7 @@ export function ensureCriticalSchema(sqlite: SQLiteDatabase): void {
       is_user_edited integer DEFAULT 0 NOT NULL,
       created_at integer NOT NULL,
       updated_at integer NOT NULL,
-      FOREIGN KEY (source_resume_id) REFERENCES resume(id) ON UPDATE no action ON DELETE cascade,
+      FOREIGN KEY (source_resume_id) REFERENCES resume(id) ON UPDATE no action ON DELETE set null,
       FOREIGN KEY (job_target_id) REFERENCES job_target(id) ON UPDATE no action ON DELETE cascade
     );
   `);
@@ -95,4 +95,9 @@ export function hasTable(sqlite: SQLiteDatabase, table: string): boolean {
 export function columnExists(sqlite: SQLiteDatabase, table: string, column: string): boolean {
   const rows = sqlite.getAllSync<{ name: string }>(`PRAGMA table_info(${table})`);
   return rows.some((r) => r.name === column);
+}
+
+export function columnIsNotNull(sqlite: SQLiteDatabase, table: string, column: string): boolean {
+  const rows = sqlite.getAllSync<{ name: string; notnull: number }>(`PRAGMA table_info(${table})`);
+  return rows.some((r) => r.name === column && r.notnull === 1);
 }

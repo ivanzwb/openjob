@@ -53,7 +53,7 @@ export function ResumesScreen(): React.JSX.Element {
     Alert.alert(
       '删除简历',
       entry.kind === 'resume'
-        ? `确定删除「${entry.label}」？基于它生成的优化版会一并删除。`
+        ? `确定删除「${entry.label}」？由它生成的优化版会保留为独立简历。`
         : `确定删除「${entry.label}」这份优化版？`,
       [
         { text: '取消', style: 'cancel' },

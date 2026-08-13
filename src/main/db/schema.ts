@@ -68,9 +68,10 @@ export const resumeVariant = sqliteTable(
   'resume_variant',
   {
     id: text('id').primaryKey(),
-    sourceResumeId: text('source_resume_id')
-      .notNull()
-      .references(() => resume.id, { onDelete: 'cascade' }),
+    // 优化版生成后就是独立的一份简历：母版被删只是断开来源，不跟着删
+    sourceResumeId: text('source_resume_id').references(() => resume.id, {
+      onDelete: 'set null',
+    }),
     jobTargetId: text('job_target_id')
       .notNull()
       .references(() => jobTarget.id, { onDelete: 'cascade' }),

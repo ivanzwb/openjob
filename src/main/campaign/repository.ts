@@ -328,7 +328,14 @@ export function updateResume(input: UpdateResumeInput): Resume {
 }
 
 export function deleteResume(id: string): void {
-  getDb().delete(schema.resume).where(eq(schema.resume.id, id)).run();
+  const db = getDb();
+  // 优化版是独立的一份简历，只断开来源。外键也是 SET NULL，
+  // 但显式写一次能落进同步 oplog，手机端拿到的是同一个结果。
+  db.update(schema.resumeVariant)
+    .set({ sourceResumeId: null })
+    .where(eq(schema.resumeVariant.sourceResumeId, id))
+    .run();
+  db.delete(schema.resume).where(eq(schema.resume.id, id)).run();
 }
 
 export function saveJdParsed(campaignId: string, parsed: JdParsed): void {

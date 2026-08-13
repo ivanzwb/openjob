@@ -335,7 +335,8 @@ export interface UpdateJobTargetInput {
 
 export interface ResumeVariantView {
   id: string;
-  sourceResumeId: string;
+  /** 生成时的母版；母版被删后为 null，优化版仍然独立可用 */
+  sourceResumeId: string | null;
   jobTargetId: string;
   label: string;
   contentMd: string;
