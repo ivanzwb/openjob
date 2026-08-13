@@ -29,14 +29,6 @@ function resolveAnchor(anchor: PopoverAnchor, center: boolean): {
   };
 }
 
-function anchorKey(anchor: PopoverAnchor | null): string {
-  if (!anchor) return '';
-  if (anchor instanceof DOMRect) {
-    return `rect:${anchor.top},${anchor.left},${anchor.bottom},${anchor.right}`;
-  }
-  return `pt:${anchor.top},${anchor.left},${anchor.width ?? 0}`;
-}
-
 function styleEqual(a: React.CSSProperties, b: React.CSSProperties): boolean {
   const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
   for (const key of keys) {
@@ -63,24 +55,33 @@ export function useAdaptivePopover(
   const center = options?.center ?? false;
   const remeasureKey = options?.remeasureKey ?? '';
   const resizable = options?.resizable ?? false;
-  const panelSize = options?.panelSize;
+
+  // 锚点每次渲染都是新的 DOMRect（或新字面量对象），面板尺寸同理：
+  // 直接进依赖数组会让布局 effect 每帧重跑。渲染期先拍成几个数字，
+  // effect 只依赖这些值，位置真的变了才重新定位。
+  const point = anchor ? resolveAnchor(anchor, center) : null;
+  const hasAnchor = point !== null;
+  const anchorTop = point?.top ?? 0;
+  const anchorLeft = point?.left ?? 0;
+  const anchorCentered = point?.center ?? false;
+  const panelWidth = options?.panelSize?.width;
+  const panelHeight = options?.panelSize?.height;
 
   useLayoutEffect(() => {
     const el = ref.current;
-    if (!el || !anchor || !enabled) return;
+    if (!el || !hasAnchor || !enabled) return;
 
     const maxW = window.innerWidth - MARGIN * 2;
     const maxH = window.innerHeight - MARGIN * 2;
 
-    if (resizable && panelSize) {
-      const naturalWidth = Math.min(Math.max(panelSize.width, MIN_WIDTH), maxW);
-      const height = Math.min(Math.max(panelSize.height, 120), maxH);
-      const point = resolveAnchor(anchor, center);
-      let left = point.center ? point.left - naturalWidth / 2 : point.left;
-      let top = point.top;
+    if (resizable && panelWidth != null && panelHeight != null) {
+      const naturalWidth = Math.min(Math.max(panelWidth, MIN_WIDTH), maxW);
+      const height = Math.min(Math.max(panelHeight, 120), maxH);
+      let left = anchorCentered ? anchorLeft - naturalWidth / 2 : anchorLeft;
+      let top = anchorTop;
 
       if (top + height > window.innerHeight - MARGIN) {
-        const flippedTop = point.top - 6 - height;
+        const flippedTop = anchorTop - 6 - height;
         top = flippedTop >= MARGIN ? flippedTop : Math.max(MARGIN, window.innerHeight - MARGIN - height);
       }
 
@@ -115,12 +116,11 @@ export function useAdaptivePopover(
     const needsScroll = contentHeight > maxH;
     const height = needsScroll ? maxH : contentHeight;
 
-    const point = resolveAnchor(anchor, center);
-    let left = point.center ? point.left - naturalWidth / 2 : point.left;
-    let top = point.top;
+    let left = anchorCentered ? anchorLeft - naturalWidth / 2 : anchorLeft;
+    let top = anchorTop;
 
     if (top + height > window.innerHeight - MARGIN) {
-      const flippedTop = point.top - 6 - height;
+      const flippedTop = anchorTop - 6 - height;
       top = flippedTop >= MARGIN ? flippedTop : Math.max(MARGIN, window.innerHeight - MARGIN - height);
     }
 
@@ -143,7 +143,18 @@ export function useAdaptivePopover(
     };
 
     setStyle((prev) => (styleEqual(prev, nextStyle) ? prev : nextStyle));
-  }, [ref, enabled, center, anchorKey(anchor), remeasureKey, resizable, panelSize?.width, panelSize?.height]);
+  }, [
+    ref,
+    enabled,
+    hasAnchor,
+    anchorTop,
+    anchorLeft,
+    anchorCentered,
+    remeasureKey,
+    resizable,
+    panelWidth,
+    panelHeight,
+  ]);
 
   return style;
 }
