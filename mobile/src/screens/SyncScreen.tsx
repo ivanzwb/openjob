@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import type { PairingPayload } from '@shared/sync';
-import type { ConflictChoice } from '@shared/sync';
+import type { ConflictChoice, PairingPayload } from '@shared/sync';
 import { listPendingConflictRows, pairDesktop, resolveConflicts, unpairDesktop } from '../db';
 import type { PendingConflictRow } from '../db';
 import { useApp } from '../context/AppContext';
@@ -41,6 +40,7 @@ function ConflictActions({
 export function SyncScreen(): React.JSX.Element {
   const { peerLabel, syncing, syncStatus, hasSyncError, repoFileSyncNotice, autoSync, setAutoSync, triggerSync, triggerFullSync, refresh } = useApp();
   const [conflicts, setConflicts] = useState<PendingConflictRow[]>([]);
+  const [conflictsFor, setConflictsFor] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
   const [pairError, setPairError] = useState<string | null>(null);
   const [permission, requestPermission] = useCameraPermissions();
@@ -53,9 +53,11 @@ export function SyncScreen(): React.JSX.Element {
     setConflicts(listPendingConflictRows());
   }, []);
 
-  useEffect(() => {
+  // 同步状态一变（含首次挂载）就重读冲突列表；渲染期比对比放进 effect 少一轮渲染
+  if (conflictsFor !== syncStatus) {
+    setConflictsFor(syncStatus);
     reloadConflicts();
-  }, [reloadConflicts, syncStatus]);
+  }
 
   const pair = async (raw: string): Promise<void> => {
     if (scannedRef.current) return;

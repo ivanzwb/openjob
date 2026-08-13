@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { ScrollView, Text, View } from 'react-native';
 import type { CampaignOverview } from '@shared/ipc';
 import { getRawDb } from '../db';
 import { getCampaignOverview } from '../data/queries';

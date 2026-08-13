@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Alert, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import type { Repo } from '@shared/entities';
 import { RepoQaPanel } from '../components/RepoQaPanel';
@@ -24,6 +24,7 @@ export function ReposScreen(): React.JSX.Element {
   const [cloneUrl, setCloneUrl] = useState('');
   const [filePath, setFilePath] = useState('');
   const [content, setContent] = useState('');
+  const [viewingRepoId, setViewingRepoId] = useState<string | null>(null);
 
   const selected = repos.find((r) => r.id === selectedId) ?? null;
 
@@ -37,21 +38,17 @@ export function ReposScreen(): React.JSX.Element {
     return list;
   }, []);
 
-  useEffect(() => {
-    try {
-      loadRepos();
-    } catch (e) {
-      alert(e instanceof Error ? e.message : String(e));
-    }
-  }, [loadRepos]);
-
+  // 挂载、同步完成、切回本 Tab 都由它统一读库
   useLocalDataReload(loadRepos);
 
-  useEffect(() => {
+  // filePath / content / selectedTab 是「当前仓库的浏览状态」，换仓库就得作废。
+  // 打开文件或预览时会连带更新 viewingRepoId，所以那两条路径不会被这里清掉
+  if (viewingRepoId !== selectedId) {
+    setViewingRepoId(selectedId);
     setFilePath('');
     setContent('');
     setSelectedTab('summary');
-  }, [selectedId]);
+  }
 
   const addRepo = (): void => {
     if (!cloneUrl.trim()) return;
@@ -64,6 +61,7 @@ export function ReposScreen(): React.JSX.Element {
   const openFile = (repo: Repo, path: string): void => {
     const raw = getRepoFileContent(getRawDb(), repo.id, path);
     setSelectedId(repo.id);
+    setViewingRepoId(repo.id);
     setFilePath(path);
     setContent(raw ?? '（文件未同步）');
     setSelectedTab('files');
@@ -71,6 +69,7 @@ export function ReposScreen(): React.JSX.Element {
 
   const openSample = (repo: Repo): void => {
     setSelectedId(repo.id);
+    setViewingRepoId(repo.id);
     if (repo.summaryMd) {
       setFilePath(`${repo.url} · 项目摘要`);
       setContent(markdownToPlainText(repo.summaryMd).slice(0, 8000));

@@ -1,7 +1,7 @@
 import * as Crypto from 'expo-crypto';
 import { openDatabaseSync, type SQLiteDatabase } from 'expo-sqlite';
 import type { ConflictChoice, FieldConflict, PairingPayload } from '@shared/sync';
-import { conflictKey, planMerge, resolutionsToChanges } from '@shared/syncMerge';
+import { planMerge, resolutionsToChanges } from '@shared/syncMerge';
 import { MIGRATIONS } from './migrations/bundle';
 import { installSyncTriggers } from '../sync/triggers';
 import { getDeviceIdentity } from '../sync/identity';
@@ -396,7 +396,7 @@ export function listPendingConflictRows(): PendingConflictRow[] {
 
 export async function resolveConflicts(
   runId: string,
-  choices: Array<{ table: string; rowId: string; field: string; choice: ConflictChoice }>,
+  choices: { table: string; rowId: string; field: string; choice: ConflictChoice }[],
 ): Promise<void> {
   const sqlite = getRawDb();
   const peer = getPeer(sqlite);
@@ -429,7 +429,7 @@ export async function resolveConflicts(
   }));
 
   const remoteRows = new Map<string, { table: string; rowId: string; values: Record<string, unknown>; wallMs: number }>();
-  const remoteTombstones: Array<{ table: string; rowId: string; wallMs: number }> = [];
+  const remoteTombstones: { table: string; rowId: string; wallMs: number }[] = [];
 
   for (const c of pending) {
     const choice = choiceMap.get(`${c.table_name}\u0000${c.row_id}\u0000${c.field}`) ?? 'local';

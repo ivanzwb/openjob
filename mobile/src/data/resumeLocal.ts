@@ -119,7 +119,7 @@ export async function updateResumeEntry(
   writingAs(db, identity.deviceId, () => {
     if (kind === 'resume') {
       const sets: string[] = [];
-      const args: Array<string | number> = [];
+      const args: (string | number)[] = [];
       if (patch.label !== undefined) {
         sets.push('label = ?');
         args.push(patch.label);
@@ -140,7 +140,7 @@ export async function updateResumeEntry(
     }
 
     const sets: string[] = [];
-    const args: Array<string | number> = [];
+    const args: (string | number)[] = [];
     if (patch.contentMd !== undefined) {
       sets.push('content_md = ?', 'is_user_edited = 1');
       args.push(patch.contentMd);

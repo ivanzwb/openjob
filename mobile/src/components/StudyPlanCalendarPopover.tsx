@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import type { TaskView } from '@shared/ipc';
 import { StudyPlanCalendar, todayLocal } from './StudyPlanCalendar';
@@ -8,6 +8,12 @@ import { completeTask, skipTask } from '../data/mutations';
 import { deferToday } from '../data/planLocal';
 import { runTask, useTaskResult, useTaskState } from '../context/RemoteTaskContext';
 import { theme } from '../theme';
+
+function monthStart(date: string | null): Date | null {
+  if (!date) return null;
+  const [y, m] = date.split('-').map(Number);
+  return y && m ? new Date(y, m - 1, 1) : null;
+}
 
 export function StudyPlanCalendarPopover({
   open,
@@ -45,35 +51,27 @@ export function StudyPlanCalendarPopover({
 }): React.JSX.Element {
   const [setupOpen, setSetupOpen] = useState(false);
   const [viewMonth, setViewMonth] = useState(() => new Date());
-  const [tick, setTick] = useState(0);
+  const [monthAnchor, setMonthAnchor] = useState(filterDate);
+  const [, bumpTick] = useState(0);
   const deferKey = `campaign:${campaignId}:planDefer`;
   const { running: generating } = useTaskState(planTaskKey);
   const { running: deferring } = useTaskState(deferKey);
 
-  const dateOptions = useMemo(
-    () => (open ? listPlanDates(getRawDb(), campaignId) : []),
-    [open, campaignId, tick],
-  );
+  // 计划就在这个弹窗里改，所以两处查询都跟着渲染重读；bumpTick 只是弹窗内改完后逼一次重渲染
+  const dateOptions = open ? listPlanDates(getRawDb(), campaignId) : [];
   const hasPlan = dateOptions.length > 0;
-  const taskCountByDate = useMemo(
-    () => Object.fromEntries(dateOptions.map((d) => [d.date, d.taskCount])),
-    [dateOptions],
-  );
+  const taskCountByDate = Object.fromEntries(dateOptions.map((d) => [d.date, d.taskCount]));
   const filterPlan = filterDate && open ? getTodayPlan(getRawDb(), campaignId, filterDate) : null;
 
-  useEffect(() => {
-    if (!open) return;
-    if (dateOptions.length === 0) setSetupOpen(true);
-  }, [open, dateOptions.length]);
-
-  useEffect(() => {
-    if (!filterDate) return;
-    const [y, m] = filterDate.split('-').map(Number);
-    if (y && m) setViewMonth(new Date(y, m - 1, 1));
-  }, [filterDate]);
+  // 选中日期变了就把日历翻到对应月份，渲染期直接调整，省掉一轮 effect 重渲染
+  if (monthAnchor !== filterDate) {
+    setMonthAnchor(filterDate);
+    const month = monthStart(filterDate);
+    if (month) setViewMonth(month);
+  }
 
   const refresh = async (): Promise<void> => {
-    setTick((t) => t + 1);
+    bumpTick((t) => t + 1);
     await onTasksChanged();
   };
 

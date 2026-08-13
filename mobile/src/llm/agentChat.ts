@@ -1,6 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import type { Repo } from '@shared/entities';
-import type { Citation } from '@shared/entities';
+import type { Citation, Repo } from '@shared/entities';
 import { normalizeChatMessages, type ChatMessage } from '@shared/llm/messages';
 import { searchWeb } from '../search';
 import { resolveLlmRole } from './resolve';
@@ -36,25 +35,25 @@ type ApiMessage =
   | {
       role: 'assistant';
       content: string | null;
-      tool_calls: Array<{
+      tool_calls: {
         id: string;
         type: 'function';
         function: { name: string; arguments: string };
-      }>;
+      }[];
     }
   | { role: 'tool'; tool_call_id: string; content: string };
 
 interface ChatCompletionResponse {
-  choices?: Array<{
+  choices?: {
     message?: {
       content?: string | null;
-      tool_calls?: Array<{
+      tool_calls?: {
         id: string;
         type: 'function';
         function: { name: string; arguments: string };
-      }>;
+      }[];
     };
-  }>;
+  }[];
 }
 
 async function runWebSearch(args: Record<string, unknown>): Promise<{

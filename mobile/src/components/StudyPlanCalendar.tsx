@@ -40,7 +40,7 @@ export function StudyPlanCalendar({
     const last = new Date(year, month + 1, 0);
     const startPad = (first.getDay() + 6) % 7;
     const daysInMonth = last.getDate();
-    const result: Array<{ key: string; day: number; inMonth: boolean }> = [];
+    const result: { key: string; day: number; inMonth: boolean }[] = [];
     for (let i = 0; i < startPad; i++) {
       const d = new Date(year, month, -startPad + i + 1);
       result.push({ key: toDateKey(d), day: d.getDate(), inMonth: false });

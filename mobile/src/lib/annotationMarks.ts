@@ -61,10 +61,10 @@ function segmentTextWithHighlights(
   text: string,
   blockStart: number,
   highlights: TextHighlight[],
-): Array<{ text: string; start: number; color?: string }> {
+): { text: string; start: number; color?: string }[] {
   if (!highlights.length) return [{ text, start: blockStart }];
 
-  const ranges: Array<{ start: number; end: number; color: string }> = [];
+  const ranges: { start: number; end: number; color: string }[] = [];
   for (const mark of highlights) {
     const needle = mark.text.trim();
     if (!needle) continue;
@@ -84,7 +84,7 @@ function segmentTextWithHighlights(
   if (!ranges.length) return [{ text, start: blockStart }];
 
   ranges.sort((a, b) => a.start - b.start);
-  const segments: Array<{ text: string; start: number; color?: string }> = [];
+  const segments: { text: string; start: number; color?: string }[] = [];
   let cursor = 0;
   for (const range of ranges) {
     if (range.start < cursor) continue;
@@ -104,17 +104,18 @@ function segmentTextWithHighlights(
   return segments.length ? segments : [{ text, start: blockStart }];
 }
 
+type InlineSplit =
+  | { type: 'plain'; text: string; start: number }
+  | { type: 'marked'; text: string; start: number; end: number; markers: InlineAnnotation[] };
+
 function splitByInlineAnnotations(
   text: string,
   blockStart: number,
   annotations: InlineAnnotation[],
-): Array<
-  | { type: 'plain'; text: string; start: number }
-  | { type: 'marked'; text: string; start: number; end: number; markers: InlineAnnotation[] }
-> {
+): InlineSplit[] {
   if (!annotations.length) return [{ type: 'plain', text, start: blockStart }];
 
-  const matches: Array<{ start: number; end: number; markers: InlineAnnotation[] }> = [];
+  const matches: { start: number; end: number; markers: InlineAnnotation[] }[] = [];
   for (const ann of annotations) {
     const sel = ann.selectedText?.trim();
     if (!sel) continue;
@@ -133,10 +134,7 @@ function splitByInlineAnnotations(
   if (!matches.length) return [{ type: 'plain', text, start: blockStart }];
 
   matches.sort((a, b) => a.start - b.start);
-  const segments: Array<
-    | { type: 'plain'; text: string; start: number }
-    | { type: 'marked'; text: string; start: number; end: number; markers: InlineAnnotation[] }
-  > = [];
+  const segments: InlineSplit[] = [];
   let cursor = 0;
   for (const m of matches) {
     if (m.start > cursor) {

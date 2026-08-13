@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import type { Repo } from '@shared/entities';
 import { getRawDb } from '../db';
 import { countRepoFiles } from '../data/repoFiles';

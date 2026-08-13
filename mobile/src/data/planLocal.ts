@@ -125,13 +125,13 @@ export async function generatePlan(
     const planDayId = Crypto.randomUUID();
     const budget = dailyBudget(daily);
     let used = 0;
-    const dayTasks: Array<{
+    const dayTasks: {
       kind: TaskKind;
       nodeId: string | null;
       repoId: string | null;
       estMinutes: number;
       orderIdx: number;
-    }> = [];
+    }[] = [];
 
     if (di > 0 && learnedQueue.length > 0) {
       const drillId = learnedQueue.shift()!;

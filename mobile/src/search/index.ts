@@ -46,7 +46,7 @@ export async function searchWeb(
   });
   if (!res.ok) throw new Error(`Tavily 搜索失败 HTTP ${res.status}`);
   const json = (await res.json()) as {
-    results?: Array<{ title?: string; url?: string; content?: string }>;
+    results?: { title?: string; url?: string; content?: string }[];
   };
   const results = (json.results ?? []).map((r) => ({
     url: r.url ?? '',

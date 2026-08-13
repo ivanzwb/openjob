@@ -138,7 +138,10 @@ export function ExplanationStudyPanel({
   useTaskResult<Explanation>(loadKey, adopt);
   useTaskResult<Explanation>(regenerateKey, adopt);
 
+  // 换考点或档位时要一次做三件事：清掉选区与编辑态、用库里的缓存补内容、缓存没有才发起生成。
+  // 前两件是同步 setState，但它们和第三件的发起动作绑在同一次切换上，拆开反而容易漏
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPhrase('');
     setSelectionStart(undefined);
     setEditing(false);

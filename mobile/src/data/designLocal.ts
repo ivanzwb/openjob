@@ -71,7 +71,7 @@ function buildInterviewContext(db: SQLiteDatabase, campaignId: string): string {
   if (resume?.parsed) {
     try {
       const parsed = JSON.parse(resume.parsed) as {
-        projects?: Array<{ name: string; summary: string; drillableTopics: string[] }>;
+        projects?: { name: string; summary: string; drillableTopics: string[] }[];
         skills?: string[];
       };
       projectSummary =

@@ -50,6 +50,8 @@ function useResizablePanel(mode: ActionModalMode | null): {
 
   const resizeResponder = useMemo(
     () =>
+      // PanResponder.create 只是登记手势回调，ref 要等手势真正发生才读，不存在 render 期访问
+      // eslint-disable-next-line react-hooks/refs
       PanResponder.create({
         onStartShouldSetPanResponder: () => true,
         onMoveShouldSetPanResponder: () => true,

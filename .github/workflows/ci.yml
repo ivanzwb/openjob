@@ -52,7 +52,7 @@ jobs:
         run: pnpm run build
 
   mobile:
-    name: Mobile typecheck
+    name: Mobile typecheck & lint
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -72,3 +72,7 @@ jobs:
       - name: Typecheck
         working-directory: mobile
         run: npm run typecheck
+
+      - name: Lint
+        working-directory: mobile
+        run: npm run lint

@@ -31,7 +31,7 @@ export async function completeChat(
   }
 
   const data = (await res.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
+    choices?: { message?: { content?: string } }[];
   };
   return data.choices?.[0]?.message?.content?.trim() ?? '';
 }

@@ -1,8 +1,12 @@
 import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import type { DesignCaseResult, DesignSubmitResult, MockInterviewType } from '@shared/ipc';
+import type {
+  CampaignSummary,
+  DesignCaseResult,
+  DesignSubmitResult,
+  MockInterviewType,
+} from '@shared/ipc';
 import { MOCK_INTERVIEW_TYPE_LABELS, MOCK_INTERVIEW_TYPE_OPTIONS } from '@shared/ipc';
-import type { CampaignSummary } from '@shared/ipc';
 import { getRawDb } from '../db';
 import { listCampaigns } from '../data/queries';
 import { generateDesignCase, submitDesignAnswer } from '../data/designLocal';

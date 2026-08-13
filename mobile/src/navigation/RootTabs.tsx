@@ -25,11 +25,19 @@ const TAB_ICONS: Record<string, { active: IoniconName; inactive: IoniconName }> 
   Sync: { active: 'sync', inactive: 'sync-outline' },
 };
 
-function tabIcon(routeName: string) {
-  return ({ focused, color, size }: { focused: boolean; color: string; size: number }) => {
-    const icons = TAB_ICONS[routeName];
-    return <Ionicons name={focused ? icons.active : icons.inactive} size={size} color={color} />;
-  };
+function TabIcon({
+  routeName,
+  focused,
+  color,
+  size,
+}: {
+  routeName: string;
+  focused: boolean;
+  color: string;
+  size: number;
+}): React.JSX.Element {
+  const icons = TAB_ICONS[routeName];
+  return <Ionicons name={focused ? icons.active : icons.inactive} size={size} color={color} />;
 }
 
 export function RootTabs(): React.JSX.Element {
@@ -42,7 +50,7 @@ export function RootTabs(): React.JSX.Element {
         tabBarStyle: { backgroundColor: theme.surface, borderTopColor: theme.border },
         tabBarActiveTintColor: theme.accent,
         tabBarInactiveTintColor: theme.muted,
-        tabBarIcon: tabIcon(route.name),
+        tabBarIcon: (props) => <TabIcon routeName={route.name} {...props} />,
         lazy: false,
         freezeOnBlur: false,
       })}

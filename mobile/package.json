@@ -8,6 +8,7 @@
     "@react-navigation/bottom-tabs": "^7.18.16",
     "@react-navigation/native": "^7.3.16",
     "@react-navigation/native-stack": "^7.18.8",
+    "drizzle-orm": "^0.45.2",
     "expo": "~57.0.11",
     "expo-camera": "^57.0.3",
     "expo-crypto": "~57.0.1",
@@ -18,7 +19,6 @@
     "expo-sharing": "~57.0.11",
     "expo-sqlite": "^57.0.1",
     "expo-status-bar": "~57.0.1",
-    "drizzle-orm": "^0.45.2",
     "react": "19.2.3",
     "react-native": "0.86.2",
     "react-native-safe-area-context": "^5.8.1",
@@ -27,6 +27,8 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
+    "eslint": "^9.39.5",
+    "eslint-config-expo": "~57.0.1",
     "typescript": "~6.0.3"
   },
   "scripts": {
@@ -35,7 +37,8 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "db:bundle": "node scripts/bundle-migrations.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint ."
   },
   "private": true
 }

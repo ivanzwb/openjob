@@ -1,4 +1,3 @@
-import type { AppConfig } from '@shared/config';
 import type { LlmRole, LlmTier } from '@shared/enums';
 import { getMobileConfig, getMobileSecret } from '../config/settings';
 

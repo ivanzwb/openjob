@@ -104,7 +104,7 @@ export function refreshAllPriorities(db: SQLiteDatabase, campaignId: string): vo
 export async function insertEdgesByName(
   db: SQLiteDatabase,
   campaignId: string,
-  specs: Array<{ from: string; to: string; relation: EdgeRelation }>,
+  specs: { from: string; to: string; relation: EdgeRelation }[],
 ): Promise<number> {
   if (specs.length === 0) return 0;
   const nodes = db.getAllSync<{ id: string; name: string }>(
