@@ -3,7 +3,9 @@
   "compilerOptions": {
     "strict": true,
     "paths": {
-      "@shared/*": ["../src/shared/*"]
+      "@shared/*": ["../src/shared/*"],
+      "drizzle-orm": ["./node_modules/drizzle-orm"],
+      "drizzle-orm/*": ["./node_modules/drizzle-orm/*"]
     }
   },
   "include": ["**/*.ts", "**/*.tsx", "../src/shared/**/*.ts"]
