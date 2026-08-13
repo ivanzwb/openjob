@@ -1,5 +1,6 @@
 import type OpenAI from 'openai';
 import type { LlmRole } from '@shared/enums';
+import { parseJsonResponse } from '@shared/llm/parseJson';
 import { createRoleClient } from './client';
 import {
   foldSystemIntoUser,
@@ -11,13 +12,16 @@ type ChatMessage = OpenAI.Chat.Completions.ChatCompletionMessageParam;
 
 /** JD 诊断等结构化输出可能很长，给足 token 上限 */
 const JSON_MAX_TOKENS = 16384;
+/** 降档的下限：再低就装不下一份结构化输出，不如直接报错 */
+const MIN_MAX_TOKENS = 2048;
 
 function extractMessageText(
   message: OpenAI.Chat.Completions.ChatCompletionMessage | undefined,
 ): string | undefined {
   if (!message) return undefined;
   const parts = message.content as string | OpenAI.Chat.Completions.ChatCompletionContentPart[] | null;
-  if (typeof parts === 'string') return parts;
+  // 空串要当成「没有正文」，否则推理端点的兜底永远走不到
+  if (typeof parts === 'string') return parts || undefined;
   if (Array.isArray(parts)) {
     const text = parts
       .filter((part) => part.type === 'text')
@@ -25,127 +29,37 @@ function extractMessageText(
       .join('');
     return text || undefined;
   }
-  // 部分推理端点（deepseek-reasoner / deepseek-v4-pro 等）把正文放进 reasoning_content 
-  // content 为空但思考过程里有内容：兜底提取，parseJsonResponse 会再抽 JSON 片段
-  // 避免误报「模型返回空内容 (finish_reason=length)」
-  const reasoning = (message as { reasoning_content?: unknown }).reasoning_content;
-  if (typeof reasoning === 'string' && reasoning.trim()) return reasoning;
-
   return undefined;
+}
+
+/** 推理端点（deepseek-reasoner 等）的思考过程，只在拿不到正文时当末位兜底 */
+function extractReasoningText(
+  message: OpenAI.Chat.Completions.ChatCompletionMessage | undefined,
+): string | undefined {
+  const reasoning = (message as { reasoning_content?: unknown } | undefined)?.reasoning_content;
+  return typeof reasoning === 'string' && reasoning.trim() ? reasoning : undefined;
+}
+
+/**
+ * 端点自己有更低的输出上限时会直接 400，比如 deepseek-chat 的
+ * 「Invalid max_tokens value, the valid range of max_tokens is [1, 8192]」。
+ *
+ * 能从报错里读出上限就照它降；只说「must be <= 4096」甚至什么都不说的端点
+ * 一律对折重试到 MIN_MAX_TOKENS 为止——别让整条流水线因为一个常量全军覆没。
+ */
+function lowerMaxTokensFor(err: unknown, current: number): number | null {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (!/max_tokens/i.test(msg)) return null;
+  const range = /\[\s*\d+\s*,\s*(\d+)\s*\]/.exec(msg);
+  const ceiling = range ? Number(range[1]) : NaN;
+  if (Number.isFinite(ceiling) && ceiling > 0 && ceiling < current) return ceiling;
+  const halved = Math.floor(current / 2);
+  return halved >= MIN_MAX_TOKENS ? halved : null;
 }
 
 function isUnsupportedJsonFormatError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
   return /response_format|json_object|json schema/i.test(msg);
-}
-
-function stripMarkdownFences(text: string): string {
-  return text
-    .replace(/^\uFEFF?```(?:json)?\s*/i, '')
-    .replace(/\s*```\s*$/i, '')
-    .trim();
-}
-
-function extractJsonSlice(text: string): string {
-  const objStart = text.indexOf('{');
-  const objEnd = text.lastIndexOf('}');
-  if (objStart !== -1 && objEnd > objStart) {
-    return text.slice(objStart, objEnd + 1);
-  }
-
-  const arrStart = text.indexOf('[');
-  const arrEnd = text.lastIndexOf(']');
-  if (arrStart !== -1 && arrEnd > arrStart) {
-    return text.slice(arrStart, arrEnd + 1);
-  }
-
-  return text;
-}
-
-/** 修复模型在 JSON 字符串值里未转义的双引号、字面换行等常见问题 */
-function repairJsonText(json: string): string {
-  let result = '';
-  let inString = false;
-  let escaped = false;
-
-  for (let i = 0; i < json.length; i++) {
-    const ch = json[i]!;
-
-    if (escaped) {
-      result += ch;
-      escaped = false;
-      continue;
-    }
-
-    if (ch === '\\') {
-      result += ch;
-      if (inString) escaped = true;
-      continue;
-    }
-
-    if (ch === '"') {
-      if (!inString) {
-        inString = true;
-        result += ch;
-        continue;
-      }
-
-      let j = i + 1;
-      while (j < json.length && /\s/.test(json[j]!)) j++;
-      const next = json[j];
-      if (next === undefined || next === ':' || next === ',' || next === '}' || next === ']') {
-        inString = false;
-        result += ch;
-      } else {
-        result += '\\"';
-      }
-      continue;
-    }
-
-    if (inString) {
-      if (ch === '\n') {
-        result += '\\n';
-        continue;
-      }
-      if (ch === '\r') {
-        result += '\\r';
-        continue;
-      }
-      if (ch === '\t') {
-        result += '\\t';
-        continue;
-      }
-    }
-
-    result += ch;
-  }
-
-  return result.replace(/,\s*([}\]])/g, '$1');
-}
-
-function parseJsonResponse<T>(raw: string): T {
-  const candidates = new Set<string>();
-  const trimmed = raw.trim();
-  const stripped = stripMarkdownFences(trimmed);
-  const extracted = extractJsonSlice(stripped);
-
-  for (const candidate of [trimmed, stripped, extracted]) {
-    if (candidate) candidates.add(candidate);
-  }
-
-  let lastError: unknown;
-  for (const candidate of candidates) {
-    for (const attempt of [candidate, repairJsonText(candidate)]) {
-      try {
-        return JSON.parse(attempt) as T;
-      } catch (err) {
-        lastError = err;
-      }
-    }
-  }
-
-  const detail = lastError instanceof Error ? lastError.message : String(lastError);
-  throw new Error(`JSON 解析失败：${detail}`);
 }
 
 interface JsonAttempt {
@@ -187,7 +101,10 @@ export async function completeJson<T>(
   ]);
 
   let raw: string | undefined;
+  /** 只拿到思考过程时先记下来，所有 attempt 都失败后再用 */
+  let reasoningRaw: string | undefined;
   let lastError: unknown;
+  let maxTokens = JSON_MAX_TOKENS;
   const attempts = buildAttempts(baseMessages);
 
   for (const attempt of attempts) {
@@ -197,7 +114,7 @@ export async function completeJson<T>(
           {
             model,
             temperature: temperature ?? 0.2,
-            max_tokens: JSON_MAX_TOKENS,
+            max_tokens: maxTokens,
             messages: attempt.messages,
             ...(attempt.useJsonFormat ? { response_format: { type: 'json_object' as const } } : {}),
           },
@@ -210,17 +127,27 @@ export async function completeJson<T>(
           raw = text;
           break;
         }
+        reasoningRaw ??= extractReasoningText(choice?.message)?.trim();
 
         const reason = choice?.finish_reason ?? 'unknown';
         lastError = new Error(`模型返回空内容 (finish_reason=${reason})`);
       } catch (err) {
         lastError = err;
+        const lowered = lowerMaxTokensFor(err, maxTokens);
+        if (lowered) {
+          maxTokens = lowered;
+          continue;
+        }
         if (attempt.useJsonFormat && isUnsupportedJsonFormatError(err)) break;
         if (isStrictSystemMessageError(err)) break;
       }
     }
     if (raw) break;
   }
+
+  // 正文一次都没拿到：推理端点偶尔把 JSON 留在思考过程里，值得试一次。
+  // 撞 token 上限被截断的情况也落在这里，解析不出来会照常报错。
+  if (!raw && reasoningRaw) raw = reasoningRaw;
 
   if (!raw) {
     const detail = lastError instanceof Error ? lastError.message : lastError ? String(lastError) : '未知原因';
