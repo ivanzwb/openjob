@@ -115,6 +115,10 @@ jobs:
         if: matrix.os == 'windows-2022'
         run: node scripts/verify-windows-installer.mjs
 
+      - name: Verify macOS app signature
+        if: matrix.os == 'macos-latest'
+        run: node scripts/verify-mac-app.mjs
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:

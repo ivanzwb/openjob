@@ -2,6 +2,14 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+  <!-- hardenedRuntime 下 V8 需要 MAP_JIT 才能把快照里的代码页映射成可执行内存，
+       缺了这两项启动时就会在 v8::Isolate::Initialize 里直接 SIGTRAP。
+       自定义 entitlements 会整体覆盖 electron-builder 的默认模板，所以默认模板里的
+       这几项必须在这里重新声明一遍。 -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
   <!-- Required when using ad-hoc signing (mac.identity: "-") with hardenedRuntime.
        Electron's pre-signed frameworks carry a different Team ID than "-". -->
   <key>com.apple.security.cs.disable-library-validation</key>
