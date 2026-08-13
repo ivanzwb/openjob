@@ -1,0 +1,91 @@
+# OpenJob Android APK 构建与发布
+#
+# 触发方式：
+#   1. 推送 v* tag（如 v0.3.0）→ 构建 APK 并挂载到同名 GitHub Release
+#   2. workflow_dispatch 手动触发 → 仅构建并上传 artifact，不发布（无 tag 概念）
+#
+# 版本来源：tag 是唯一事实源。从 GITHUB_REF_NAME 同步到 app.json/package.json
+# （scripts/sync-version.mjs），避免 tag 与版本不一致导致发错版本（历史教训）。
+
+name: Build Android APK
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write # 上传 APK 到 release 需要
+
+jobs:
+  build-android:
+    name: Build & release Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('mobile/package-lock.json') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: Install dependencies
+        working-directory: mobile
+        run: npm ci
+
+      # tag 推送时把版本号对齐到 tag；手动 dispatch（分支名）自动跳过
+      - name: Sync version from tag
+        working-directory: mobile
+        run: node scripts/sync-version.mjs
+
+      # CNG 工作流：android/ 不入库，每次由 prebuild 生成
+      - name: Prebuild android project
+        working-directory: mobile
+        env:
+          CI: '1'
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Build release APK
+        working-directory: mobile/android
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Copy APK to dist
+        working-directory: mobile
+        run: |
+          mkdir -p dist
+          VERSION=$(node -e "console.log(require('./package.json').version)")
+          cp android/app/build/outputs/apk/release/app-release.apk "dist/OpenJob-${VERSION}.apk"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openjob-android-apk
+          path: mobile/dist/OpenJob-*.apk
+          if-no-files-found: error
+
+      # 仅 tag 推送时挂到 release；手动 dispatch 不发布
+      - name: Attach APK to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: mobile/dist/OpenJob-*.apk
+          fail_on_unmatched_files: false

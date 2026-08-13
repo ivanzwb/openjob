@@ -2,3 +2,6 @@ node_modules/
 .expo/
 dist/
 web-build/
+# CNG（Continuous Native Generation）：android/ 与 ios/ 由 expo prebuild 生成，不入库
+android/
+ios/
