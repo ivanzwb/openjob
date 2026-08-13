@@ -63,11 +63,15 @@ async function chatCompletion(
   }
 
   const data = (await res.json()) as {
-    choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
+    choices?: Array<{ message?: { content?: string; reasoning_content?: string }; finish_reason?: string }>;
   };
   const choice = data.choices?.[0];
+  // 推理端点（deepseek-reasoner / deepseek-v4-pro 等）把正文放进 reasoning_content，
+  // content 为空时兜底提取，避免误报「模型返回空内容 (finish_reason=length)」
+  const contentText = choice?.message?.content?.trim();
+  const reasoningText = choice?.message?.reasoning_content?.trim();
   return {
-    text: choice?.message?.content?.trim(),
+    text: contentText || reasoningText || undefined,
     finishReason: choice?.finish_reason,
   };
 }

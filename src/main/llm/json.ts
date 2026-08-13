@@ -10,7 +10,7 @@ import {
 type ChatMessage = OpenAI.Chat.Completions.ChatCompletionMessageParam;
 
 /** JD 诊断等结构化输出可能很长，给足 token 上限 */
-const JSON_MAX_TOKENS = 8192;
+const JSON_MAX_TOKENS = 16384;
 
 function extractMessageText(
   message: OpenAI.Chat.Completions.ChatCompletionMessage | undefined,
@@ -25,6 +25,12 @@ function extractMessageText(
       .join('');
     return text || undefined;
   }
+  // 部分推理端点（deepseek-reasoner / deepseek-v4-pro 等）把正文放进 reasoning_content 
+  // content 为空但思考过程里有内容：兜底提取，parseJsonResponse 会再抽 JSON 片段
+  // 避免误报「模型返回空内容 (finish_reason=length)」
+  const reasoning = (message as { reasoning_content?: unknown }).reasoning_content;
+  if (typeof reasoning === 'string' && reasoning.trim()) return reasoning;
+
   return undefined;
 }
 
