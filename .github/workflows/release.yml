@@ -103,6 +103,12 @@ jobs:
       - name: Provision Electron binary
         run: node node_modules/electron/install.js
 
+      # 从 tag 同步版本号：防止 tag 与 package.json 版本不一致时，安装包被发布到错误的 release
+      # （例如打 v0.2.1 tag 但 package.json 仍是 0.2.0，electron-builder 会按版本挂到 v0.2.0）
+      - name: Sync version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: node -e "const { readFileSync, writeFileSync } = require('node:fs'); const p = JSON.parse(readFileSync('package.json', 'utf8')); const v = process.env.GITHUB_REF_NAME.replace(/^v/, ''); if (p.version !== v) { p.version = v; writeFileSync('package.json', JSON.stringify(p, null, 2) + '\n'); console.log('version synced to ' + v); } else { console.log('version already ' + v); }"
+
       - name: Typecheck
         run: pnpm run typecheck
 
