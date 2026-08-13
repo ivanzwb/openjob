@@ -43,7 +43,7 @@ export function snapshotRepoFiles(repoId: string, repoRoot: string): { files: nu
         continue;
       }
       if (!isTextFileName(e.name)) continue;
-      let size = 0;
+      let size: number;
       try {
         size = statSync(full).size;
       } catch {

@@ -64,6 +64,7 @@ export function CampaignDetail({
   const [pageTab, setPageTab] = useState<'intel' | 'study' | 'materials'>('intel');
   const [calendarFilterDate, setCalendarFilterDate] = useState<string | null>(null);
   const [filterPlan, setFilterPlan] = useState<TodayPlan | null>(null);
+  const [prevCalendarFilterDate, setPrevCalendarFilterDate] = useState<string | null>(calendarFilterDate);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [nodeStudyMode, setNodeStudyMode] = useState<'explain' | 'drill' | 'followUp'>('explain');
@@ -73,11 +74,14 @@ export function CampaignDetail({
   const resumeJob = useJobFeedback('简历交叉分析');
   const expandJob = useJobFeedback('细化考点');
 
+  // filterDate 清空时渲染期同步清空 plan，避免 effect 内同步 setState
+  if (prevCalendarFilterDate !== calendarFilterDate) {
+    setPrevCalendarFilterDate(calendarFilterDate);
+    if (!calendarFilterDate) setFilterPlan(null);
+  }
+
   useEffect(() => {
-    if (!calendarFilterDate) {
-      setFilterPlan(null);
-      return;
-    }
+    if (!calendarFilterDate) return;
     void invoke('plan:getToday', { campaignId: id, date: calendarFilterDate }).then(setFilterPlan);
   }, [id, calendarFilterDate, planLogKey]);
 
@@ -123,10 +127,10 @@ export function CampaignDetail({
     if (!job && lastResult) refresh();
   }, [job, lastResult, refresh]);
 
-  useEffect(() => {
-    if (expandJob.isRunning) return;
-    if (pendingExpandNodeId) setPendingExpandNodeId(null);
-  }, [expandJob.isRunning, pendingExpandNodeId]);
+  // 细化任务结束时渲染期同步清空待展开节点
+  if (!expandJob.isRunning && pendingExpandNodeId) {
+    setPendingExpandNodeId(null);
+  }
 
   const runDiagnosis = async (): Promise<void> => {
     await invoke('diagnosis:fromJd', { campaignId: id });

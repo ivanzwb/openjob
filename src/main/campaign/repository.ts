@@ -208,7 +208,7 @@ export function createCampaign(input: CreateCampaignInput): Campaign {
   let company = input.company?.trim() ?? '';
   let roleTitle = input.roleTitle?.trim() ?? '未命名岗位';
   let jdRaw = input.jdRaw?.trim() ?? '';
-  let jdParsed: JdParsed | null = null;
+  let jdParsed: JdParsed | null;
 
   if (jobTargetId) {
     const t = getJobTarget(jobTargetId);

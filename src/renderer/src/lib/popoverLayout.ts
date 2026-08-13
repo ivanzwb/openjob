@@ -96,6 +96,8 @@ export function useAdaptivePopover(
         flexDirection: 'column',
         overflow: 'hidden',
       };
+      // 布局定位需在 useLayoutEffect 内测量 DOM 后应用样式，setState 是测量结果的应用，属规则误报
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setStyle((prev) => (styleEqual(prev, nextStyle) ? prev : nextStyle));
       return;
     }

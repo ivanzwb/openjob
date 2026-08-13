@@ -4,6 +4,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -111,7 +112,6 @@ function finalizeExtraction(toolDir, item) {
 
   try {
     // Prefer rename; fall back to copy when Defender still holds a handle.
-    const { renameSync } = require('node:fs');
     renameSync(item.dirPath, finalPath);
   } catch {
     cpSync(item.dirPath, finalPath, { recursive: true });

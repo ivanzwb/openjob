@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { TabPanel } from '../components/TabPanel';
 import { CampaignCreate } from './CampaignCreate';
 import { CampaignDetail } from './CampaignDetail';
@@ -24,9 +24,11 @@ export function CampaignsPanel({
 }): React.JSX.Element {
   const [mounted, setMounted] = useState<Set<string>>(() => new Set(['list']));
 
-  useEffect(() => {
-    setMounted((prev) => new Set(prev).add(viewKey(view)));
-  }, [view]);
+  // 记录已挂载视图（keep-alive）：渲染期同步加入，避免 effect 内同步 setState
+  const mountedKey = viewKey(view);
+  if (!mounted.has(mountedKey)) {
+    setMounted((prev) => new Set(prev).add(mountedKey));
+  }
 
   const detailIds = [...mounted]
     .filter((key) => key.startsWith('detail:'))

@@ -41,6 +41,7 @@ export function StudyPlanCalendarPopover({
   const [setupOpen, setSetupOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [deferring, setDeferring] = useState(false);
+  const [prevFilterDate, setPrevFilterDate] = useState(filterDate);
 
   const taskCountByDate = useMemo(
     () => new Map(dateOptions.map((d) => [d.date, d.taskCount])),
@@ -70,14 +71,7 @@ export function StudyPlanCalendarPopover({
   useEffect(() => {
     if (!open) return;
     if (filterDate) loadPlan(filterDate);
-    else setPlan(null);
   }, [filterDate, loadPlan, planLogKey, open]);
-
-  useEffect(() => {
-    if (!filterDate) return;
-    const [y, m] = filterDate.split('-').map(Number);
-    if (y && m) setViewMonth(new Date(y, m - 1, 1));
-  }, [filterDate]);
 
   useEffect(() => {
     if (!open) return;
@@ -87,6 +81,17 @@ export function StudyPlanCalendarPopover({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
+
+  // filterDate 变化时渲染期同步重置（避免 effect 内同步 setState 引发级联渲染）
+  if (prevFilterDate !== filterDate) {
+    setPrevFilterDate(filterDate);
+    if (filterDate) {
+      const [y, m] = filterDate.split('-').map(Number);
+      if (y && m) setViewMonth(new Date(y, m - 1, 1));
+    } else {
+      setPlan(null);
+    }
+  }
 
   const refresh = (): void => {
     loadDates();

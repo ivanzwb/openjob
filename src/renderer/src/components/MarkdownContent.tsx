@@ -119,7 +119,6 @@ function renderTextWithRefs(
     ? segmentTextWithHighlights(text, blockStart, highlights)
     : [{ text }];
   const nodes: React.ReactNode[] = [];
-  let last = 0;
   let match: RegExpExecArray | null;
   const re = new RegExp(FILE_REF.source, 'g');
 
@@ -139,7 +138,7 @@ function renderTextWithRefs(
     }
 
     const segText = seg.text;
-    last = 0;
+    let last = 0;
     while ((match = re.exec(segText)) !== null) {
       if (match.index > last) {
         nodes.push(segText.slice(last, match.index));

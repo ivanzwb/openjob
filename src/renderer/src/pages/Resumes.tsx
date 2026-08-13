@@ -91,7 +91,7 @@ export function Resumes(): React.JSX.Element {
         id: NEW_RESUME_DRAFT_ID,
         label: resumeForm.label.trim() || '新建简历',
         subtitle: target ? `${target.company} · ${target.roleTitle}` : '未保存',
-        updatedAt: Date.now(),
+        updatedAt: 0,
       });
     }
     return sorted;
@@ -128,13 +128,15 @@ export function Resumes(): React.JSX.Element {
   }, [optimizeTargetId]);
 
   useEffect(() => {
+    // refreshAll 为 async，所有 setState 均在 await 之后，非同步 setState，属规则误报
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void refreshAll();
   }, [refreshAll]);
 
-  useEffect(() => {
-    if (!selectedResume || resumeFormOpen || listSelection?.kind === 'variant') return;
+  // 切换母版/关闭表单时渲染期同步清空选中变体
+  if (selectedResume && !resumeFormOpen && listSelection?.kind !== 'variant' && activeVariantId !== null) {
     setActiveVariantId(null);
-  }, [selectedResume?.id, resumeFormOpen, listSelection?.kind]);
+  }
 
   const saveTarget = async (): Promise<void> => {
     setBusy(true);

@@ -48,6 +48,7 @@ export function Repos(): React.JSX.Element {
   const [repos, setRepos] = useState<Repo[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedTab, setSelectedTab] = useState<RepoTab>('summary');
+  const [prevSelectedId, setPrevSelectedId] = useState<string | null>(selectedId);
   const [url, setUrl] = useState('');
   const [git, setGit] = useState<GitStatus | null>(null);
   const { active } = useJobProgress();
@@ -85,9 +86,11 @@ export function Repos(): React.JSX.Element {
     if (!active) refresh();
   }, [active, refresh]);
 
-  useEffect(() => {
+  // 切换仓库时渲染期同步重置标签页
+  if (prevSelectedId !== selectedId) {
+    setPrevSelectedId(selectedId);
     setSelectedTab('summary');
-  }, [selectedId]);
+  }
 
   const add = async (): Promise<void> => {
     const trimmed = url.trim();
