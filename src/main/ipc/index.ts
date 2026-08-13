@@ -22,8 +22,7 @@ import {
 } from '../jobTarget/repository';
 import { optimizeResumeForJobTarget } from '../resume/optimize';
 import { exportResumePdf } from '../resume/pdf';
-import { polishResumeSection } from '../resume/polish';
-import { structureResumeWithLlm } from '../resume/structure';
+import { polishResumeSection, structureResumeWithLlm } from '../resume/ai';
 import {
   deleteResumeVariant,
   getResumeVariant,

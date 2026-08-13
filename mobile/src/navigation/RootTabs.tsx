@@ -6,6 +6,7 @@ import { ScriptsScreen } from '../screens/ScriptsScreen';
 import { CampaignsScreen } from '../screens/CampaignsScreen';
 import { DesignScreen } from '../screens/DesignScreen';
 import { ReposScreen } from '../screens/ReposScreen';
+import { ResumesScreen } from '../screens/ResumesScreen';
 import { SyncScreen } from '../screens/SyncScreen';
 import { AppHeaderTitle } from '../components/AppHeaderTitle';
 import { theme } from '../theme';
@@ -17,6 +18,7 @@ type IoniconName = ComponentProps<typeof Ionicons>['name'];
 const TAB_ICONS: Record<string, { active: IoniconName; inactive: IoniconName }> = {
   Overview: { active: 'home', inactive: 'home-outline' },
   Campaigns: { active: 'book', inactive: 'book-outline' },
+  Resumes: { active: 'document-text', inactive: 'document-text-outline' },
   Design: { active: 'mic', inactive: 'mic-outline' },
   Repos: { active: 'code-slash', inactive: 'code-slash-outline' },
   Scripts: { active: 'chatbubble-ellipses', inactive: 'chatbubble-ellipses-outline' },
@@ -54,6 +56,11 @@ export function RootTabs(): React.JSX.Element {
         name="Campaigns"
         component={CampaignsScreen}
         options={{ title: '备考', tabBarLabel: '备考', headerTitle: () => <AppHeaderTitle title="备考" /> }}
+      />
+      <Tab.Screen
+        name="Resumes"
+        component={ResumesScreen}
+        options={{ title: '简历', tabBarLabel: '简历', headerTitle: () => <AppHeaderTitle title="简历" /> }}
       />
       <Tab.Screen
         name="Design"

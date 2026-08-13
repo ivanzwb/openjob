@@ -335,7 +335,12 @@ function renderSections(
 export function buildResumeDocumentHtml(
   doc: ResumeDocument,
   style: ResumePreviewStyle,
-  meta?: { headline?: string; subtitle?: string },
+  meta?: {
+    headline?: string;
+    subtitle?: string;
+    /** 手机 WebView 预览用：按纸张宽度布局再整体缩放到屏幕宽 */
+    viewportWidth?: number;
+  },
 ): string {
   const template = style.template;
   const basic = extractBasicInfo(doc.sections.find((s) => s.key === 'basic'));
@@ -371,10 +376,14 @@ export function buildResumeDocumentHtml(
     basicFields: infoFields,
   });
 
+  const viewport = meta?.viewportWidth
+    ? `\n  <meta name="viewport" content="width=${meta.viewportWidth}" />`
+    : '';
+
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8" />
+  <meta charset="utf-8" />${viewport}
   <style>
     :root { --accent: ${TEMPLATE_ACCENT[template]}; }
     ${baseCss()}
