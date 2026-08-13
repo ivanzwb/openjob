@@ -369,7 +369,7 @@ export function Resumes(): React.JSX.Element {
         if (selectedTargetId === id) setSelectedTargetId(null);
         setMessage(msg);
       })
-      .catch((e: unknown) => setMessage(e instanceof Error ? e.message : String(e)));
+      .catch(() => undefined);
   };
 
   const deleteResume = (id: string): void => {
@@ -387,7 +387,7 @@ export function Resumes(): React.JSX.Element {
         }
         setMessage(msg);
       })
-      .catch((e: unknown) => setMessage(e instanceof Error ? e.message : String(e)));
+      .catch(() => undefined);
   };
 
   const deleteVariant = (id: string): void => {
@@ -405,7 +405,7 @@ export function Resumes(): React.JSX.Element {
         }
         setMessage(msg);
       })
-      .catch((e: unknown) => setMessage(e instanceof Error ? e.message : String(e)));
+      .catch(() => undefined);
   };
 
   return (

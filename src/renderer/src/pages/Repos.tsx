@@ -59,12 +59,9 @@ export function Repos(): React.JSX.Element {
   const cloneWasRunning = useRef(false);
 
   useEffect(() => {
-    if (cloneWasRunning.current && !cloneJob.isRunning) {
-      if (cloneJob.error) {
-        toast(`克隆失败：${cloneJob.error}`, { variant: 'error' });
-      } else if (cloneJob.message) {
-        toast(cloneJob.message, { variant: 'success' });
-      }
+    // 失败提示由 App 统一弹出，这里只补一条成功提示
+    if (cloneWasRunning.current && !cloneJob.isRunning && !cloneJob.error && cloneJob.message) {
+      toast(cloneJob.message, { variant: 'success' });
     }
     cloneWasRunning.current = cloneJob.isRunning;
   }, [cloneJob.isRunning, cloneJob.error, cloneJob.message, toast]);
@@ -112,7 +109,7 @@ export function Repos(): React.JSX.Element {
         if (selectedId === id) setSelectedId(null);
         refresh();
       })
-      .catch((err: unknown) => alert(err instanceof Error ? err.message : String(err)));
+      .catch(() => undefined);
   };
 
   const selected = repos.find((r) => r.id === selectedId) ?? null;

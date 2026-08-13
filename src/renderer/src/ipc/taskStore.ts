@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
+import { reportBackgroundError } from './errorToast';
 
 /**
  * 按 key 记录「正在跑的动作」的模块级仓库。
@@ -58,8 +59,10 @@ export function isTaskRunning(key: string): boolean {
 
 /**
  * 跑一个带 key 的任务。同一个 key 正在跑时直接复用，避免重复点击发两次请求。
- * 返回的 promise 会正常抛错，调用方该自己 catch；仓库里也留一份错误文本，
- * 好让切回来的界面还能看到失败原因。
+ *
+ * 失败一定会弹出提示：任务可能在用户已经切走的页面上跑，光把错误留在仓库里
+ * 等着「切回来才看见」等于没说，模型调用失败尤其不能悄悄咽下去。
+ * 仓库里同时留一份错误文本，界面可以再就地显示一遍。
  */
 export function runTask<T>(key: string, fn: () => Promise<T>): Promise<T> {
   const existing = inflight.get(key);
@@ -72,12 +75,9 @@ export function runTask<T>(key: string, fn: () => Promise<T>): Promise<T> {
       update(key, { running: false, error: null, hasResult: true, result });
       return result;
     } catch (err) {
-      update(key, {
-        running: false,
-        error: err instanceof Error ? err.message : String(err),
-        hasResult: false,
-        result: null,
-      });
+      const message = err instanceof Error ? err.message : String(err);
+      update(key, { running: false, error: message, hasResult: false, result: null });
+      reportBackgroundError(message);
       throw err;
     } finally {
       inflight.delete(key);

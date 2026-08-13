@@ -3,6 +3,7 @@ import type { ChatRequest, StreamDone, StreamToolCall, TokenUsage } from '@share
 import type { Citation } from '@shared/entities';
 import type { EvidenceKind } from '@shared/enums';
 import { invoke, onEvent } from './index';
+import { reportBackgroundError } from './errorToast';
 
 export interface StreamState {
   text: string;
@@ -103,6 +104,7 @@ function ensureSubscription(): void {
     const key = ownerOf(p.streamId);
     if (!key) return;
     update(key, { running: false, error: p.message });
+    reportBackgroundError(p.message);
     finish(key, p.streamId);
   });
 }
@@ -173,12 +175,10 @@ export function useStream(
           update(key, { sessionId: started.sessionId });
         }
       } catch (err) {
-        states.set(key, {
-          ...EMPTY,
-          sessionId: sessions.get(key) ?? null,
-          error: err instanceof Error ? err.message : String(err),
-        });
+        const message = err instanceof Error ? err.message : String(err);
+        states.set(key, { ...EMPTY, sessionId: sessions.get(key) ?? null, error: message });
         emit(key);
+        reportBackgroundError(message);
       }
     },
     [key],

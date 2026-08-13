@@ -87,7 +87,8 @@ export function Scripts(): React.JSX.Element {
       .then((msg) => {
         if (msg) setExportMsg(msg);
       })
-      .catch((e: unknown) => setExportMsg(e instanceof Error ? e.message : String(e)));
+      // 失败原因由任务仓库统一 toast，这里只留成功提示
+      .catch(() => undefined);
   };
 
   return (
