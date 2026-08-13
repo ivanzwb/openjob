@@ -322,10 +322,9 @@ export function Resumes(): React.JSX.Element {
     }
   };
 
+  /** 编辑器自动保存的落库入口：成功时不打扰用户，失败才提示并抛回给编辑器 */
   const saveEditorDocument = async (payload: ResumeEditorSavePayload): Promise<void> => {
     if (!editorKind || !editorId) return;
-    setBusy(true);
-    setMessage(null);
     try {
       if (editorKind === 'variant') {
         await invoke('resumeVariant:update', {
@@ -333,7 +332,6 @@ export function Resumes(): React.JSX.Element {
           contentMd: payload.contentMd,
           previewStyle: payload.previewStyle,
         });
-        setListSelection({ kind: 'variant', id: editorId });
       } else {
         await invoke('resume:update', {
           id: editorId,
@@ -341,14 +339,11 @@ export function Resumes(): React.JSX.Element {
           rawText: payload.contentMd,
           previewStyle: payload.previewStyle,
         });
-        setListSelection({ kind: 'resume', id: editorId });
       }
       await refreshAll();
-      setMessage(editorKind === 'variant' ? '优化版已保存' : '母版已保存');
     } catch (e) {
       setMessage(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
+      throw e;
     }
   };
 
@@ -592,19 +587,40 @@ export function Resumes(): React.JSX.Element {
                 <p className="px-2 py-3 text-xs text-[var(--color-muted)]">暂无简历，点击「新建简历」</p>
               ) : (
                 sidebarEntries.map((entry) => (
-                  <button
+                  <div
                     key={`${entry.kind}-${entry.id}`}
-                    type="button"
-                    onClick={() => selectSidebarEntry(entry)}
-                    className={`w-full rounded-lg border p-3 text-left text-sm transition-colors ${
+                    className={`group relative rounded-lg border transition-colors ${
                       isEntrySelected(entry)
                         ? 'border-[var(--color-accent)] bg-[var(--color-surface)]'
                         : 'border-transparent hover:border-[var(--color-border)] hover:bg-[var(--color-surface)]/50'
                     }`}
                   >
-                    <div className="font-medium">{entry.label}</div>
-                    <div className="text-xs text-[var(--color-muted)]">{entry.subtitle}</div>
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => selectSidebarEntry(entry)}
+                      className="w-full p-3 pr-10 text-left text-sm"
+                    >
+                      <div className="truncate font-medium">{entry.label}</div>
+                      <div className="truncate text-xs text-[var(--color-muted)]">
+                        {entry.subtitle}
+                      </div>
+                    </button>
+                    {entry.id !== NEW_RESUME_DRAFT_ID && (
+                      <button
+                        type="button"
+                        title="删除"
+                        disabled={busy}
+                        onClick={() =>
+                          void (entry.kind === 'variant'
+                            ? deleteVariant(entry.id)
+                            : deleteResume(entry.id))
+                        }
+                        className="absolute right-2 top-2 rounded px-1.5 py-0.5 text-xs text-[var(--color-muted)] opacity-0 transition-opacity hover:text-red-400 focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-30"
+                      >
+                        删除
+                      </button>
+                    )}
+                  </div>
                 ))
               )}
             </div>
@@ -718,9 +734,7 @@ export function Resumes(): React.JSX.Element {
                   headline: activeVariant.label,
                   subtitle: `${activeVariant.company} · ${activeVariant.roleTitle}`,
                 }}
-                busy={busy}
                 onSave={saveEditorDocument}
-                onDelete={() => void deleteVariant(activeVariant.id)}
                 onMessage={setMessage}
               />
             ) : editorKind === 'resume' && selectedResume ? (
@@ -731,9 +745,7 @@ export function Resumes(): React.JSX.Element {
                 initialPreviewStyle={selectedResume.previewStyle}
                 initialLabel={selectedResume.label}
                 subtitle={`母版 · 更新于 ${new Date(selectedResume.updatedAt).toLocaleString()}`}
-                busy={busy}
                 onSave={saveEditorDocument}
-                onDelete={() => void deleteResume(selectedResume.id)}
                 onMessage={setMessage}
               />
             ) : (

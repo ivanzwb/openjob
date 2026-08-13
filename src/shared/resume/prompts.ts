@@ -68,6 +68,83 @@ ${resumeText.slice(0, 12000)}
 }`;
 }
 
+export const RESUME_STRUCTURE_SYSTEM = `你是简历排版助手，把一份从 PDF / Word / 剪贴板里抠出来的**纯文本简历**整理成结构化模块。
+
+## 唯一职责：归类与排版
+你只做搬运和分段，不做改写。逐字保留原文的事实与措辞：
+- 严禁新增、推断、润色任何公司、岗位、时间、项目、技术、数字、学校、证书
+- 严禁删减原文内容；实在归不了类的内容原样放进 other 模块
+- 只允许：判断内容属于哪个模块、修掉 PDF 抽取产生的断行与乱序、把列表符号统一成 \`- \`
+
+## 模块 key 只能用这几个（没有内容的模块不要输出）
+basic（基本信息）/ intention（求职意向）/ summary（个人优势）/ experience（工作经历）/
+project（项目经历）/ education（教育经历）/ skills（专业技能）/ certificate（资格证书）/ other（其他）
+
+## 每个模块的 contentMd 写法
+- basic、intention：每行一项「标签：值」，如「姓名：张三」「电话：13800138000」「期望城市：上海」
+- experience、project、education：每段以 \`### 机构 | 岗位或角色 | 2021-04 ~ 至今\` 开头，时间放最后一段；职责与成果用 \`- \` 分条
+- summary、skills、certificate：用 \`- \` 分条
+- 不要写 \`#\` / \`##\` 标题，模块由 key 决定`;
+
+export function buildResumeStructureUserPrompt(rawText: string): string {
+  return `下面是简历的纯文本内容，请只做归类与排版，逐字保留事实与措辞：
+
+${rawText.slice(0, 16000)}
+
+请输出 JSON：
+{
+  "sections": [{ "key": "experience", "contentMd": "### 腾讯科技 | 前端工程师 | 2021-04 ~ 至今\\n\\n- ..." }]
+}`;
+}
+
+export const RESUME_POLISH_SYSTEM = `你是资深简历顾问，只负责润色候选人**正在编辑的那一小块内容**，其余部分只作为上下文参考。
+
+## 最高优先级：事实忠实（违反则输出无效）
+- 只能使用「当前内容」与「整份简历」里已经出现的事实
+- 严禁新增或推断公司、岗位、时间、项目、技术栈、学校、证书
+- 严禁编造数字（用户量、QPS、耗时、百分比、团队人数等）；原文有数字可以改写得更清晰，原文没有就不要写
+- 当前内容为空时，从整份简历已有的事实中提炼，不得引入新事实
+
+## 优化方向
+- 表述更专业、更简洁，动词开头，突出「做了什么 + 带来什么结果」
+- 去掉空话与重复，合并同类项，必要时调整条目顺序让亮点靠前
+- 用户给了具体要求时优先满足要求
+
+## 输出
+- 只输出这一块的正文 markdown，不要 \`#\` / \`##\` 标题，不要解释、不要前后寒暄
+- 保持这一块原有的书写约定：分条用 \`- \` 开头；「标签：值」的行保持该写法
+- 语言与原文一致（中文简历就写中文）`;
+
+export function buildResumePolishUserPrompt(input: {
+  sectionTitle: string;
+  /** 具体到某段经历时的定位，如「腾讯科技 | 前端工程师」 */
+  scopeLabel?: string;
+  resumeMd: string;
+  contentMd: string;
+  instruction: string;
+}): string {
+  const target = input.scopeLabel
+    ? `${input.sectionTitle} → ${input.scopeLabel}`
+    : input.sectionTitle;
+  const current = input.contentMd.trim();
+
+  return `正在编辑的位置：${target}
+
+当前内容${current ? '' : '（为空，请基于整份简历里已有的事实起草）'}：
+${current || '（空）'}
+
+用户要求：
+${input.instruction.trim() || '（没有额外要求，按通用简历标准优化）'}
+
+整份简历原文（仅作上下文，事实只能来源于此，不要改写这里的其他模块）：
+${input.resumeMd.slice(0, 12000)}
+
+请输出 JSON：
+{
+  "contentMd": "优化后的这一块正文"
+}`;
+}
+
 export function assembleResumeMarkdown(sections: ResumeOptimizeSection[]): string {
   return sections
     .map((s) => `## ${s.title}\n\n${s.contentMd.trim()}`)

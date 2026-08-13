@@ -9,6 +9,7 @@ import type { ResumeSectionKey } from './document';
 import {
   joinDateRange,
   looksLikeDate,
+  looksLikeEntryHead,
   parseEntryHead,
   splitDateRange,
   stripBullet,
@@ -19,11 +20,11 @@ export type SectionFormKind = 'fields' | 'bullets' | 'entries' | 'text';
 const FORM_KIND: Record<ResumeSectionKey, SectionFormKind> = {
   basic: 'fields',
   intention: 'fields',
-  summary: 'bullets',
+  summary: 'text',
   experience: 'entries',
   project: 'entries',
   education: 'entries',
-  skills: 'bullets',
+  skills: 'text',
   certificate: 'bullets',
   other: 'text',
 };
@@ -53,14 +54,10 @@ export interface SectionEntry {
   role: string;
   start: string;
   end: string;
+  /** 职责与成果：原样保存用户写的多行文本（`- ` 开头即为分条） */
   description: string;
-  bullets: string[];
 }
 
-export interface EntriesSectionData {
-  lead: string;
-  entries: SectionEntry[];
-}
 
 function normalizeLabel(label: string): string {
   return label.replace(/\s+/g, '');
@@ -117,69 +114,74 @@ export function serializeBulletsSection(items: string[]): string {
 }
 
 export function createEmptyEntry(): SectionEntry {
-  return { org: '', role: '', start: '', end: '', description: '', bullets: [''] };
+  return { org: '', role: '', start: '', end: '', description: '' };
 }
 
-export function parseEntriesSection(md: string): EntriesSectionData {
+/**
+ * 所有内容都落进条目字段：`### ` 之外也认「机构 | 岗位 | 时间」和以时间结尾的表头，
+ * 表头之外的内容原样进描述，格式（分条、分段）由用户自己掌握。
+ */
+export function parseEntriesSection(md: string): SectionEntry[] {
   const lines = splitLines(md);
-  const leadLines: string[] = [];
   const entries: SectionEntry[] = [];
-  let current: SectionEntry | null = null;
-  const descriptionLines: string[][] = [];
+
+  const openEntry = (head: { org: string; role: string; date: string }): SectionEntry => {
+    const range = splitDateRange(head.date);
+    const entry: SectionEntry = {
+      org: head.org,
+      role: head.role,
+      start: range.start,
+      end: range.end,
+      description: '',
+    };
+    entries.push(entry);
+    return entry;
+  };
 
   for (let i = 0; i < lines.length; i += 1) {
     const text = lines[i].trim();
 
-    if (/^#{3,}\s+/.test(text)) {
-      const head = parseEntryHead(text.replace(/^#+\s*/, ''));
+    const headText = !text
+      ? null
+      : /^#{3,}\s+/.test(text)
+        ? text.replace(/^#+\s*/, '')
+        : looksLikeEntryHead(text)
+          ? text
+          : null;
+
+    if (headText !== null) {
+      const head = parseEntryHead(headText);
       if (!head.date) {
+        // 时间单独占一行的写法
         const next = lines[i + 1] ? stripBullet(lines[i + 1]) : '';
         if (next && looksLikeDate(next)) {
           head.date = next;
           i += 1;
         }
       }
-      const range = splitDateRange(head.date);
-      current = {
-        org: head.org,
-        role: head.role,
-        start: range.start,
-        end: range.end,
-        description: '',
-        bullets: [],
-      };
-      entries.push(current);
-      descriptionLines.push([]);
+      openEntry(head);
       continue;
     }
 
-    if (!text) continue;
+    const current = entries[entries.length - 1] ?? null;
+    // 条目还没开始前的空行忽略，条目内的空行保留，用户的分段不被吃掉
+    if (!text && (!current || !current.description)) continue;
 
-    if (!current) {
-      leadLines.push(text);
-      continue;
-    }
-
-    if (/^[-*]\s+/.test(lines[i].trim())) {
-      current.bullets.push(stripBullet(text));
-      continue;
-    }
-    descriptionLines[entries.length - 1].push(text);
+    const target = current ?? openEntry({ org: '', role: '', date: '' });
+    target.description = target.description ? `${target.description}\n${text}` : text;
   }
 
-  entries.forEach((entry, index) => {
-    entry.description = descriptionLines[index].join('\n');
-  });
+  for (const entry of entries) {
+    entry.description = entry.description.trim();
+  }
 
-  return { lead: leadLines.join('\n'), entries };
+  return entries;
 }
 
-export function serializeEntriesSection(data: EntriesSectionData): string {
+export function serializeEntriesSection(entries: SectionEntry[]): string {
   const blocks: string[] = [];
-  const lead = data.lead.trim();
-  if (lead) blocks.push(lead);
 
-  for (const entry of data.entries) {
+  for (const entry of entries) {
     const headText = [
       entry.org.trim(),
       entry.role.trim(),
@@ -187,16 +189,11 @@ export function serializeEntriesSection(data: EntriesSectionData): string {
     ]
       .filter(Boolean)
       .join(' | ');
-    const bullets = entry.bullets
-      .map((b) => b.trim())
-      .filter(Boolean)
-      .map((b) => `- ${b}`);
     const description = entry.description.trim();
-    if (!headText && !description && bullets.length === 0) continue;
+    if (!headText && !description) continue;
 
     const parts = [headText ? `### ${headText}` : ''];
     if (description) parts.push(description);
-    if (bullets.length) parts.push(bullets.join('\n'));
     blocks.push(parts.filter(Boolean).join('\n\n'));
   }
 

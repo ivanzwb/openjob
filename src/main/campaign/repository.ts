@@ -16,6 +16,7 @@ import type {
   UpdateResumeInput,
   BlindSpotQuestion,
 } from '@shared/ipc';
+import { structureResumeText } from '@shared/resume/importStructure';
 import { getDb, schema } from '../db';
 import { attachPriorityReason, computePriority } from '../diagnosis/priority';
 import { countCrossCampaignReports } from '../diagnosis/prior';
@@ -300,7 +301,8 @@ export function createResume(label: string, rawText: string): Resume {
   const row = {
     id: randomUUID(),
     label: label.trim(),
-    rawText: rawText.trim(),
+    // 导入与粘贴进来的是没有结构的纯文本，先识别成模块，编辑器才能按模块填表
+    rawText: structureResumeText(rawText),
     parsed: null,
     previewStyle: null,
     createdAt: now,

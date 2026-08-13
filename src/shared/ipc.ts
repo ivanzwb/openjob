@@ -376,6 +376,33 @@ export interface ResumeExportResult {
   path: string | null;
 }
 
+/** 交给模型重新归类到固定模块，只返回 markdown，不落库 */
+export interface ResumeStructureInput {
+  contentMd: string;
+}
+
+export interface ResumeStructureResult {
+  contentMd: string;
+}
+
+/** 只优化当前编辑的那一块，整份简历作为上下文，不落库 */
+export interface ResumePolishInput {
+  /** 整份简历 markdown，供模型理解上下文 */
+  resumeMd: string;
+  /** 固定模块 key，如 summary / skills / experience */
+  sectionKey: string;
+  /** 定位到具体条目，如「腾讯科技 | 前端工程师」 */
+  scopeLabel?: string;
+  /** 当前文本框内容，可为空 */
+  contentMd: string;
+  /** 用户的额外要求，可为空 */
+  instruction?: string;
+}
+
+export interface ResumePolishResult {
+  contentMd: string;
+}
+
 export interface OptimizeResumeInput {
   sourceResumeId: string;
   jobTargetId: string;
@@ -841,6 +868,10 @@ export interface IpcInvokeMap {
   /** 弹出文件选择框导入简历（pdf/docx/txt/md），取消或失败时返回 null */
   'resume:importFile': { req: void; res: Resume | null };
   'resume:exportPdf': { req: ResumeExportInput; res: ResumeExportResult };
+  /** 用模型把内容重新归类到固定模块，返回 markdown 交给渲染进程预览后再保存 */
+  'resume:aiStructure': { req: ResumeStructureInput; res: ResumeStructureResult };
+  /** 基于整份简历与用户要求优化当前模块/条目的正文，返回文本交给渲染进程决定是否采用 */
+  'resume:aiPolish': { req: ResumePolishInput; res: ResumePolishResult };
 
   'jobTarget:list': { req: void; res: JobTarget[] };
   'jobTarget:get': { req: { id: string }; res: JobTarget };
@@ -1017,6 +1048,8 @@ export const IPC_INVOKE_CHANNELS = [
   'resume:delete',
   'resume:importFile',
   'resume:exportPdf',
+  'resume:aiStructure',
+  'resume:aiPolish',
   'jobTarget:list',
   'jobTarget:get',
   'jobTarget:create',

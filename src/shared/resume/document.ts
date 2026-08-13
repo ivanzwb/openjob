@@ -57,7 +57,7 @@ const TITLE_KEY_MAP: Record<string, ResumeSectionKey> = {
   证书: 'certificate',
 };
 
-function inferSectionKey(title: string): ResumeSectionKey {
+export function inferSectionKey(title: string): ResumeSectionKey {
   const t = title.trim();
   if (TITLE_KEY_MAP[t]) return TITLE_KEY_MAP[t];
   if (t.includes('工作')) return 'experience';

@@ -22,6 +22,8 @@ import {
 } from '../jobTarget/repository';
 import { optimizeResumeForJobTarget } from '../resume/optimize';
 import { exportResumePdf } from '../resume/pdf';
+import { polishResumeSection } from '../resume/polish';
+import { structureResumeWithLlm } from '../resume/structure';
 import {
   deleteResumeVariant,
   getResumeVariant,
@@ -154,6 +156,12 @@ export function registerIpcHandlers(): void {
     deleteResume(id);
   });
   handle('resume:exportPdf', (input) => exportResumePdf(input));
+  handle('resume:aiStructure', async (input) => ({
+    contentMd: await structureResumeWithLlm(input.contentMd),
+  }));
+  handle('resume:aiPolish', async (input) => ({
+    contentMd: await polishResumeSection(input),
+  }));
 
   handle('jobTarget:list', () => listJobTargets());
   handle('jobTarget:get', ({ id }) => getJobTarget(id));

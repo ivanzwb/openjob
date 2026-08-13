@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import type { ResumeDocument } from '@shared/resume/document';
 import type { ResumePreviewStyle } from '@shared/resume/previewStyle';
 import { buildResumeDocumentHtml } from '@shared/resume/renderHtml';
-import { ResumeTemplatePicker } from './ResumeTemplatePicker';
+import { RESUME_TEMPLATE_META } from '@shared/resume/templates';
 
 /** A4 在 96dpi 下的像素尺寸，与导出 PDF 的纸张一致 */
 const PAGE_WIDTH = 794;
@@ -13,13 +13,11 @@ export function ResumePreviewDialog({
   resumeDocument,
   style,
   previewMeta,
-  onStyleChange,
   onClose,
 }: {
   resumeDocument: ResumeDocument;
   style: ResumePreviewStyle;
   previewMeta?: { headline?: string; subtitle?: string };
-  onStyleChange: (style: ResumePreviewStyle) => void;
   onClose: () => void;
 }): React.JSX.Element {
   const html = buildResumeDocumentHtml(resumeDocument, style, previewMeta);
@@ -49,17 +47,11 @@ export function ResumePreviewDialog({
             <p className="truncate text-sm font-medium">
               预览
               <span className="ml-2 text-xs font-normal text-[var(--color-muted)]">
-                与导出 PDF 一致
+                {RESUME_TEMPLATE_META[style.template].label} · 与导出 PDF 一致
                 {pageCount > 1 && ` · 共 ${pageCount} 页，虚线为分页位置`}
               </span>
             </p>
           </div>
-          <ResumeTemplatePicker
-            resumeDocument={resumeDocument}
-            style={style}
-            onStyleChange={onStyleChange}
-            previewMeta={previewMeta}
-          />
           <button
             type="button"
             onClick={onClose}

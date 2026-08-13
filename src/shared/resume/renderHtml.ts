@@ -1,5 +1,5 @@
 import type { EntryHead } from './entryHead';
-import { looksLikeDate, parseEntryHead, stripBullet } from './entryHead';
+import { looksLikeDate, looksLikeEntryHead, parseEntryHead, stripBullet } from './entryHead';
 import type { ResumeDocument, ResumeSection } from './document';
 import type { ResumePreviewStyle } from './previewStyle';
 import type { ResumeTemplateId } from './templates';
@@ -136,9 +136,15 @@ function renderRichBody(md: string): string {
       continue;
     }
 
-    if (/^#{3,}\s+/.test(text)) {
+    const headText = /^#{3,}\s+/.test(text)
+      ? text.replace(/^#+\s*/, '')
+      : looksLikeEntryHead(text)
+        ? text
+        : null;
+
+    if (headText !== null) {
       closeEntry();
-      const head = parseEntryHead(text.replace(/^#+\s*/, ''));
+      const head = parseEntryHead(headText);
       if (!head.date) {
         const next = lines[i + 1] ? stripBullet(lines[i + 1]) : '';
         if (next && looksLikeDate(next)) {

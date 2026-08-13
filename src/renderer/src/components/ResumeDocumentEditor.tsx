@@ -1,6 +1,7 @@
-import type { ResumeDocument } from '@shared/resume/document';
+import type { ResumeDocument, ResumeSectionKey } from '@shared/resume/document';
 import { catalogHintForKey } from '@shared/resume/document';
 import { ResumeSectionForm } from './ResumeSectionForm';
+import type { SectionPolishRequest } from './ResumeSectionForm';
 
 /**
  * 母版与优化版共用的简历编辑器：左侧模块导航 + 右侧结构化表单。
@@ -12,12 +13,15 @@ export function ResumeDocumentEditor({
   activeSectionIndex,
   onDocumentChange,
   onActiveSectionChange,
+  onPolish,
   documentKey,
 }: {
   document: ResumeDocument;
   activeSectionIndex: number;
   onDocumentChange: (doc: ResumeDocument) => void;
   onActiveSectionChange: (index: number) => void;
+  /** 大文本框上的「AI 优化」，由上层带整份简历上下文去请求模型 */
+  onPolish?: (req: SectionPolishRequest & { sectionKey: ResumeSectionKey }) => Promise<string>;
   /** 切换简历时用它强制重建表单，避免沿用上一份的本地草稿 */
   documentKey?: string;
 }): React.JSX.Element {
@@ -75,6 +79,9 @@ export function ResumeDocumentEditor({
           <ResumeSectionForm
             key={`${documentKey ?? ''}-${activeSection.key}`}
             section={activeSection}
+            polish={
+              onPolish ? (req) => onPolish({ ...req, sectionKey: activeSection.key }) : undefined
+            }
             onContentChange={updateContent}
           />
         </div>

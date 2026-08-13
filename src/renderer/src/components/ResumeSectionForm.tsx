@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { ResumeSection, ResumeSectionKey } from '@shared/resume/document';
-import type { EntriesSectionData, SectionEntry, SectionField } from '@shared/resume/sectionModel';
+import type { SectionEntry, SectionField } from '@shared/resume/sectionModel';
 import {
   createEmptyEntry,
   formKindForSection,
@@ -51,6 +51,138 @@ function move<T>(list: T[], index: number, delta: number): T[] {
   const next = [...list];
   [next[index], next[target]] = [next[target], next[index]];
   return next;
+}
+
+export interface SectionPolishRequest {
+  /** 当前文本框内容，可为空 */
+  contentMd: string;
+  /** 用户填的优化要求，可为空 */
+  instruction: string;
+  /** 定位到具体条目，如「腾讯科技 | 前端工程师」 */
+  scopeLabel?: string;
+}
+
+/** 由上层注入：带着整份简历上下文去请求模型，返回优化后的这一块正文 */
+export type SectionPolish = (req: SectionPolishRequest) => Promise<string>;
+
+/**
+ * 大文本框 + AI 优化：优化以整份简历为上下文，可附加用户要求，
+ * 结果直接替换文本框内容，替换前的版本留一次撤销机会。
+ */
+function PolishTextarea({
+  value,
+  onChange,
+  label,
+  placeholder,
+  minHeightClass,
+  polish,
+  scopeLabel,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  label?: string;
+  placeholder: string;
+  minHeightClass: string;
+  polish?: SectionPolish;
+  scopeLabel?: string;
+}): React.JSX.Element {
+  const [open, setOpen] = useState(false);
+  const [instruction, setInstruction] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [undoValue, setUndoValue] = useState<string | null>(null);
+
+  const run = async (): Promise<void> => {
+    if (!polish || busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      const next = await polish({ contentMd: value, instruction: instruction.trim(), scopeLabel });
+      setUndoValue(value);
+      onChange(next);
+      setOpen(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div>
+      <div className="mb-1 flex min-h-6 items-center justify-between gap-2">
+        <span className="text-xs text-[var(--color-muted)]">{label}</span>
+        {polish && (
+          <div className="flex items-center gap-1">
+            {undoValue !== null && (
+              <button
+                type="button"
+                className={GHOST_BTN}
+                onClick={() => {
+                  onChange(undoValue);
+                  setUndoValue(null);
+                }}
+              >
+                撤销优化
+              </button>
+            )}
+            <button
+              type="button"
+              className={GHOST_BTN}
+              title="基于整份简历和你的要求优化这一块内容"
+              onClick={() => setOpen((v) => !v)}
+            >
+              AI 优化
+            </button>
+          </div>
+        )}
+      </div>
+
+      {open && polish && (
+        <div className="mb-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-2 space-y-2">
+          <input
+            value={instruction}
+            autoFocus
+            onChange={(e) => setInstruction(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void run();
+            }}
+            placeholder="想怎么改？如：更突出量化成果、精简到 4 条、贴合后端岗位（可留空）"
+            className={INPUT}
+          />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void run()}
+              className="rounded-lg bg-[var(--color-accent)] px-3 py-1.5 text-xs text-white disabled:opacity-40"
+            >
+              {busy ? '优化中…' : '开始优化'}
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              className={GHOST_BTN}
+              onClick={() => setOpen(false)}
+            >
+              取消
+            </button>
+            <span className="text-xs text-[var(--color-muted)]">
+              只改这一块，事实取自简历原文
+            </span>
+          </div>
+          {error && <p className="text-xs text-red-400">{error}</p>}
+        </div>
+      )}
+
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className={`${INPUT} ${minHeightClass} resize-y leading-relaxed`}
+      />
+    </div>
+  );
 }
 
 function FieldsForm({
@@ -195,6 +327,7 @@ function EntryCard({
   index,
   total,
   labels,
+  polish,
   onChange,
   onMove,
   onRemove,
@@ -203,6 +336,7 @@ function EntryCard({
   index: number;
   total: number;
   labels: { org: string; role: string; title: string };
+  polish?: SectionPolish;
   onChange: (patch: Partial<SectionEntry>) => void;
   onMove: (delta: number) => void;
   onRemove: () => void;
@@ -286,114 +420,64 @@ function EntryCard({
         </div>
       </div>
 
-      <div>
-        <label className={FIELD_LABEL}>补充说明（选填）</label>
-        <textarea
-          value={entry.description}
-          rows={2}
-          onChange={(e) => onChange({ description: e.target.value })}
-          placeholder="团队规模、业务背景、技术栈等整段描述"
-          className={`${INPUT} resize-y leading-relaxed`}
-        />
-      </div>
-
-      <div className="space-y-2">
-        <label className={FIELD_LABEL}>职责与成果</label>
-        {entry.bullets.map((bullet, bulletIndex) => (
-          <div key={bulletIndex} className="flex items-start gap-2">
-            <span className="mt-2 shrink-0 text-xs text-[var(--color-muted)]">·</span>
-            <textarea
-              value={bullet}
-              rows={2}
-              onChange={(e) =>
-                onChange({
-                  bullets: entry.bullets.map((v, i) => (i === bulletIndex ? e.target.value : v)),
-                })
-              }
-              placeholder="做了什么 + 带来什么结果（尽量有数字）"
-              className={`${INPUT} resize-y leading-relaxed`}
-            />
-            <button
-              type="button"
-              className={GHOST_BTN}
-              onClick={() =>
-                onChange({ bullets: entry.bullets.filter((_, i) => i !== bulletIndex) })
-              }
-            >
-              删除
-            </button>
-          </div>
-        ))}
-        <button
-          type="button"
-          className={ADD_BTN}
-          onClick={() => onChange({ bullets: [...entry.bullets, ''] })}
-        >
-          + 添加一条
-        </button>
-      </div>
+      <PolishTextarea
+        label="职责与成果"
+        value={entry.description}
+        onChange={(description) => onChange({ description })}
+        placeholder={'业务背景、团队规模、技术栈可直接成段写。\n分条请用 - 开头，例如：\n- 主导 xx 重构，首屏耗时从 3.2s 降到 1.1s'}
+        minHeightClass="min-h-[220px]"
+        polish={polish}
+        scopeLabel={
+          [entry.org.trim(), entry.role.trim()].filter(Boolean).join(' | ') ||
+          `${labels.title} ${index + 1}`
+        }
+      />
     </div>
   );
 }
 
 function EntriesForm({
   section,
+  polish,
   onContentChange,
 }: {
   section: ResumeSection;
+  polish?: SectionPolish;
   onContentChange: (contentMd: string) => void;
 }): React.JSX.Element {
   const labels = entryLabels(section.key);
-  const [data, setData] = useState<EntriesSectionData>(() => {
+  const [entries, setEntries] = useState<SectionEntry[]>(() => {
     const parsed = parseEntriesSection(section.contentMd);
-    return parsed.entries.length > 0
-      ? parsed
-      : { ...parsed, entries: [createEmptyEntry()] };
+    return parsed.length > 0 ? parsed : [createEmptyEntry()];
   });
 
-  const apply = (next: EntriesSectionData): void => {
-    setData(next);
+  const apply = (next: SectionEntry[]): void => {
+    setEntries(next);
     onContentChange(serializeEntriesSection(next));
   };
 
   return (
     <div className="space-y-3">
-      {data.lead.trim() && (
-        <div>
-          <label className={FIELD_LABEL}>模块开头说明</label>
-          <textarea
-            value={data.lead}
-            rows={2}
-            onChange={(e) => apply({ ...data, lead: e.target.value })}
-            className={`${INPUT} resize-y leading-relaxed`}
-          />
-        </div>
-      )}
-
-      {data.entries.map((entry, index) => (
+      {entries.map((entry, index) => (
         <EntryCard
           key={index}
           entry={entry}
           index={index}
-          total={data.entries.length}
+          total={entries.length}
           labels={labels}
+          polish={polish}
           onChange={(patch) =>
-            apply({
-              ...data,
-              entries: data.entries.map((e, i) => (i === index ? { ...e, ...patch } : e)),
-            })
+            apply(entries.map((e, i) => (i === index ? { ...e, ...patch } : e)))
           }
-          onMove={(delta) => apply({ ...data, entries: move(data.entries, index, delta) })}
-          onRemove={() =>
-            apply({ ...data, entries: data.entries.filter((_, i) => i !== index) })
-          }
+          onMove={(delta) => apply(move(entries, index, delta))}
+          onRemove={() => apply(entries.filter((_, i) => i !== index))}
         />
       ))}
 
       <button
         type="button"
         className={ADD_BTN}
-        onClick={() => apply({ ...data, entries: [...data.entries, createEmptyEntry()] })}
+        onClick={() => apply([...entries, createEmptyEntry()])}
       >
         + 添加{labels.title}
       </button>
@@ -403,26 +487,31 @@ function EntriesForm({
 
 function TextForm({
   section,
+  polish,
   onContentChange,
 }: {
   section: ResumeSection;
+  polish?: SectionPolish;
   onContentChange: (contentMd: string) => void;
 }): React.JSX.Element {
   return (
-    <textarea
+    <PolishTextarea
       value={section.contentMd}
-      onChange={(e) => onContentChange(e.target.value)}
-      placeholder="整段文字；分条请用 - 开头"
-      className={`${INPUT} min-h-[240px] resize-y leading-relaxed`}
+      onChange={onContentChange}
+      placeholder={'整段文字直接写，分条请用 - 开头，例如：\n- 5 年前端经验，主导过 3 个中大型项目从 0 到 1'}
+      minHeightClass="min-h-[60vh]"
+      polish={polish}
     />
   );
 }
 
 export function ResumeSectionForm({
   section,
+  polish,
   onContentChange,
 }: {
   section: ResumeSection;
+  polish?: SectionPolish;
   onContentChange: (contentMd: string) => void;
 }): React.JSX.Element {
   switch (formKindForSection(section.key)) {
@@ -431,8 +520,8 @@ export function ResumeSectionForm({
     case 'bullets':
       return <BulletsForm section={section} onContentChange={onContentChange} />;
     case 'entries':
-      return <EntriesForm section={section} onContentChange={onContentChange} />;
+      return <EntriesForm section={section} polish={polish} onContentChange={onContentChange} />;
     default:
-      return <TextForm section={section} onContentChange={onContentChange} />;
+      return <TextForm section={section} polish={polish} onContentChange={onContentChange} />;
   }
 }
