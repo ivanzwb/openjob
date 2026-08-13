@@ -6,7 +6,13 @@
  */
 
 import type { ResumeSectionKey } from './document';
-import { RESUME_SECTION_CATALOG, catalogTitleForKey, inferSectionKey } from './document';
+import {
+  RESUME_SECTION_CATALOG,
+  catalogTitleForKey,
+  documentToMarkdown,
+  inferSectionKey,
+  parseMarkdownToDocument,
+} from './document';
 import { structureResumeText } from './importStructure';
 import {
   RESUME_POLISH_SYSTEM,
@@ -45,34 +51,68 @@ function sectionTitle(key: string): string {
   return known ? catalogTitleForKey(known.key as ResumeSectionKey) : '其他';
 }
 
+export interface ResumeStructureOutcome {
+  contentMd: string;
+  /** 模型用不上时退回了规则识别，带上原因供界面提示用户 */
+  fallbackReason?: string;
+}
+
+/**
+ * 不用模型的兜底：只把还堆在「其他」里的内容交给规则识别重新分配，
+ * 已经归好类的模块原样保留——否则会把模型分对的结果又打散。
+ * 规则识别一个模块都拆不出来时返回 null，让调用方报错而不是假装成功。
+ */
+function structureUnclassifiedByRules(md: string): string | null {
+  const doc = parseMarkdownToDocument(md);
+  const unclassified = doc.sections.find((s) => s.key === 'other')?.contentMd.trim() ?? '';
+  if (!unclassified) return null;
+
+  const extracted = parseMarkdownToDocument(structureResumeText(unclassified));
+  const gained = extracted.sections.some((s) => s.key !== 'other' && s.contentMd.trim());
+  if (!gained) return null;
+
+  return documentToMarkdown({
+    sections: doc.sections.map((s) => {
+      // 「其他」整块交给了规则识别，这里只用重新分配后的结果
+      const kept = s.key === 'other' ? '' : s.contentMd.trim();
+      const added = extracted.sections.find((e) => e.key === s.key)?.contentMd.trim() ?? '';
+      return { ...s, contentMd: [kept, added].filter(Boolean).join('\n\n') };
+    }),
+  });
+}
+
 /**
  * 规则识别搞不定的简历（双栏 PDF、没有小标题）交给模型重新归类。
  * 只归类不改写，输出仍是 `## 模块` 的 markdown，与手工编辑的格式一致。
+ *
+ * 模型报错或没给出可用结构时都退回规则识别，并把原因带回去：
+ * 用户至少能拿到一版归类，同时知道这版不是模型给的。
  */
 export async function structureResumeWithLlm(
   complete: ResumeJsonCompleter,
   rawText: string,
-): Promise<string> {
+): Promise<ResumeStructureOutcome> {
   const text = rawText.trim();
   if (!text) throw new Error('简历内容为空');
 
-  const generated = await complete<{ sections?: ResumeOptimizeSection[] }>(
-    RESUME_STRUCTURE_SYSTEM,
-    buildResumeStructureUserPrompt(text),
-  );
-
-  const blocks = (generated.sections ?? [])
-    .filter((s) => s?.contentMd?.trim())
-    .map((s) => `## ${catalogTitleForKey(normalizeKey(s))}\n\n${s.contentMd.trim()}`);
-
-  if (blocks.length === 0) {
-    // 模型没给出可用结构时退回规则识别，至少不让用户白等
-    const fallback = structureResumeText(text);
-    if (fallback === text) throw new Error('未能识别出简历结构，请检查内容或手动整理');
-    return fallback;
+  let failure: string;
+  try {
+    const generated = await complete<{ sections?: ResumeOptimizeSection[] }>(
+      RESUME_STRUCTURE_SYSTEM,
+      buildResumeStructureUserPrompt(text),
+    );
+    const blocks = (generated.sections ?? [])
+      .filter((s) => s?.contentMd?.trim())
+      .map((s) => `## ${catalogTitleForKey(normalizeKey(s))}\n\n${s.contentMd.trim()}`);
+    if (blocks.length > 0) return { contentMd: blocks.join('\n\n') };
+    failure = '模型没有给出可用的模块划分';
+  } catch (err) {
+    failure = err instanceof Error ? err.message : String(err);
   }
 
-  return blocks.join('\n\n');
+  const fallback = structureUnclassifiedByRules(text);
+  if (!fallback) throw new Error(`${failure}；规则识别也没能拆出模块，请检查内容或手动整理`);
+  return { contentMd: fallback, fallbackReason: failure };
 }
 
 /**

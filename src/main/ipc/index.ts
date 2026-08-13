@@ -155,9 +155,7 @@ export function registerIpcHandlers(): void {
     deleteResume(id);
   });
   handle('resume:exportPdf', (input) => exportResumePdf(input));
-  handle('resume:aiStructure', async (input) => ({
-    contentMd: await structureResumeWithLlm(input.contentMd),
-  }));
+  handle('resume:aiStructure', (input) => structureResumeWithLlm(input.contentMd));
   handle('resume:aiPolish', async (input) => ({
     contentMd: await polishResumeSection(input),
   }));

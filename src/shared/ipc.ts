@@ -384,6 +384,8 @@ export interface ResumeStructureInput {
 
 export interface ResumeStructureResult {
   contentMd: string;
+  /** 模型用不上时退回了规则识别，带上原因供界面提示用户 */
+  fallbackReason?: string;
 }
 
 /** 只优化当前编辑的那一块，整份简历作为上下文，不落库 */

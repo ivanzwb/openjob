@@ -9,6 +9,7 @@ import { ResumeDocumentEditor } from './ResumeDocumentEditor';
 import { ResumePreviewDialog } from './ResumePreviewDialog';
 import { ResumeTemplatePicker } from './ResumeTemplatePicker';
 import { TaskButton } from './TaskButton';
+import { useToast } from './Toast';
 import type { SectionPolishRequest } from './ResumeSectionForm';
 
 export interface ResumeEditorSavePayload {
@@ -70,6 +71,7 @@ export function ResumeEditorPane({
   const polishKeyPrefix = `resume:aiPolish:${taskScope}`;
   const exportKey = `resume:exportPdf:${taskScope}`;
   const { running: structuring, error: structureError } = useTask(structureKey);
+  const toast = useToast();
 
   const previewMeta: { headline: string; subtitle?: string } = variantMeta ?? { headline: label };
 
@@ -144,15 +146,21 @@ export function ResumeEditorPane({
       const res = await invoke('resume:aiStructure', { contentMd: payloadRef.current.contentMd });
       const normalized = documentToMarkdown(parseMarkdownToDocument(res.contentMd));
       await persistContent(normalized);
-      return normalized;
+      return { contentMd: normalized, fallbackReason: res.fallbackReason };
     }).catch(() => undefined);
   };
 
-  useTaskResult<string>(structureKey, (contentMd) => {
-    setResumeDocument(parseMarkdownToDocument(contentMd));
+  useTaskResult<{ contentMd: string; fallbackReason?: string }>(structureKey, (res) => {
+    setResumeDocument(parseMarkdownToDocument(res.contentMd));
     setDocumentNonce((n) => n + 1);
     setActiveSectionIndex(0);
-    onMessage('已按 AI 识别结果重排模块');
+    if (res.fallbackReason) {
+      // 结果不是模型给的，说清楚才不会让用户以为模型就这水平
+      toast(`模型识别失败，已退回规则识别：${res.fallbackReason}`, { variant: 'warning' });
+      onMessage('模型识别失败，已按规则识别重排模块');
+    } else {
+      onMessage('已按 AI 识别结果重排模块');
+    }
   });
 
   /**

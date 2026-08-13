@@ -56,6 +56,8 @@ const ORDERED_KEYS: ResumeSectionKey[] = [
 ];
 
 const EMAIL = /[\w.+-]+@[\w-]+\.[\w.-]+/;
+/** 中文姓名的长度区间，和「城市」等两三字词撞得上，只在抬头位置才当姓名用 */
+const NAME = /^[\u4e00-\u9fa5]{2,4}$/;
 
 /** 「138-0013-8000」「+86 13800138000」都归一成 11 位号码 */
 function asPhone(text: string): string | null {
@@ -105,12 +107,15 @@ function structureHeadBlock(lines: string[]): { basic: string[]; other: string[]
   const basic: string[] = [];
   const other: string[] = [];
   let nameTaken = false;
+  let firstLine = true;
 
   for (const line of lines) {
     const text = line.trim();
     if (!text) continue;
+    const isFirstLine = firstLine;
+    firstLine = false;
 
-    if (!nameTaken && !/[：:]/.test(text) && /^[\u4e00-\u9fa5]{2,4}$/.test(text)) {
+    if (!nameTaken && !/[：:]/.test(text) && NAME.test(text)) {
       basic.push(`姓名：${text}`);
       nameTaken = true;
       continue;
@@ -123,10 +128,17 @@ function structureHeadBlock(lines: string[]): { basic: string[]; other: string[]
       other.push(text);
       continue;
     }
-    for (const token of tokens) {
+    tokens.forEach((token, i) => {
+      // 「张三 | 138xxxx | a@b.com」：抬头第一项通常是姓名，
+      // 不先认出来会被下面的「城市」规则当成城市
+      if (isFirstLine && i === 0 && !nameTaken && NAME.test(token.trim())) {
+        basic.push(`姓名：${token.trim()}`);
+        nameTaken = true;
+        return;
+      }
       const labeled = labelContactToken(token);
       if (labeled) basic.push(labeled);
-    }
+    });
   }
 
   return { basic, other };

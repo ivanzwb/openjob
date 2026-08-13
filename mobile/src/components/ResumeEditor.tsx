@@ -169,28 +169,38 @@ export function ResumeEditor({
 
   const polish: SectionPolish = ({ contentMd: sectionMd, instruction, scopeLabel, taskKey, mergeSection }) => {
     const sectionKey = activeKey;
-    return runTask(taskKey, 'AI 优化', async () => {
-      const polished = await polishResume({
-        resumeMd: latestRef.current.contentMd,
-        sectionKey,
-        scopeLabel,
-        contentMd: sectionMd,
-        instruction,
-      });
-      const nextDoc: ResumeDocument = {
-        sections: latestRef.current.doc.sections.map((s) =>
-          s.key === sectionKey ? { ...s, contentMd: mergeSection(polished) } : s,
-        ),
-      };
-      await persistAiContent(documentToMarkdown(nextDoc));
-      return polished;
-    });
+    return runTask(
+      taskKey,
+      'AI 优化',
+      async () => {
+        const polished = await polishResume({
+          resumeMd: latestRef.current.contentMd,
+          sectionKey,
+          scopeLabel,
+          contentMd: sectionMd,
+          instruction,
+        });
+        const nextDoc: ResumeDocument = {
+          sections: latestRef.current.doc.sections.map((s) =>
+            s.key === sectionKey ? { ...s, contentMd: mergeSection(polished) } : s,
+          ),
+        };
+        await persistAiContent(documentToMarkdown(nextDoc));
+        return polished;
+      },
+      // 优化后的正文直接出现在表单里，再 toast 一遍整段就太吵了
+      { toastSuccess: false },
+    );
   };
 
   // AI 识别整体换掉正文：结果先落库，再刷新界面并重建表单本地状态
-  useTaskResult<string>(structureKey, (md) => {
-    setDoc(parseMarkdownToDocument(md));
+  useTaskResult<{ contentMd: string; fallbackReason?: string }>(structureKey, (res) => {
+    setDoc(parseMarkdownToDocument(res.contentMd));
     setFormNonce((n) => n + 1);
+    // 结果不是模型给的，说清楚才不会让用户以为模型就这水平
+    if (res.fallbackReason) {
+      Alert.alert('模型识别失败，已退回规则识别', res.fallbackReason);
+    }
   });
 
   const runStructure = (): void => {
@@ -205,10 +215,10 @@ export function ResumeEditor({
         text: '开始',
         onPress: () => {
           void runTask(structureKey, 'AI 识别', async () => {
-            const md = await structureResume(latestRef.current.contentMd);
-            const normalized = documentToMarkdown(parseMarkdownToDocument(md));
+            const res = await structureResume(latestRef.current.contentMd);
+            const normalized = documentToMarkdown(parseMarkdownToDocument(res.contentMd));
             await persistAiContent(normalized);
-            return normalized;
+            return { contentMd: normalized, fallbackReason: res.fallbackReason };
           }).catch(() => undefined);
         },
       },
