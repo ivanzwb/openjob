@@ -69,7 +69,7 @@ export function TaskCard({
           <button
             type="button"
             onClick={onComplete}
-            className="rounded bg-[var(--color-accent)] px-2 py-1 text-xs"
+            className="rounded bg-[var(--color-accent)] px-2 py-1 text-xs text-white"
           >
             完成
           </button>

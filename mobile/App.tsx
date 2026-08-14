@@ -6,9 +6,10 @@ import { AppProvider, useApp } from './src/context/AppContext';
 import { RemoteTaskProvider, useRemoteTask } from './src/context/RemoteTaskContext';
 import { ToastProvider } from './src/components/Toast';
 import { RootTabs } from './src/navigation/RootTabs';
-import { theme } from './src/theme';
+import { useTheme } from './src/theme';
 
 function TaskBanner(): React.JSX.Element | null {
+  const theme = useTheme();
   const { active } = useRemoteTask();
   if (!active) return null;
   return (
@@ -23,6 +24,7 @@ function TaskBanner(): React.JSX.Element | null {
 }
 
 function AppShell(): React.JSX.Element {
+  const theme = useTheme();
   const { ready } = useApp();
 
   if (!ready) {
@@ -38,7 +40,7 @@ function AppShell(): React.JSX.Element {
     <NavigationContainer>
       <TaskBanner />
       <RootTabs />
-      <StatusBar style="light" />
+      <StatusBar style={theme.scheme === 'dark' ? 'light' : 'dark'} />
     </NavigationContainer>
   );
 }

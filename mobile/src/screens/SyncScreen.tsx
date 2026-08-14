@@ -7,7 +7,7 @@ import { listPendingConflictRows, pairDesktop, resolveConflicts, unpairDesktop }
 import type { PendingConflictRow } from '../db';
 import { useApp } from '../context/AppContext';
 import { runTask, useTaskState } from '../context/RemoteTaskContext';
-import { theme } from '../theme';
+import { useTheme } from '../theme';
 
 function ConflictActions({
   row,
@@ -16,6 +16,7 @@ function ConflictActions({
   row: PendingConflictRow;
   onResolve: (row: PendingConflictRow, choice: ConflictChoice) => void;
 }): React.JSX.Element {
+  const theme = useTheme();
   const { running } = useTaskState(`conflict:${row.id}`);
   return (
     <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -38,6 +39,7 @@ function ConflictActions({
 }
 
 export function SyncScreen(): React.JSX.Element {
+  const theme = useTheme();
   const { peerLabel, syncing, syncStatus, hasSyncError, repoFileSyncNotice, autoSync, setAutoSync, triggerSync, triggerFullSync, refresh } = useApp();
   const [conflicts, setConflicts] = useState<PendingConflictRow[]>([]);
   const [conflictsFor, setConflictsFor] = useState<string | null>(null);

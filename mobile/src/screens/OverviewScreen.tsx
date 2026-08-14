@@ -4,9 +4,9 @@ import type { CampaignOverview } from '@shared/ipc';
 import { getRawDb } from '../db';
 import { getCampaignOverview } from '../data/queries';
 import { useLocalDataReload } from '../hooks/useLocalDataReload';
-import { theme } from '../theme';
+import { useTheme, type Palette } from '../theme';
 
-function statCard(label: string, value: string): React.JSX.Element {
+function statCard(theme: Palette, label: string, value: string): React.JSX.Element {
   return (
     <View
       style={{
@@ -26,6 +26,7 @@ function statCard(label: string, value: string): React.JSX.Element {
 }
 
 export function OverviewScreen(): React.JSX.Element {
+  const theme = useTheme();
   const [overview, setOverview] = useState<CampaignOverview | null>(null);
 
   const reload = useCallback(() => {
@@ -45,10 +46,10 @@ export function OverviewScreen(): React.JSX.Element {
       </Text>
 
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-        {statCard('Campaign', String(overview.campaignCount))}
-        {statCard('进行中', String(overview.activeCampaignCount))}
-        {statCard('话术', String(overview.totalSpeechSnippets))}
-        {statCard('盲区题', String(overview.totalBlindSpots))}
+        {statCard(theme, 'Campaign', String(overview.campaignCount))}
+        {statCard(theme, '进行中', String(overview.activeCampaignCount))}
+        {statCard(theme, '话术', String(overview.totalSpeechSnippets))}
+        {statCard(theme, '盲区题', String(overview.totalBlindSpots))}
       </View>
 
       <View style={{ borderWidth: 1, borderColor: theme.border, borderRadius: 8, padding: 12, backgroundColor: theme.surface }}>

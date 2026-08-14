@@ -8,7 +8,7 @@
  * 渲染进程只能通过 preload 暴露的白名单方法访问这里声明的通道。
  */
 
-import type { AppConfig } from './config';
+import type { AppConfig, UiTheme } from './config';
 import type {
   EvidenceKind,
   LlmRole,
@@ -1159,4 +1159,12 @@ export const IPC_EVENT_CHANNELS = [
 export interface IpcBridge {
   invoke<C extends IpcInvokeChannel>(channel: C, payload: IpcReq<C>): Promise<IpcRes<C>>;
   on<C extends IpcEventChannel>(channel: C, listener: (payload: IpcEventMap[C]) => void): () => void;
+}
+
+/**
+ * 首帧之前就要用上、等不了一次 IPC 往返的值。
+ * 由主进程在建窗时按 config.json 填好，preload 同步注入到 window。
+ */
+export interface RendererBootstrap {
+  theme: UiTheme;
 }

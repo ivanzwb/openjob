@@ -143,7 +143,7 @@ export function Repos(): React.JSX.Element {
             type="button"
             onClick={() => void add()}
             disabled={cloneBusy || !url.trim() || (git !== null && !git.available)}
-            className="shrink-0 rounded bg-[var(--color-accent)] px-3 py-1.5 text-sm disabled:opacity-40"
+            className="shrink-0 rounded bg-[var(--color-accent)] px-3 py-1.5 text-sm text-white disabled:opacity-40"
           >
             {cloneBusy ? '克隆中…' : '添加'}
           </button>

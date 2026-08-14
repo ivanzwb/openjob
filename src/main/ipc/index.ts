@@ -98,6 +98,7 @@ import {
 import { getAppPaths } from '../paths';
 import { checkForUpdates, getUpdateStatus, quitAndInstall } from '../updater';
 import { handle } from './bridge';
+import { applyWindowTheme } from '../theme';
 import { importResumeFromFile } from '../campaign/resumeImport';
 import {
   beginPairing,
@@ -120,7 +121,11 @@ export function registerIpcHandlers(): void {
   handle('update:install', () => quitAndInstall());
 
   handle('config:get', () => getConfig());
-  handle('config:update', (next) => updateConfig(next));
+  handle('config:update', (next) => {
+    const merged = updateConfig(next);
+    applyWindowTheme(merged.ui.theme);
+    return merged;
+  });
   handle('config:setSecret', ({ ref, value }) => setSecret(ref, value));
   handle('config:hasSecret', ({ ref }) => hasSecret(ref));
   handle('config:deleteSecret', ({ ref }) => deleteSecret(ref));

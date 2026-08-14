@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from 'react';
 import { Text, View } from 'react-native';
-import { theme } from '../theme';
+import { useTheme } from '../theme';
 
 type ToastVariant = 'info' | 'success' | 'warning' | 'error';
 
@@ -22,11 +22,11 @@ type ToastOptions = {
   duration?: number;
 };
 
-const variantStyle: Record<ToastVariant, { bg: string; border: string; color: string }> = {
-  info: { bg: '#1f2937', border: theme.border, color: theme.text },
-  success: { bg: '#052e16', border: '#065f46', color: '#a7f3d0' },
-  warning: { bg: '#451a03', border: '#92400e', color: '#fcd34d' },
-  error: { bg: '#450a0a', border: '#991b1b', color: '#fca5a5' },
+const VARIANT_TONE: Record<ToastVariant, 'slate' | 'emerald' | 'amber' | 'red'> = {
+  info: 'slate',
+  success: 'emerald',
+  warning: 'amber',
+  error: 'red',
 };
 
 const ToastContext = createContext<((message: string, options?: ToastOptions) => void) | null>(
@@ -34,6 +34,7 @@ const ToastContext = createContext<((message: string, options?: ToastOptions) =>
 );
 
 export function ToastProvider({ children }: { children: ReactNode }): React.JSX.Element {
+  const theme = useTheme();
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const idRef = useRef(0);
 
@@ -62,7 +63,7 @@ export function ToastProvider({ children }: { children: ReactNode }): React.JSX.
         }}
       >
         {toasts.map((item) => {
-          const style = variantStyle[item.variant];
+          const style = theme.tone[VARIANT_TONE[item.variant]];
           return (
             <View
               key={item.id}
@@ -77,7 +78,7 @@ export function ToastProvider({ children }: { children: ReactNode }): React.JSX.
                 paddingVertical: 10,
               }}
             >
-              <Text style={{ color: style.color, fontSize: 13, textAlign: 'center' }}>{item.message}</Text>
+              <Text style={{ color: style.text, fontSize: 13, textAlign: 'center' }}>{item.message}</Text>
             </View>
           );
         })}

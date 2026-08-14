@@ -13,7 +13,7 @@ import { updateResumeEntry, type ResumeEntry } from '../data/resumeLocal';
 import { polishResume, structureResume } from '../data/resumeAi';
 import { useApp } from '../context/AppContext';
 import { runTask, useTaskResult, useTaskState } from '../context/RemoteTaskContext';
-import { theme } from '../theme';
+import { useTheme } from '../theme';
 import { ResumeSectionForm, type SectionPolish } from './ResumeSectionForm';
 import { ResumePreviewModal } from './ResumePreviewModal';
 
@@ -36,6 +36,7 @@ export function ResumeEditor({
   entry: ResumeEntry;
   onBack: () => void;
 }): React.JSX.Element {
+  const theme = useTheme();
   const { triggerSync, notifyDataChanged } = useApp();
   /** 同一份简历用同一组任务标识：退出编辑器、切页再回来都能接回未跑完的 AI 任务 */
   const taskScope = `${entry.kind}:${entry.id}`;

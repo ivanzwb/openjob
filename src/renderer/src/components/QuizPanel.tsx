@@ -63,7 +63,7 @@ export function QuizPanel({
           type="button"
           onClick={start}
           disabled={loading}
-          className="rounded bg-[var(--color-accent)] px-3 py-1.5 text-sm disabled:opacity-40"
+          className="rounded bg-[var(--color-accent)] px-3 py-1.5 text-sm text-white disabled:opacity-40"
         >
           {questionTask.running ? '出题中…' : '开始出题'}
         </button>
@@ -86,7 +86,7 @@ export function QuizPanel({
             type="button"
             onClick={submit}
             disabled={loading || !answer.trim()}
-            className="rounded bg-[var(--color-accent)] px-3 py-1.5 text-sm disabled:opacity-40"
+            className="rounded bg-[var(--color-accent)] px-3 py-1.5 text-sm text-white disabled:opacity-40"
           >
             {submitTask.running ? '评分中…' : '提交答案'}
           </button>

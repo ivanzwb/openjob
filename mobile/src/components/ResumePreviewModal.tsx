@@ -9,7 +9,7 @@ import { buildResumeDocumentHtml } from '@shared/resume/renderHtml';
 import type { ResumePreviewStyle } from '@shared/resume/previewStyle';
 import { RESUME_TEMPLATES, RESUME_TEMPLATE_META } from '@shared/resume/templates';
 import { runTask, useTaskState } from '../context/RemoteTaskContext';
-import { theme } from '../theme';
+import { useTheme } from '../theme';
 
 /** A4 在 72 PPI 下的点数，expo-print 默认是美式 Letter，必须显式传 */
 const A4_WIDTH_PT = 595;
@@ -51,6 +51,7 @@ export function ResumePreviewModal({
   onClose: () => void;
   onMessage: (message: string) => void;
 }): React.JSX.Element {
+  const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { running: exporting } = useTaskState(taskKey);
 

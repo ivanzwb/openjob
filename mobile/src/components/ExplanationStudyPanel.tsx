@@ -15,7 +15,7 @@ import {
 import { elaborateExplanationSelection, generateExplanation } from '../data/explainGen';
 import { useApp } from '../context/AppContext';
 import { isTaskRunning, runTask, useTaskResult, useTaskState } from '../context/RemoteTaskContext';
-import { theme } from '../theme';
+import { useTheme, type Palette } from '../theme';
 import { AnnotatedExplanationText } from './AnnotatedExplanationText';
 import {
   DEFAULT_HIGHLIGHT_COLOR,
@@ -52,6 +52,9 @@ export function ExplanationStudyPanel({
   nodeName: string;
   tier?: ExplanationTier;
 }): React.JSX.Element {
+  const theme = useTheme();
+  const btnGhost = makeBtnGhost(theme);
+  const actionBtn = makeActionBtn(theme);
   const { notifyDataChanged } = useApp();
   const [tier, setTier] = useState<ExplanationTier>(initialTier);
   const [content, setContent] = useState<Explanation | null>(null);
@@ -442,7 +445,7 @@ export function ExplanationStudyPanel({
 
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
         <Pressable onPress={toggleBookmark} style={btnGhost}>
-          <Text style={{ color: bookmarked ? '#fbbf24' : theme.muted, fontSize: 12 }}>
+          <Text style={{ color: bookmarked ? theme.tone.amber.text : theme.muted, fontSize: 12 }}>
             {bookmarked ? '★ 已收藏' : '☆ 收藏'}
           </Text>
         </Pressable>
@@ -602,16 +605,20 @@ export function ExplanationStudyPanel({
   );
 }
 
-const btnGhost = {
-  paddingHorizontal: 8,
-  paddingVertical: 4,
-  borderRadius: 8,
-  backgroundColor: theme.bg,
-} as const;
+function makeBtnGhost(theme: Palette) {
+  return {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: theme.bg,
+  } as const;
+}
 
-const actionBtn = {
-  paddingHorizontal: 10,
-  paddingVertical: 6,
-  borderRadius: 8,
-  backgroundColor: theme.bg,
-} as const;
+function makeActionBtn(theme: Palette) {
+  return {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: theme.bg,
+  } as const;
+}

@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import type { Annotation } from '@shared/entities';
 import { DEFAULT_HIGHLIGHT_COLOR, HIGHLIGHT_COLORS } from '../lib/annotationMarks';
-import { theme } from '../theme';
+import { useTheme } from '../theme';
 
 export type ActionModalMode = 'highlight' | 'note' | 'edit' | 'elaboration' | 'viewMarker';
 
@@ -111,6 +111,7 @@ export function ExplanationActionModal({
   onSaveElaboration: () => void;
   onDeleteMarker: () => void;
 }): React.JSX.Element {
+  const theme = useTheme();
   const title =
     mode === 'highlight'
       ? '划词高亮'
@@ -320,7 +321,7 @@ export function ExplanationActionModal({
       <Pressable
         style={{
           flex: 1,
-          backgroundColor: 'rgba(0,0,0,0.55)',
+          backgroundColor: theme.scrim,
           justifyContent: useCenterPanel ? 'center' : 'flex-end',
           padding: 16,
         }}

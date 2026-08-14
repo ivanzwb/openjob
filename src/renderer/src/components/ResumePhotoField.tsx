@@ -57,7 +57,7 @@ function PhotoZoom({ photo, onClose }: { photo: string; onClose: () => void }): 
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[130] flex items-center justify-center bg-black/70 p-8"
+      className="fixed inset-0 z-[130] flex items-center justify-center bg-scrim p-8"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}

@@ -14,7 +14,7 @@ import { generatePlan } from '../data/planLocal';
 import { useApp } from '../context/AppContext';
 import { runTask, useTaskResult, useTaskState } from '../context/RemoteTaskContext';
 import { useLocalDataReload } from '../hooks/useLocalDataReload';
-import { theme } from '../theme';
+import { useTheme, type Palette } from '../theme';
 
 const CREATE_CAMPAIGN_KEY = 'campaign:create';
 
@@ -23,6 +23,7 @@ function CampaignListView({
 }: {
   onOpenDetail: (id: string) => void;
 }): React.JSX.Element {
+  const theme = useTheme();
   const { triggerSync, notifyDataChanged } = useApp();
   const { running: creating } = useTaskState(CREATE_CAMPAIGN_KEY);
   const [campaigns, setCampaigns] = useState<CampaignSummary[]>([]);
@@ -60,13 +61,13 @@ function CampaignListView({
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: theme.bg }} contentContainerStyle={{ padding: 16, gap: 10 }}>
-      <TextInput placeholder="公司" placeholderTextColor={theme.muted} value={company} onChangeText={setCompany} style={inputStyle} />
-      <TextInput placeholder="岗位" placeholderTextColor={theme.muted} value={role} onChangeText={setRole} style={inputStyle} />
-      <TextInput placeholder="JD" placeholderTextColor={theme.muted} value={jd} onChangeText={setJd} multiline style={[inputStyle, { minHeight: 80 }]} />
+      <TextInput placeholder="公司" placeholderTextColor={theme.muted} value={company} onChangeText={setCompany} style={inputStyle(theme)} />
+      <TextInput placeholder="岗位" placeholderTextColor={theme.muted} value={role} onChangeText={setRole} style={inputStyle(theme)} />
+      <TextInput placeholder="JD" placeholderTextColor={theme.muted} value={jd} onChangeText={setJd} multiline style={[inputStyle(theme), { minHeight: 80 }]} />
       <Pressable
         onPress={create}
         disabled={creating}
-        style={[btnStyle, { opacity: creating ? 0.6 : 1 }]}
+        style={[btnStyle(theme), { opacity: creating ? 0.6 : 1 }]}
       >
         <Text style={{ color: '#fff' }}>{creating ? '创建中…' : '创建'}</Text>
       </Pressable>
@@ -74,7 +75,7 @@ function CampaignListView({
         <Text style={{ color: theme.muted, fontSize: 13 }}>暂无备考，可在上方创建或从桌面端同步</Text>
       )}
       {campaigns.map((c) => (
-        <Pressable key={c.id} onPress={() => onOpenDetail(c.id)} style={cardStyle}>
+        <Pressable key={c.id} onPress={() => onOpenDetail(c.id)} style={cardStyle(theme)}>
           <Text style={{ color: theme.text }}>{c.company} · {c.roleTitle}</Text>
           <Text style={{ color: theme.muted, fontSize: 11 }}>{c.nodeCount} 考点 · {c.status}</Text>
         </Pressable>
@@ -90,6 +91,7 @@ function CampaignDetailView({
   id: string;
   onBack: () => void;
 }): React.JSX.Element {
+  const theme = useTheme();
   const { triggerSync, notifyDataChanged } = useApp();
   // 三个动作各有自己的 key：切页、返回列表再进来都能看到它还在跑
   const diagnoseKey = `campaign:${id}:diagnose`;
@@ -260,7 +262,7 @@ function CampaignDetailView({
         ))
       )}
       {selectedNode && (
-        <View style={sectionStyle}>
+        <View style={sectionStyle(theme)}>
           <Text style={{ color: theme.text, fontWeight: '600', marginBottom: 8 }}>{selectedNode.name}</Text>
           <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
             <Pressable
@@ -362,7 +364,7 @@ export function CampaignsScreen(): React.JSX.Element {
   );
 }
 
-const inputStyle = { color: theme.text, borderWidth: 1, borderColor: theme.border, borderRadius: 8, padding: 10 };
-const btnStyle = { backgroundColor: theme.accent, padding: 12, borderRadius: 8, alignItems: 'center' as const };
-const cardStyle = { borderWidth: 1, borderColor: theme.border, borderRadius: 8, padding: 12, backgroundColor: theme.surface };
-const sectionStyle = { borderWidth: 1, borderColor: theme.border, borderRadius: 8, padding: 12, backgroundColor: theme.surface, gap: 8 };
+const inputStyle = (theme: Palette) => ({ color: theme.text, borderWidth: 1, borderColor: theme.border, borderRadius: 8, padding: 10 });
+const btnStyle = (theme: Palette) => ({ backgroundColor: theme.accent, padding: 12, borderRadius: 8, alignItems: 'center' as const });
+const cardStyle = (theme: Palette) => ({ borderWidth: 1, borderColor: theme.border, borderRadius: 8, padding: 12, backgroundColor: theme.surface });
+const sectionStyle = (theme: Palette) => ({ borderWidth: 1, borderColor: theme.border, borderRadius: 8, padding: 12, backgroundColor: theme.surface, gap: 8 });

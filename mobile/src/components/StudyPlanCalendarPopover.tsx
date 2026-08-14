@@ -7,7 +7,7 @@ import { getTodayPlan, listPlanDates } from '../data/queries';
 import { completeTask, skipTask } from '../data/mutations';
 import { deferToday } from '../data/planLocal';
 import { runTask, useTaskResult, useTaskState } from '../context/RemoteTaskContext';
-import { theme } from '../theme';
+import { useTheme, type Palette } from '../theme';
 
 function monthStart(date: string | null): Date | null {
   if (!date) return null;
@@ -49,6 +49,7 @@ export function StudyPlanCalendarPopover({
   onOpenTask: (task: TaskView) => void;
   onTasksChanged: () => void | Promise<void>;
 }): React.JSX.Element {
+  const theme = useTheme();
   const [setupOpen, setSetupOpen] = useState(false);
   const [viewMonth, setViewMonth] = useState(() => new Date());
   const [monthAnchor, setMonthAnchor] = useState(filterDate);
@@ -111,7 +112,7 @@ export function StudyPlanCalendarPopover({
     <Modal visible={open} transparent animationType="fade" onRequestClose={onClose}>
       <View style={{ flex: 1, justifyContent: 'center', padding: 16 }}>
         <Pressable
-          style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: 'rgba(0,0,0,0.45)' }}
+          style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: theme.scrim }}
           onPress={onClose}
         />
         <View
@@ -152,7 +153,7 @@ export function StudyPlanCalendarPopover({
                   placeholderTextColor={theme.muted}
                   value={interviewDate}
                   onChangeText={onInterviewDateChange}
-                  style={inputStyle}
+                  style={inputStyle(theme)}
                 />
                 <TextInput
                   placeholder="每日分钟"
@@ -160,7 +161,7 @@ export function StudyPlanCalendarPopover({
                   value={dailyMinutes}
                   onChangeText={onDailyMinutesChange}
                   keyboardType="number-pad"
-                  style={inputStyle}
+                  style={inputStyle(theme)}
                 />
                 <Pressable
                   onPress={onGeneratePlan}
@@ -253,6 +254,7 @@ function DayTaskRow({
   onComplete: () => void;
   onSkip: () => void;
 }): React.JSX.Element {
+  const theme = useTheme();
   const done = task.status === 'done';
   const skipped = task.status === 'skipped';
   const canOpen = Boolean(task.nodeId) && !done && !skipped;
@@ -300,10 +302,12 @@ function DayTaskRow({
   );
 }
 
-const inputStyle = {
-  color: theme.text,
-  borderWidth: 1,
-  borderColor: theme.border,
-  borderRadius: 8,
-  padding: 10,
-};
+function inputStyle(theme: Palette) {
+  return {
+    color: theme.text,
+    borderWidth: 1,
+    borderColor: theme.border,
+    borderRadius: 8,
+    padding: 10,
+  };
+}

@@ -7,9 +7,10 @@ import { completeRepoAgentChat } from '../llm/agentChat';
 import { runTask, useTaskResult, useTaskState } from '../context/RemoteTaskContext';
 import { markdownToPlainText } from '../lib/markdownBlocks';
 import { SourceBadge } from './SourceBadge';
-import { theme } from '../theme';
+import { useTheme } from '../theme';
 
 export function RepoQaPanel({ repo }: { repo: Repo }): React.JSX.Element {
+  const theme = useTheme();
   // 按仓库记这次问答：切页回来能接着看回答，答完也不会丢
   const taskKey = `repo:qa:${repo.id}`;
   const { running: busy, error } = useTaskState(taskKey);

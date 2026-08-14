@@ -75,7 +75,7 @@ export function CampaignCreate({
           type="button"
           onClick={submit}
           disabled={busy || !jobTargetId}
-          className="rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm font-medium disabled:opacity-40"
+          className="rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
         >
           {busy ? '创建中…' : '创建并进入诊断'}
         </button>

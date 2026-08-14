@@ -7,7 +7,7 @@ import { listRepos } from '../data/repoLocal';
 import { getRepoFileContent, listRepoFilePaths } from '../data/repoFiles';
 import { useLocalDataReload } from '../hooks/useLocalDataReload';
 import { markdownToPlainText } from '../lib/markdownBlocks';
-import { theme } from '../theme';
+import { useTheme } from '../theme';
 
 type RepoTab = 'summary' | 'files' | 'qa';
 
@@ -18,6 +18,7 @@ const TABS: { id: RepoTab; label: string }[] = [
 ];
 
 export function ReposScreen(): React.JSX.Element {
+  const theme = useTheme();
   const [repos, setRepos] = useState<Repo[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedTab, setSelectedTab] = useState<RepoTab>('summary');

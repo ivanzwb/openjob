@@ -35,7 +35,7 @@ export function ResumePreviewDialog({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[120] flex justify-center bg-black/60 p-6"
+      className="fixed inset-0 z-[120] flex justify-center bg-scrim p-6"
       // 模板下拉是另一个 portal，只在点到遮罩本身时关闭，避免选模板时把弹窗带走
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();

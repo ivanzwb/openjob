@@ -187,7 +187,7 @@ export function Scripts(): React.JSX.Element {
                   type="button"
                   disabled={saving || !dirty}
                   onClick={save}
-                  className="rounded bg-[var(--color-accent)] px-3 py-1 text-xs disabled:opacity-40"
+                  className="rounded bg-[var(--color-accent)] px-3 py-1 text-xs text-white disabled:opacity-40"
                 >
                   {saving ? '保存中…' : selected.isUserEdited ? '保存修改' : '保存为自己的话'}
                 </button>

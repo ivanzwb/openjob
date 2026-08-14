@@ -8,7 +8,7 @@ import { useApp } from '../context/AppContext';
 import { runTask, useTaskResult, useTaskState } from '../context/RemoteTaskContext';
 import { useLocalDataReload } from '../hooks/useLocalDataReload';
 import { markdownToPlainText } from '../lib/markdownBlocks';
-import { theme } from '../theme';
+import { useTheme } from '../theme';
 
 type PanelMode = 'preview' | 'edit';
 
@@ -30,6 +30,7 @@ function SnippetDeleteButton({
   snippetId: string;
   onPress: () => void;
 }): React.JSX.Element {
+  const theme = useTheme();
   const { running } = useTaskState(`speech:delete:${snippetId}`);
   return (
     <Pressable
@@ -51,6 +52,7 @@ function SnippetDeleteButton({
 }
 
 export function ScriptsScreen(): React.JSX.Element {
+  const theme = useTheme();
   const { triggerSync, notifyDataChanged } = useApp();
   const [items, setItems] = useState<SpeechSnippetView[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -284,7 +286,7 @@ export function ScriptsScreen(): React.JSX.Element {
       <Modal visible={pickerOpen} transparent animationType="fade" onRequestClose={() => setPickerOpen(false)}>
         <View style={{ flex: 1, justifyContent: 'center', padding: 16 }}>
           <Pressable
-            style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: 'rgba(0,0,0,0.45)' }}
+            style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: theme.scrim }}
             onPress={() => setPickerOpen(false)}
           />
           <View

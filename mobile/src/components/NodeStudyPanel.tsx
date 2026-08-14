@@ -4,7 +4,7 @@ import { getRawDb } from '../db';
 import { generateQuizQuestion, submitQuizAnswer } from '../data/quizLocal';
 import { useApp } from '../context/AppContext';
 import { isTaskRunning, runTask, useTaskResult, useTaskState } from '../context/RemoteTaskContext';
-import { theme } from '../theme';
+import { useTheme } from '../theme';
 import { useEffect, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 
@@ -17,6 +17,7 @@ export function NodeStudyPanel({
   nodeName: string;
   mode: 'explain' | 'drill';
 }): React.JSX.Element {
+  const theme = useTheme();
   const { notifyDataChanged } = useApp();
   // 出题与评分都按考点记：换考点、切页再回来还是这道题和这份评分
   const questionKey = `quiz:question:${nodeId}`;
@@ -47,7 +48,7 @@ export function NodeStudyPanel({
   }
 
   if (questionError !== null && question === null) {
-    return <Text style={{ color: '#f87171', fontSize: 13 }}>{questionError}</Text>;
+    return <Text style={{ color: theme.danger, fontSize: 13 }}>{questionError}</Text>;
   }
 
   const submitQuiz = (): void => {

@@ -1,10 +1,11 @@
 import { Image, Text, View } from 'react-native';
 import { useRemoteTask } from '../context/RemoteTaskContext';
-import { theme } from '../theme';
+import { useTheme } from '../theme';
 
 const logo = require('../../assets/icon.png');
 
 export function AppHeaderTitle({ title }: { title: string }): React.JSX.Element {
+  const theme = useTheme();
   const { active } = useRemoteTask();
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>

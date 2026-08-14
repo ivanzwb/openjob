@@ -104,6 +104,8 @@ function mergeDefaults(loaded: Partial<AppConfig>): AppConfig {
       targetMastery: { ...base.priority.targetMastery, ...loaded.priority?.targetMastery },
     },
     update: { ...base.update, ...loaded.update },
+    // 主题的默认值只在字段缺失时生效：显式存过 'dark' 的老用户升级后仍是深色
+    ui: { theme: loaded.ui?.theme ?? base.ui.theme },
   };
 }
 

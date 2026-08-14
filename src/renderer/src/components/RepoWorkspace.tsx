@@ -171,7 +171,7 @@ export function RepoWorkspace({
                 <button
                   type="button"
                   onClick={onComplete}
-                  className="ml-auto rounded bg-[var(--color-accent)] px-2 py-1 text-[var(--color-fg)]"
+                  className="ml-auto rounded bg-[var(--color-accent)] px-2 py-1 text-white"
                 >
                   标记任务完成
                 </button>
@@ -196,7 +196,7 @@ export function RepoWorkspace({
             type="button"
             onClick={submit}
             disabled={state.running || !input.trim() || repo.status !== 'ready'}
-            className="self-end rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm font-medium disabled:opacity-40"
+            className="self-end rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
           >
             发送
           </button>

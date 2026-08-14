@@ -79,14 +79,22 @@ const LANG_LOADERS: Record<string, () => Promise<unknown>> = {
   markdown: () => import('@shikijs/langs/markdown'),
 };
 
-export const THEME = 'github-dark-default';
+/**
+ * 双主题输出：每个 token 上同时带 --shiki-light / --shiki-dark 两个变量，
+ * 由 index.css 按 html[data-theme] 取用。这样切主题不必把已经渲染好的代码
+ * 重新高亮一遍——高亮是异步的，重跑会让长文档里的代码块集体闪一下。
+ */
+const THEMES = { light: 'github-light-default', dark: 'github-dark-default' } as const;
 
 let corePromise: Promise<HighlighterCore> | null = null;
 const loaded = new Set<string>();
 
 function getCore(): Promise<HighlighterCore> {
   corePromise ??= createHighlighterCore({
-    themes: [import('@shikijs/themes/github-dark-default')],
+    themes: [
+      import('@shikijs/themes/github-dark-default'),
+      import('@shikijs/themes/github-light-default'),
+    ],
     langs: [],
     engine: createJavaScriptRegexEngine({ forgiving: true }),
   });
@@ -121,7 +129,8 @@ export async function highlightToHtml(
     }
     return core.codeToHtml(code, {
       lang,
-      theme: THEME,
+      themes: THEMES,
+      defaultColor: false,
       transformers: [
         {
           line(node, line) {

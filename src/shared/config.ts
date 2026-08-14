@@ -113,6 +113,13 @@ export interface UpdateConfig {
   checkOnStartup: boolean;
 }
 
+/** 界面主题。light 为默认（白底方案），dark 为深色方案。 */
+export type UiTheme = 'dark' | 'light';
+
+export interface UiConfig {
+  theme: UiTheme;
+}
+
 export interface AppConfig {
   /** 配置结构版本，用于后续迁移 */
   version: number;
@@ -120,6 +127,7 @@ export interface AppConfig {
   search: SearchConfig;
   priority: PriorityWeights;
   update: UpdateConfig;
+  ui: UiConfig;
 }
 
 export const CONFIG_VERSION = 1;
@@ -195,6 +203,9 @@ export const DEFAULT_CONFIG: AppConfig = {
     feedUrl: '',
     checkOnStartup: true,
   },
+  ui: {
+    theme: 'light',
+  },
 };
 
 /** 与磁盘/同步 JSON 合并默认值（不含桌面 legacy 迁移逻辑） */
@@ -233,5 +244,7 @@ export function mergeAppConfig(loaded: Partial<AppConfig> | null | undefined): A
       targetMastery: { ...base.priority.targetMastery, ...loaded.priority?.targetMastery },
     },
     update: { ...base.update, ...loaded.update },
+    // 主题的默认值只在字段缺失时生效：显式存过 'dark' 的用户不能被新默认值改掉
+    ui: { theme: loaded.ui?.theme ?? base.ui.theme },
   };
 }

@@ -7,7 +7,7 @@ import { completeRepoAgentChat } from '../llm/agentChat';
 import { runTask, useTaskResult, useTaskState } from '../context/RemoteTaskContext';
 import { markdownToPlainText } from '../lib/markdownBlocks';
 import { SourceBadge } from './SourceBadge';
-import { theme } from '../theme';
+import { useTheme } from '../theme';
 
 export function ReadCodePanel({
   repo,
@@ -16,6 +16,7 @@ export function ReadCodePanel({
   repo: Repo;
   onComplete?: () => void;
 }): React.JSX.Element {
+  const theme = useTheme();
   // 按仓库记：导读要跑挺久，切页回来要能看到还在读，读完也要能看到结果
   const taskKey = `repo:readCode:${repo.id}`;
   const { running: busy, error } = useTaskState(taskKey);

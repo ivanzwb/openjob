@@ -11,7 +11,7 @@ import { useApp } from '../context/AppContext';
 import { runTask, useTaskResult, useTaskState } from '../context/RemoteTaskContext';
 import { useLocalDataReload } from '../hooks/useLocalDataReload';
 import { ResumeEditor } from '../components/ResumeEditor';
-import { theme } from '../theme';
+import { useTheme } from '../theme';
 
 function entryKey(entry: ResumeEntry): string {
   return `${entry.kind}:${entry.id}`;
@@ -30,6 +30,7 @@ function ResumeRow({
   onOpen: () => void;
   onDelete: () => void;
 }): React.JSX.Element {
+  const theme = useTheme();
   const { running: removing } = useTaskState(deleteKeyOf(entry));
 
   return (
@@ -95,6 +96,7 @@ function ResumeRow({
 }
 
 export function ResumesScreen(): React.JSX.Element {
+  const theme = useTheme();
   const { triggerSync, notifyDataChanged } = useApp();
   const { running: creating } = useTaskState(CREATE_KEY);
   const [entries, setEntries] = useState<ResumeEntry[]>([]);
@@ -212,7 +214,7 @@ export function ResumesScreen(): React.JSX.Element {
       <Modal visible={createOpen} transparent animationType="fade" onRequestClose={() => setCreateOpen(false)}>
         <View style={{ flex: 1, justifyContent: 'center', padding: 16 }}>
           <Pressable
-            style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: 'rgba(0,0,0,0.45)' }}
+            style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: theme.scrim }}
             onPress={() => setCreateOpen(false)}
           />
           <View

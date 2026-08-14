@@ -134,7 +134,7 @@ export function DesignPractice(): React.JSX.Element {
           type="button"
           disabled={!campaignId || loading}
           onClick={start}
-          className="rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm disabled:opacity-40"
+          className="rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm text-white disabled:opacity-40"
         >
           {caseTask.running ? '出题中…' : designCase ? '换一题' : '开始模拟'}
         </button>
@@ -200,7 +200,7 @@ export function DesignPractice(): React.JSX.Element {
                   type="button"
                   disabled={loading || !answer.trim()}
                   onClick={submit}
-                  className="ml-auto rounded bg-emerald-700 px-4 py-2 text-sm disabled:opacity-40"
+                  className="ml-auto rounded bg-emerald-700 px-4 py-2 text-sm text-white disabled:opacity-40"
                 >
                   {submitTask.running ? '评分中…' : '提交回答'}
                 </button>

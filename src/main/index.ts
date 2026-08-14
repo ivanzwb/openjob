@@ -6,6 +6,8 @@ import { closeDb, getDb } from './db';
 import { scheduleStartupCheck } from './updater';
 import { startSyncServer } from './sync';
 import { applyAppIcon } from './icon';
+import { getConfig } from './config';
+import { trackWindowTheme, WINDOW_BACKGROUND } from './theme';
 
 const isDev = !app.isPackaged;
 
@@ -18,6 +20,9 @@ let mainWindow: BrowserWindow | null = null;
 
 function createWindow(): void {
   const icon = applyAppIcon();
+  // 主题在建窗前就得定下来：窗口底色和 preload 注入的初值都取自它，
+  // 否则浅色用户每次启动都会先闪一下深色。
+  const theme = getConfig().ui.theme;
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -25,7 +30,7 @@ function createWindow(): void {
     minHeight: 640,
     show: false,
     autoHideMenuBar: true,
-    backgroundColor: '#0b0d12',
+    backgroundColor: WINDOW_BACKGROUND[theme],
     title: 'OpenJob',
     ...(icon ? { icon } : {}),
     webPreferences: {
@@ -35,8 +40,10 @@ function createWindow(): void {
       nodeIntegration: false,
       // ESM preload 要求关闭 sandbox；隔离仍由 contextIsolation 保证
       sandbox: false,
+      additionalArguments: [`--ui-theme=${theme}`],
     },
   });
+  trackWindowTheme(mainWindow);
 
   mainWindow.on('ready-to-show', () => mainWindow?.show());
 

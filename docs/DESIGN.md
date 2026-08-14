@@ -1,7 +1,7 @@
 # OpenJob — 面试备考 Agent 设计方案
 
 > 状态：持续实施中（桌面端 + 手机端已可用）
-> 最后更新：2026-08-12
+> 最后更新：2026-08-14
 > 快速上手见仓库根目录 [README.md](../README.md)
 
 ---
@@ -484,7 +484,7 @@ todo 未学 → learning 已看 → shaky 半懂存疑 → mastered 已掌握
 | 图谱可视化 | React Flow（阶段 4） | — |
 | 代码高亮 | Shiki | — |
 | 流程图 | mermaid | — |
-| UI | Tailwind + shadcn/ui | — |
+| UI | Tailwind CSS 4（`@theme` 令牌） | 配色集中在 CSS 变量里，深浅两套主题不必逐个组件改 |
 | 打包 | electron-builder | NSIS(Win) / dmg(macOS) / AppImage+deb(Linux) |
 | 自动更新 | electron-updater | — |
 
@@ -494,7 +494,7 @@ todo 未学 → learning 已看 → shaky 半懂存疑 → mastered 已掌握
 
 ```
 <userData>/
-├── config.json          # LLM / 搜索 provider 配置、API Key
+├── config.json          # LLM / 搜索 provider 配置、界面主题
 ├── openjob.db           # SQLite
 ├── repos/               # clone 下来的开源项目
 └── cache/               # 搜索缓存、repo map、项目摘要
@@ -510,6 +510,32 @@ API Key 存储用 Electron `safeStorage`（走系统密钥链）加密后落盘�
 | 渲染进程（React） | 纯 UI，通过 IPC 调用主进程能力，不直接碰文件系统和网络 |
 
 长任务（clone + 索引）在主进程用 worker 或异步队列跑，通过 IPC 向渲染进程推送进度。
+
+#### 界面主题（浅色 / 深色）
+
+浅色是默认，深色在**设置 → 外观**切换。选择存在 `AppConfig.ui.theme`，随 `app_setting` 同步到手机（手机端不另设开关，见 5.7）。默认值只在字段缺失时生效——`mergeAppConfig` 写的是 `loaded.ui?.theme ?? base.ui.theme`，而不是「dark 视为未设置」，因此已经显式选过深色的老用户升级后仍是深色。
+
+**桌面端改的是变量，不是组件。** 六个语义 token（`--color-bg` / `surface` / `border` / `fg` / `muted` / `accent`）在 `@theme` 里定义，`@theme` 装的是深色值，但它是 Tailwind 的编译基线、不等于默认主题：默认主题由 `html:not([data-theme='dark'])` 覆盖成浅色。选择器写成 `:not(dark)` 而不是 `[data-theme='light']`，是因为 `@theme` 只能被更高优先级的选择器覆盖，「没有 data-theme 属性」这个状态必须也落到浅色，否则首帧或属性被清掉时会退回深色基线，与默认浅色矛盾；反过来把浅色搬进 `@theme`、深色改成属性覆盖也成立，但要把下面整套调色板重映射连同 Tailwind 原始色阶一起对调写回去，回归面大得多，不值得。`color-scheme` 同理：基线不再写 `dark`，浅色分支给 `light`、`[data-theme='dark']` 给 `dark`。
+
+真正的麻烦在于界面里另有三百多处直接写死的调色板类（`text-sky-300`、`bg-amber-950/40`、`hover:bg-black/20`），它们在深色下是刻意挑的——浅色阶当前景色，深色阶当着色底板。Tailwind v4 把调色板同样编译成 `var(--color-sky-300)`，所以浅色主题只需在浅色分支里按「保持感知对比度」重映射用到的色阶，一次生效，不必逐个组件改类名：
+
+| 用途 | 深色取的色阶 | 浅色映射到 |
+|---|---|---|
+| 前景色 | 100 / 200 / 300 / 400 | 900 / 800 / 700 / 600~700（按各色相在白底的可读性取） |
+| 着色底板 | 800 / 900 / 950 | 300 / 300 / 200 |
+| 描边与实心按钮 | 500 / 700 | 不动，两个主题都成立 |
+
+底板不能照着深浅直接翻到 50 档：这些类几乎都带 `/20`~`/40` 的透明度，叠在白底上会淡到看不出色相，告警面板退化成一个白框。停在 200/300 档，透明度化掉之后刚好剩一层能认出色相的浅色。
+
+两个东西不参与翻转：**模态遮罩**用独立的 `--color-scrim`，两套主题都压暗——遮罩上盖的是简历纸张、寸照和白字按钮，跟着变浅就既压不住底层内容、也撑不住上面的白字；**`--color-white` 保持纯白**，二维码卡片、简历纸张、证件照底色都依赖它，而 `text-white` 只出现在实心按钮（强调色蓝、`emerald-700` 绿）和遮罩之上，这些底色都不跟着翻转，白字始终立得住。
+
+由此有一条**必须遵守的约定**：实心深色按钮要显式写 `text-white`，不能靠继承 `--color-fg`。深色下 fg 本就接近白色，漏写时完全看不出问题，浅色下就变成蓝底黑字——第一版有二十多处这样的按钮，全是这个原因。
+
+**启动不能闪一下另一套主题。** 主题在建窗之前就要定下来：主进程读 `config.json` → 决定窗口 `backgroundColor`，并通过 `additionalArguments` 把主题传给 preload → preload 同步读出注入 `window.bootstrap` → 渲染进程在 React 挂载前落 `html[data-theme]`。任何一环换成 IPC 往返，就会先看到一帧错主题。这条链上每处兜底值都要与 `DEFAULT_CONFIG.ui.theme` 同为浅色：preload 解析不到 `--ui-theme` 时返回 `light`，`uiTheme.ts` 的 store 初值也是 `light`，否则新装用户仍会闪一帧深色。
+
+**三处配色不走这套 token**，各自单独跟随：Shiki 改成双主题输出（每个 token 上同时带 `--shiki-light` / `--shiki-dark`，切主题只是换取哪个变量，不必把已渲染的代码重新高亮——高亮是异步的，重跑会让长文档里的代码块集体闪一下）；mermaid 把配色烧进 SVG，只能按主题重新渲染；React Flow 走 `colorMode` 加控件变量覆盖。
+
+**手机端没有 CSS 变量这条捷径，只能真改代码。** `mobile/src/theme.ts` 从静态对象改为订阅式 store 加 `useTheme()`，组件里约定 `const theme = useTheme()`——局部变量与原来的导入同名，于是四百多处 `theme.bg` 之类的引用一行都不用动。迁移方式是删掉旧的静态导出，让类型检查器把全部引用逐个报出来，保证不漏；模块顶层的样式常量和非组件辅助函数不能调钩子，改成接收 `theme: Palette` 参数由组件传入。写死的深色值（Toast 变体、来源标签、批注前景色）收进语义三元组 `tone.{amber,sky,emerald,red,slate}.{text,border,bg}`，深浅各一份——`Toast` 的 info 变体原本是深灰底配正文色，浅色下会变成深底深字、完全看不见，这类才是必须改的。store 的初值取浅色，与默认主题一致：手机端在同步到桌面配置之前就要显示界面，初值取错会在首次同步后闪一次主题。`app.json` 的 `userInterfaceStyle` 本来就是 `light`，系统级外观与默认主题一致，无需改动。
 
 ### 5.2 LLM Provider 抽象
 
@@ -638,6 +664,7 @@ openJob/
     │
     ├── main/                       # Electron 主进程 = 全部后端逻辑
     │   ├── index.ts                # app 生命周期、窗口、单实例锁
+    │   ├── theme.ts                # 窗口底色，与渲染层 --color-bg 保持一致
     │   ├── ipc/                    # IPC handler 注册（替代 HTTP 路由）
     │   ├── config/                 # config.json 读写、safeStorage 密钥
     │   ├── db/
@@ -681,6 +708,8 @@ openJob/
             │   ├── StreamChat.tsx  # 复用：考我 / 源码问答
             │   ├── SourceBadge.tsx # 来源可信度角标
             │   └── ToolTrace.tsx   # 推理过程面板
+            ├── lib/
+            │   └── uiTheme.ts      # 当前主题，供少数不由 CSS 决定的配色取用
             └── ipc/                # 类型安全的 IPC 客户端封装
 ```
 
@@ -700,7 +729,8 @@ mobile/
     │   ├── triggers.ts            # 变更捕获触发器，语义与桌面端完全一致
     │   └── apply.ts               # 变更集落库
     ├── components/                # 通用 UI 组件
-    └── screens/                   # 页面（Sync / Campaigns / Repos / …）
+    ├── screens/                   # 页面（Sync / Campaigns / Repos / …）
+    └── theme.ts                   # 双主题调色板 + 订阅式 store（useTheme）
 ```
 
 **安全基线**：渲染进程开启 `contextIsolation`、关闭 `nodeIntegration`，仅通过 preload 暴露白名单 IPC 方法。这既是 Electron 安全规范，也强制了「UI 不碰 IO」的分层。
@@ -732,6 +762,8 @@ mobile/
 - 同一列改成不同值 / 删除与修改冲突 → 挂起为冲突，手机端弹 UI 让用户选本端还是对端
 - 手机专属列（如 `repo.local_path`）在合并时被剔除，不接受对端值
 - `repo_file`（源码快照）同步优先级最低；手机端在落库前检查可用存储，不足则跳过并在同步页提示
+
+**配置随行**：`app_setting` 整份参与同步，桌面 `config.json` 的改动经镜像下发到手机，因此界面主题（`ui.theme`）也一起过去——手机端只读跟随，不再做一套本机开关，两端观感一致。落库后若 `app_setting` 有变更，手机会重新 hydrate 配置缓存并据此切主题。
 
 **安全**：配对交换 ECDH 派生共享密钥；每个请求带 HMAC 签名（设备 ID + 时间戳 + 路径 + body），防局域网内重放与伪造。
 
@@ -939,6 +971,10 @@ tool_call(
 | 系统设计 | 阶段 5+ 独立链路 | MVP 纳入 | 是综合应用而非知识点，需完全不同的交互形态 |
 | 间隔重复(SRS) | 不做 | MVP 纳入 | 短期备考有日程计划即可，SRS 面向长期知识保鲜 |
 | Agent 编排 | 原生 tool calling | LangChain 等框架 | 编排逻辑不复杂，框架抽象成本大于收益 |
+| 浅色主题实现 | 在浅色分支重映射 Tailwind 调色板变量 | 逐处补 `dark:` / `light:` 变体或改类名 | 界面有三百多处写死的调色板类，改类名等于重刷 45 个文件、深色也可能回归；v4 的调色板本身就编译成 CSS 变量，重映射一处生效 |
+| 默认浅色的落地方式 | `@theme` 保持深色基线，浅色用 `html:not([data-theme='dark'])` 覆盖 | 把浅色搬进 `@theme`、深色改成 `[data-theme='dark']` 覆盖 | 后者更「正」，但要把整套调色板重映射连同 Tailwind 原始色阶对调写回去，两套主题极易弄混；`:not(dark)` 只动选择器，同时保证无属性时也是浅色、不闪深色帧 |
+| 主题偏好存放 | `AppConfig.ui.theme`，随 `app_setting` 同步 | 各端本机偏好（`sync_meta` / localStorage） | 配置本来整份同步，手机端不必再做一套开关；代价是两端不能各用一套主题，目前不需要 |
+| 手机端主题 | 订阅式 store + `useTheme()`，组件内变量仍叫 `theme` | 保留静态 `theme` 对象、切主题时整树 remount | 静态对象换不了主题；remount 会重置导航与页面状态。删掉静态导出可让类型检查器枚举全部四百多处引用，变量同名则组件内部零改动 |
 
 ### 7.1 专项：为什么放弃 Python
 

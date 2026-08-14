@@ -1,3 +1,5 @@
+import { getTheme } from '../theme';
+
 function parseHexColor(color: string): { r: number; g: number; b: number } | null {
   const hex = color.trim();
   const match = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(hex);
@@ -21,7 +23,8 @@ function relativeLuminance(r: number, g: number, b: number): number {
 
 export function readableTextOnBackground(bg: string): string {
   const rgb = parseHexColor(bg);
-  if (!rgb) return '#f3f4f6';
+  // 认不出高亮色时按正文色走：此时文字画在页面底色上，得跟着主题
+  if (!rgb) return getTheme().text;
   const lum = relativeLuminance(rgb.r, rgb.g, rgb.b);
   return lum > 0.55 ? '#1a1a1a' : '#f5f5f5';
 }

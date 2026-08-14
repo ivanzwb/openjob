@@ -11,6 +11,7 @@ import {
 import '@xyflow/react/dist/style.css';
 import type { KnowledgeNodeView, NodeEdgeView } from '@shared/ipc';
 import type { CoverageType, EdgeRelation } from '@shared/enums';
+import { useUiTheme } from '../lib/uiTheme';
 
 const COVERAGE_COLOR: Record<CoverageType, string> = {
   deepDive: '#f59e0b',
@@ -87,6 +88,7 @@ export function KnowledgeGraph({
   nodes: KnowledgeNodeView[];
   edges?: NodeEdgeView[];
 }): React.JSX.Element {
+  const uiTheme = useUiTheme();
   const { flowNodes, flowEdges } = useMemo(() => {
     const tree = layoutTree(nodes);
     const present = new Set(nodes.map((n) => n.id));
@@ -118,7 +120,7 @@ export function KnowledgeGraph({
       <div className="knowledge-graph-host relative min-h-0 flex-1 overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)]">
         <ReactFlow
           className="knowledge-graph-flow"
-          colorMode="dark"
+          colorMode={uiTheme}
           nodes={flowNodes}
           edges={flowEdges}
           fitView
@@ -134,7 +136,7 @@ export function KnowledgeGraph({
             position="bottom-right"
             bgColor="var(--color-surface)"
             maskColor="rgb(79 124 255 / 0.14)"
-            nodeColor={(node) => (node.style?.borderColor as string) ?? '#8b93a7'}
+            nodeColor={(node) => (node.style?.borderColor as string) ?? 'var(--color-muted)'}
             nodeStrokeColor="var(--color-border)"
             style={{
               backgroundColor: 'var(--color-surface)',

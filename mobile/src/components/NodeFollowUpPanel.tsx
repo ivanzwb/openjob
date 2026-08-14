@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { completeChat } from '../llm/chat';
 import { runTask, useTaskResult, useTaskState } from '../context/RemoteTaskContext';
-import { theme } from '../theme';
+import { useTheme } from '../theme';
 
 type Msg = { role: 'user' | 'assistant'; text: string };
 
@@ -15,6 +15,7 @@ export function NodeFollowUpPanel({
   nodeId: string;
   nodeName: string;
 }): React.JSX.Element {
+  const theme = useTheme();
   // 按考点记这轮追问：切页、换 Tab 再回来还能看到「回答中…」和已经答完的内容
   const taskKey = `node:followUp:${nodeId}`;
   const { running: busy, error } = useTaskState(taskKey);

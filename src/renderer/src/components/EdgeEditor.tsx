@@ -90,7 +90,7 @@ export function EdgeEditor({
         <button
           type="button"
           onClick={submit}
-          className="rounded bg-[var(--color-accent)] px-2 py-1 text-xs"
+          className="rounded bg-[var(--color-accent)] px-2 py-1 text-xs text-white"
         >
           添加关系
         </button>

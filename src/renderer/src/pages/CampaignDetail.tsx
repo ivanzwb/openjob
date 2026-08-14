@@ -398,7 +398,7 @@ export function CampaignDetail({
               type="button"
               disabled={Boolean(job)}
               onClick={() => void runDiagnosis()}
-              className="rounded-lg bg-[var(--color-accent)] px-3 py-1.5 text-sm disabled:opacity-40"
+              className="rounded-lg bg-[var(--color-accent)] px-3 py-1.5 text-sm text-white disabled:opacity-40"
             >
               {jdJob.isRunning ? '诊断中…' : nodes.length ? '重新诊断' : '开始诊断'}
             </button>
@@ -558,7 +558,7 @@ export function CampaignDetail({
                     type="button"
                     disabled={!debriefText.trim() || ingestDebriefTask.running || Boolean(job)}
                     onClick={() => ingestReport('selfDebrief')}
-                    className="rounded bg-emerald-700 px-3 py-1.5 text-xs disabled:opacity-40"
+                    className="rounded bg-emerald-700 px-3 py-1.5 text-xs text-white disabled:opacity-40"
                   >
                     {ingestDebriefTask.running ? '提交中…' : '提交复盘'}
                   </button>
@@ -888,7 +888,7 @@ export function CampaignDetail({
                             type="button"
                             disabled={createResumeTask.running || Boolean(job)}
                             onClick={createAndAttachResume}
-                            className="rounded bg-[var(--color-accent)] px-3 py-1 text-xs disabled:opacity-40"
+                            className="rounded bg-[var(--color-accent)] px-3 py-1 text-xs text-white disabled:opacity-40"
                           >
                             {createResumeTask.running ? '保存中…' : '保存并交叉分析'}
                           </button>

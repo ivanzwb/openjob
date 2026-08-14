@@ -9,7 +9,7 @@ import { ReposScreen } from '../screens/ReposScreen';
 import { ResumesScreen } from '../screens/ResumesScreen';
 import { SyncScreen } from '../screens/SyncScreen';
 import { AppHeaderTitle } from '../components/AppHeaderTitle';
-import { theme } from '../theme';
+import { useTheme } from '../theme';
 
 const Tab = createBottomTabNavigator();
 
@@ -41,6 +41,7 @@ function TabIcon({
 }
 
 export function RootTabs(): React.JSX.Element {
+  const theme = useTheme();
   return (
     <Tab.Navigator
       detachInactiveScreens={false}

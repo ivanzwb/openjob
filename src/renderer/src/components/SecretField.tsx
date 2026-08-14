@@ -72,7 +72,7 @@ export function SecretField({
           type="button"
           onClick={save}
           disabled={saving || removing || !draft.trim()}
-          className="rounded bg-[var(--color-accent)] px-3 py-1.5 text-sm disabled:opacity-40"
+          className="rounded bg-[var(--color-accent)] px-3 py-1.5 text-sm text-white disabled:opacity-40"
         >
           {saving ? '保存中…' : '保存'}
         </button>

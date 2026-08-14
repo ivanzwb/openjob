@@ -8,7 +8,11 @@ import {
   type IpcInvokeChannel,
   type IpcReq,
   type IpcRes,
+  type RendererBootstrap,
 } from '@shared/ipc';
+import type { UiTheme } from '@shared/config';
+
+const THEME_ARG = '--ui-theme=';
 
 const invokeAllowList = new Set<string>(IPC_INVOKE_CHANNELS);
 const eventAllowList = new Set<string>(IPC_EVENT_CHANNELS);
@@ -36,3 +40,15 @@ const bridge: IpcBridge = {
 };
 
 contextBridge.exposeInMainWorld('api', bridge);
+
+/**
+ * 主进程建窗时把主题写进 additionalArguments，这里同步读出来即可。
+ * 参数缺失或不认识时落到默认的浅色，与 DEFAULT_CONFIG.ui.theme 保持一致。
+ */
+function initialTheme(): UiTheme {
+  const arg = process.argv.find((a) => a.startsWith(THEME_ARG));
+  return arg?.slice(THEME_ARG.length) === 'dark' ? 'dark' : 'light';
+}
+
+const bootstrap: RendererBootstrap = { theme: initialTheme() };
+contextBridge.exposeInMainWorld('bootstrap', bootstrap);

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { AppConfig, PriorityWeights, SearchConfig, UpdateConfig } from '@shared/config';
+import type { AppConfig, PriorityWeights, SearchConfig, UiTheme, UpdateConfig } from '@shared/config';
 import { DEFAULT_PRIORITY_WEIGHTS } from '@shared/config';
 import { LLM_ROLES, LLM_TIERS, type CoverageType, type LlmRole, type LlmTier } from '@shared/enums';
 import type { ProviderTestResult } from '@shared/ipc';
@@ -10,6 +10,12 @@ import { SearchQualityPanel } from '../components/SearchQualityPanel';
 import { UpdatePanel } from '../components/UpdatePanel';
 import { SyncPanel } from '../components/SyncPanel';
 import { PageShell } from '../components/PageShell';
+import { setUiTheme } from '../lib/uiTheme';
+
+const THEME_OPTIONS: Array<{ id: UiTheme; label: string; hint: string }> = [
+  { id: 'dark', label: '深色', hint: '黑底白字，适合夜间与暗光环境' },
+  { id: 'light', label: '浅色', hint: '白底黑字，默认，适合白天与投屏' },
+];
 
 const TIER_HINTS: Record<LlmTier, string> = {
   main: '主力档：outline / codeAgent / quiz 与全部未映射的角色都走这一档，必须支持 function calling',
@@ -176,12 +182,44 @@ const updateEmbedding = (patch: Partial<AppConfig['llm']['embedding']>): void =>
     void persist({ ...config, update: { ...config.update, ...patch } });
   };
 
+  // 先切界面再落盘：主题是所见即所得的设置，等一次 IPC 往返会有明显迟滞
+  const selectTheme = (theme: UiTheme): void => {
+    setUiTheme(theme);
+    void persist({ ...config, ui: { ...config.ui, theme } });
+  };
+
   return (
     <PageShell className="space-y-8">
       <header className="flex items-baseline gap-3">
         <h2 className="text-lg font-semibold">设置</h2>
         {saved && <span className="text-xs text-emerald-400">已保存</span>}
       </header>
+
+      <section className="space-y-2">
+        <h3 className="text-sm font-medium text-[var(--color-muted)]">外观</h3>
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+          <div className="flex gap-1 rounded-lg border border-[var(--color-border)] p-1">
+            {THEME_OPTIONS.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => selectTheme(option.id)}
+                className={`rounded px-3 py-1 text-sm ${
+                  config.ui.theme === option.id
+                    ? 'bg-[var(--color-accent)] text-white'
+                    : 'text-[var(--color-muted)] hover:text-[var(--color-fg)]'
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          <span className="text-xs text-[var(--color-muted)]">
+            {THEME_OPTIONS.find((o) => o.id === config.ui.theme)?.hint}
+          </span>
+        </div>
+        <p className="text-xs text-[var(--color-muted)]">手机端在下次同步后跟随这里的选择。</p>
+      </section>
 
       <section className="space-y-4">
         <h3 className="text-sm font-medium text-[var(--color-muted)]">模型 Provider</h3>

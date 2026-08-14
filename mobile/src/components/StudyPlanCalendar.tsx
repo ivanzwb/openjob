@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { theme } from '../theme';
+import { useTheme } from '../theme';
 
 const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日'];
 
@@ -31,6 +31,7 @@ export function StudyPlanCalendar({
   onSelectDate: (date: string | null) => void;
   interviewDate?: string;
 }): React.JSX.Element {
+  const theme = useTheme();
   const today = todayLocal();
   const year = viewMonth.getFullYear();
   const month = viewMonth.getMonth();

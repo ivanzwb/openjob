@@ -52,7 +52,7 @@ export function CampaignList({
         <button
           type="button"
           onClick={onCreate}
-          className="rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm font-medium"
+          className="rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-white"
         >
           新建
         </button>

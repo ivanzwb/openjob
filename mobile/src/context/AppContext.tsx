@@ -11,6 +11,8 @@ import {
 import { AppState } from 'react-native';
 import { openDb, syncNow, isPaired, listPendingConflicts, getPeerLabel, getAutoSync, setAutoSync as persistAutoSync, getRepoFileSyncNotice } from '../db';
 import type { FieldConflict } from '@shared/sync';
+import { getMobileConfig } from '../config/settings';
+import { setThemeScheme } from '../theme';
 
 interface AppContextValue {
   ready: boolean;
@@ -124,6 +126,11 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
       .then(() => refresh())
       .then(() => setReady(true));
   }, [refresh]);
+
+  // 主题没有本机开关，跟着桌面同步下来的配置走：开库时读一次，之后每次同步再读
+  useEffect(() => {
+    setThemeScheme(getMobileConfig().ui.theme);
+  }, [ready, dataVersion]);
 
   useEffect(() => {
     if (!paired || !autoSync) return;

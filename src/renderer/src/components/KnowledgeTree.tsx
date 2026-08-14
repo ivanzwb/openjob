@@ -224,7 +224,7 @@ function NodeRow({
                 <button
                   type="button"
                   onClick={saveEdit}
-                  className="rounded bg-[var(--color-accent)] px-2 py-0.5 text-xs"
+                  className="rounded bg-[var(--color-accent)] px-2 py-0.5 text-xs text-white"
                 >
                   保存
                 </button>
@@ -372,7 +372,7 @@ function NodeRow({
                 setNoteText('');
                 setNoting(false);
               }}
-              className="rounded bg-[var(--color-accent)] px-2 py-0.5 text-xs disabled:opacity-40"
+              className="rounded bg-[var(--color-accent)] px-2 py-0.5 text-xs text-white disabled:opacity-40"
             >
               保存笔记
             </button>
@@ -405,7 +405,7 @@ function NodeRow({
               setChildName('');
               setAdding(false);
             }}
-            className="rounded bg-[var(--color-accent)] px-2 py-1 text-xs disabled:opacity-40"
+            className="rounded bg-[var(--color-accent)] px-2 py-1 text-xs text-white disabled:opacity-40"
           >
             添加
           </button>

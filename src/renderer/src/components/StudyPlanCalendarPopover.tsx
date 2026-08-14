@@ -203,7 +203,7 @@ export function StudyPlanCalendarPopover({
               type="button"
               disabled={nodeCount === 0 || generating}
               onClick={() => void runGenerate()}
-              className="w-full rounded-lg bg-emerald-700 px-3 py-1.5 text-xs disabled:opacity-40"
+              className="w-full rounded-lg bg-emerald-700 px-3 py-1.5 text-xs text-white disabled:opacity-40"
             >
               {generating ? '生成中…' : hasPlan ? '重新生成计划' : '生成计划'}
             </button>

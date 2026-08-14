@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { highlightToHtml } from '../lib/highlight';
 import { highlightTextStyle } from '../lib/highlightStyle';
+import { useUiTheme } from '../lib/uiTheme';
 import { visibleMarkdownBlocks } from '../lib/markdownBlocks';
 import {
   filterInlineAnnotations,
@@ -174,12 +175,18 @@ function renderTextWithRefs(
 function MermaidBlock({ chart }: { chart: string }): React.JSX.Element {
   const id = useId().replace(/:/g, '');
   const ref = useRef<HTMLDivElement>(null);
+  // mermaid 把配色烧进 SVG，换主题只能重新渲染一次
+  const uiTheme = useUiTheme();
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       const mermaid = (await import('mermaid')).default;
-      mermaid.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'loose' });
+      mermaid.initialize({
+        startOnLoad: false,
+        theme: uiTheme === 'dark' ? 'dark' : 'default',
+        securityLevel: 'loose',
+      });
       if (cancelled || !ref.current) return;
       try {
         const { svg } = await mermaid.render(`mmd-${id}`, chart.trim());
@@ -193,7 +200,7 @@ function MermaidBlock({ chart }: { chart: string }): React.JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [chart, id]);
+  }, [chart, id, uiTheme]);
 
   return <div ref={ref} className="mb-3 mt-3 overflow-x-auto rounded bg-black/20 p-3 first:mt-0" />;
 }

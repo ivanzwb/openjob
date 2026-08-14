@@ -1,27 +1,35 @@
 import { Text, View } from 'react-native';
 import type { EvidenceKind } from '@shared/enums';
+import { useTheme } from '../theme';
 
-const STYLES: Record<EvidenceKind, { label: string; color: string; border: string; bg: string }> = {
-  model: { label: '模型知识', color: '#fcd34d', border: '#92400e', bg: '#451a03' },
-  web: { label: '网络检索', color: '#7dd3fc', border: '#0369a1', bg: '#082f49' },
-  code: { label: '代码实证', color: '#6ee7b7', border: '#047857', bg: '#052e16' },
+const LABELS: Record<EvidenceKind, string> = {
+  model: '模型知识',
+  web: '网络检索',
+  code: '代码实证',
+};
+
+const TONES: Record<EvidenceKind, 'amber' | 'sky' | 'emerald'> = {
+  model: 'amber',
+  web: 'sky',
+  code: 'emerald',
 };
 
 export function SourceBadge({ kind }: { kind: EvidenceKind }): React.JSX.Element {
-  const style = STYLES[kind];
+  const theme = useTheme();
+  const tone = theme.tone[TONES[kind]];
   return (
     <View
       style={{
         alignSelf: 'flex-start',
         borderWidth: 1,
-        borderColor: style.border,
-        backgroundColor: style.bg,
+        borderColor: tone.border,
+        backgroundColor: tone.bg,
         borderRadius: 6,
         paddingHorizontal: 8,
         paddingVertical: 3,
       }}
     >
-      <Text style={{ color: style.color, fontSize: 11 }}>{style.label}</Text>
+      <Text style={{ color: tone.text, fontSize: 11 }}>{LABELS[kind]}</Text>
     </View>
   );
 }

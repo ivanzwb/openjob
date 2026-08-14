@@ -13,13 +13,14 @@ import { generateDesignCase, submitDesignAnswer } from '../data/designLocal';
 import { useApp } from '../context/AppContext';
 import { runTask, useTaskResult, useTaskState } from '../context/RemoteTaskContext';
 import { useLocalDataReload } from '../hooks/useLocalDataReload';
-import { theme } from '../theme';
+import { useTheme } from '../theme';
 
 function campaignLabel(c: CampaignSummary): string {
   return `${c.company} · ${c.roleTitle}`;
 }
 
 export function DesignScreen(): React.JSX.Element {
+  const theme = useTheme();
   const { notifyDataChanged } = useApp();
   const [campaigns, setCampaigns] = useState<CampaignSummary[]>([]);
   const [campaignId, setCampaignId] = useState('');
