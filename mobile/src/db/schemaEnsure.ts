@@ -82,6 +82,18 @@ export function ensureCriticalSchema(sqlite: SQLiteDatabase): void {
   } catch {
     // column already exists
   }
+
+  try {
+    sqlite.execSync(`ALTER TABLE resume_variant ADD COLUMN photo text`);
+  } catch {
+    // column already exists
+  }
+
+  try {
+    sqlite.execSync(`ALTER TABLE resume ADD COLUMN photo text`);
+  } catch {
+    // column already exists
+  }
 }
 
 export function hasTable(sqlite: SQLiteDatabase, table: string): boolean {

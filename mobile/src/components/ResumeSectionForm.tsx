@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, Text, TextInput, View } from 'react-native';
+import { Image, Pressable, Text, TextInput, View } from 'react-native';
 import type { ResumeSection } from '@shared/resume/document';
 import type { SectionEntry, SectionField } from '@shared/resume/sectionModel';
 import {
@@ -46,6 +46,29 @@ const ENTRY_LABELS: Record<string, { org: string; role: string; title: string }>
 
 function FieldLabel({ children }: { children: string }): React.JSX.Element {
   return <Text style={{ color: theme.muted, fontSize: 11, marginBottom: 4 }}>{children}</Text>;
+}
+
+/** 寸照在手机上只看不改：换照片要裁剪要预览，留在桌面端做 */
+function PhotoRow({ photo }: { photo: string }): React.JSX.Element {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+      <Image
+        source={{ uri: photo }}
+        style={{
+          width: 60,
+          height: 84,
+          borderRadius: 4,
+          borderWidth: 1,
+          borderColor: theme.border,
+          backgroundColor: '#fff',
+        }}
+        resizeMode="cover"
+      />
+      <Text style={{ flex: 1, color: theme.muted, fontSize: 11, lineHeight: 16 }}>
+        寸照会排在简历抬头右侧，预览与导出都带着它；上传或更换请在桌面端操作。
+      </Text>
+    </View>
+  );
 }
 
 function GhostButton({
@@ -433,17 +456,25 @@ export function ResumeSectionForm({
   section,
   polish,
   taskKeyPrefix,
+  photo,
   onContentChange,
 }: {
   section: ResumeSection;
   polish?: SectionPolish;
   /** 该模块的任务前缀，例如 resume:polish:12:experience */
   taskKeyPrefix: string;
+  /** 寸照存在简历行上而不是正文里，所以和模块内容分开传 */
+  photo?: string | null;
   onContentChange: (contentMd: string) => void;
 }): React.JSX.Element {
   switch (formKindForSection(section.key)) {
     case 'fields':
-      return <FieldsForm section={section} onContentChange={onContentChange} />;
+      return (
+        <View style={{ gap: 12 }}>
+          {section.key === 'basic' && photo ? <PhotoRow photo={photo} /> : null}
+          <FieldsForm section={section} onContentChange={onContentChange} />
+        </View>
+      );
     case 'bullets':
       return <BulletsForm section={section} onContentChange={onContentChange} />;
     case 'entries':

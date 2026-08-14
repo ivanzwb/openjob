@@ -348,6 +348,7 @@ export function ResumeEditor({
           section={activeSection}
           polish={polish}
           taskKeyPrefix={`resume:polish:${taskScope}:${activeSection.key}`}
+          photo={entry.photo}
           onContentChange={(value) => setSectionContent(activeSection.key, value)}
         />
       </ScrollView>
@@ -357,7 +358,10 @@ export function ResumeEditor({
           resumeDocument={doc}
           style={style}
           onStyleChange={changeStyle}
-          meta={{ headline: entry.kind === 'resume' ? label : entry.headline }}
+          meta={{
+            headline: entry.kind === 'resume' ? label : entry.headline,
+            photo: entry.photo,
+          }}
           fileStem={entry.fileStem}
           taskKey={`resume:exportPdf:${taskScope}`}
           onClose={() => setPreviewOpen(false)}

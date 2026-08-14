@@ -47,6 +47,7 @@ function rowToResume(row: typeof schema.resume.$inferSelect): Resume {
     rawText: row.rawText,
     parsed: row.parsed ?? null,
     previewStyle: row.previewStyle ?? null,
+    photo: row.photo ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt ?? row.createdAt,
   };
@@ -305,6 +306,7 @@ export function createResume(label: string, rawText: string): Resume {
     rawText: structureResumeText(rawText),
     parsed: null,
     previewStyle: null,
+    photo: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -321,6 +323,8 @@ export function updateResume(input: UpdateResumeInput): Resume {
     label: input.label?.trim() ?? existing.label,
     rawText: input.rawText?.trim() ?? existing.rawText,
     previewStyle: input.previewStyle ?? existing.previewStyle,
+    // 移除照片要能写进去，所以只认 undefined 为「不动」
+    photo: input.photo !== undefined ? input.photo : existing.photo,
     updatedAt: now,
   };
   db.update(schema.resume).set(patch).where(eq(schema.resume.id, input.id)).run();

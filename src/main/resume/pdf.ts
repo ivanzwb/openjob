@@ -11,6 +11,7 @@ export function buildResumeHtml(input: ResumeExportInput): string {
   return buildResumeDocumentHtml(doc, style, {
     headline: input.headline,
     subtitle: input.subtitle,
+    photo: input.photo,
   });
 }
 

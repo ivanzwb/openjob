@@ -340,6 +340,7 @@ export function Resumes(): React.JSX.Element {
           id: editorId,
           contentMd: payload.contentMd,
           previewStyle: payload.previewStyle,
+          photo: payload.photo,
         });
       } else {
         await invoke('resume:update', {
@@ -347,6 +348,7 @@ export function Resumes(): React.JSX.Element {
           label: payload.label,
           rawText: payload.contentMd,
           previewStyle: payload.previewStyle,
+          photo: payload.photo,
         });
       }
       await refreshAll();
@@ -748,6 +750,7 @@ export function Resumes(): React.JSX.Element {
                 initialContentMd={activeVariant.contentMd}
                 initialPreviewStyle={activeVariant.previewStyle}
                 initialLabel={activeVariant.label}
+                initialPhoto={activeVariant.photo}
                 heading={`${activeVariant.company} · ${activeVariant.roleTitle}`}
                 subtitle={
                   activeVariant.sourceResumeLabel
@@ -769,6 +772,7 @@ export function Resumes(): React.JSX.Element {
                 initialContentMd={selectedResume.rawText}
                 initialPreviewStyle={selectedResume.previewStyle}
                 initialLabel={selectedResume.label}
+                initialPhoto={selectedResume.photo}
                 subtitle={`母版 · 更新于 ${new Date(selectedResume.updatedAt).toLocaleString()}`}
                 onSave={saveEditorDocument}
                 onMessage={setMessage}

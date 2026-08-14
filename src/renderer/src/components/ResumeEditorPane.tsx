@@ -16,6 +16,8 @@ export interface ResumeEditorSavePayload {
   contentMd: string;
   previewStyle: string;
   label: string;
+  /** 寸照 data URL，null 表示没有照片 */
+  photo: string | null;
 }
 
 /** 停止输入后多久落库 */
@@ -35,6 +37,7 @@ export function ResumeEditorPane({
   initialContentMd,
   initialPreviewStyle,
   initialLabel,
+  initialPhoto,
   heading,
   subtitle,
   variantMeta,
@@ -47,6 +50,7 @@ export function ResumeEditorPane({
   initialContentMd: string;
   initialPreviewStyle: string | null;
   initialLabel: string;
+  initialPhoto: string | null;
   /** 优化版用固定标题，母版用可编辑名称 */
   heading?: string;
   subtitle: string;
@@ -61,6 +65,7 @@ export function ResumeEditorPane({
     parsePreviewStyle(initialPreviewStyle),
   );
   const [label, setLabel] = useState(initialLabel);
+  const [photo, setPhoto] = useState<string | null>(initialPhoto);
   const [activeSectionIndex, setActiveSectionIndex] = useState(0);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
@@ -73,12 +78,16 @@ export function ResumeEditorPane({
   const { running: structuring, error: structureError } = useTask(structureKey);
   const toast = useToast();
 
-  const previewMeta: { headline: string; subtitle?: string } = variantMeta ?? { headline: label };
+  const previewMeta: { headline: string; subtitle?: string; photo: string | null } = {
+    ...(variantMeta ?? { headline: label }),
+    photo,
+  };
 
   const payload: ResumeEditorSavePayload = {
     contentMd: documentToMarkdown(resumeDocument),
     previewStyle: serializePreviewStyle(style),
     label: label.trim() || '未命名简历',
+    photo,
   };
 
   // 打开简历不该触发一次保存，所以基线用归一化后的初始内容
@@ -86,12 +95,14 @@ export function ResumeEditorPane({
     contentMd: documentToMarkdown(parseMarkdownToDocument(initialContentMd)),
     previewStyle: serializePreviewStyle(parsePreviewStyle(initialPreviewStyle)),
     label: initialLabel.trim() || '未命名简历',
+    photo: initialPhoto,
   }));
 
   const dirty =
     payload.contentMd !== saved.contentMd ||
     payload.previewStyle !== saved.previewStyle ||
-    payload.label !== saved.label;
+    payload.label !== saved.label ||
+    payload.photo !== saved.photo;
 
   const onSaveRef = useRef(onSave);
   const pendingRef = useRef<ResumeEditorSavePayload | null>(null);
@@ -120,7 +131,7 @@ export function ResumeEditorPane({
         .catch(() => setSaveState('idle'));
     }, AUTOSAVE_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [dirty, payload.contentMd, payload.previewStyle, payload.label]);
+  }, [dirty, payload.contentMd, payload.previewStyle, payload.label, payload.photo]);
 
   // 切换简历时把没落库的改动补上；此时 onSave 仍指向本份简历
   useEffect(() => {
@@ -199,6 +210,7 @@ export function ResumeEditorPane({
         previewStyle: payloadRef.current.previewStyle,
         headline: meta.headline,
         subtitle: meta.subtitle,
+        photo: payloadRef.current.photo,
       });
       return res.saved ? `已导出：${res.path}` : '已取消导出';
     }).catch(() => undefined);
@@ -267,6 +279,8 @@ export function ResumeEditorPane({
       <ResumeDocumentEditor
         document={resumeDocument}
         activeSectionIndex={activeSectionIndex}
+        photo={photo}
+        onPhotoChange={setPhoto}
         onDocumentChange={setResumeDocument}
         onActiveSectionChange={setActiveSectionIndex}
         onPolish={polishSection}

@@ -17,7 +17,7 @@ export function ResumePreviewDialog({
 }: {
   resumeDocument: ResumeDocument;
   style: ResumePreviewStyle;
-  previewMeta?: { headline?: string; subtitle?: string };
+  previewMeta?: { headline?: string; subtitle?: string; photo?: string | null };
   onClose: () => void;
 }): React.JSX.Element {
   const html = buildResumeDocumentHtml(resumeDocument, style, previewMeta);

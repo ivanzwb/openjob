@@ -44,6 +44,11 @@ export const resume = sqliteTable('resume', {
   parsed: text('parsed', { mode: 'json' }).$type<ResumeParsed>(),
   /** 排版模板等预览样式，JSON 字符串；null 表示用默认模板 */
   previewStyle: text('preview_style'),
+  /**
+   * 寸照，data URL。刻意不放进 raw_text：正文会整份交给模型重排与优化，
+   * 图片进了正文既白烧 token，也会在重排后丢失。
+   */
+  photo: text('photo'),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
 });
@@ -79,6 +84,8 @@ export const resumeVariant = sqliteTable(
     contentMd: text('content_md').notNull(),
     changelogMd: text('changelog_md').default('').notNull(),
     previewStyle: text('preview_style'),
+    /** 寸照 data URL，生成时继承母版 */
+    photo: text('photo'),
     isUserEdited: integer('is_user_edited', { mode: 'boolean' }).notNull().default(false),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),

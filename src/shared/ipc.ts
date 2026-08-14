@@ -317,6 +317,8 @@ export interface UpdateResumeInput {
   label?: string;
   rawText?: string;
   previewStyle?: string;
+  /** 寸照 data URL；null 表示移除照片，不传表示不动 */
+  photo?: string | null;
 }
 
 export interface CreateJobTargetInput {
@@ -342,6 +344,7 @@ export interface ResumeVariantView {
   contentMd: string;
   changelogMd: string;
   previewStyle: string | null;
+  photo: string | null;
   isUserEdited: boolean;
   createdAt: number;
   updatedAt: number;
@@ -357,6 +360,8 @@ export interface UpdateResumeVariantInput {
   contentMd?: string;
   changelogMd?: string;
   previewStyle?: string;
+  /** 寸照 data URL；null 表示移除照片，不传表示不动 */
+  photo?: string | null;
 }
 
 /**
@@ -370,6 +375,8 @@ export interface ResumeExportInput {
   previewStyle: string;
   headline: string;
   subtitle?: string;
+  /** 寸照 data URL，导出与预览用同一张 */
+  photo?: string | null;
 }
 
 export interface ResumeExportResult {

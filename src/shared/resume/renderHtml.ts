@@ -110,6 +110,12 @@ function renderInfoGrid(fields: InfoField[]): string {
   return `<div class="info-grid">${renderInfoItems(fields)}</div>`;
 }
 
+/** 只认内嵌图片：别的协议一律当没照片，渲染出去的 HTML 会进 PDF 和预览 iframe */
+function photoSrc(photo: string | null | undefined): string | null {
+  const src = photo?.trim();
+  return src && /^data:image\//i.test(src) ? escapeHtml(src) : null;
+}
+
 function renderRichBody(md: string): string {
   const lines = md.split('\n');
   const out: string[] = [];
@@ -213,6 +219,16 @@ function baseCss(): string {
   .info-item { display: flex; gap: 10px; font-size: 12.5px; line-height: 1.7; }
   .info-label { color: #6b7280; flex: 0 0 66px; }
   .info-value { color: #374151; }
+  /* 寸照 35×49mm 的比例，抬头右侧固定一栏 */
+  .doc-head-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
+  .doc-head-main { flex: 1; min-width: 0; }
+  .doc-photo { flex: 0 0 auto; width: 84px; height: 118px; object-fit: cover; border-radius: 2px; }
+  /* 居中版式配一个等宽占位，标题才不会被照片挤偏 */
+  .doc-photo-spacer { flex: 0 0 84px; }
+  .banner-photo {
+    flex: 0 0 auto; width: 76px; height: 106px; object-fit: cover;
+    border-radius: 2px; border: 1px solid rgba(255, 255, 255, 0.55);
+  }
 `;
 }
 
@@ -338,6 +354,8 @@ export function buildResumeDocumentHtml(
   meta?: {
     headline?: string;
     subtitle?: string;
+    /** 寸照 data URL，只在抬头出现 */
+    photo?: string | null;
     /** 手机 WebView 预览用：按纸张宽度布局再整体缩放到屏幕宽 */
     viewportWidth?: number;
   },
@@ -353,6 +371,7 @@ export function buildResumeDocumentHtml(
   );
 
   const headerKind = HEADER_KIND[template];
+  const photo = photoSrc(meta?.photo);
   const header =
     headerKind === 'band'
       ? `
@@ -362,12 +381,19 @@ export function buildResumeDocumentHtml(
         ${tagline ? `<p class="banner-role">${inline(tagline)}</p>` : ''}
       </div>
       <div class="banner-fields">${renderInfoItems(infoFields)}</div>
+      ${photo ? `<img class="banner-photo" src="${photo}" alt="" />` : ''}
     </header>
     ${template === 'navy' ? '<div class="band-rule"></div>' : ''}`
       : `
     <header class="doc-head">
-      <h1>${inline(name)}</h1>
-      ${tagline ? `<p class="doc-sub">${inline(tagline)}</p>` : ''}
+      <div class="doc-head-row">
+        ${photo && headerKind === 'centered' ? '<span class="doc-photo-spacer"></span>' : ''}
+        <div class="doc-head-main">
+          <h1>${inline(name)}</h1>
+          ${tagline ? `<p class="doc-sub">${inline(tagline)}</p>` : ''}
+        </div>
+        ${photo ? `<img class="doc-photo" src="${photo}" alt="" />` : ''}
+      </div>
       <div class="doc-rule"></div>
     </header>`;
 

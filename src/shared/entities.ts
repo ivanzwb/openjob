@@ -50,6 +50,8 @@ export interface Resume {
   parsed: ResumeParsed | null;
   /** 排版模板等预览样式，JSON 字符串；null 表示用默认模板 */
   previewStyle: string | null;
+  /** 寸照，data URL；null 表示没放照片 */
+  photo: string | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
@@ -73,6 +75,8 @@ export interface ResumeVariant {
   contentMd: string;
   changelogMd: string;
   previewStyle: string | null;
+  /** 寸照，data URL；生成时继承母版 */
+  photo: string | null;
   isUserEdited: boolean;
   createdAt: Timestamp;
   updatedAt: Timestamp;

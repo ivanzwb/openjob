@@ -94,6 +94,7 @@ export function getResume(db: SQLiteDatabase, resumeId: string): Resume {
     raw_text: string;
     parsed: string | null;
     preview_style: string | null;
+    photo: string | null;
     created_at: number;
     updated_at: number;
   }>(`SELECT * FROM resume WHERE id = ?`, resumeId);
@@ -104,6 +105,7 @@ export function getResume(db: SQLiteDatabase, resumeId: string): Resume {
     rawText: row.raw_text,
     parsed: row.parsed ? (JSON.parse(row.parsed) as Resume['parsed']) : null,
     previewStyle: row.preview_style ?? null,
+    photo: row.photo ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

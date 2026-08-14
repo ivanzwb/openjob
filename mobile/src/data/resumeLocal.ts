@@ -20,6 +20,8 @@ export interface ResumeEntry {
   subtitle: string;
   contentMd: string;
   previewStyle: string | null;
+  /** 寸照 data URL，手机端只显示，上传与更换在桌面端 */
+  photo: string | null;
   updatedAt: number;
   /** 导出 PDF 时的抬头 */
   headline: string;
@@ -32,6 +34,7 @@ interface ResumeRow {
   label: string;
   raw_text: string;
   preview_style: string | null;
+  photo: string | null;
   updated_at: number;
 }
 
@@ -40,6 +43,7 @@ interface VariantRow {
   label: string;
   content_md: string;
   preview_style: string | null;
+  photo: string | null;
   updated_at: number;
   company: string | null;
   role_title: string | null;
@@ -52,10 +56,10 @@ function formatUpdatedAt(ts: number): string {
 
 export function listResumeEntries(db: SQLiteDatabase): ResumeEntry[] {
   const resumes = db.getAllSync<ResumeRow>(
-    `SELECT id, label, raw_text, preview_style, updated_at FROM resume`,
+    `SELECT id, label, raw_text, preview_style, photo, updated_at FROM resume`,
   );
   const variants = db.getAllSync<VariantRow>(
-    `SELECT v.id, v.label, v.content_md, v.preview_style, v.updated_at,
+    `SELECT v.id, v.label, v.content_md, v.preview_style, v.photo, v.updated_at,
             t.company AS company, t.role_title AS role_title, r.label AS source_label
        FROM resume_variant v
        LEFT JOIN job_target t ON t.id = v.job_target_id
@@ -69,6 +73,7 @@ export function listResumeEntries(db: SQLiteDatabase): ResumeEntry[] {
     subtitle: `母版 · 更新于 ${formatUpdatedAt(row.updated_at)}`,
     contentMd: row.raw_text,
     previewStyle: row.preview_style,
+    photo: row.photo,
     updatedAt: row.updated_at,
     headline: row.label,
     fileStem: row.label || '母版',
@@ -83,6 +88,7 @@ export function listResumeEntries(db: SQLiteDatabase): ResumeEntry[] {
       subtitle: row.source_label ? `源自 ${row.source_label}` : '母版已删除',
       contentMd: row.content_md,
       previewStyle: row.preview_style,
+      photo: row.photo,
       updatedAt: row.updated_at,
       headline: row.label,
       fileStem: target || row.label || '优化版',

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ResumeSection, ResumeSectionKey } from '@shared/resume/document';
+import { ResumePhotoField } from './ResumePhotoField';
 import { useTask, useTaskResult } from '../ipc/taskStore';
 import type { SectionEntry, SectionField } from '@shared/resume/sectionModel';
 import {
@@ -556,17 +557,29 @@ export function ResumeSectionForm({
   section,
   polish,
   taskKeyPrefix,
+  photo,
+  onPhotoChange,
   onContentChange,
 }: {
   section: ResumeSection;
   polish?: SectionPolish;
   /** 优化任务 key 的前缀，由上层按简历给出 */
   taskKeyPrefix: string;
+  /** 寸照存在简历行上而不是正文里，所以和模块内容分开传 */
+  photo?: string | null;
+  onPhotoChange?: (photo: string | null) => void;
   onContentChange: (contentMd: string) => void;
 }): React.JSX.Element {
   switch (formKindForSection(section.key)) {
     case 'fields':
-      return <FieldsForm section={section} onContentChange={onContentChange} />;
+      return (
+        <div className="space-y-4">
+          {section.key === 'basic' && onPhotoChange && (
+            <ResumePhotoField photo={photo ?? null} onChange={onPhotoChange} />
+          )}
+          <FieldsForm section={section} onContentChange={onContentChange} />
+        </div>
+      );
     case 'bullets':
       return <BulletsForm section={section} onContentChange={onContentChange} />;
     case 'entries':

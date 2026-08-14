@@ -15,6 +15,7 @@ function rowToVariant(row: typeof schema.resumeVariant.$inferSelect): ResumeVari
     contentMd: row.contentMd,
     changelogMd: row.changelogMd,
     previewStyle: row.previewStyle ?? null,
+    photo: row.photo ?? null,
     isUserEdited: row.isUserEdited,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -93,6 +94,10 @@ export function createResumeVariantRecord(
 ): ResumeVariantView {
   const db = getDb();
   const now = Date.now();
+  // 优化版只重写文字：模板与寸照跟着母版走，用户不用每次生成后重新挑一遍
+  const source = sourceResumeId
+    ? db.select().from(schema.resume).where(eq(schema.resume.id, sourceResumeId)).get()
+    : undefined;
   const row = {
     id: randomUUID(),
     sourceResumeId,
@@ -100,6 +105,8 @@ export function createResumeVariantRecord(
     label: label.trim(),
     contentMd,
     changelogMd,
+    previewStyle: source?.previewStyle ?? null,
+    photo: source?.photo ?? null,
     isUserEdited,
     createdAt: now,
     updatedAt: now,
@@ -124,8 +131,9 @@ export function updateResumeVariant(input: UpdateResumeVariantInput): ResumeVari
       contentMd: input.contentMd?.trim() ?? existing.contentMd,
       changelogMd: input.changelogMd ?? existing.changelogMd,
       previewStyle: input.previewStyle !== undefined ? input.previewStyle : existing.previewStyle,
+      photo: input.photo !== undefined ? input.photo : existing.photo,
       isUserEdited:
-        input.contentMd !== undefined || input.previewStyle !== undefined
+        input.contentMd !== undefined || input.previewStyle !== undefined || input.photo !== undefined
           ? true
           : existing.isUserEdited,
       updatedAt: now,

@@ -44,7 +44,7 @@ export function ResumePreviewModal({
   resumeDocument: ResumeDocument;
   style: ResumePreviewStyle;
   onStyleChange: (style: ResumePreviewStyle) => void;
-  meta: { headline: string; subtitle?: string };
+  meta: { headline: string; subtitle?: string; photo?: string | null };
   fileStem: string;
   /** 导出任务标识，关掉预览再打开仍能看到还在导出 */
   taskKey: string;

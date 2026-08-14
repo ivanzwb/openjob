@@ -85,6 +85,13 @@
       "when": 1786970000000,
       "tag": "0011_resume_variant_source_optional",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1787050000000,
+      "tag": "0012_resume_photo",
+      "breakpoints": true
     }
   ]
 }

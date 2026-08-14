@@ -11,6 +11,8 @@ import type { SectionPolishRequest } from './ResumeSectionForm';
 export function ResumeDocumentEditor({
   document,
   activeSectionIndex,
+  photo,
+  onPhotoChange,
   onDocumentChange,
   onActiveSectionChange,
   onPolish,
@@ -19,6 +21,9 @@ export function ResumeDocumentEditor({
 }: {
   document: ResumeDocument;
   activeSectionIndex: number;
+  /** 寸照挂在简历行上，不进正文，所以单独传给「基本信息」模块 */
+  photo: string | null;
+  onPhotoChange: (photo: string | null) => void;
   onDocumentChange: (doc: ResumeDocument) => void;
   onActiveSectionChange: (index: number) => void;
   /** 大文本框上的「AI 优化」，由上层带整份简历上下文去请求模型 */
@@ -86,6 +91,8 @@ export function ResumeDocumentEditor({
               onPolish ? (req) => onPolish({ ...req, sectionKey: activeSection.key }) : undefined
             }
             taskKeyPrefix={polishTaskKeyPrefix}
+            photo={photo}
+            onPhotoChange={onPhotoChange}
             onContentChange={updateContent}
           />
         </div>

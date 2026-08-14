@@ -13,7 +13,7 @@ const THUMB_WIDTH = 186;
 const THUMB_SCALE = THUMB_WIDTH / PAGE_WIDTH;
 const THUMB_HEIGHT = Math.round(PAGE_HEIGHT * THUMB_SCALE);
 
-type PreviewMeta = { headline?: string; subtitle?: string };
+type PreviewMeta = { headline?: string; subtitle?: string; photo?: string | null };
 
 /** 缩略图直接用当前简历渲染，所见即所得，不会和模板本体走偏 */
 function TemplateThumb({
