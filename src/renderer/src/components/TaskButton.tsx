@@ -17,7 +17,8 @@ export function TaskButton({
   taskKey: string;
   onClick: () => void;
   className: string;
-  runningLabel: string;
+  /** 跑起来后顶替内容：带文字的按钮给「删除中…」，纯图标按钮给 `<Spinner />` */
+  runningLabel: ReactNode;
   disabled?: boolean;
   title?: string;
   children: ReactNode;
@@ -27,6 +28,7 @@ export function TaskButton({
     <button
       type="button"
       title={title}
+      aria-label={title}
       disabled={running || disabled}
       onClick={onClick}
       className={className}

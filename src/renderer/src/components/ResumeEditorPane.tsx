@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Eye, FileDown, ScanText } from 'lucide-react';
 import { documentToMarkdown, parseMarkdownToDocument } from '@shared/resume/document';
 import type { ResumeDocument, ResumeSectionKey } from '@shared/resume/document';
 import { parsePreviewStyle, serializePreviewStyle } from '@shared/resume/previewStyle';
@@ -248,8 +249,9 @@ export function ResumeEditorPane({
             disabled={structuring}
             title="内容归类不对时，用模型重新分到各模块；只归类不改写"
             onClick={aiStructure}
-            className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm disabled:opacity-40"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm disabled:opacity-40"
           >
+            <ScanText size={15} aria-hidden />
             {structuring ? '识别中…' : 'AI 识别'}
           </button>
           <ResumeTemplatePicker
@@ -261,16 +263,18 @@ export function ResumeEditorPane({
           <button
             type="button"
             onClick={() => setPreviewOpen(true)}
-            className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm"
           >
+            <Eye size={15} aria-hidden />
             预览
           </button>
           <TaskButton
             taskKey={exportKey}
             onClick={exportPdf}
             runningLabel="导出中…"
-            className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm disabled:opacity-40"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm disabled:opacity-40"
           >
+            <FileDown size={15} aria-hidden />
             导出 PDF
           </TaskButton>
         </div>

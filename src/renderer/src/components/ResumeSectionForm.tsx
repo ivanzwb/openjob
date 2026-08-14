@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
+import { ChevronDown, ChevronUp, Plus, Sparkles, Trash2, Undo2 } from 'lucide-react';
 import type { ResumeSection, ResumeSectionKey } from '@shared/resume/document';
+import { IconButton } from './IconButton';
 import { ResumePhotoField } from './ResumePhotoField';
 import { useTask, useTaskResult } from '../ipc/taskStore';
 import type { FieldSpec, SectionEntry, SectionField } from '@shared/resume/sectionModel';
@@ -23,9 +25,9 @@ const INPUT =
   'w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2.5 py-1.5 text-sm';
 const FIELD_LABEL = 'mb-1 block text-xs text-[var(--color-muted)]';
 const GHOST_BTN =
-  'shrink-0 whitespace-nowrap rounded border border-[var(--color-border)] px-2 py-1 text-xs text-[var(--color-muted)] hover:text-[var(--color-fg)] disabled:opacity-40';
+  'inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded border border-[var(--color-border)] px-2 py-1 text-xs text-[var(--color-muted)] hover:text-[var(--color-fg)] disabled:opacity-40';
 const ADD_BTN =
-  'whitespace-nowrap rounded-lg border border-dashed border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-muted)] hover:border-[var(--color-accent)] hover:text-[var(--color-fg)]';
+  'inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-dashed border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-muted)] hover:border-[var(--color-accent)] hover:text-[var(--color-fg)]';
 
 const ENTRY_LABELS: Record<string, { org: string; role: string; title: string }> = {
   experience: { org: '公司名称', role: '岗位', title: '工作经历' },
@@ -311,6 +313,7 @@ function PolishTextarea({
                   setUndoValue(null);
                 }}
               >
+                <Undo2 size={13} aria-hidden />
                 撤销优化
               </button>
             )}
@@ -321,6 +324,7 @@ function PolishTextarea({
               title="基于整份简历和你的要求优化这一块内容"
               onClick={() => setOpen((v) => !v)}
             >
+              <Sparkles size={13} aria-hidden />
               {busy ? '优化中…' : 'AI 优化'}
             </button>
           </div>
@@ -422,13 +426,12 @@ function FieldsForm({
                   />
                 </div>
                 {!isPreset && (
-                  <button
-                    type="button"
-                    className={GHOST_BTN}
+                  <IconButton
+                    icon={Trash2}
+                    label="删除字段"
+                    tone="danger"
                     onClick={() => apply(rows.filter((_, i) => i !== index))}
-                  >
-                    删除
-                  </button>
+                  />
                 )}
               </div>
             </div>
@@ -440,7 +443,8 @@ function FieldsForm({
         className={ADD_BTN}
         onClick={() => apply([...rows, { label: '', value: '' }])}
       >
-        + 添加自定义字段
+        <Plus size={14} aria-hidden />
+        添加自定义字段
       </button>
       <p className="text-xs text-[var(--color-muted)]">留空的字段不会出现在预览与导出的 PDF 中。</p>
     </div>
@@ -478,37 +482,34 @@ function BulletsForm({
             placeholder="一条一句，突出成果与量化数据"
             className={`${INPUT} resize-y leading-relaxed`}
           />
-          <div className="flex shrink-0 flex-col gap-1">
-            <div className="flex gap-1">
-              <button
-                type="button"
-                className={GHOST_BTN}
-                disabled={index === 0}
-                onClick={() => apply(move(items, index, -1))}
-              >
-                ↑
-              </button>
-              <button
-                type="button"
-                className={GHOST_BTN}
-                disabled={index === items.length - 1}
-                onClick={() => apply(move(items, index, 1))}
-              >
-                ↓
-              </button>
-            </div>
-            <button
-              type="button"
-              className={GHOST_BTN}
+          <div className="flex shrink-0 items-center gap-0.5">
+            <IconButton
+              icon={ChevronUp}
+              label="上移"
+              size="sm"
+              disabled={index === 0}
+              onClick={() => apply(move(items, index, -1))}
+            />
+            <IconButton
+              icon={ChevronDown}
+              label="下移"
+              size="sm"
+              disabled={index === items.length - 1}
+              onClick={() => apply(move(items, index, 1))}
+            />
+            <IconButton
+              icon={Trash2}
+              label="删除这一条"
+              size="sm"
+              tone="danger"
               onClick={() => apply(items.filter((_, i) => i !== index))}
-            >
-              删除
-            </button>
+            />
           </div>
         </div>
       ))}
       <button type="button" className={ADD_BTN} onClick={() => apply([...items, ''])}>
-        + 添加一条
+        <Plus size={14} aria-hidden />
+        添加一条
       </button>
     </div>
   );
@@ -545,26 +546,28 @@ function EntryCard({
         <span className="text-xs font-medium text-[var(--color-muted)]">
           {labels.title} {index + 1}
         </span>
-        <div className="flex gap-1">
-          <button
-            type="button"
-            className={GHOST_BTN}
+        <div className="flex items-center gap-0.5">
+          <IconButton
+            icon={ChevronUp}
+            label={`上移${labels.title}`}
+            size="sm"
             disabled={index === 0}
             onClick={() => onMove(-1)}
-          >
-            ↑
-          </button>
-          <button
-            type="button"
-            className={GHOST_BTN}
+          />
+          <IconButton
+            icon={ChevronDown}
+            label={`下移${labels.title}`}
+            size="sm"
             disabled={index === total - 1}
             onClick={() => onMove(1)}
-          >
-            ↓
-          </button>
-          <button type="button" className={`${GHOST_BTN} text-red-400`} onClick={onRemove}>
-            删除
-          </button>
+          />
+          <IconButton
+            icon={Trash2}
+            label={`删除这段${labels.title}`}
+            size="sm"
+            tone="danger"
+            onClick={onRemove}
+          />
         </div>
       </div>
 
@@ -691,7 +694,8 @@ function EntriesForm({
         className={ADD_BTN}
         onClick={() => apply([...entries, createEmptyEntry()])}
       >
-        + 添加{labels.title}
+        <Plus size={14} aria-hidden />
+        添加{labels.title}
       </button>
     </div>
   );

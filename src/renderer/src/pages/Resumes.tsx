@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Plus, Trash2 } from 'lucide-react';
 import type { JobTarget, Resume } from '@shared/entities';
 import type { ResumeVariantView } from '@shared/ipc';
 import type { ResumeEditorSavePayload } from '../components/ResumeEditorPane';
 import { ResumeEditorPane } from '../components/ResumeEditorPane';
 import { PageShell } from '../components/PageShell';
+import { Spinner } from '../components/Spinner';
 import { TaskButton } from '../components/TaskButton';
 import { invoke } from '../ipc';
 import { runTask, useTask, useTaskResult } from '../ipc/taskStore';
@@ -455,8 +457,9 @@ export function Resumes(): React.JSX.Element {
               <button
                 type="button"
                 onClick={openNewTargetForm}
-                className="rounded-lg bg-[var(--color-accent)] px-2.5 py-1 text-xs font-medium text-white"
+                className="inline-flex items-center gap-1 rounded-lg bg-[var(--color-accent)] px-2.5 py-1 text-xs font-medium text-white"
               >
+                <Plus size={13} aria-hidden />
                 新建岗位
               </button>
             </div>
@@ -484,11 +487,11 @@ export function Resumes(): React.JSX.Element {
                     <TaskButton
                       taskKey={`jobTarget:delete:${t.id}`}
                       onClick={() => deleteTarget(t.id)}
-                      runningLabel="删除中…"
-                      title="删除"
-                      className="absolute right-2 top-2 rounded px-1.5 py-0.5 text-xs text-[var(--color-muted)] transition-colors hover:text-red-400"
+                      runningLabel={<Spinner />}
+                      title="删除岗位"
+                      className="absolute right-2 top-2 rounded p-1 text-[var(--color-muted)] transition-colors hover:bg-red-500/10 hover:text-red-400 disabled:opacity-40"
                     >
-                      删除
+                      <Trash2 size={14} aria-hidden />
                     </TaskButton>
                   </div>
                 ))
@@ -592,8 +595,9 @@ export function Resumes(): React.JSX.Element {
               <button
                 type="button"
                 onClick={openNewResumeForm}
-                className="rounded-lg bg-[var(--color-accent)] px-2.5 py-1 text-xs font-medium text-white"
+                className="inline-flex items-center gap-1 rounded-lg bg-[var(--color-accent)] px-2.5 py-1 text-xs font-medium text-white"
               >
+                <Plus size={13} aria-hidden />
                 新建简历
               </button>
             </div>
@@ -630,11 +634,11 @@ export function Resumes(): React.JSX.Element {
                         onClick={() =>
                           entry.kind === 'variant' ? deleteVariant(entry.id) : deleteResume(entry.id)
                         }
-                        runningLabel="删除中…"
-                        title="删除"
-                        className="absolute right-2 top-2 rounded px-1.5 py-0.5 text-xs text-[var(--color-muted)] transition-colors hover:text-red-400"
+                        runningLabel={<Spinner />}
+                        title="删除简历"
+                        className="absolute right-2 top-2 rounded p-1 text-[var(--color-muted)] transition-colors hover:bg-red-500/10 hover:text-red-400 disabled:opacity-40"
                       >
-                        删除
+                        <Trash2 size={14} aria-hidden />
                       </TaskButton>
                     )}
                   </div>
