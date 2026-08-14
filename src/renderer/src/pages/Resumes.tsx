@@ -463,19 +463,34 @@ export function Resumes(): React.JSX.Element {
                 <p className="px-2 py-3 text-xs text-[var(--color-muted)]">暂无岗位，点击「新建岗位」</p>
               ) : (
                 targets.map((t) => (
-                  <button
+                  <div
                     key={t.id}
-                    type="button"
-                    onClick={() => selectTarget(t.id)}
-                    className={`w-full rounded-lg border p-3 text-left text-sm transition-colors ${
+                    className={`group relative rounded-lg border transition-colors ${
                       selectedTargetId === t.id
                         ? 'border-[var(--color-accent)] bg-[var(--color-surface)]'
                         : 'border-transparent hover:border-[var(--color-border)] hover:bg-[var(--color-surface)]/50'
                     }`}
                   >
-                    <div className="font-medium">{t.company}</div>
-                    <div className="text-xs text-[var(--color-muted)]">{t.roleTitle}</div>
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => selectTarget(t.id)}
+                      className="w-full p-3 pr-10 text-left text-sm"
+                    >
+                      <div className="truncate font-medium">{t.company}</div>
+                      <div className="truncate text-xs text-[var(--color-muted)]">{t.roleTitle}</div>
+                    </button>
+                    <TaskButton
+                      taskKey={`jobTarget:delete:${t.id}`}
+                      onClick={() => deleteTarget(t.id)}
+                      runningLabel="删除中…"
+                      title="删除"
+                      className="absolute right-2 top-2 rounded px-1.5 py-0.5 text-xs text-[var(--color-muted)] transition-opacity hover:text-red-400 focus-visible:opacity-100 group-hover:opacity-100"
+                      // 平时靠悬停显形，删除中要一直看得见进度
+                      idleClassName="opacity-0"
+                    >
+                      删除
+                    </TaskButton>
+                  </div>
                 ))
               )}
             </div>
@@ -547,23 +562,13 @@ export function Resumes(): React.JSX.Element {
                       更新于 {new Date(selectedTarget.updatedAt).toLocaleString()}
                     </p>
                   </div>
-                  <div className="flex shrink-0 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => editTarget(selectedTarget)}
-                      className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm"
-                    >
-                      编辑
-                    </button>
-                    <TaskButton
-                      taskKey={`jobTarget:delete:${selectedTarget.id}`}
-                      onClick={() => deleteTarget(selectedTarget.id)}
-                      runningLabel="删除中…"
-                      className="rounded-lg border border-red-400/50 px-3 py-1.5 text-sm text-red-400 disabled:opacity-40"
-                    >
-                      删除
-                    </TaskButton>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => editTarget(selectedTarget)}
+                    className="shrink-0 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm"
+                  >
+                    编辑
+                  </button>
                 </div>
                 <div className="min-h-0 flex-1 overflow-y-auto p-4">
                   <h4 className="mb-2 text-xs font-medium text-[var(--color-muted)]">岗位 JD</h4>
