@@ -296,7 +296,7 @@ export async function syncNow(options?: { full?: boolean }): Promise<{
   let repoFileMessage: string | undefined;
   if (repoFile.length > 0) {
     const neededBytes = estimateRepoFileBytes(repoFile, sqlite);
-    const freeBytes = await getFreeDiskBytes();
+    const freeBytes = getFreeDiskBytes();
     if (canApplyRepoFileSync(neededBytes, freeBytes)) {
       appliedRemote += applyAutoChanges(sqlite, peer.device_id, repoFile);
       clearRepoFileSyncNotice(sqlite);

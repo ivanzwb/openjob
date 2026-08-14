@@ -1,4 +1,4 @@
-import * as FileSystem from 'expo-file-system';
+import { Paths } from 'expo-file-system';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import type { AutoChange } from '@shared/sync';
 
@@ -55,8 +55,9 @@ export function estimateRepoFileBytes(changes: AutoChange[], sqlite?: SQLiteData
   return total;
 }
 
-export async function getFreeDiskBytes(): Promise<number> {
-  return FileSystem.getFreeDiskStorageAsync();
+/** SDK 57 起可用空间是同步属性，老的 getFreeDiskStorageAsync 会在运行时直接抛错 */
+export function getFreeDiskBytes(): number {
+  return Paths.availableDiskSpace;
 }
 
 export function canApplyRepoFileSync(neededBytes: number, freeBytes: number): boolean {
