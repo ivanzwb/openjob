@@ -615,6 +615,8 @@ export interface ExplainGetInput {
 export interface ExplainGenerateInput {
   nodeId: string;
   tier: ExplanationTier;
+  /** 重新生成时用户临时提的要求，一次性的，不落库 */
+  instruction?: string;
 }
 
 export interface ExplainUpdateInput {
@@ -942,7 +944,7 @@ export interface IpcInvokeMap {
 
   'explain:get': { req: ExplainGetInput; res: Explanation | null };
   'explain:generate': { req: ExplainGenerateInput; res: Explanation };
-  'explain:fallback': { req: { nodeId: string }; res: Explanation };
+  'explain:fallback': { req: { nodeId: string; instruction?: string }; res: Explanation };
   'explain:update': { req: ExplainUpdateInput; res: Explanation };
   'explain:elaborate': { req: ExplainElaborateInput; res: ExplainElaborateResult };
   'explain:rewrite': { req: ExplainRewriteInput; res: ExplainRewriteResult };

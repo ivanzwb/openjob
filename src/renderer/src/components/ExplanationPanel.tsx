@@ -293,11 +293,16 @@ export function ExplanationPanel({
   const [noteDraft, setNoteDraft] = useState('');
   const [highlightColor, setHighlightColor] = useState(DEFAULT_HIGHLIGHT_COLOR);
   const [focusMarkId, setFocusMarkId] = useState<string | null>(null);
+  const [regenerateOpen, setRegenerateOpen] = useState(false);
+  const [regenerateInstruction, setRegenerateInstruction] = useState('');
   const bodyRef = useRef<HTMLDivElement>(null);
   const selectionRef = useRef<SelectionAnchor | null>(null);
   const toast = useToast();
 
   const activeTier = fallbackMode ? 'oneliner' : tier;
+  const regenerateTargetLabel = fallbackMode
+    ? '兜底话术'
+    : (TIERS.find((t) => t.id === activeTier)?.label ?? activeTier);
 
   /**
    * 讲解生成与划词动作都记在按考点取的任务 key 上。
@@ -495,17 +500,14 @@ export function ExplanationPanel({
   };
 
   const regenerateFull = (): void => {
-    const tierLabel = TIERS.find((t) => t.id === activeTier)?.label ?? activeTier;
-    const message = isUserEdited
-      ? `你已手动修改过讲解。重新生成将覆盖当前「${tierLabel}」内容，确定继续？`
-      : `重新生成将覆盖当前「${tierLabel}」讲解内容，确定继续？`;
-    if (!confirm(message)) return;
-
+    const instruction = regenerateInstruction.trim();
+    setRegenerateOpen(false);
+    setRegenerateInstruction('');
     clearSelection();
     void runTask(regenerateKey, () =>
       fallbackMode
-        ? invoke('explain:fallback', { nodeId })
-        : invoke('explain:generate', { nodeId, tier: activeTier }),
+        ? invoke('explain:fallback', { nodeId, instruction })
+        : invoke('explain:generate', { nodeId, tier: activeTier, instruction }),
     ).catch(() => undefined);
   };
 
@@ -660,13 +662,50 @@ export function ExplanationPanel({
                 <button
                   type="button"
                   disabled={regenerating}
-                  onClick={regenerateFull}
+                  onClick={() => setRegenerateOpen((v) => !v)}
                   className={toolbarBtn}
                 >
                   {regenerating ? '重新生成中…' : '重新生成'}
                 </button>
               </div>
             </div>
+
+            {regenerateOpen && (
+              <div className="space-y-2 border-t border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-2">
+                <p className="text-xs text-[var(--color-muted)]">
+                  {isUserEdited
+                    ? `你手动修改过这份讲解，重新生成会覆盖当前「${regenerateTargetLabel}」的内容。`
+                    : `重新生成会覆盖当前「${regenerateTargetLabel}」的内容。`}
+                </p>
+                <input
+                  value={regenerateInstruction}
+                  autoFocus
+                  onChange={(e) => setRegenerateInstruction(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') regenerateFull();
+                    if (e.key === 'Escape') setRegenerateOpen(false);
+                  }}
+                  placeholder="这次想怎么讲？如：多用我简历里的项目举例、少讲源码细节、重点讲 GC（可留空）"
+                  className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2.5 py-1.5 text-sm"
+                />
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={regenerating}
+                    onClick={regenerateFull}
+                    className="rounded-lg bg-[var(--color-accent)] px-3 py-1.5 text-xs text-white disabled:opacity-40"
+                  >
+                    {regenerating ? '重新生成中…' : '重新生成'}
+                  </button>
+                  <button type="button" onClick={() => setRegenerateOpen(false)} className={toolbarBtn}>
+                    取消
+                  </button>
+                  <span className="text-xs text-[var(--color-muted)]">
+                    留空就按原来的要求重写；要求只作用于这一次
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="relative min-h-0 flex-1 overflow-y-auto p-4">

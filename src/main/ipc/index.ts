@@ -260,8 +260,12 @@ export function registerIpcHandlers(): void {
   });
 
   handle('explain:get', ({ nodeId, tier }) => getExplanation(nodeId, tier));
-  handle('explain:generate', ({ nodeId, tier }) => generateExplanation(nodeId, tier));
-  handle('explain:fallback', ({ nodeId }) => generateFallbackScript(nodeId));
+  handle('explain:generate', ({ nodeId, tier, instruction }) =>
+    generateExplanation(nodeId, tier, instruction),
+  );
+  handle('explain:fallback', ({ nodeId, instruction }) =>
+    generateFallbackScript(nodeId, instruction),
+  );
   handle('explain:update', ({ id, contentMd }) => updateExplanation(id, contentMd));
   handle('explain:elaborate', ({ nodeId, tier, selectedText, contextMd }) =>
     elaborateExplanationSelection(nodeId, tier, selectedText, contextMd),

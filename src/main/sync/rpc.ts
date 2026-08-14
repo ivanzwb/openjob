@@ -152,9 +152,12 @@ const RPC_HANDLERS: Partial<Record<IpcInvokeChannel, RpcHandler>> = {
   },
   'explain:generate': (p) => {
     const input = p as IpcReq<'explain:generate'>;
-    return generateExplanation(input.nodeId, input.tier);
+    return generateExplanation(input.nodeId, input.tier, input.instruction);
   },
-  'explain:fallback': (p) => generateFallbackScript((p as { nodeId: string }).nodeId),
+  'explain:fallback': (p) => {
+    const input = p as IpcReq<'explain:fallback'>;
+    return generateFallbackScript(input.nodeId, input.instruction);
+  },
   'explain:update': (p) => {
     const input = p as IpcReq<'explain:update'>;
     return updateExplanation(input.id, input.contentMd);

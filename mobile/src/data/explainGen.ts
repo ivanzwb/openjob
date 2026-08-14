@@ -2,6 +2,7 @@ import * as Crypto from 'expo-crypto';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import type { Explanation } from '@shared/entities';
 import type { ExplanationTier } from '@shared/enums';
+import { userRequestBlock } from '@shared/explain/prompt';
 import { completeJson } from '../llm/json';
 import { resolveLlmRole } from '../llm/resolve';
 import { buildResumeContext, getCampaign, getKnowledgeNode } from './campaignLocal';
@@ -40,6 +41,7 @@ export async function generateExplanation(
   db: SQLiteDatabase,
   nodeId: string,
   tier: ExplanationTier,
+  instruction?: string,
 ): Promise<Explanation> {
   const node = getKnowledgeNode(db, nodeId);
   const campaign = getCampaign(db, node.campaignId);
@@ -52,6 +54,7 @@ export async function generateExplanation(
 档位要求：${TIER_GUIDE[tier]}
 ${EXPLAIN_TEMPLATE}
 ${RESUME_ALIGN_RULES}
+${userRequestBlock(instruction)}
 输出 JSON：{ "markdown": "..." }`,
     `公司：${campaign.company}
 岗位：${campaign.roleTitle}
@@ -107,6 +110,7 @@ ${resumeContext}`,
 export async function generateFallbackScript(
   db: SQLiteDatabase,
   nodeId: string,
+  instruction?: string,
 ): Promise<Explanation> {
   const node = getKnowledgeNode(db, nodeId);
   const campaign = getCampaign(db, node.campaignId);
@@ -117,6 +121,7 @@ export async function generateFallbackScript(
     'explain',
     `写一段 30 秒兜底口语稿。被问到不熟的知识点时不露怯，能说出框架和学习态度。
 不要装懂，但要体面。若简历有相关邻近经历可轻量提及。
+${userRequestBlock(instruction)}
 输出 JSON：{ "markdown": "..." }`,
     `公司：${campaign.company} 岗位：${campaign.roleTitle} 考点：${node.name}
 

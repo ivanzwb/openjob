@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import type { Explanation } from '@shared/entities';
 import type { ExplanationTier } from '@shared/enums';
+import { userRequestBlock } from '@shared/explain/prompt';
 import { completeJson } from '../llm/json';
 import { resolveLlmRole } from '../config';
 import { getDb, schema } from '../db';
@@ -78,6 +79,7 @@ export function getExplanation(nodeId: string, tier: ExplanationTier): Explanati
 export async function generateExplanation(
   nodeId: string,
   tier: ExplanationTier,
+  instruction?: string,
 ): Promise<Explanation> {
   const db = getDb();
   const nodeRow = db
@@ -98,6 +100,7 @@ export async function generateExplanation(
 档位要求：${TIER_GUIDE[tier]}
 ${EXPLAIN_TEMPLATE}
 ${RESUME_ALIGN_RULES}
+${userRequestBlock(instruction)}
 输出 JSON：{ "markdown": "..." }`,
     `公司：${campaign.company}
 岗位：${campaign.roleTitle}
@@ -144,7 +147,10 @@ ${resumeContext}`,
 }
 
 /** 兜底话术：30 秒能说完，不求深度 */
-export async function generateFallbackScript(nodeId: string): Promise<Explanation> {
+export async function generateFallbackScript(
+  nodeId: string,
+  instruction?: string,
+): Promise<Explanation> {
   const db = getDb();
   const nodeRow = db
     .select()
@@ -162,6 +168,7 @@ export async function generateFallbackScript(nodeId: string): Promise<Explanatio
     'explain',
     `写一段 30 秒兜底口语稿。被问到不熟的知识点时不露怯，能说出框架和学习态度。
 不要装懂，但要体面。若简历有相关邻近经历可轻量提及。
+${userRequestBlock(instruction)}
 输出 JSON：{ "markdown": "..." }`,
     `公司：${campaign.company} 岗位：${campaign.roleTitle} 考点：${node.name}
 
