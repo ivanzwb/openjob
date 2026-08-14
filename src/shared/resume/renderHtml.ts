@@ -186,7 +186,15 @@ function renderRichBody(md: string): string {
 
 function baseCss(): string {
   return `
-  @page { size: A4; margin: 0; }
+  /*
+   * 第 2 页起的上下留白只能由 @page 给：.resume-body 的 padding 是整块内容的内边距，
+   * 分页后只在正文首尾各生效一次，续页会直接贴到纸张顶端。
+   * 左右仍为 0，横向留白由 .resume-body 的 48px 提供，顶栏色块才能出血到纸张左右边缘。
+   * 实测 Electron printToPDF 里 @page 的 margin 优先于 options.margins。
+   */
+  @page { size: A4; margin: 14mm 0; }
+  /* 首页顶端归零：banner 版式要出血到纸张上沿，doc-head 版式自带 40px 上内边距 */
+  @page :first { margin-top: 0; }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: #fff; }
   body {
@@ -228,6 +236,10 @@ function baseCss(): string {
   .banner-photo {
     flex: 0 0 auto; width: 76px; height: 106px; object-fit: cover;
     border-radius: 2px; border: 1px solid rgba(255, 255, 255, 0.55);
+  }
+  @media print {
+    /* 末页底部留白已由 @page 提供，这里再留 44px 会叠成双份；预览是非分页的，保持原样 */
+    .resume-body { padding-bottom: 0; }
   }
 `;
 }

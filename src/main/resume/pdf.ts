@@ -22,7 +22,8 @@ export async function writeResumePdf(html: string, filePath: string): Promise<vo
     const pdf = await win.webContents.printToPDF({
       printBackground: true,
       pageSize: 'A4',
-      // 页边距由模板 CSS 控制，顶栏色块才能出血到纸张边缘
+      // 实测这里的 margins 只在 CSS 没写 @page margin 时才生效；页边距一律交给模板 CSS 的
+      // @page 决定，续页才能有上下留白、首页顶栏色块才能出血到纸张边缘。归零是兜底。
       margins: { top: 0, bottom: 0, left: 0, right: 0 },
     });
     writeFileSync(filePath, pdf);
