@@ -2,7 +2,7 @@ import { useCallback, useState, type PointerEvent as ReactPointerEvent } from 'r
 
 const MARGIN = 8;
 
-export type ResizablePanelPreset = 'edit' | 'note' | 'highlight' | 'view';
+export type ResizablePanelPreset = 'edit' | 'note' | 'highlight' | 'view' | 'regenerate';
 
 export interface PanelSize {
   width: number;
@@ -27,6 +27,10 @@ const PRESETS: Record<
   },
   view: {
     defaultSize: { width: 420, height: 280 },
+    minSize: { width: 320, height: 200 },
+  },
+  regenerate: {
+    defaultSize: { width: 420, height: 250 },
     minSize: { width: 320, height: 200 },
   },
 };

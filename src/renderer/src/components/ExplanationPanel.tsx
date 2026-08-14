@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import type { Explanation } from '@shared/entities';
 import type { ExplanationTier } from '@shared/enums';
@@ -308,6 +308,119 @@ function SelectionActionPopover({
   );
 }
 
+/** 重新生成的要求：锚在「重新生成」按钮上，和划词那几个动作用同一套弹层 */
+function RegeneratePopover({
+  anchor,
+  triggerRef,
+  targetLabel,
+  isUserEdited,
+  instruction,
+  regenerating,
+  onInstructionChange,
+  onClose,
+  onSubmit,
+}: {
+  anchor: DOMRect;
+  triggerRef: RefObject<HTMLButtonElement | null>;
+  targetLabel: string;
+  isUserEdited: boolean;
+  instruction: string;
+  regenerating: boolean;
+  onInstructionChange: (v: string) => void;
+  onClose: () => void;
+  onSubmit: () => void;
+}): React.JSX.Element {
+  const ref = useRef<HTMLDivElement>(null);
+  const { size, resizeHandleProps } = useResizablePanel('regenerate');
+  const popoverStyle = useAdaptivePopover(ref, anchor, true, {
+    remeasureKey: instruction,
+    resizable: true,
+    panelSize: size,
+  });
+
+  useEffect(() => {
+    const onPointerDown = (e: MouseEvent): void => {
+      if (ref.current?.contains(e.target as Node)) return;
+      // 点「重新生成」本身交给按钮自己收起，否则这里先关、按钮再开，等于点不动
+      if (triggerRef.current?.contains(e.target as Node)) return;
+      onClose();
+    };
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [onClose, triggerRef]);
+
+  return createPortal(
+    <div
+      ref={ref}
+      className="fixed z-[110] rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-xl"
+      style={popoverStyle}
+    >
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <div className="mb-2 flex shrink-0 items-start justify-between gap-2">
+          <p className="text-[10px] font-medium text-[var(--color-muted)]">
+            重新生成「{targetLabel}」
+          </p>
+          <button
+            type="button"
+            onClick={onClose}
+            className="shrink-0 text-[10px] text-[var(--color-muted)] hover:text-[var(--color-fg)]"
+          >
+            关闭
+          </button>
+        </div>
+        <p className="mb-2 shrink-0 text-[10px] text-amber-300/90">
+          {isUserEdited
+            ? '你手动修改过这份讲解，重新生成会覆盖当前内容。'
+            : '重新生成会覆盖当前内容。'}
+        </p>
+        <textarea
+          value={instruction}
+          autoFocus
+          onChange={(e) => onInstructionChange(e.target.value)}
+          onKeyDown={(e) => {
+            // 要求通常就一行，回车直接开跑；真要换行按 Shift+Enter
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              onSubmit();
+            }
+          }}
+          placeholder="这次想怎么讲？如：多用我简历里的项目举例、少讲源码细节、重点讲 GC（可留空）"
+          className="mb-2 box-border min-h-0 w-full flex-1 resize-none rounded border border-[var(--color-border)] bg-[var(--color-bg)] p-2 text-xs leading-relaxed outline-none focus:border-[var(--color-accent)]"
+        />
+        <div className="flex shrink-0 items-center justify-between gap-2">
+          <span className="text-[10px] text-[var(--color-muted)]">
+            留空就按原来的要求重写；要求只作用于这一次
+          </span>
+          <div className="flex shrink-0 gap-2">
+            <button type="button" className={toolbarBtn} onClick={onClose}>
+              取消
+            </button>
+            <button
+              type="button"
+              disabled={regenerating}
+              className="rounded bg-[var(--color-accent)] px-2 py-1 text-xs text-white disabled:opacity-40"
+              onClick={onSubmit}
+            >
+              {regenerating ? '重新生成中…' : '重新生成'}
+            </button>
+          </div>
+        </div>
+        <button type="button" {...resizeHandleProps} aria-label="拖动调整大小">
+          <ResizeHandleGlyph />
+        </button>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 export function ExplanationPanel({
   nodeId,
   nodeName,
@@ -333,9 +446,10 @@ export function ExplanationPanel({
   const [noteDraft, setNoteDraft] = useState('');
   const [highlightColor, setHighlightColor] = useState(DEFAULT_HIGHLIGHT_COLOR);
   const [focusMarkId, setFocusMarkId] = useState<string | null>(null);
-  const [regenerateOpen, setRegenerateOpen] = useState(false);
+  const [regenerateAnchor, setRegenerateAnchor] = useState<DOMRect | null>(null);
   const [regenerateInstruction, setRegenerateInstruction] = useState('');
   const bodyRef = useRef<HTMLDivElement>(null);
+  const regenerateBtnRef = useRef<HTMLButtonElement>(null);
   const selectionRef = useRef<SelectionAnchor | null>(null);
   const toast = useToast();
 
@@ -572,9 +686,25 @@ export function ExplanationPanel({
     return updated;
   };
 
+  const closeRegenerate = useCallback(() => {
+    setRegenerateAnchor(null);
+    setRegenerateInstruction('');
+  }, []);
+
+  const toggleRegenerate = (): void => {
+    if (regenerateAnchor) {
+      closeRegenerate();
+      return;
+    }
+    const rect = regenerateBtnRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    clearSelection();
+    setRegenerateAnchor(rect);
+  };
+
   const regenerateFull = (): void => {
     const instruction = regenerateInstruction.trim();
-    setRegenerateOpen(false);
+    setRegenerateAnchor(null);
     setRegenerateInstruction('');
     clearSelection();
     void runTask(regenerateKey, () =>
@@ -743,9 +873,10 @@ export function ExplanationPanel({
                 )}
                 <span className="mx-0.5 h-4 w-px bg-[var(--color-border)]" />
                 <button
+                  ref={regenerateBtnRef}
                   type="button"
                   disabled={regenerating}
-                  onClick={() => setRegenerateOpen((v) => !v)}
+                  onClick={toggleRegenerate}
                   className={toolbarBtn}
                 >
                   {regenerating ? '重新生成中…' : '重新生成'}
@@ -753,42 +884,6 @@ export function ExplanationPanel({
               </div>
             </div>
 
-            {regenerateOpen && (
-              <div className="space-y-2 border-t border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-2">
-                <p className="text-xs text-[var(--color-muted)]">
-                  {isUserEdited
-                    ? `你手动修改过这份讲解，重新生成会覆盖当前「${regenerateTargetLabel}」的内容。`
-                    : `重新生成会覆盖当前「${regenerateTargetLabel}」的内容。`}
-                </p>
-                <input
-                  value={regenerateInstruction}
-                  autoFocus
-                  onChange={(e) => setRegenerateInstruction(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') regenerateFull();
-                    if (e.key === 'Escape') setRegenerateOpen(false);
-                  }}
-                  placeholder="这次想怎么讲？如：多用我简历里的项目举例、少讲源码细节、重点讲 GC（可留空）"
-                  className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2.5 py-1.5 text-sm"
-                />
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    disabled={regenerating}
-                    onClick={regenerateFull}
-                    className="rounded-lg bg-[var(--color-accent)] px-3 py-1.5 text-xs text-white disabled:opacity-40"
-                  >
-                    {regenerating ? '重新生成中…' : '重新生成'}
-                  </button>
-                  <button type="button" onClick={() => setRegenerateOpen(false)} className={toolbarBtn}>
-                    取消
-                  </button>
-                  <span className="text-xs text-[var(--color-muted)]">
-                    留空就按原来的要求重写；要求只作用于这一次
-                  </span>
-                </div>
-              </div>
-            )}
           </div>
 
           <div className="relative min-h-0 flex-1 overflow-y-auto p-4">
@@ -866,6 +961,20 @@ export function ExplanationPanel({
             });
           }}
           onClearHighlight={clearSelectedHighlight}
+        />
+      )}
+
+      {regenerateAnchor && content && (
+        <RegeneratePopover
+          anchor={regenerateAnchor}
+          triggerRef={regenerateBtnRef}
+          targetLabel={regenerateTargetLabel}
+          isUserEdited={isUserEdited}
+          instruction={regenerateInstruction}
+          regenerating={regenerating}
+          onInstructionChange={setRegenerateInstruction}
+          onClose={closeRegenerate}
+          onSubmit={regenerateFull}
         />
       )}
 

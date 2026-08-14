@@ -15,7 +15,13 @@ import type { Annotation } from '@shared/entities';
 import { DEFAULT_HIGHLIGHT_COLOR, HIGHLIGHT_COLORS } from '../lib/annotationMarks';
 import { useTheme } from '../theme';
 
-export type ActionModalMode = 'highlight' | 'note' | 'edit' | 'elaboration' | 'viewMarker';
+export type ActionModalMode =
+  | 'highlight'
+  | 'note'
+  | 'edit'
+  | 'elaboration'
+  | 'viewMarker'
+  | 'regenerate';
 
 type PanelPreset = 'edit' | 'note' | 'default';
 
@@ -83,6 +89,7 @@ export function ExplanationActionModal({
   existingHighlight,
   marker,
   busy,
+  regenerateHint,
   onDraftChange,
   onHighlightColorChange,
   onClose,
@@ -91,6 +98,7 @@ export function ExplanationActionModal({
   onSaveNote,
   onSaveEdit,
   onSaveElaboration,
+  onSubmitRegenerate,
   onDeleteMarker,
 }: {
   visible: boolean;
@@ -101,6 +109,7 @@ export function ExplanationActionModal({
   existingHighlight: Annotation | null;
   marker: Annotation | null;
   busy: boolean;
+  regenerateHint: string;
   onDraftChange: (v: string) => void;
   onHighlightColorChange: (c: string) => void;
   onClose: () => void;
@@ -109,6 +118,7 @@ export function ExplanationActionModal({
   onSaveNote: () => void;
   onSaveEdit: () => void;
   onSaveElaboration: () => void;
+  onSubmitRegenerate: () => void;
   onDeleteMarker: () => void;
 }): React.JSX.Element {
   const theme = useTheme();
@@ -121,11 +131,13 @@ export function ExplanationActionModal({
           ? '编辑讲解'
           : mode === 'elaboration'
             ? '细化讲解'
-            : mode === 'viewMarker'
-              ? marker?.kind === 'note'
-                ? '笔记'
-                : '细化讲解'
-              : '';
+            : mode === 'regenerate'
+              ? '重新生成讲解'
+              : mode === 'viewMarker'
+                ? marker?.kind === 'note'
+                  ? '笔记'
+                  : '细化讲解'
+                : '';
 
   const resizable = mode === 'note' || mode === 'edit' || mode === 'viewMarker';
   const { width, height, resizeResponder } = useResizablePanel(mode);
@@ -152,7 +164,7 @@ export function ExplanationActionModal({
         </Pressable>
       </View>
 
-      {phrase && mode !== 'viewMarker' && (
+      {phrase && mode !== 'viewMarker' && mode !== 'regenerate' && (
         <Text style={{ color: theme.muted, fontSize: 11 }} numberOfLines={2}>
           「{phrase}」
         </Text>
@@ -192,6 +204,34 @@ export function ExplanationActionModal({
         <Text style={{ color: theme.muted, fontSize: 12, lineHeight: 18 }}>
           将根据选中的词句生成细化讲解，并保存为内联标记。
         </Text>
+      )}
+
+      {mode === 'regenerate' && (
+        <>
+          <Text style={{ color: theme.muted, fontSize: 12, lineHeight: 18 }}>{regenerateHint}</Text>
+          <TextInput
+            value={draft}
+            onChangeText={onDraftChange}
+            onSubmitEditing={onSubmitRegenerate}
+            returnKeyType="done"
+            editable={!busy}
+            autoFocus
+            placeholder="这次想怎么讲？如：多用我简历里的项目举例、少讲源码细节、重点讲 GC（可留空）"
+            placeholderTextColor={theme.muted}
+            style={{
+              color: theme.text,
+              borderWidth: 1,
+              borderColor: theme.border,
+              borderRadius: 8,
+              paddingHorizontal: 10,
+              paddingVertical: 8,
+              fontSize: 13,
+            }}
+          />
+          <Text style={{ color: theme.muted, fontSize: 11 }}>
+            留空就按原来的要求重写；要求只作用于这一次
+          </Text>
+        </>
       )}
 
       {(mode === 'note' || mode === 'edit') && (
@@ -293,6 +333,24 @@ export function ExplanationActionModal({
             }}
           >
             <Text style={{ color: '#fff', fontSize: 13 }}>{busy ? '生成中…' : '生成并保存'}</Text>
+          </Pressable>
+        )}
+
+        {mode === 'regenerate' && (
+          <Pressable
+            onPress={onSubmitRegenerate}
+            disabled={busy}
+            style={{
+              backgroundColor: theme.accent,
+              paddingHorizontal: 14,
+              paddingVertical: 8,
+              borderRadius: 8,
+              opacity: busy ? 0.5 : 1,
+            }}
+          >
+            <Text style={{ color: '#fff', fontSize: 13 }}>
+              {busy ? '重新生成中…' : '重新生成'}
+            </Text>
           </Pressable>
         )}
       </View>

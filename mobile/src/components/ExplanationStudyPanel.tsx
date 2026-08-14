@@ -72,8 +72,6 @@ export function ExplanationStudyPanel({
   const [highlightColor, setHighlightColor] = useState<string>(DEFAULT_HIGHLIGHT_COLOR);
   const [viewMarker, setViewMarker] = useState<Annotation | null>(null);
   const [focusedMarkId, setFocusedMarkId] = useState<string | null>(null);
-  const [regenerateOpen, setRegenerateOpen] = useState(false);
-  const [regenerateInstruction, setRegenerateInstruction] = useState('');
 
   // 按「考点 + 档位」记讲解任务，按考点记标注类操作：
   // 切页、换档位、关掉弹窗再回来，都能看到还在跑，也不会重复发起同一件事
@@ -169,8 +167,7 @@ export function ExplanationStudyPanel({
     setSelectionStart(undefined);
     setEditing(false);
     setModalMode(null);
-    setRegenerateOpen(false);
-    setRegenerateInstruction('');
+    setModalDraft('');
     const cached = getExplanation(getRawDb(), nodeId, tier);
     if (cached?.contentMd) {
       adopt(cached);
@@ -186,14 +183,14 @@ export function ExplanationStudyPanel({
   }, [nodeId, tier, loadKey, adopt, notifyDataChanged]);
 
   const openModal = (mode: ActionModalMode): void => {
-    if (!phrase.trim() && mode !== 'viewMarker') return;
+    // 重新生成和查看标记都不针对选区，其余动作没选中词句就无从下手
+    if (!phrase.trim() && mode !== 'viewMarker' && mode !== 'regenerate') return;
     if (mode === 'highlight') {
       const existing = findHighlightMark(phrase, highlightMarks, selectionStart);
       setHighlightColor(existing?.highlightColor ?? DEFAULT_HIGHLIGHT_COLOR);
     }
     if (mode === 'edit') setModalDraft(phrase);
-    if (mode === 'note') setModalDraft('');
-    if (mode === 'elaboration') setModalDraft('');
+    if (mode === 'note' || mode === 'elaboration' || mode === 'regenerate') setModalDraft('');
     setModalMode(mode);
   };
 
@@ -271,9 +268,9 @@ export function ExplanationStudyPanel({
 
   // 这次的要求只拼进本次提示词，不落库：先取出来再收面板，避免清空 state 后拿到空串
   const submitRegenerate = (): void => {
-    const instruction = regenerateInstruction.trim();
-    setRegenerateOpen(false);
-    setRegenerateInstruction('');
+    const instruction = modalDraft.trim();
+    setModalMode(null);
+    setModalDraft('');
     void runTask(regenerateKey, '重新生成讲解', async () => {
       const generated = await generateExplanation(getRawDb(), nodeId, tier, instruction);
       notifyDataChanged();
@@ -470,7 +467,7 @@ export function ExplanationStudyPanel({
               <Text style={{ color: theme.accent, fontSize: 12 }}>编辑全文</Text>
             </Pressable>
             <Pressable
-              onPress={() => setRegenerateOpen((v) => !v)}
+              onPress={() => openModal('regenerate')}
               disabled={regenerating}
               style={btnGhost}
             >
@@ -481,72 +478,6 @@ export function ExplanationStudyPanel({
           </>
         )}
       </View>
-
-      {regenerateOpen && !editing && (
-        <View
-          style={{
-            gap: 8,
-            padding: 10,
-            borderRadius: 10,
-            borderWidth: 1,
-            borderColor: theme.border,
-            backgroundColor: theme.surface,
-          }}
-        >
-          <Text style={{ color: theme.muted, fontSize: 12, lineHeight: 18 }}>
-            {content.modelUsed === 'user-edit'
-              ? `你手动修改过这份讲解，重新生成会覆盖当前「${regenerateTargetLabel}」的内容。`
-              : `重新生成会覆盖当前「${regenerateTargetLabel}」的内容。`}
-          </Text>
-          <TextInput
-            value={regenerateInstruction}
-            onChangeText={setRegenerateInstruction}
-            onSubmitEditing={submitRegenerate}
-            returnKeyType="done"
-            editable={!regenerating}
-            placeholder="这次想怎么讲？如：多用我简历里的项目举例、少讲源码细节、重点讲 GC（可留空）"
-            placeholderTextColor={theme.muted}
-            style={{
-              color: theme.text,
-              borderWidth: 1,
-              borderColor: theme.border,
-              borderRadius: 8,
-              paddingHorizontal: 10,
-              paddingVertical: 8,
-              fontSize: 13,
-            }}
-          />
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Pressable
-              onPress={submitRegenerate}
-              disabled={regenerating}
-              style={{
-                backgroundColor: theme.accent,
-                paddingHorizontal: 14,
-                paddingVertical: 8,
-                borderRadius: 8,
-                opacity: regenerating ? 0.5 : 1,
-              }}
-            >
-              <Text style={{ color: '#fff', fontSize: 12 }}>
-                {regenerating ? '重新生成中…' : '重新生成'}
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={() => {
-                setRegenerateOpen(false);
-                setRegenerateInstruction('');
-              }}
-              style={{ paddingHorizontal: 12, paddingVertical: 8 }}
-            >
-              <Text style={{ color: theme.muted, fontSize: 12 }}>取消</Text>
-            </Pressable>
-          </View>
-          <Text style={{ color: theme.muted, fontSize: 11 }}>
-            留空就按原来的要求重写；要求只作用于这一次
-          </Text>
-        </View>
-      )}
 
       {editing ? (
         <>
@@ -676,7 +607,12 @@ export function ExplanationStudyPanel({
         highlightColor={highlightColor}
         existingHighlight={existingHighlight}
         marker={viewMarker}
-        busy={busy}
+        busy={modalMode === 'regenerate' ? regenerating : busy}
+        regenerateHint={
+          content.modelUsed === 'user-edit'
+            ? `你手动修改过这份讲解，重新生成会覆盖当前「${regenerateTargetLabel}」的内容。`
+            : `重新生成会覆盖当前「${regenerateTargetLabel}」的内容。`
+        }
         onDraftChange={setModalDraft}
         onHighlightColorChange={setHighlightColor}
         onClose={() => {
@@ -688,6 +624,7 @@ export function ExplanationStudyPanel({
         onSaveNote={saveNote}
         onSaveEdit={saveEditExcerpt}
         onSaveElaboration={saveElaboration}
+        onSubmitRegenerate={submitRegenerate}
         onDeleteMarker={deleteMarker}
       />
     </View>
