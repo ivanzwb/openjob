@@ -467,7 +467,7 @@ export function Resumes(): React.JSX.Element {
                 targets.map((t) => (
                   <div
                     key={t.id}
-                    className={`group relative rounded-lg border transition-colors ${
+                    className={`relative rounded-lg border transition-colors ${
                       selectedTargetId === t.id
                         ? 'border-[var(--color-accent)] bg-[var(--color-surface)]'
                         : 'border-transparent hover:border-[var(--color-border)] hover:bg-[var(--color-surface)]/50'
@@ -486,9 +486,7 @@ export function Resumes(): React.JSX.Element {
                       onClick={() => deleteTarget(t.id)}
                       runningLabel="删除中…"
                       title="删除"
-                      className="absolute right-2 top-2 rounded px-1.5 py-0.5 text-xs text-[var(--color-muted)] transition-opacity hover:text-red-400 focus-visible:opacity-100 group-hover:opacity-100"
-                      // 平时靠悬停显形，删除中要一直看得见进度
-                      idleClassName="opacity-0"
+                      className="absolute right-2 top-2 rounded px-1.5 py-0.5 text-xs text-[var(--color-muted)] transition-colors hover:text-red-400"
                     >
                       删除
                     </TaskButton>
@@ -606,7 +604,7 @@ export function Resumes(): React.JSX.Element {
                 sidebarEntries.map((entry) => (
                   <div
                     key={`${entry.kind}-${entry.id}`}
-                    className={`group relative rounded-lg border transition-colors ${
+                    className={`relative rounded-lg border transition-colors ${
                       isEntrySelected(entry)
                         ? 'border-[var(--color-accent)] bg-[var(--color-surface)]'
                         : 'border-transparent hover:border-[var(--color-border)] hover:bg-[var(--color-surface)]/50'
@@ -634,9 +632,7 @@ export function Resumes(): React.JSX.Element {
                         }
                         runningLabel="删除中…"
                         title="删除"
-                        className="absolute right-2 top-2 rounded px-1.5 py-0.5 text-xs text-[var(--color-muted)] transition-opacity hover:text-red-400 focus-visible:opacity-100 group-hover:opacity-100"
-                        // 平时靠悬停显形，删除中要一直看得见进度
-                        idleClassName="opacity-0"
+                        className="absolute right-2 top-2 rounded px-1.5 py-0.5 text-xs text-[var(--color-muted)] transition-colors hover:text-red-400"
                       >
                         删除
                       </TaskButton>

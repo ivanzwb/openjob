@@ -9,7 +9,6 @@ export function TaskButton({
   taskKey,
   onClick,
   className,
-  idleClassName = '',
   runningLabel,
   disabled,
   title,
@@ -18,8 +17,6 @@ export function TaskButton({
   taskKey: string;
   onClick: () => void;
   className: string;
-  /** 只在空闲时附加的样式，例如靠悬停显形的删除按钮 */
-  idleClassName?: string;
   runningLabel: string;
   disabled?: boolean;
   title?: string;
@@ -32,7 +29,7 @@ export function TaskButton({
       title={title}
       disabled={running || disabled}
       onClick={onClick}
-      className={`${className} ${running ? '' : idleClassName}`}
+      className={className}
     >
       {running ? runningLabel : children}
     </button>
