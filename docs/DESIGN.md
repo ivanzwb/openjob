@@ -976,6 +976,8 @@ tool_call(
 | 主题偏好存放 | `AppConfig.ui.theme`，随 `app_setting` 同步 | 各端本机偏好（`sync_meta` / localStorage） | 配置本来整份同步，手机端不必再做一套开关；代价是两端不能各用一套主题，目前不需要 |
 | 手机端主题 | 订阅式 store + `useTheme()`，组件内变量仍叫 `theme` | 保留静态 `theme` 对象、切主题时整树 remount | 静态对象换不了主题；remount 会重置导航与页面状态。删掉静态导出可让类型检查器枚举全部四百多处引用，变量同名则组件内部零改动 |
 | 更新源默认值 | 默认查官方 GitHub Release，`feedUrl` 作为覆盖项 | 保持 `feedUrl` 必填，空则完全不联网 | 安装包本来就发在 GitHub Release，必填等于默认没有更新检测；不联网的诉求由「启动检查」开关承担，手动检查是用户主动行为 |
+| 按钮图标化的边界 | 语义普及的动作（删除、上移、下移）纯图标，其余图标 + 文字 | 全部配文字，或全部换成图标 | 垃圾桶不需要「删除」二字，但「AI 优化」「至今」这类换成图标只能靠猜；手机端更严格：没有 hover tooltip，纯图标一律要 `accessibilityLabel` |
+| 手机端月份选择 | 自己搭年 + 月面板（Modal + 月份格子） | 接 `@react-native-community/datetimepicker` | 原生模块要重新 prebuild 才生效，而系统选择器是年月日三段，简历只要年月；自搭的面板还能顺手给「清空」留位置（留空的字段不进 PDF） |
 
 ### 7.1 专项：为什么放弃 Python
 

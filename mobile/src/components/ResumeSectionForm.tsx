@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Image, Pressable, Text, TextInput, View } from 'react-native';
+import { Image, Modal, Pressable, Text, TextInput, View } from 'react-native';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ResumeSection } from '@shared/resume/document';
 import type { FieldSpec, SectionEntry, SectionField } from '@shared/resume/sectionModel';
 import {
@@ -7,6 +8,7 @@ import {
   fieldSpecFor,
   formatUnitNumber,
   formKindForSection,
+  moveInList,
   parseBulletsSection,
   parseEntriesSection,
   parseFieldsSection,
@@ -15,7 +17,9 @@ import {
   serializeBulletsSection,
   serializeEntriesSection,
   serializeFieldsSection,
+  toMonthInputValue,
 } from '@shared/resume/sectionModel';
+import { IconButton, type IconName } from './IconButton';
 import { useTaskState, useTaskResult } from '../context/RemoteTaskContext';
 import { useTheme, type Palette } from '../theme';
 
@@ -30,17 +34,20 @@ export type SectionPolish = (req: {
   taskKey: string;
 }) => Promise<string>;
 
-function makeInput(theme: Palette) {
+/** 输入框的外框，单独拆出来给「长得像输入框但其实是按钮」的控件复用（如月份选择） */
+function makeInputBox(theme: Palette) {
   return {
-    color: theme.text,
     borderWidth: 1,
     borderColor: theme.border,
     borderRadius: 8,
     backgroundColor: theme.bg,
     paddingHorizontal: 10,
     paddingVertical: 8,
-    fontSize: 13,
   } as const;
+}
+
+function makeInput(theme: Palette) {
+  return { ...makeInputBox(theme), color: theme.text, fontSize: 13 } as const;
 }
 
 const ENTRY_LABELS: Record<string, { org: string; role: string; title: string }> = {
@@ -78,23 +85,30 @@ function PhotoRow({ photo }: { photo: string }): React.JSX.Element {
   );
 }
 
+/** 语义不够直白的动作仍然要文字，图标只作前缀帮着扫视 */
 function GhostButton({
   label,
   onPress,
   disabled,
   danger,
+  icon,
 }: {
   label: string;
   onPress: () => void;
   disabled?: boolean;
   danger?: boolean;
+  icon?: IconName;
 }): React.JSX.Element {
   const theme = useTheme();
+  const color = danger ? theme.danger : theme.muted;
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled}
       style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
         borderWidth: 1,
         borderColor: theme.border,
         borderRadius: 8,
@@ -103,7 +117,8 @@ function GhostButton({
         opacity: disabled ? 0.4 : 1,
       }}
     >
-      <Text style={{ color: danger ? theme.danger : theme.muted, fontSize: 11 }}>{label}</Text>
+      {icon ? <Ionicons name={icon} size={13} color={color} /> : null}
+      <Text style={{ color, fontSize: 11 }}>{label}</Text>
     </Pressable>
   );
 }
@@ -250,6 +265,150 @@ function NumberField({
   );
 }
 
+const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
+
+/** 年份左右翻，月份点一下就选中并收起。留空是合法的：空字段不进 PDF */
+function MonthPicker({
+  value,
+  onPick,
+  onClose,
+}: {
+  value: string;
+  onPick: (month: string) => void;
+  onClose: () => void;
+}): React.JSX.Element {
+  const theme = useTheme();
+  const selectedYear = value ? Number(value.slice(0, 4)) : 0;
+  const selectedMonth = value ? Number(value.slice(5, 7)) : 0;
+  const [year, setYear] = useState(selectedYear || new Date().getFullYear());
+
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable
+        onPress={onClose}
+        style={{
+          flex: 1,
+          backgroundColor: theme.scrim,
+          justifyContent: 'flex-end',
+          padding: 16,
+        }}
+      >
+        <Pressable onPress={(e) => e.stopPropagation()} style={{ width: '100%' }}>
+          <View style={{ backgroundColor: theme.surface, borderRadius: 16, padding: 16, gap: 12 }}>
+            <View
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+            >
+              <IconButton icon="chevron-back" label="上一年" onPress={() => setYear((y) => y - 1)} />
+              <Text style={{ color: theme.text, fontSize: 16, fontWeight: '600' }}>{year} 年</Text>
+              <IconButton
+                icon="chevron-forward"
+                label="下一年"
+                onPress={() => setYear((y) => y + 1)}
+              />
+            </View>
+
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              {MONTHS.map((month) => {
+                const selected = year === selectedYear && month === selectedMonth;
+                return (
+                  <Pressable
+                    key={month}
+                    onPress={() => onPick(`${year}-${String(month).padStart(2, '0')}`)}
+                    style={{
+                      flexBasis: '22%',
+                      alignItems: 'center',
+                      paddingVertical: 10,
+                      borderRadius: 8,
+                      borderWidth: 1,
+                      borderColor: selected ? theme.accent : theme.border,
+                      backgroundColor: selected ? theme.accent : 'transparent',
+                    }}
+                  >
+                    <Text style={{ color: selected ? '#fff' : theme.text, fontSize: 13 }}>
+                      {month} 月
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <GhostButton label="清空" onPress={() => onPick('')} />
+              <GhostButton label="取消" onPress={onClose} />
+            </View>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+/**
+ * 月份选择器。认不出格式的既有值（`2021`、`2016/09-2018/08` 这类导入残留）
+ * 退回纯文本框，宁可少一个选择器也不能把用户已有的内容显示成空白。
+ */
+function MonthField({
+  value,
+  disabled,
+  placeholder,
+  onChange,
+}: {
+  value: string;
+  disabled?: boolean;
+  placeholder: string;
+  onChange: (value: string) => void;
+}): React.JSX.Element {
+  const theme = useTheme();
+  const [open, setOpen] = useState(false);
+  const month = value.trim() === '' ? '' : toMonthInputValue(value);
+
+  if (month === null) {
+    return (
+      <TextInput
+        value={value}
+        editable={!disabled}
+        onChangeText={onChange}
+        placeholder={placeholder}
+        placeholderTextColor={theme.muted}
+        style={{ ...makeInput(theme), opacity: disabled ? 0.5 : 1 }}
+      />
+    );
+  }
+
+  return (
+    <>
+      <Pressable
+        onPress={() => setOpen(true)}
+        disabled={disabled}
+        accessibilityRole="button"
+        accessibilityLabel={month ? `选择月份，当前 ${month}` : '选择月份'}
+        style={{
+          ...makeInputBox(theme),
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 6,
+          opacity: disabled ? 0.5 : 1,
+        }}
+      >
+        <Text style={{ flex: 1, color: month ? theme.text : theme.muted, fontSize: 13 }}>
+          {month || placeholder}
+        </Text>
+        <Ionicons name="calendar-outline" size={14} color={theme.muted} />
+      </Pressable>
+      {open && (
+        <MonthPicker
+          value={month}
+          onClose={() => setOpen(false)}
+          onPick={(next) => {
+            onChange(next);
+            setOpen(false);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
 function FieldValue({
   label,
   value,
@@ -352,6 +511,7 @@ function PolishTextarea({
           <View style={{ flexDirection: 'row', gap: 6 }}>
             {undoValue !== null && (
               <GhostButton
+                icon="arrow-undo-outline"
                 label="撤销优化"
                 onPress={() => {
                   onChange(undoValue);
@@ -359,7 +519,11 @@ function PolishTextarea({
                 }}
               />
             )}
-            <GhostButton label={busy ? '优化中…' : 'AI 优化'} onPress={() => setOpen((v) => !v)} />
+            <GhostButton
+              icon="sparkles-outline"
+              label={busy ? '优化中…' : 'AI 优化'}
+              onPress={() => setOpen((v) => !v)}
+            />
           </View>
         )}
       </View>
@@ -387,6 +551,9 @@ function PolishTextarea({
               onPress={run}
               disabled={busy}
               style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 4,
                 backgroundColor: theme.accent,
                 borderRadius: 8,
                 paddingHorizontal: 12,
@@ -394,6 +561,7 @@ function PolishTextarea({
                 opacity: busy ? 0.5 : 1,
               }}
             >
+              <Ionicons name="sparkles-outline" size={13} color="#fff" />
               <Text style={{ color: '#fff', fontSize: 12 }}>{busy ? '优化中…' : '开始优化'}</Text>
             </Pressable>
             <GhostButton label="取消" onPress={() => setOpen(false)} disabled={busy} />
@@ -465,9 +633,10 @@ function FieldsForm({
                 />
               </View>
               {!isPreset && (
-                <GhostButton
-                  label="删除"
-                  danger
+                <IconButton
+                  icon="trash-outline"
+                  label={`删除${row.label || '这个字段'}`}
+                  tone="danger"
                   onPress={() => apply(rows.filter((_, i) => i !== index))}
                 />
               )}
@@ -475,7 +644,11 @@ function FieldsForm({
           </View>
         );
       })}
-      <GhostButton label="+ 添加自定义字段" onPress={() => apply([...rows, { label: '', value: '' }])} />
+      <GhostButton
+        icon="add"
+        label="添加自定义字段"
+        onPress={() => apply([...rows, { label: '', value: '' }])}
+      />
       <Text style={{ color: theme.muted, fontSize: 11 }}>留空的字段不会出现在预览与导出的 PDF 中。</Text>
     </View>
   );
@@ -503,19 +676,40 @@ function BulletsForm({
   return (
     <View style={{ gap: 8 }}>
       {items.map((item, index) => (
-        <View key={index} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6 }}>
+        // 手机屏窄，操作按钮压到输入框下面一行，右对齐
+        <View key={index} style={{ gap: 2 }}>
           <TextInput
             multiline
             value={item}
             onChangeText={(text) => apply(items.map((v, i) => (i === index ? text : v)))}
             placeholder="一条一句，突出成果与量化数据"
             placeholderTextColor={theme.muted}
-            style={{ ...INPUT, flex: 1, minHeight: 52, lineHeight: 20, textAlignVertical: 'top' }}
+            style={{ ...INPUT, minHeight: 52, lineHeight: 20, textAlignVertical: 'top' }}
           />
-          <GhostButton label="删除" danger onPress={() => apply(items.filter((_, i) => i !== index))} />
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Text style={{ flex: 1, color: theme.muted, fontSize: 11 }}>第 {index + 1} 条</Text>
+            <IconButton
+              icon="chevron-up"
+              label={`上移第 ${index + 1} 条`}
+              disabled={index === 0}
+              onPress={() => apply(moveInList(items, index, -1))}
+            />
+            <IconButton
+              icon="chevron-down"
+              label={`下移第 ${index + 1} 条`}
+              disabled={index === items.length - 1}
+              onPress={() => apply(moveInList(items, index, 1))}
+            />
+            <IconButton
+              icon="trash-outline"
+              label={`删除第 ${index + 1} 条`}
+              tone="danger"
+              onPress={() => apply(items.filter((_, i) => i !== index))}
+            />
+          </View>
         </View>
       ))}
-      <GhostButton label="+ 添加一条" onPress={() => apply([...items, ''])} />
+      <GhostButton icon="add" label="添加一条" onPress={() => apply([...items, ''])} />
     </View>
   );
 }
@@ -566,11 +760,26 @@ function EntriesForm({
               <Text style={{ color: theme.muted, fontSize: 11 }}>
                 {labels.title} {index + 1}
               </Text>
-              <GhostButton
-                label="删除"
-                danger
-                onPress={() => apply(entries.filter((_, i) => i !== index))}
-              />
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <IconButton
+                  icon="chevron-up"
+                  label={`上移${labels.title}`}
+                  disabled={index === 0}
+                  onPress={() => apply(moveInList(entries, index, -1))}
+                />
+                <IconButton
+                  icon="chevron-down"
+                  label={`下移${labels.title}`}
+                  disabled={index === entries.length - 1}
+                  onPress={() => apply(moveInList(entries, index, 1))}
+                />
+                <IconButton
+                  icon="trash-outline"
+                  label={`删除这段${labels.title}`}
+                  tone="danger"
+                  onPress={() => apply(entries.filter((_, i) => i !== index))}
+                />
+              </View>
             </View>
 
             <View style={{ gap: 4 }}>
@@ -594,27 +803,26 @@ function EntriesForm({
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <View style={{ flex: 1, gap: 4 }}>
                 <FieldLabel>开始时间</FieldLabel>
-                <TextInput
+                <MonthField
                   value={entry.start}
-                  onChangeText={(start) => patch(index, { start })}
                   placeholder="2021-04"
-                  placeholderTextColor={theme.muted}
-                  style={INPUT}
+                  onChange={(start) => patch(index, { start })}
                 />
               </View>
               <View style={{ flex: 1, gap: 4 }}>
                 <FieldLabel>结束时间</FieldLabel>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <TextInput
-                    value={isCurrent ? '' : entry.end}
-                    editable={!isCurrent}
-                    onChangeText={(end) => patch(index, { end })}
-                    placeholder="2023-02"
-                    placeholderTextColor={theme.muted}
-                    style={{ ...INPUT, flex: 1, opacity: isCurrent ? 0.5 : 1 }}
-                  />
+                  <View style={{ flex: 1 }}>
+                    <MonthField
+                      value={isCurrent ? '' : entry.end}
+                      disabled={isCurrent}
+                      placeholder="2023-02"
+                      onChange={(end) => patch(index, { end })}
+                    />
+                  </View>
                   <GhostButton
-                    label={isCurrent ? '✓ 至今' : '至今'}
+                    icon={isCurrent ? 'checkmark' : undefined}
+                    label="至今"
                     onPress={() => patch(index, { end: isCurrent ? '' : '至今' })}
                   />
                 </View>
@@ -639,7 +847,11 @@ function EntriesForm({
           </View>
         );
       })}
-      <GhostButton label={`+ 添加${labels.title}`} onPress={() => apply([...entries, createEmptyEntry()])} />
+      <GhostButton
+        icon="add"
+        label={`添加${labels.title}`}
+        onPress={() => apply([...entries, createEmptyEntry()])}
+      />
     </View>
   );
 }

@@ -1,5 +1,15 @@
 import { useCallback, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Modal,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { getRawDb } from '../db';
 import {
   createResumeFromText,
@@ -79,9 +89,12 @@ function ResumeRow({
       <Pressable
         onPress={onDelete}
         disabled={removing}
+        accessibilityRole="button"
+        accessibilityLabel={`删除${entry.label}`}
         style={{
+          alignItems: 'center',
           justifyContent: 'center',
-          paddingHorizontal: 12,
+          paddingHorizontal: 14,
           borderWidth: 1,
           borderColor: theme.border,
           borderRadius: 10,
@@ -89,7 +102,12 @@ function ResumeRow({
           opacity: removing ? 0.5 : 1,
         }}
       >
-        <Text style={{ color: theme.danger, fontSize: 11 }}>{removing ? '删除中…' : '删除'}</Text>
+        {/* 图标按钮没有文字位置放「删除中…」，跑起来就换成转圈 */}
+        {removing ? (
+          <ActivityIndicator size="small" color={theme.muted} />
+        ) : (
+          <Ionicons name="trash-outline" size={18} color={theme.danger} />
+        )}
       </Pressable>
     </View>
   );

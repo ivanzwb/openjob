@@ -18,6 +18,7 @@ import {
   serializeBulletsSection,
   serializeEntriesSection,
   serializeFieldsSection,
+  moveInList,
   toMonthInputValue,
 } from '@shared/resume/sectionModel';
 
@@ -215,13 +216,6 @@ function MonthField({
   );
 }
 
-function move<T>(list: T[], index: number, delta: number): T[] {
-  const target = index + delta;
-  if (target < 0 || target >= list.length) return list;
-  const next = [...list];
-  [next[index], next[target]] = [next[target], next[index]];
-  return next;
-}
 
 export interface SectionPolishRequest {
   /** 当前文本框内容，可为空 */
@@ -488,14 +482,14 @@ function BulletsForm({
               label="上移"
               size="sm"
               disabled={index === 0}
-              onClick={() => apply(move(items, index, -1))}
+              onClick={() => apply(moveInList(items, index, -1))}
             />
             <IconButton
               icon={ChevronDown}
               label="下移"
               size="sm"
               disabled={index === items.length - 1}
-              onClick={() => apply(move(items, index, 1))}
+              onClick={() => apply(moveInList(items, index, 1))}
             />
             <IconButton
               icon={Trash2}
@@ -684,7 +678,7 @@ function EntriesForm({
           onChange={(patch) =>
             apply(entries.map((e, i) => (i === index ? { ...e, ...patch } : e)))
           }
-          onMove={(delta) => apply(move(entries, index, delta))}
+          onMove={(delta) => apply(moveInList(entries, index, delta))}
           onRemove={() => apply(entries.filter((_, i) => i !== index))}
         />
       ))}
