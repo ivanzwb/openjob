@@ -15,7 +15,8 @@
     "android": {
       "package": "com.openjob.mobile",
       "permissions": [
-        "CAMERA"
+        "CAMERA",
+        "REQUEST_INSTALL_PACKAGES"
       ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",

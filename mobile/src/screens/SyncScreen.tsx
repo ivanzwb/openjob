@@ -7,6 +7,7 @@ import { listPendingConflictRows, pairDesktop, resolveConflicts, unpairDesktop }
 import type { PendingConflictRow } from '../db';
 import { useApp } from '../context/AppContext';
 import { runTask, useTaskState } from '../context/RemoteTaskContext';
+import { AppUpdateCard } from '../components/AppUpdateCard';
 import { useTheme } from '../theme';
 
 function ConflictActions({
@@ -254,6 +255,9 @@ export function SyncScreen(): React.JSX.Element {
           ))}
         </View>
       )}
+
+      {/* 更新与配对无关，放在最后一张卡：这里是手机端唯一的设置类页面 */}
+      <AppUpdateCard />
     </ScrollView>
   );
 }
