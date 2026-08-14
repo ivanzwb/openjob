@@ -7,12 +7,23 @@ import { emit } from './ipc/bridge';
 /**
  * 自动更新。
  *
- * 更新源不写死在打包配置里，而是运行时从 config.update.feedUrl 读——
- * 这个项目没有固定的发布地址，谁自己构建谁指向自己的目录。
- * feedUrl 为空时整个模块不发起任何网络请求。
+ * 默认查官方发布渠道（GitHub Release，安装包与 latest.yml 由 electron-builder
+ * 的 provider: github 挂在那里），开箱就能收到新版本。
+ * 自己构建自己分发的，在 config.update.feedUrl 填上自己的目录即可覆盖。
+ *
+ * 想彻底不联网就关掉 checkOnStartup：此后只有用户点「立即检查」才会发请求。
  */
 
 type Updater = typeof ElectronAutoUpdater;
+
+/** 官方发布渠道，和 electron-builder.yml 的 publish 配置指向同一处 */
+const GITHUB_FEED = { provider: 'github', owner: 'ivanzwb', repo: 'openjob' } as const;
+
+function resolveFeed(): Parameters<Updater['setFeedURL']>[0] {
+  const feedUrl = getConfig().update.feedUrl.trim();
+  if (!feedUrl) return GITHUB_FEED;
+  return { provider: 'generic', url: feedUrl };
+}
 
 let status: UpdateStatus = { state: 'idle' };
 let updaterPromise: Promise<Updater | null> | null = null;
@@ -63,12 +74,6 @@ export function getUpdateStatus(): UpdateStatus {
 }
 
 export async function checkForUpdates(): Promise<UpdateStatus> {
-  const feedUrl = getConfig().update.feedUrl.trim();
-  if (!feedUrl) {
-    setStatus({ state: 'disabled', message: '未配置更新源，可在设置中填写' });
-    return status;
-  }
-
   const updater = await getUpdater();
   if (!updater) {
     setStatus({ state: 'disabled', message: '开发模式下不检查更新' });
@@ -76,7 +81,7 @@ export async function checkForUpdates(): Promise<UpdateStatus> {
   }
 
   try {
-    updater.setFeedURL({ provider: 'generic', url: feedUrl });
+    updater.setFeedURL(resolveFeed());
     await updater.checkForUpdates();
   } catch (err) {
     setStatus({ state: 'error', message: err instanceof Error ? err.message : String(err) });
@@ -93,8 +98,7 @@ export async function quitAndInstall(): Promise<void> {
 
 /** 启动时的静默检查，失败不打扰用户 */
 export function scheduleStartupCheck(): void {
-  const { feedUrl, checkOnStartup } = getConfig().update;
-  if (!checkOnStartup || !feedUrl.trim() || !app.isPackaged) return;
+  if (!getConfig().update.checkOnStartup || !app.isPackaged) return;
 
   // 等窗口和首屏渲染完再查，别和启动抢带宽
   setTimeout(() => void checkForUpdates(), 8000);

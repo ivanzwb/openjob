@@ -104,11 +104,11 @@ export interface PriorityWeights {
 }
 
 /**
- * 自动更新。项目不绑定固定的发布地址，更新源由用户填。
- * feedUrl 为空即关闭自动更新，不会有任何网络请求。
+ * 自动更新。默认查官方 GitHub Release，自己分发的可以指到自己的目录。
+ * 不想让它联网就关掉 checkOnStartup，此后只有手动点检查才发请求。
  */
 export interface UpdateConfig {
-  /** electron-builder generic provider 的目录 URL，里面应有 latest.yml */
+  /** electron-builder generic provider 的目录 URL（里面应有 latest.yml）；留空走官方 GitHub Release */
   feedUrl: string;
   checkOnStartup: boolean;
 }

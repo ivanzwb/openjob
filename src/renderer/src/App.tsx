@@ -1,6 +1,7 @@
 import { Component, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { TabPanel } from './components/TabPanel';
+import { UpdateBadge } from './components/UpdateBadge';
 import { CampaignsPanel, type CampaignView } from './pages/CampaignsPanel';
 import { Settings } from './pages/Settings';
 import { Overview } from './pages/Overview';
@@ -80,6 +81,7 @@ export default function App(): React.JSX.Element {
             <span className="font-semibold">OpenJob</span>
           </div>
           <span className="text-xs text-[var(--color-muted)]">v{version}</span>
+          <UpdateBadge onOpenSettings={() => selectTab('settings')} />
           <nav className="ml-4 flex gap-1">
             {TABS.map(({ key, label }) => (
               <button

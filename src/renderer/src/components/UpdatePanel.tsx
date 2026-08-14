@@ -46,14 +46,15 @@ export function UpdatePanel({
       <div>
         <h3 className="text-sm font-medium text-[var(--color-muted)]">自动更新</h3>
         <p className="mt-1 text-xs text-[var(--color-muted)]">
-          项目不绑定固定发布地址。填入你自己托管的目录（里面要有 electron-builder
-          产出的 latest.yml 和安装包），留空则完全不联网检查。
+          默认检查官方 GitHub Release，发现新版会自动下载，装不装由你点。自己构建自己分发的，
+          填上你托管的目录（里面要有 electron-builder 产出的 latest.yml 和安装包）即可改到那边。
+          不想让它自己联网就取消下面的启动检查，此后只有点「立即检查」才会发请求。
         </p>
       </div>
 
       <div className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
         <label className="block space-y-1">
-          <span className="text-xs text-[var(--color-muted)]">更新源 URL</span>
+          <span className="text-xs text-[var(--color-muted)]">更新源 URL（留空用官方 GitHub Release）</span>
           <input
             value={value.feedUrl}
             onChange={(e) => onChange({ feedUrl: e.target.value })}

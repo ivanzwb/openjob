@@ -486,7 +486,7 @@ todo 未学 → learning 已看 → shaky 半懂存疑 → mastered 已掌握
 | 流程图 | mermaid | — |
 | UI | Tailwind CSS 4（`@theme` 令牌） | 配色集中在 CSS 变量里，深浅两套主题不必逐个组件改 |
 | 打包 | electron-builder | NSIS(Win) / dmg(macOS) / AppImage+deb(Linux) |
-| 自动更新 | electron-updater | — |
+| 自动更新 | electron-updater | 默认查官方 GitHub Release，`config.update.feedUrl` 可改到自建目录 |
 
 #### 数据与配置位置
 
@@ -975,6 +975,7 @@ tool_call(
 | 默认浅色的落地方式 | `@theme` 保持深色基线，浅色用 `html:not([data-theme='dark'])` 覆盖 | 把浅色搬进 `@theme`、深色改成 `[data-theme='dark']` 覆盖 | 后者更「正」，但要把整套调色板重映射连同 Tailwind 原始色阶对调写回去，两套主题极易弄混；`:not(dark)` 只动选择器，同时保证无属性时也是浅色、不闪深色帧 |
 | 主题偏好存放 | `AppConfig.ui.theme`，随 `app_setting` 同步 | 各端本机偏好（`sync_meta` / localStorage） | 配置本来整份同步，手机端不必再做一套开关；代价是两端不能各用一套主题，目前不需要 |
 | 手机端主题 | 订阅式 store + `useTheme()`，组件内变量仍叫 `theme` | 保留静态 `theme` 对象、切主题时整树 remount | 静态对象换不了主题；remount 会重置导航与页面状态。删掉静态导出可让类型检查器枚举全部四百多处引用，变量同名则组件内部零改动 |
+| 更新源默认值 | 默认查官方 GitHub Release，`feedUrl` 作为覆盖项 | 保持 `feedUrl` 必填，空则完全不联网 | 安装包本来就发在 GitHub Release，必填等于默认没有更新检测；不联网的诉求由「启动检查」开关承担，手动检查是用户主动行为 |
 
 ### 7.1 专项：为什么放弃 Python
 
