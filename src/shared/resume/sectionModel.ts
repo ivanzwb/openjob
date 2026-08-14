@@ -44,6 +44,95 @@ export function presetFieldsForSection(key: ResumeSectionKey): string[] {
   return PRESET_FIELDS[key] ?? [];
 }
 
+export type FieldControl = 'text' | 'select' | 'number' | 'tel' | 'email';
+
+/**
+ * 字段该用什么控件。取值范围明确的字段（性别、学历）给选择器，带单位的给数字框，
+ * 免得同一个字段在不同简历里出现「男 / 男性」「28 岁 / 28岁 / 二十八」这类写法。
+ */
+export interface FieldSpec {
+  control: FieldControl;
+  /** select 的候选项 */
+  options?: readonly string[];
+  /** 候选项之外还能自己写（学历、到岗时间的说法太多，不能锁死） */
+  allowCustom?: boolean;
+  /** number 的单位：表单只填数字，落库时补上，如 `- 年龄：28 岁` */
+  unit?: string;
+  min?: number;
+  max?: number;
+  placeholder?: string;
+}
+
+const TEXT_FIELD: FieldSpec = { control: 'text' };
+
+const FIELD_SPECS: Record<string, FieldSpec> = {
+  姓名: { control: 'text', placeholder: '张三' },
+  求职岗位: { control: 'text', placeholder: '高级前端工程师' },
+  性别: { control: 'select', options: ['男', '女'] },
+  年龄: { control: 'number', unit: '岁', min: 16, max: 70, placeholder: '28' },
+  城市: { control: 'text', placeholder: '上海' },
+  工作年限: { control: 'number', unit: '年', min: 0, max: 45, placeholder: '5' },
+  电话: { control: 'tel', placeholder: '13800000000' },
+  邮箱: { control: 'email', placeholder: 'name@example.com' },
+  学历: {
+    control: 'select',
+    options: ['高中及以下', '中专', '大专', '本科', '硕士', '博士'],
+    allowCustom: true,
+  },
+  政治面貌: {
+    control: 'select',
+    options: ['群众', '共青团员', '中共预备党员', '中共党员'],
+    allowCustom: true,
+  },
+  婚姻状况: { control: 'select', options: ['未婚', '已婚'] },
+  期望岗位: { control: 'text', placeholder: '高级前端工程师' },
+  期望城市: { control: 'text', placeholder: '上海' },
+  // 期望薪资写法太多（25-35K / 30 万年包 / 面议），给不出候选项，保持自由填写
+  期望薪资: { control: 'text', placeholder: '25-35K' },
+  到岗时间: {
+    control: 'select',
+    options: ['随时到岗', '一周内', '两周内', '一个月内', '两个月内', '三个月内'],
+    allowCustom: true,
+  },
+};
+
+/** 自定义字段（用户自己加的行）一律纯文本 */
+export function fieldSpecFor(label: string): FieldSpec {
+  return FIELD_SPECS[normalizeLabel(label)] ?? TEXT_FIELD;
+}
+
+/**
+ * 从带单位的值里取出数字部分供数字框显示。
+ * 取不出来（导入来的「二十八岁」「5 年工作」）返回 null，调用方退回纯文本框，
+ * 宁可少一个选择器也不能把用户已有的内容吃掉。
+ */
+export function parseUnitNumber(value: string, unit: string): string | null {
+  const text = value.trim();
+  if (!text) return '';
+  const match = text.match(/^(\d+(?:\.\d+)?)\s*(.*)$/);
+  if (!match) return null;
+  const [, num, tail] = match;
+  return !tail || tail === unit ? num : null;
+}
+
+/** 数字框写回 markdown：补上单位，空值仍然是空（留空的字段不进 PDF） */
+export function formatUnitNumber(num: string, unit: string): string {
+  const text = num.trim();
+  return text ? `${text} ${unit}` : '';
+}
+
+/**
+ * 经历时间给月份选择器用：`2021-04`、`2021.4`、`2021/4`、`2021年4月` 都能进，
+ * 统一按 `YYYY-MM` 输出。认不出来（`2021`、`至今`、空）返回 null，调用方退回纯文本框。
+ */
+export function toMonthInputValue(value: string): string | null {
+  const match = value.trim().match(/^((?:19|20)\d{2})\s*[.\-/年]\s*(\d{1,2})\s*月?$/);
+  if (!match) return null;
+  const month = Number(match[2]);
+  if (month < 1 || month > 12) return null;
+  return `${match[1]}-${String(month).padStart(2, '0')}`;
+}
+
 export interface SectionField {
   label: string;
   value: string;

@@ -2,17 +2,21 @@ import { useEffect, useRef, useState } from 'react';
 import type { ResumeSection, ResumeSectionKey } from '@shared/resume/document';
 import { ResumePhotoField } from './ResumePhotoField';
 import { useTask, useTaskResult } from '../ipc/taskStore';
-import type { SectionEntry, SectionField } from '@shared/resume/sectionModel';
+import type { FieldSpec, SectionEntry, SectionField } from '@shared/resume/sectionModel';
 import {
   createEmptyEntry,
+  fieldSpecFor,
+  formatUnitNumber,
   formKindForSection,
   parseBulletsSection,
   parseEntriesSection,
   parseFieldsSection,
+  parseUnitNumber,
   presetFieldsForSection,
   serializeBulletsSection,
   serializeEntriesSection,
   serializeFieldsSection,
+  toMonthInputValue,
 } from '@shared/resume/sectionModel';
 
 const INPUT =
@@ -23,20 +27,6 @@ const GHOST_BTN =
 const ADD_BTN =
   'whitespace-nowrap rounded-lg border border-dashed border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-muted)] hover:border-[var(--color-accent)] hover:text-[var(--color-fg)]';
 
-const FIELD_PLACEHOLDER: Record<string, string> = {
-  姓名: '张三',
-  性别: '男',
-  年龄: '28 岁',
-  城市: '上海',
-  电话: '13800000000',
-  邮箱: 'name@example.com',
-  工作年限: '5 年',
-  期望岗位: '高级前端工程师',
-  期望城市: '上海',
-  期望薪资: '25-35K',
-  到岗时间: '一个月内',
-};
-
 const ENTRY_LABELS: Record<string, { org: string; role: string; title: string }> = {
   experience: { org: '公司名称', role: '岗位', title: '工作经历' },
   project: { org: '项目名称', role: '角色', title: '项目' },
@@ -45,6 +35,182 @@ const ENTRY_LABELS: Record<string, { org: string; role: string; title: string }>
 
 function entryLabels(key: ResumeSectionKey): { org: string; role: string; title: string } {
   return ENTRY_LABELS[key] ?? { org: '名称', role: '角色', title: '条目' };
+}
+
+/** 下拉框里代表「我要自己写」的哨兵值，不会和任何真实取值撞上 */
+const CUSTOM_OPTION = '\u0000custom';
+
+function SelectField({
+  spec,
+  value,
+  onChange,
+}: {
+  spec: FieldSpec;
+  value: string;
+  onChange: (value: string) => void;
+}): React.JSX.Element {
+  const options = spec.options ?? [];
+  // 导入来的值可能不在候选项里（如「男性」「研究生」），得原样留着
+  const known = value === '' || options.includes(value);
+  const [custom, setCustom] = useState(false);
+
+  if (spec.allowCustom && (custom || !known)) {
+    return (
+      <div className="flex gap-1">
+        <input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={spec.placeholder ?? '填写内容'}
+          className={INPUT}
+        />
+        <button
+          type="button"
+          className={GHOST_BTN}
+          title="改回从候选项里选"
+          onClick={() => {
+            setCustom(false);
+            onChange('');
+          }}
+        >
+          选项
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <select
+      value={value}
+      onChange={(e) => {
+        if (e.target.value === CUSTOM_OPTION) {
+          setCustom(true);
+          onChange('');
+          return;
+        }
+        onChange(e.target.value);
+      }}
+      className={INPUT}
+    >
+      <option value="">未填写</option>
+      {options.map((option) => (
+        <option key={option} value={option}>
+          {option}
+        </option>
+      ))}
+      {!known && <option value={value}>{value}</option>}
+      {spec.allowCustom && <option value={CUSTOM_OPTION}>其他…</option>}
+    </select>
+  );
+}
+
+/** 只填数字，单位贴在框里右侧，落库时拼回值上 */
+function NumberField({
+  spec,
+  value,
+  onChange,
+}: {
+  spec: FieldSpec;
+  value: string;
+  onChange: (value: string) => void;
+}): React.JSX.Element {
+  const unit = spec.unit ?? '';
+  const num = parseUnitNumber(value, unit);
+
+  if (num === null) {
+    return (
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={INPUT}
+      />
+    );
+  }
+
+  return (
+    <div className="relative">
+      <input
+        type="number"
+        inputMode="numeric"
+        min={spec.min}
+        max={spec.max}
+        value={num}
+        onChange={(e) => onChange(formatUnitNumber(e.target.value, unit))}
+        placeholder={spec.placeholder}
+        className={`${INPUT} pr-9 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none`}
+      />
+      <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[var(--color-muted)]">
+        {unit}
+      </span>
+    </div>
+  );
+}
+
+function FieldValue({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}): React.JSX.Element {
+  const spec = fieldSpecFor(label);
+
+  if (spec.control === 'select' && spec.options) {
+    return <SelectField spec={spec} value={value} onChange={onChange} />;
+  }
+  if (spec.control === 'number' && spec.unit) {
+    return <NumberField spec={spec} value={value} onChange={onChange} />;
+  }
+  return (
+    <input
+      type={spec.control === 'tel' ? 'tel' : spec.control === 'email' ? 'email' : 'text'}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={spec.placeholder ?? '填写内容'}
+      className={INPUT}
+    />
+  );
+}
+
+/**
+ * 月份选择器。认不出格式的既有值（`2021`、`2016/09-2018/08` 这类导入残留）
+ * 退回纯文本框，避免 input[type=month] 把不合规的值显示成空白、看着像内容丢了。
+ */
+function MonthField({
+  value,
+  disabled,
+  placeholder,
+  onChange,
+}: {
+  value: string;
+  disabled?: boolean;
+  placeholder: string;
+  onChange: (value: string) => void;
+}): React.JSX.Element {
+  const month = value.trim() === '' ? '' : toMonthInputValue(value);
+
+  if (month === null) {
+    return (
+      <input
+        value={value}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className={`${INPUT} disabled:opacity-50`}
+      />
+    );
+  }
+
+  return (
+    <input
+      type="month"
+      value={month}
+      disabled={disabled}
+      onChange={(e) => onChange(e.target.value)}
+      className={`${INPUT} disabled:opacity-50`}
+    />
+  );
 }
 
 function move<T>(list: T[], index: number, delta: number): T[] {
@@ -235,7 +401,8 @@ function FieldsForm({
         {rows.map((row, index) => {
           const isPreset = index < presets.length && row.label === presets[index];
           return (
-            <div key={`${row.label}-${index}`}>
+            // 按位置作 key：带上 label 的话，改字段名每敲一个字都会重建这一行、输入框跟着丢焦点
+            <div key={index}>
               {isPreset ? (
                 <label className={FIELD_LABEL}>{row.label}</label>
               ) : (
@@ -247,12 +414,13 @@ function FieldsForm({
                 />
               )}
               <div className="flex gap-1">
-                <input
-                  value={row.value}
-                  onChange={(e) => update(index, { value: e.target.value })}
-                  placeholder={FIELD_PLACEHOLDER[row.label] ?? '填写内容'}
-                  className={INPUT}
-                />
+                <div className="min-w-0 flex-1">
+                  <FieldValue
+                    label={row.label}
+                    value={row.value}
+                    onChange={(value) => update(index, { value })}
+                  />
+                </div>
                 {!isPreset && (
                   <button
                     type="button"
@@ -419,23 +587,23 @@ function EntryCard({
         </div>
         <div>
           <label className={FIELD_LABEL}>开始时间</label>
-          <input
+          <MonthField
             value={entry.start}
-            onChange={(e) => onChange({ start: e.target.value })}
             placeholder="2021-04"
-            className={INPUT}
+            onChange={(start) => onChange({ start })}
           />
         </div>
         <div>
           <label className={FIELD_LABEL}>结束时间</label>
           <div className="flex items-center gap-2">
-            <input
-              value={isCurrent ? '' : entry.end}
-              disabled={isCurrent}
-              onChange={(e) => onChange({ end: e.target.value })}
-              placeholder="2023-02"
-              className={`${INPUT} disabled:opacity-50`}
-            />
+            <div className="min-w-0 flex-1">
+              <MonthField
+                value={isCurrent ? '' : entry.end}
+                disabled={isCurrent}
+                placeholder="2023-02"
+                onChange={(end) => onChange({ end })}
+              />
+            </div>
             <label className="flex shrink-0 items-center gap-1 text-xs text-[var(--color-muted)]">
               <input
                 type="checkbox"
