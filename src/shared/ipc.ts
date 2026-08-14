@@ -710,6 +710,12 @@ export interface SpeechSaveFromNodeInput {
   tier?: ExplanationTier;
 }
 
+/** 某个来源（考点、仓库…）下已存过的话术，用来判断这段选区是不是已经进过库 */
+export interface SpeechListForSourceInput {
+  sourceType: SpeechSnippet['sourceType'];
+  sourceId: string;
+}
+
 export interface SpeechSnippetView extends SpeechSnippet {
   sourceLabel: string;
 }
@@ -961,6 +967,7 @@ export interface IpcInvokeMap {
   'speech:save': { req: SpeechSaveInput; res: SpeechSnippet };
   'speech:saveFromNode': { req: SpeechSaveFromNodeInput; res: SpeechSnippet };
   'speech:list': { req: void; res: SpeechSnippetView[] };
+  'speech:listForSource': { req: SpeechListForSourceInput; res: SpeechSnippet[] };
   'speech:update': { req: SpeechUpdateInput; res: SpeechSnippet };
   'speech:delete': { req: { id: string }; res: void };
   'speech:export': { req: SpeechExportInput; res: SpeechExportResult };
@@ -1116,6 +1123,7 @@ export const IPC_INVOKE_CHANNELS = [
   'speech:save',
   'speech:saveFromNode',
   'speech:list',
+  'speech:listForSource',
   'speech:update',
   'speech:delete',
   'speech:export',

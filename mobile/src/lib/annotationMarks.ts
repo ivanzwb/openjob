@@ -1,4 +1,5 @@
 import type { Annotation } from '@shared/entities';
+import { findMarkOnSelection } from '@shared/annotationMarkList';
 
 export const HIGHLIGHT_COLORS = [
   '#fef08a',
@@ -24,17 +25,7 @@ export function findHighlightMark(
   marks: Annotation[],
   selectionStart?: number,
 ): Annotation | undefined {
-  const trimmed = text.trim();
-  if (!trimmed) return undefined;
-  const matches = marks.filter(
-    (m) => m.kind === 'highlight' && m.selectedText?.trim() === trimmed,
-  );
-  if (!matches.length) return undefined;
-  if (selectionStart !== undefined) {
-    const exact = matches.find((m) => m.selectionStart === selectionStart);
-    if (exact) return exact;
-  }
-  return matches.find((m) => m.selectionStart == null) ?? matches[0];
+  return findMarkOnSelection(marks, 'highlight', text, selectionStart);
 }
 
 export function phraseSelectionStart(contentMd: string, phrase: string): number | undefined {

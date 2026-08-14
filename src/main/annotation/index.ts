@@ -3,6 +3,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import type { Annotation } from '@shared/entities';
 import type { AnnotationKind, AnnotationTarget } from '@shared/enums';
 import type { AnnotationCreateInput, AnnotationView } from '@shared/ipc';
+import { findMarkOnSelection } from '@shared/annotationMarkList';
 import { getDb, schema } from '../db';
 
 function rowToAnnotation(row: typeof schema.annotation.$inferSelect): Annotation {
@@ -132,7 +133,31 @@ export function listCodeAnnotations(repoId: string): AnnotationView[] {
     .sort((a, b) => b.createdAt - a.createdAt);
 }
 
+/**
+ * 同一段选区上的同类标记只留一条。
+ *
+ * 界面会先把按钮禁掉，这里是兜底：连点、手机端同时操作、同步回灌都不该攒出重复。
+ * 判定规则与两端界面共用 findMarkOnSelection，避免「界面说没有、库里其实有」。
+ * 不带选区的整篇笔记（selectedText 为空）不受此限，那本来就是想记几条记几条。
+ */
+function findDuplicateOnSelection(input: AnnotationCreateInput): Annotation | undefined {
+  const selected = input.selectedText?.trim();
+  if (!selected) return undefined;
+  if (input.kind !== 'highlight' && input.kind !== 'note' && input.kind !== 'elaboration') {
+    return undefined;
+  }
+  return findMarkOnSelection(
+    listAnnotations(input.targetType, input.targetId),
+    input.kind,
+    selected,
+    input.selectionStart ?? undefined,
+  );
+}
+
 export function createAnnotation(input: AnnotationCreateInput): Annotation {
+  const duplicate = findDuplicateOnSelection(input);
+  if (duplicate) return duplicate;
+
   const id = randomUUID();
   const now = Date.now();
   const row = {

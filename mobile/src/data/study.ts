@@ -3,6 +3,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import type { Annotation, Explanation } from '@shared/entities';
 import type { AnnotationTarget, ExplanationTier } from '@shared/enums';
 import type { AnnotationCreateInput } from '@shared/ipc';
+import { findMarkOnSelection } from '@shared/annotationMarkList';
 import { getDeviceIdentity } from '../sync/identity';
 import { writingAs } from '../sync/triggers';
 
@@ -86,10 +87,36 @@ export function listAnnotations(
   return rows.map(rowToAnnotation);
 }
 
+/**
+ * 同一段选区上的同类标记只留一条，和桌面端 createAnnotation 是同一条规则。
+ *
+ * 界面会先把按钮禁掉，这里兜住连点；判定复用 findMarkOnSelection，两端结论一致。
+ * 不带选区的整篇笔记不受限。
+ */
+function findDuplicateOnSelection(
+  db: SQLiteDatabase,
+  input: AnnotationCreateInput,
+): Annotation | undefined {
+  const selected = input.selectedText?.trim();
+  if (!selected) return undefined;
+  if (input.kind !== 'highlight' && input.kind !== 'note' && input.kind !== 'elaboration') {
+    return undefined;
+  }
+  return findMarkOnSelection(
+    listAnnotations(db, input.targetType, input.targetId),
+    input.kind,
+    selected,
+    input.selectionStart ?? undefined,
+  );
+}
+
 export async function createAnnotation(
   db: SQLiteDatabase,
   input: AnnotationCreateInput,
 ): Promise<Annotation> {
+  const duplicate = findDuplicateOnSelection(db, input);
+  if (duplicate) return duplicate;
+
   const identity = await getDeviceIdentity(db);
   const id = Crypto.randomUUID();
   const now = Date.now();

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { dialog } from 'electron';
 import type { ExplanationTier } from '@shared/enums';
 import type { SpeechSnippet } from '@shared/entities';
@@ -101,12 +101,46 @@ export function saveSpeechFromNode(
   return saveSpeech('node', nodeId, contentMd, tier);
 }
 
+/** 同一来源下内容一模一样的话术只留一条：要背的是内容，重复条目只会碍事 */
+function findSameSnippet(
+  sourceType: SpeechSnippet['sourceType'],
+  sourceId: string,
+  contentMd: string,
+): SpeechSnippet | undefined {
+  const text = contentMd.trim();
+  if (!text) return undefined;
+  return listSpeechSnippetsForSource(sourceType, sourceId).find(
+    (s) => s.contentMd.trim() === text,
+  );
+}
+
+export function listSpeechSnippetsForSource(
+  sourceType: SpeechSnippet['sourceType'],
+  sourceId: string,
+): SpeechSnippet[] {
+  return getDb()
+    .select()
+    .from(schema.speechSnippet)
+    .where(
+      and(
+        eq(schema.speechSnippet.sourceType, sourceType),
+        eq(schema.speechSnippet.sourceId, sourceId),
+      ),
+    )
+    .all()
+    .map(rowToSnippet)
+    .sort((a, b) => b.createdAt - a.createdAt);
+}
+
 function saveSpeech(
   sourceType: SpeechSnippet['sourceType'],
   sourceId: string,
   contentMd: string,
   tier: ExplanationTier,
 ): SpeechSnippet {
+  const same = findSameSnippet(sourceType, sourceId, contentMd);
+  if (same) return same;
+
   const id = randomUUID();
   const now = Date.now();
   const row = {

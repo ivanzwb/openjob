@@ -85,6 +85,7 @@ import {
   deleteSpeechSnippet,
   exportSpeechSnippets,
   listSpeechSnippets,
+  listSpeechSnippetsForSource,
   saveSpeechFromNode,
   saveSpeechFromRepo,
   updateSpeechSnippet,
@@ -295,6 +296,9 @@ export function registerIpcHandlers(): void {
     saveSpeechFromNode(input.nodeId, input.contentMd, input.tier),
   );
   handle('speech:list', () => listSpeechSnippets());
+  handle('speech:listForSource', ({ sourceType, sourceId }) =>
+    listSpeechSnippetsForSource(sourceType, sourceId),
+  );
   handle('speech:update', (input) => updateSpeechSnippet(input.id, input.contentMd));
   handle('speech:delete', ({ id }) => {
     deleteSpeechSnippet(id);

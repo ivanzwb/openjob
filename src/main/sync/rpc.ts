@@ -65,6 +65,7 @@ import { fetchUrl, search } from '../search';
 import {
   deleteSpeechSnippet,
   listSpeechSnippets,
+  listSpeechSnippetsForSource,
   saveSpeechFromNode,
   saveSpeechFromRepo,
   updateSpeechSnippet,
@@ -204,6 +205,10 @@ const RPC_HANDLERS: Partial<Record<IpcInvokeChannel, RpcHandler>> = {
     return saveSpeechFromNode(input.nodeId, input.contentMd, input.tier);
   },
   'speech:list': () => listSpeechSnippets(),
+  'speech:listForSource': (p) => {
+    const input = p as IpcReq<'speech:listForSource'>;
+    return listSpeechSnippetsForSource(input.sourceType, input.sourceId);
+  },
   'speech:update': (p) => {
     const input = p as IpcReq<'speech:update'>;
     return updateSpeechSnippet(input.id, input.contentMd);

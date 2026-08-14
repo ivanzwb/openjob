@@ -8,6 +8,28 @@ const MARK_KIND_LABEL: Record<'highlight' | 'note' | 'elaboration', string> = {
   elaboration: '细化讲解',
 };
 
+export type SelectionMarkKind = 'highlight' | 'note' | 'elaboration';
+
+/**
+ * 找出同一段选区上已有的某类标记，两端与主进程共用同一套「同一段」判定。
+ *
+ * 选区身份是「文本 + 位置」：位置能对上优先按位置，只有文本对得上时退而认它
+ * （老数据没记 selectionStart），这样同一句话在正文里出现两次也能分开处理。
+ */
+export function findMarkOnSelection<
+  T extends Pick<Annotation, 'kind' | 'selectedText' | 'selectionStart'>,
+>(marks: T[], kind: SelectionMarkKind, text: string, selectionStart?: number): T | undefined {
+  const trimmed = text.trim();
+  if (!trimmed) return undefined;
+  const matches = marks.filter((m) => m.kind === kind && m.selectedText?.trim() === trimmed);
+  if (!matches.length) return undefined;
+  if (selectionStart !== undefined) {
+    const exact = matches.find((m) => m.selectionStart === selectionStart);
+    if (exact) return exact;
+  }
+  return matches.find((m) => m.selectionStart == null) ?? matches[0];
+}
+
 export function annotationContentOffset(
   mark: Pick<Annotation, 'selectedText' | 'selectionStart' | 'noteMd'>,
   contentMd: string,

@@ -2,7 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, Text, TextInput, View } from 'react-native';
 import type { Annotation, Explanation } from '@shared/entities';
 import type { ExplanationTier } from '@shared/enums';
-import { annotationMarkSummary, sortMarksByContentPosition } from '@shared/annotationMarkList';
+import {
+  annotationMarkSummary,
+  findMarkOnSelection,
+  sortMarksByContentPosition,
+} from '@shared/annotationMarkList';
 import { getRawDb } from '../db';
 import {
   createAnnotation,
@@ -127,6 +131,18 @@ export function ExplanationStudyPanel({
         : null,
     [phrase, highlightMarks, selectionStart],
   );
+
+  // 笔记和细化都是「新增一条」：同一段做过就别再做，重复点只会攒出内容一样的多条
+  const noteMark = phrase.trim()
+    ? findMarkOnSelection(contentMarks, 'note', phrase, selectionStart)
+    : undefined;
+  const elaborationMark = phrase.trim()
+    ? findMarkOnSelection(contentMarks, 'elaboration', phrase, selectionStart)
+    : undefined;
+  const doneLabels = [
+    noteMark ? '记过笔记' : null,
+    elaborationMark ? '细化过' : null,
+  ].filter((v): v is string => v !== null);
 
   const loadAnnotations = useCallback((explanationId: string) => {
     setAnnotations(listAnnotations(getRawDb(), 'explanation', explanationId));
@@ -318,7 +334,7 @@ export function ExplanationStudyPanel({
   };
 
   const saveNote = (): void => {
-    if (!content || !modalDraft.trim()) return;
+    if (!content || !modalDraft.trim() || noteMark) return;
     const explanationId = content.id;
     const trimmed = phrase.trim().slice(0, 500);
     const noteMd = modalDraft.trim();
@@ -361,7 +377,8 @@ export function ExplanationStudyPanel({
 
   const saveElaboration = (): void => {
     const text = phrase.trim();
-    if (!text || !content) return;
+    // 已细化过就别再请求模型：白花一次调用，落库那头也会当重复丢掉
+    if (!text || !content || elaborationMark) return;
     const target = { id: content.id, contentMd: content.contentMd };
     // 细化要请求模型，落库放在任务里：切走再回来，标记已经在正文上了
     void runTask(elaborateKey, '细化讲解', async () => {
@@ -619,17 +636,21 @@ export function ExplanationStudyPanel({
             </Pressable>
             <Pressable
               onPress={() => openModal('note')}
-              disabled={!phrase.trim()}
-              style={[actionBtn, !phrase.trim() && { opacity: 0.5 }]}
+              disabled={!phrase.trim() || Boolean(noteMark)}
+              style={[actionBtn, (!phrase.trim() || Boolean(noteMark)) && { opacity: 0.5 }]}
             >
-              <Text style={{ color: theme.accent, fontSize: 12 }}>记笔记</Text>
+              <Text style={{ color: theme.accent, fontSize: 12 }}>
+                {noteMark ? '已有笔记' : '记笔记'}
+              </Text>
             </Pressable>
             <Pressable
               onPress={() => openModal('elaboration')}
-              disabled={!phrase.trim()}
-              style={[actionBtn, !phrase.trim() && { opacity: 0.5 }]}
+              disabled={!phrase.trim() || Boolean(elaborationMark)}
+              style={[actionBtn, (!phrase.trim() || Boolean(elaborationMark)) && { opacity: 0.5 }]}
             >
-              <Text style={{ color: theme.accent, fontSize: 12 }}>细化讲解</Text>
+              <Text style={{ color: theme.accent, fontSize: 12 }}>
+                {elaborationMark ? '已细化' : '细化讲解'}
+              </Text>
             </Pressable>
             <Pressable
               onPress={() => openModal('edit')}
@@ -639,6 +660,11 @@ export function ExplanationStudyPanel({
               <Text style={{ color: theme.accent, fontSize: 12 }}>编辑词句</Text>
             </Pressable>
           </View>
+          {doneLabels.length > 0 && (
+            <Text style={{ color: theme.muted, fontSize: 11 }}>
+              这段已经{doneLabels.join('、')}，想重做就先在正文里点开原来的标记删掉
+            </Text>
+          )}
         </View>
       )}
 

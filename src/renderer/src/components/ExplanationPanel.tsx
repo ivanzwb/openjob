@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Explanation } from '@shared/entities';
 import type { ExplanationTier } from '@shared/enums';
+import { findMarkOnSelection } from '@shared/annotationMarkList';
 import { invoke } from '../ipc';
 import { isTaskRunning, runTask, useTask, useTaskResult } from '../ipc/taskStore';
 import {
@@ -27,6 +28,25 @@ const TIERS: { id: ExplanationTier; label: string }[] = [
 const toolbarBtn =
   'rounded px-2 py-1 text-xs text-[var(--color-muted)] hover:bg-black/20 hover:text-[var(--color-fg)] disabled:cursor-not-allowed disabled:opacity-40';
 
+/**
+ * 同一段选区上，每个动作只做一次。
+ *
+ * 笔记、细化、话术都是「新增一条」的动作，重复点只会攒出内容一样的多条记录；
+ * 已经做过就把按钮禁掉并说明原因，想重做先删掉原来那条。
+ * 高亮不在此列：它走的是删旧建新的更新路径，本来就不会重复。
+ */
+interface SelectionDone {
+  note: boolean;
+  elaboration: boolean;
+  speech: boolean;
+}
+
+const DONE_HINT: Record<keyof SelectionDone, string> = {
+  note: '这段已经记过笔记了，想重记就先删掉原来那条',
+  elaboration: '这段已经细化过了，想重做就先删掉原来的细化标记',
+  speech: '这段已经在话术库里了，想重存就先去话术库删掉',
+};
+
 function replaceExcerpt(contentMd: string, selected: string, replacement: string): string {
   const sel = selected.trim();
   const rep = replacement.trim();
@@ -38,6 +58,7 @@ function replaceExcerpt(contentMd: string, selected: string, replacement: string
 function SelectionFloatingMenu({
   anchor,
   busy,
+  done,
   onEdit,
   onHighlight,
   onNote,
@@ -46,6 +67,7 @@ function SelectionFloatingMenu({
 }: {
   anchor: SelectionAnchor;
   busy: string | null;
+  done: SelectionDone;
   onEdit: () => void;
   onHighlight: () => void;
   onNote: () => void;
@@ -68,14 +90,32 @@ function SelectionFloatingMenu({
         <button type="button" className={menuBtn} disabled={Boolean(busy)} onClick={onHighlight}>
           {busy === 'highlight' ? '高亮中…' : '划词高亮'}
         </button>
-        <button type="button" className={menuBtn} disabled={Boolean(busy)} onClick={onNote}>
-          记笔记
+        <button
+          type="button"
+          className={menuBtn}
+          disabled={Boolean(busy) || done.note}
+          title={done.note ? DONE_HINT.note : undefined}
+          onClick={onNote}
+        >
+          {done.note ? '已有笔记' : '记笔记'}
         </button>
-        <button type="button" className={menuBtn} disabled={Boolean(busy)} onClick={onElaborate}>
-          {busy === 'elaborate' ? '细化中…' : '细化讲解'}
+        <button
+          type="button"
+          className={menuBtn}
+          disabled={Boolean(busy) || done.elaboration}
+          title={done.elaboration ? DONE_HINT.elaboration : undefined}
+          onClick={onElaborate}
+        >
+          {busy === 'elaborate' ? '细化中…' : done.elaboration ? '已细化' : '细化讲解'}
         </button>
-        <button type="button" className={menuBtn} disabled={Boolean(busy)} onClick={onSaveSpeech}>
-          {busy === 'speech' ? '保存中…' : '存入话术库'}
+        <button
+          type="button"
+          className={menuBtn}
+          disabled={Boolean(busy) || done.speech}
+          title={done.speech ? DONE_HINT.speech : undefined}
+          onClick={onSaveSpeech}
+        >
+          {busy === 'speech' ? '保存中…' : done.speech ? '已存入话术库' : '存入话术库'}
         </button>
       </div>
     </div>,
@@ -357,6 +397,15 @@ export function ExplanationPanel({
   const isUserEdited = content?.modelUsed === 'user-edit';
   const hasSelection = Boolean(selection);
 
+  // 这个考点已经存进话术库的原文，用来判断选中的这段是不是已经存过
+  const [savedSpeech, setSavedSpeech] = useState<Set<string>>(() => new Set());
+  const reloadSavedSpeech = useCallback(() => {
+    void invoke('speech:listForSource', { sourceType: 'node', sourceId: nodeId }).then((list) =>
+      setSavedSpeech(new Set(list.map((s) => s.contentMd.trim()))),
+    );
+  }, [nodeId]);
+  useEffect(reloadSavedSpeech, [reloadSavedSpeech]);
+
   const annotation = useAnnotationTools({
     targetType: 'explanation',
     targetId: content?.id ?? '',
@@ -372,6 +421,30 @@ export function ExplanationPanel({
     toolbarPanel === 'highlight' && popoverAnchor
       ? findHighlightMark(popoverAnchor.text, highlightMarks, popoverAnchor.selectionStart)
       : undefined;
+
+  // 判断「这段做过没有」只看 state 里的选区：渲染期读 selectionRef 拿到的可能是上一帧的
+  const markedSelection = popoverAnchor ?? selection;
+  const done: SelectionDone = {
+    note: Boolean(
+      markedSelection &&
+        findMarkOnSelection(
+          annotation.marks,
+          'note',
+          markedSelection.text,
+          markedSelection.selectionStart,
+        ),
+    ),
+    elaboration: Boolean(
+      markedSelection &&
+        findMarkOnSelection(
+          annotation.marks,
+          'elaboration',
+          markedSelection.text,
+          markedSelection.selectionStart,
+        ),
+    ),
+    speech: Boolean(markedSelection && savedSpeech.has(markedSelection.text.trim())),
+  };
 
   const closeActionPanel = useCallback(() => {
     setToolbarPanel('none');
@@ -524,6 +597,35 @@ export function ExplanationPanel({
     }).catch(() => undefined);
   };
 
+  const elaborateSelection = (): void => {
+    const contextMd = content?.contentMd;
+    if (!contextMd) return;
+    runOnSelection(elaborateKey, async (sel) => {
+      // 已细化过就别再请求模型：白花一次调用，落库那头也会当重复丢掉
+      if (findMarkOnSelection(annotation.marks, 'elaboration', sel.text, sel.selectionStart)) {
+        return;
+      }
+      const res = await invoke('explain:elaborate', {
+        nodeId,
+        tier: activeTier,
+        selectedText: sel.text,
+        contextMd,
+      });
+      await annotation.addElaborationOnSelection(res.selectedText, res.elaborationMd);
+      toast('细化讲解已保存', { variant: 'success' });
+      clearSelection();
+    });
+  };
+
+  const saveSelectionToSpeech = (): void => {
+    runOnSelection(speechKey, async (sel) => {
+      await invoke('speech:saveFromNode', { nodeId, contentMd: sel.text, tier: activeTier });
+      reloadSavedSpeech();
+      toast('选区已存入话术库', { variant: 'success' });
+      clearSelection();
+    });
+  };
+
   const clearSelectedHighlight = (): void => {
     const sel = currentSelection();
     if (!sel) return;
@@ -581,49 +683,30 @@ export function ExplanationPanel({
               </button>
               <button
                 type="button"
-                disabled={!hasSelection || Boolean(busy)}
+                disabled={!hasSelection || Boolean(busy) || done.note}
+                title={done.note ? DONE_HINT.note : undefined}
                 onClick={() => openActionPanel('note')}
                 className={toolbarBtn}
               >
-                记笔记
+                {done.note ? '已有笔记' : '记笔记'}
               </button>
               <button
                 type="button"
-                disabled={!hasSelection || Boolean(busy)}
-                onClick={() => {
-                  runOnSelection(elaborateKey, async (sel) => {
-                    const res = await invoke('explain:elaborate', {
-                      nodeId,
-                      tier: activeTier,
-                      selectedText: sel.text,
-                      contextMd: content.contentMd,
-                    });
-                    await annotation.addElaborationOnSelection(res.selectedText, res.elaborationMd);
-                    toast('细化讲解已保存', { variant: 'success' });
-                    clearSelection();
-                  });
-                }}
+                disabled={!hasSelection || Boolean(busy) || done.elaboration}
+                title={done.elaboration ? DONE_HINT.elaboration : undefined}
+                onClick={elaborateSelection}
                 className={toolbarBtn}
               >
-                {busy === 'elaborate' ? '细化中…' : '细化讲解'}
+                {busy === 'elaborate' ? '细化中…' : done.elaboration ? '已细化' : '细化讲解'}
               </button>
               <button
                 type="button"
-                disabled={!hasSelection || Boolean(busy)}
-                onClick={() => {
-                  runOnSelection(speechKey, async (sel) => {
-                    await invoke('speech:saveFromNode', {
-                      nodeId,
-                      contentMd: sel.text,
-                      tier: activeTier,
-                    });
-                    toast('选区已存入话术库', { variant: 'success' });
-                    clearSelection();
-                  });
-                }}
+                disabled={!hasSelection || Boolean(busy) || done.speech}
+                title={done.speech ? DONE_HINT.speech : undefined}
+                onClick={() => saveSelectionToSpeech()}
                 className={toolbarBtn}
               >
-                {busy === 'speech' ? '保存中…' : '存入话术库'}
+                {busy === 'speech' ? '保存中…' : done.speech ? '已存入话术库' : '存入话术库'}
               </button>
 
               <div className="ml-auto flex items-center gap-1">
@@ -731,33 +814,12 @@ export function ExplanationPanel({
         <SelectionFloatingMenu
           anchor={selection}
           busy={busy}
+          done={done}
           onEdit={() => openActionPanel('edit')}
           onNote={() => openActionPanel('note')}
           onHighlight={() => openActionPanel('highlight')}
-          onElaborate={() => {
-            runOnSelection(elaborateKey, async (sel) => {
-              const res = await invoke('explain:elaborate', {
-                nodeId,
-                tier: activeTier,
-                selectedText: sel.text,
-                contextMd: content.contentMd,
-              });
-              await annotation.addElaborationOnSelection(res.selectedText, res.elaborationMd);
-              toast('细化讲解已保存', { variant: 'success' });
-              clearSelection();
-            });
-          }}
-          onSaveSpeech={() => {
-            runOnSelection(speechKey, async (sel) => {
-              await invoke('speech:saveFromNode', {
-                nodeId,
-                contentMd: sel.text,
-                tier: activeTier,
-              });
-              toast('选区已存入话术库', { variant: 'success' });
-              clearSelection();
-            });
-          }}
+          onElaborate={elaborateSelection}
+          onSaveSpeech={saveSelectionToSpeech}
         />
       )}
 
