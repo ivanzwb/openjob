@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type {
   CampaignSummary,
   DesignCaseResult,
@@ -12,6 +12,7 @@ import {
 import { VoiceInputButton } from '../components/VoiceInputButton';
 import { PageShell } from '../components/PageShell';
 import { invoke } from '../ipc';
+import { useDataRefresh } from '../ipc/dataVersion';
 import { runTask, useTask, useTaskResult } from '../ipc/taskStore';
 
 const ANSWER_PLACEHOLDER: Record<string, string> = {
@@ -37,12 +38,18 @@ export function DesignPractice(): React.JSX.Element {
   const loading = caseTask.running || submitTask.running;
   const error = caseTask.error ?? submitTask.error;
 
-  useEffect(() => {
+  const refresh = useCallback(() => {
     void invoke('campaign:list', undefined).then((list) => {
       setCampaigns(list);
       setCampaignId((prev) => prev || list[0]?.id || '');
     });
   }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  useDataRefresh(refresh);
 
   useTaskResult<DesignCaseResult>(caseKey, (c) => {
     setDesignCase(c);
