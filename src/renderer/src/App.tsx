@@ -9,7 +9,8 @@ import { Repos } from './pages/Repos';
 import { Scripts } from './pages/Scripts';
 import { DesignPractice } from './pages/DesignPractice';
 import { Resumes } from './pages/Resumes';
-import { invoke } from './ipc';
+import { invoke, onEvent } from './ipc';
+import { bumpDataVersion } from './ipc/dataVersion';
 import { useJobProgress } from './ipc/useJobProgress';
 import { reportBackgroundError, useBackgroundErrorToast } from './ipc/errorToast';
 
@@ -66,6 +67,9 @@ export default function App(): React.JSX.Element {
   useEffect(() => {
     void invoke('app:getVersion', undefined).then(setVersion);
   }, []);
+
+  // 手机端同步把变更落库后，数据页需要重拉：任何同步完成都全局 bump 数据版本
+  useEffect(() => onEvent('sync:finished', () => bumpDataVersion()), []);
 
   const selectTab = (key: Tab): void => {
     setTab(key);

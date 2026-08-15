@@ -3,6 +3,7 @@ import QRCodeSVG from 'react-qr-code';
 import type { FieldConflict, PairingPayload, SyncRunSummary, SyncStatus } from '@shared/sync';
 import type { ConflictChoice } from '@shared/sync';
 import { invoke, onEvent } from '../ipc';
+import { bumpDataVersion } from '../ipc/dataVersion';
 import { runTask } from '../ipc/taskStore';
 import { TaskButton } from './TaskButton';
 
@@ -81,7 +82,10 @@ export function SyncPanel(): React.JSX.Element {
       await invoke('sync:rollback', { backupFile });
       await refresh();
     })
-      .then(() => setMessage('已回退到所选备份'))
+      .then(() => {
+        bumpDataVersion();
+        setMessage('已回退到所选备份');
+      })
       .catch(() => undefined);
   };
 
@@ -101,6 +105,7 @@ export function SyncPanel(): React.JSX.Element {
       await refresh();
     })
       .then(() => {
+        bumpDataVersion();
         setActiveRunId(null);
         setConflicts([]);
         setChoices({});
