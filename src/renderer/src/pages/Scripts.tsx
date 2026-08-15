@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { SpeechSnippetView } from '@shared/ipc';
 import { MarkdownContent } from '../components/MarkdownContent';
 import { invoke } from '../ipc';
+import { useDataRefresh } from '../ipc/dataVersion';
 import { runTask, useTask, useTaskResult } from '../ipc/taskStore';
 import { PageShell } from '../components/PageShell';
 import { TaskButton } from '../components/TaskButton';
@@ -33,6 +34,8 @@ export function Scripts(): React.JSX.Element {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  useDataRefresh(refresh);
 
   const selected = snippets.find((s) => s.id === selectedId) ?? null;
   const dirty = Boolean(selected && draft !== selected.contentMd);

@@ -8,6 +8,7 @@ import { TaskButton } from '../components/TaskButton';
 import { useToast } from '../components/Toast';
 import { useJobFeedback, useJobProgress } from '../ipc/useJobProgress';
 import { invoke } from '../ipc';
+import { useDataRefresh } from '../ipc/dataVersion';
 import { runTask } from '../ipc/taskStore';
 
 type RepoTab = 'summary' | 'qa';
@@ -80,6 +81,8 @@ export function Repos(): React.JSX.Element {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  useDataRefresh(refresh);
 
   useEffect(() => {
     if (!active) refresh();

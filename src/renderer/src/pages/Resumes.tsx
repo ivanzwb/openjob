@@ -8,6 +8,7 @@ import { PageShell } from '../components/PageShell';
 import { Spinner } from '../components/Spinner';
 import { TaskButton } from '../components/TaskButton';
 import { invoke } from '../ipc';
+import { useDataRefresh } from '../ipc/dataVersion';
 import { runTask, useTask, useTaskResult } from '../ipc/taskStore';
 
 type SubTab = 'targets' | 'resumes';
@@ -135,6 +136,8 @@ export function Resumes(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void refreshAll();
   }, [refreshAll]);
+
+  useDataRefresh(refreshAll);
 
   // 切换母版/关闭表单时渲染期同步清空选中变体
   if (selectedResume && !resumeFormOpen && listSelection?.kind !== 'variant' && activeVariantId !== null) {
