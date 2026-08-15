@@ -25,6 +25,7 @@ import { ReportSourceList } from '../components/ReportSourceList';
 import { TaskStudyPanel } from '../components/TaskStudyPanel';
 import { PageShell } from '../components/PageShell';
 import { invoke } from '../ipc';
+import { useDataRefresh } from '../ipc/dataVersion';
 import { useJobFeedback, useJobProgress } from '../ipc/useJobProgress';
 import { runTask, useTask, useTaskResult } from '../ipc/taskStore';
 
@@ -150,6 +151,8 @@ export function CampaignDetail({
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  useDataRefresh(refresh);
 
   useEffect(() => {
     if (!autoDiagnose || autoRan.current) return;

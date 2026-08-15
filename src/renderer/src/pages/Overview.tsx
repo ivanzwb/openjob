@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { CampaignCompareResult, CampaignOverview } from '@shared/ipc';
 import { invoke } from '../ipc';
+import { useDataRefresh } from '../ipc/dataVersion';
 import { runTask, useTask, useTaskResult } from '../ipc/taskStore';
 import { PageShell } from '../components/PageShell';
 
@@ -35,6 +36,8 @@ export function Overview({
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  useDataRefresh(refresh);
 
   const runCompare = (): void => {
     if (!compareA || !compareB || compareA === compareB) return;

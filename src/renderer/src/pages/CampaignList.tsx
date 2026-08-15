@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { CampaignSummary } from '@shared/ipc';
 import { invoke } from '../ipc';
+import { useDataRefresh } from '../ipc/dataVersion';
 import { runTask } from '../ipc/taskStore';
 import { PageShell } from '../components/PageShell';
 import { TaskButton } from '../components/TaskButton';
@@ -32,6 +33,8 @@ export function CampaignList({
       cancelled = true;
     };
   }, []);
+
+  useDataRefresh(refresh);
 
   const remove = (id: string): void => {
     if (!confirm('确定删除这场备考？')) return;
