@@ -1,7 +1,7 @@
 import { ActivityIndicator, View, Text } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppProvider, useApp } from './src/context/AppContext';
 import { RemoteTaskProvider, useRemoteTask } from './src/context/RemoteTaskContext';
 import { ToastProvider } from './src/components/Toast';
@@ -10,10 +10,11 @@ import { useTheme } from './src/theme';
 
 function TaskBanner(): React.JSX.Element | null {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const { active } = useRemoteTask();
   if (!active) return null;
   return (
-    <View style={{ backgroundColor: theme.surface, borderBottomWidth: 1, borderColor: theme.border, paddingHorizontal: 12, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+    <View style={{ backgroundColor: theme.surface, borderBottomWidth: 1, borderColor: theme.border, paddingTop: insets.top, paddingHorizontal: 12, paddingBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
       <ActivityIndicator size="small" color={theme.accent} />
       <Text style={{ color: theme.text, fontSize: 12, flex: 1 }} numberOfLines={1}>
         {active.label}
