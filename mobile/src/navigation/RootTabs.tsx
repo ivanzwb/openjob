@@ -9,6 +9,7 @@ import { ReposScreen } from '../screens/ReposScreen';
 import { ResumesScreen } from '../screens/ResumesScreen';
 import { SyncScreen } from '../screens/SyncScreen';
 import { AppHeaderTitle } from '../components/AppHeaderTitle';
+import { useRemoteTask } from '../context/RemoteTaskContext';
 import { useTheme } from '../theme';
 
 const Tab = createBottomTabNavigator();
@@ -42,12 +43,16 @@ function TabIcon({
 
 export function RootTabs(): React.JSX.Element {
   const theme = useTheme();
+  const { active } = useRemoteTask();
   return (
     <Tab.Navigator
       detachInactiveScreens={false}
       screenOptions={({ route }) => ({
         headerStyle: { backgroundColor: theme.surface },
         headerTintColor: theme.text,
+        // 任务横幅出现时横幅已吃掉顶部安全区（insets.top），
+        // 导航 header 就不再叠加一份，避免标题下方出现大段空白
+        headerStatusBarHeight: active ? 0 : undefined,
         tabBarStyle: { backgroundColor: theme.surface, borderTopColor: theme.border },
         tabBarActiveTintColor: theme.accent,
         tabBarInactiveTintColor: theme.muted,
