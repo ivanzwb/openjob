@@ -13,6 +13,9 @@ config.resolver.nodeModulesPaths = [
 ];
 config.resolver.extraNodeModules = {
   '@shared': path.resolve(workspaceRoot, 'src/shared'),
+  // whisper.rn 依赖 safe-buffer → require('buffer')（Node 内置）。
+  // Metro 默认不解析 Node 内置模块，用 npm 的 buffer 包顶替。
+  buffer: require.resolve('buffer/'),
 };
 
 module.exports = config;

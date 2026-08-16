@@ -3,7 +3,7 @@ import {
   requestRecordingPermissionsAsync,
   useAudioStream,
 } from 'expo-audio';
-import { initWhisper, releaseAllWhisper, type WhisperContext } from 'whisper.rn';
+import { initWhisper, releaseAllWhisper, type WhisperContext } from 'whisper.rn/index';
 import { ensureModel, isModelReady } from '../stt/model';
 
 /** 与桌面端同构的状态机：idle → recording → transcribing → done/error */
