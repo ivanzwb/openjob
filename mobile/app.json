@@ -9,13 +9,15 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSCameraUsageDescription": "扫描二维码以配对桌面端同步服务"
+        "NSCameraUsageDescription": "扫描二维码以配对桌面端同步服务",
+        "NSMicrophoneUsageDescription": "用于语音口述（本地离线语音转文字）"
       }
     },
     "android": {
       "package": "com.openjob.mobile",
       "permissions": [
         "CAMERA",
+        "RECORD_AUDIO",
         "REQUEST_INSTALL_PACKAGES"
       ],
       "adaptiveIcon": {
@@ -38,6 +40,12 @@
           "android": {
             "usesCleartextTraffic": true
           }
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "允许 $(PRODUCT_NAME) 使用麦克风进行语音口述（本地离线语音转文字）"
         }
       ]
     ]

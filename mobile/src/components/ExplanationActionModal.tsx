@@ -14,6 +14,7 @@ import {
 import type { Annotation } from '@shared/entities';
 import { DEFAULT_HIGHLIGHT_COLOR, HIGHLIGHT_COLORS } from '../lib/annotationMarks';
 import { useTheme } from '../theme';
+import { VoiceInputButton } from './VoiceInputButton';
 
 export type ActionModalMode =
   | 'highlight'
@@ -209,25 +210,32 @@ export function ExplanationActionModal({
       {mode === 'regenerate' && (
         <>
           <Text style={{ color: theme.muted, fontSize: 12, lineHeight: 18 }}>{regenerateHint}</Text>
-          <TextInput
-            value={draft}
-            onChangeText={onDraftChange}
-            onSubmitEditing={onSubmitRegenerate}
-            returnKeyType="done"
-            editable={!busy}
-            autoFocus
-            placeholder="这次想怎么讲？如：多用我简历里的项目举例、少讲源码细节、重点讲 GC（可留空）"
-            placeholderTextColor={theme.muted}
-            style={{
-              color: theme.text,
-              borderWidth: 1,
-              borderColor: theme.border,
-              borderRadius: 8,
-              paddingHorizontal: 10,
-              paddingVertical: 8,
-              fontSize: 13,
-            }}
-          />
+          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+            <TextInput
+              value={draft}
+              onChangeText={onDraftChange}
+              onSubmitEditing={onSubmitRegenerate}
+              returnKeyType="done"
+              editable={!busy}
+              autoFocus
+              placeholder="这次想怎么讲？如：多用我简历里的项目举例、少讲源码细节、重点讲 GC（可留空）"
+              placeholderTextColor={theme.muted}
+              style={{
+                flex: 1,
+                color: theme.text,
+                borderWidth: 1,
+                borderColor: theme.border,
+                borderRadius: 8,
+                paddingHorizontal: 10,
+                paddingVertical: 8,
+                fontSize: 13,
+              }}
+            />
+            <VoiceInputButton
+              onTranscript={(text) => onDraftChange(draft + text)}
+              disabled={busy}
+            />
+          </View>
           <Text style={{ color: theme.muted, fontSize: 11 }}>
             留空就按原来的要求重写；要求只作用于这一次
           </Text>
@@ -235,7 +243,14 @@ export function ExplanationActionModal({
       )}
 
       {(mode === 'note' || mode === 'edit') && (
-        <TextInput
+        <>
+          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'flex-end' }}>
+            <VoiceInputButton
+              onTranscript={(text) => onDraftChange(draft + text)}
+              disabled={busy}
+            />
+          </View>
+          <TextInput
           multiline
           value={draft}
           onChangeText={onDraftChange}
@@ -255,6 +270,7 @@ export function ExplanationActionModal({
             lineHeight: 20,
           }}
         />
+        </>
       )}
 
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'flex-end' }}>

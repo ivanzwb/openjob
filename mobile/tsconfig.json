@@ -5,7 +5,8 @@
     "paths": {
       "@shared/*": ["../src/shared/*"],
       "drizzle-orm": ["./node_modules/drizzle-orm"],
-      "drizzle-orm/*": ["./node_modules/drizzle-orm/*"]
+      "drizzle-orm/*": ["./node_modules/drizzle-orm/*"],
+      "whisper.rn": ["./node_modules/whisper.rn/lib/typescript/index.d.ts"]
     }
   },
   "include": ["**/*.ts", "**/*.tsx", "../src/shared/**/*.ts"]

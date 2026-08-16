@@ -7,6 +7,7 @@ import { completeRepoAgentChat } from '../llm/agentChat';
 import { runTask, useTaskResult, useTaskState } from '../context/RemoteTaskContext';
 import { markdownToPlainText } from '../lib/markdownBlocks';
 import { SourceBadge } from './SourceBadge';
+import { VoiceInputButton } from './VoiceInputButton';
 import { useTheme } from '../theme';
 
 export function RepoQaPanel({ repo }: { repo: Repo }): React.JSX.Element {
@@ -94,6 +95,10 @@ export function RepoQaPanel({ repo }: { repo: Repo }): React.JSX.Element {
                 paddingVertical: 8,
                 fontSize: 13,
               }}
+            />
+            <VoiceInputButton
+              onTranscript={(text) => setInput((prev) => (prev ? prev + text : text))}
+              disabled={busy}
             />
             <Pressable
               onPress={submit}

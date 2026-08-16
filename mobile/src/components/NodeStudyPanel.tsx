@@ -7,6 +7,7 @@ import { isTaskRunning, runTask, useTaskResult, useTaskState } from '../context/
 import { useTheme } from '../theme';
 import { useEffect, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
+import { VoiceInputButton } from './VoiceInputButton';
 
 export function NodeStudyPanel({
   nodeId,
@@ -66,6 +67,9 @@ export function NodeStudyPanel({
       {question && <Text style={{ color: theme.text, fontSize: 13, lineHeight: 20 }}>{question}</Text>}
       {!quizResult ? (
         <>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' }}>
+            <VoiceInputButton onTranscript={(text) => setAnswer((prev) => prev + text)} />
+          </View>
           <TextInput
             multiline
             value={answer}
