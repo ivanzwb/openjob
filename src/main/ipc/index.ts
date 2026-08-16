@@ -97,6 +97,7 @@ import {
   searchSessions,
 } from '../session';
 import { getAppPaths } from '../paths';
+import { getSttStatus, transcribe } from '../stt';
 import { checkForUpdates, getUpdateStatus, quitAndInstall } from '../updater';
 import { handle } from './bridge';
 import { applyWindowTheme } from '../theme';
@@ -363,6 +364,9 @@ export function registerIpcHandlers(): void {
   handle('sync:rollback', ({ backupFile }) => {
     restoreBackup(backupFile);
   });
+
+  handle('stt:status', () => getSttStatus());
+  handle('stt:transcribe', ({ audio }) => transcribe(audio).then((text) => ({ text })));
 }
 
 export { emit, handle } from './bridge';

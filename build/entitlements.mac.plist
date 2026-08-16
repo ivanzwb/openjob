@@ -14,5 +14,8 @@
        Electron's pre-signed frameworks carry a different Team ID than "-". -->
   <key>com.apple.security.cs.disable-library-validation</key>
   <true/>
+  <!-- 语音口述需要麦克风：hardened runtime 下缺这个 entitlement 拿不到音频输入 -->
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
 </dict>
 </plist>

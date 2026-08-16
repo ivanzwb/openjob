@@ -22,9 +22,12 @@ extraResources:
     filter:
       - '**/*'
 
-# 原生模块（better-sqlite3）的 .node 必须解包，asar 内无法 dlopen
+# 原生模块（better-sqlite3）的 .node 必须解包，asar 内无法 dlopen；
+# onnxruntime-web 的 WASM/MJS 运行时文件也要解包——主进程通过 file:// 动态加载，
+# 无法读取 asar 虚拟路径，SttService 会把 app.asar 改写为 app.asar.unpacked
 asarUnpack:
   - '**/*.node'
+  - '**/onnxruntime-web/dist/ort-wasm-simd-threaded.*'
 
 # 让 electron-builder 按 Electron 的 ABI 重建原生依赖
 npmRebuild: true
@@ -71,6 +74,9 @@ mac:
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   gatekeeperAssess: false
+  # 语音口述走 getUserMedia，TCC 要求 Info.plist 声明用途描述，缺了会静默拒绝权限
+  extendInfo:
+    NSMicrophoneUsageDescription: 用于语音口述（本地离线语音转文字）
 
 dmg:
   sign: false

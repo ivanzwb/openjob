@@ -840,6 +840,19 @@ export interface CampaignCompareResult {
 }
 
 // ---------------------------------------------------------------------------
+// 语音口述（本地 STT）
+// ---------------------------------------------------------------------------
+
+/** 本地语音转写引擎状态，主进程 → 渲染进程单向推送 */
+export interface SttStatus {
+  state: 'idle' | 'loading' | 'ready' | 'error';
+  /** 模型下载进度 0-1（loading 期间推送） */
+  progress?: number;
+  /** 错误信息（error 状态时） */
+  error?: string;
+}
+
+// ---------------------------------------------------------------------------
 // 通道映射
 // ---------------------------------------------------------------------------
 
@@ -1010,6 +1023,11 @@ export interface IpcInvokeMap {
     res: { applied: number };
   };
   'sync:rollback': { req: { backupFile: string }; res: void };
+
+  /** 查询本地语音转写引擎状态（模型是否就绪/加载进度/错误） */
+  'stt:status': { req: void; res: SttStatus };
+  /** 本地离线转写：16kHz 单声道 Float32 PCM → 文本 */
+  'stt:transcribe': { req: { audio: Float32Array }; res: { text: string } };
 }
 
 /** 主进程 → 渲染进程的单向推送 */
@@ -1027,6 +1045,8 @@ export interface IpcEventMap {
     status: 'success' | 'conflict';
     conflictCount: number;
   };
+  /** 语音模型加载/下载进度推送 */
+  'stt:status': SttStatus;
 }
 
 export type IpcInvokeChannel = keyof IpcInvokeMap;
@@ -1149,6 +1169,8 @@ export const IPC_INVOKE_CHANNELS = [
   'sync:listConflicts',
   'sync:resolveConflicts',
   'sync:rollback',
+  'stt:status',
+  'stt:transcribe',
 ] as const satisfies readonly IpcInvokeChannel[];
 
 export const IPC_EVENT_CHANNELS = [
@@ -1160,6 +1182,7 @@ export const IPC_EVENT_CHANNELS = [
   'update:status',
   'sync:paired',
   'sync:finished',
+  'stt:status',
 ] as const satisfies readonly IpcEventChannel[];
 
 /**

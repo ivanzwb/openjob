@@ -55,6 +55,7 @@
     "vite": "^7.3.6"
   },
   "dependencies": {
+    "@huggingface/transformers": "^4.2.0",
     "@shikijs/langs": "4.4.2",
     "@shikijs/themes": "4.4.2",
     "@xyflow/react": "^12.11.2",
