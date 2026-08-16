@@ -3,9 +3,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import type { DesignCaseResult, DesignSubmitResult } from '@shared/ipc';
 import type { ExamForm } from '@shared/enums';
 import {
-  caseSystemForType,
   caseUserHintForType,
-  scoreSystemForType,
   type DesignCaseGenerated,
   type DesignScoreGenerated,
   type MockInterviewType,
@@ -111,8 +109,10 @@ export async function generateDesignCase(
 
   const generated = await completeJson<DesignCaseGenerated>(
     'quiz',
-    caseSystemForType(interviewType),
+    'design.case',
     `${context}\n\n${caseUserHintForType(interviewType)}`,
+    undefined,
+    { type: interviewType },
   );
 
   return {
@@ -140,13 +140,15 @@ export async function submitDesignAnswer(
 
   const scored = await completeJson<DesignScoreGenerated>(
     'quiz',
-    scoreSystemForType(interviewType),
+    'design.score',
     `${context}
 
 题目类型：${interviewType}
 题目：${caseTitle}
 题干：${scenarioMd}
 候选人回答：${userAnswer}`,
+    undefined,
+    { type: interviewType },
   );
 
   const score = Math.min(5, Math.max(1, Math.round(scored.score)));

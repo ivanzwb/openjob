@@ -6,6 +6,7 @@ import {
   type ChatMessage,
 } from '@shared/llm/messages';
 import { parseJsonResponse } from '@shared/llm/parseJson';
+import { resolvePrompt } from '@shared/prompts/registry';
 import { resolveLlmRole } from './resolve';
 
 /** JD 诊断等结构化输出可能很长，给足 token 上限 */
@@ -97,13 +98,15 @@ async function chatCompletion(
 
 export async function completeJson<T>(
   role: LlmRole,
-  system: string,
+  promptId: string,
   user: string,
   signal?: AbortSignal,
+  params?: Record<string, string | undefined>,
 ): Promise<T> {
   const { baseUrl, model, apiKey, temperature } = await resolveLlmRole(role);
+  const resolved = resolvePrompt(promptId, params);
   const systemContent =
-    system +
+    resolved.text +
     '\n\n只输出合法 JSON，不要 markdown 代码块，不要任何解释文字。' +
     '字符串值里的双引号必须写成 \\"，换行必须写成 \\n。';
 

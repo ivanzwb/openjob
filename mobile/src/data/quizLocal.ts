@@ -31,8 +31,7 @@ export async function generateQuizQuestion(
 
   const result = await completeJson<{ question: string }>(
     'quiz',
-    `你是面试官。根据考点出一道口头面试题，模拟真实追问压力。
-输出 JSON：{ "question": "..." }`,
+    'quiz.question',
     `公司：${campaign.company} 岗位：${campaign.roleTitle}
 考点：${node.name} 覆盖类型：${node.coverageType}`,
   );
@@ -51,8 +50,7 @@ export async function submitQuizAnswer(
 
   const scored = await completeJson<QuizScoreResult>(
     'quiz',
-    `你是面试评委。按 1-5 分评分（5=能扛追问），给出反馈和改进后的口语表述。
-输出 JSON：{ "score": 1-5, "feedbackMd": "...", "improvedScriptMd": "口语改进稿" }`,
+    'quiz.score',
     `公司：${campaign.company} 岗位：${campaign.roleTitle}
 考点：${node.name}
 问题：${question}

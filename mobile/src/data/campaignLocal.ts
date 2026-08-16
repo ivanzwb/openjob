@@ -1,6 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import type { Campaign, KnowledgeNode, Resume } from '@shared/entities';
 import type { CoverageType, ExamForm, MasterySource, NodeKind, NodeStatus } from '@shared/enums';
+import { RESUME_ALIGN_RULES } from '@shared/prompts/explain';
 
 type NodeRow = {
   id: string;
@@ -110,13 +111,6 @@ export function getResume(db: SQLiteDatabase, resumeId: string): Resume {
     updatedAt: row.updated_at,
   };
 }
-
-const RESUME_ALIGN_RULES = `
-## 简历对齐要求（非常重要）
-- 面试问法、举例、项目经历、技术名词必须尽量与候选人简历一致，让候选人能直接用自己的经历口述。
-- 优先引用简历中的公司、项目名、技术栈、职责描述；不要编造候选人没做过的项目。
-- 若简历与考点关联弱，用通用框架回答，并明确标注「可换成你简历里的 XXX 项目/经历」。
-- 问答示例里的背景、数据、角色要与简历角色匹配（如后端岗不要举纯前端项目为主例）。`;
 
 export function buildResumeContext(db: SQLiteDatabase, campaignId: string): string {
   const campaign = getCampaign(db, campaignId);

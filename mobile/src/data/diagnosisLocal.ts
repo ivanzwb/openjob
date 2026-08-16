@@ -1,7 +1,6 @@
 import * as Crypto from 'expo-crypto';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import type { JdDiagnosisResult } from '@shared/diagnosis/prompts';
-import { JD_SYSTEM, INTEL_SYSTEM } from '@shared/diagnosis/prompts';
 import { flattenGeneratedTree } from '@shared/diagnosis/tree';
 import { completeJson } from '../llm/json';
 import { getCampaign } from './campaignLocal';
@@ -24,7 +23,7 @@ export async function diagnoseFromJd(db: SQLiteDatabase, campaignId: string): Pr
 
   const result = await completeJson<JdDiagnosisResult>(
     'outline',
-    JD_SYSTEM,
+    'diagnosis.jd',
     `公司：${campaign.company}\n岗位：${campaign.roleTitle}\n\nJD：\n${campaign.jdRaw}`,
   );
 
@@ -71,7 +70,7 @@ export async function diagnoseFetchIntel(db: SQLiteDatabase, campaignId: string)
     talkingPointsMd: string;
   }>(
     'outline',
-    INTEL_SYSTEM,
+    'diagnosis.intel',
     `公司：${campaign.company}\n岗位：${campaign.roleTitle}\n\n检索结果：\n${context}`,
   );
 

@@ -7,8 +7,8 @@ import {
 } from '@shared/resume/aiEdit';
 import { completeJson } from '../llm/json';
 
-const complete: ResumeJsonCompleter = (system, user) =>
-  completeJson('resumeOptimize', system, user);
+const complete: ResumeJsonCompleter = (promptId, user) =>
+  completeJson('resumeOptimize', promptId, user);
 
 /** 把一段乱序内容重新归类到固定模块，返回 markdown，交给界面预览后再落库 */
 export function structureResume(rawText: string): Promise<ResumeStructureOutcome> {
