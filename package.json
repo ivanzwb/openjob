@@ -12,18 +12,19 @@
     "sync:grammars": "node scripts/sync-grammars.mjs",
     "icons": "node scripts/generate-icons.mjs",
     "smoke:grammars": "node scripts/sync-grammars.mjs && node scripts/smoke-treesitter.mjs",
+    "smoke:app": "node scripts/smoke-app.mjs",
     "dev": "node scripts/generate-icons.mjs && electron-vite dev",
     "build": "npm run typecheck && electron-vite build",
     "prepackage": "npm run sync:grammars && npm run icons && node scripts/ensure-nsis-cache.mjs",
     "predist": "npm run sync:grammars && npm run icons && node scripts/ensure-nsis-cache.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "ci": "npm run typecheck && npm run lint && npm run smoke:sync && npm run smoke:grammars && npm run build",
+    "test": "vitest run",
+    "ci": "npm run typecheck && npm run lint && npm run test && npm run smoke:grammars && npm run build && npm run smoke:app",
     "lint": "eslint .",
     "start": "electron-vite preview",
     "db:generate": "drizzle-kit generate",
     "package": "npm run build && node scripts/run-electron-builder.mjs --dir",
-    "dist": "npm run build && node scripts/run-electron-builder.mjs",
-    "smoke:sync": "tsx scripts/smoke-sync-merge.ts"
+    "dist": "npm run build && node scripts/run-electron-builder.mjs"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
@@ -49,10 +50,10 @@
     "png-to-ico": "^3.0.2",
     "tailwindcss": "^4.3.3",
     "tree-sitter-wasms": "^0.1.13",
-    "tsx": "^4.23.10",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.66.0",
-    "vite": "^7.3.6"
+    "vite": "^7.3.6",
+    "vitest": "^4.1.10"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.2.0",

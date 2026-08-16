@@ -32,7 +32,13 @@ export default tseslint.config(
     // 构建脚本跑在 Node 里，不走 tsconfig 的 lib 配置
     files: ['scripts/**/*.mjs', 'eslint.config.js'],
     languageOptions: {
-      globals: { console: 'readonly', process: 'readonly', URL: 'readonly' },
+      globals: {
+        console: 'readonly',
+        process: 'readonly',
+        URL: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+      },
     },
   },
 
@@ -73,6 +79,15 @@ export default tseslint.config(
           ],
         },
       ],
+    },
+  },
+
+  {
+    // 测试文件不是 shipped 代码，允许做源码静态扫描所需的 I/O
+    // （如 ipcContract.test.ts 读取 main/preload 源码做三方一致性校验）
+    files: ['src/shared/**/*.test.ts'],
+    rules: {
+      'no-restricted-imports': 'off',
     },
   },
 

@@ -31,7 +31,7 @@ jobs:
       - name: Install Linux build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential python3 libsqlite3-dev
+          sudo apt-get install -y build-essential python3 libsqlite3-dev xvfb
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -42,8 +42,8 @@ jobs:
       - name: Lint
         run: pnpm run lint
 
-      - name: Smoke — sync merge
-        run: pnpm run smoke:sync
+      - name: Unit tests
+        run: pnpm run test
 
       - name: Smoke — tree-sitter grammars
         run: pnpm run smoke:grammars
@@ -51,8 +51,11 @@ jobs:
       - name: Build
         run: pnpm run build
 
+      - name: Smoke — app boot (startup chain)
+        run: xvfb-run -a pnpm run smoke:app
+
   mobile:
-    name: Mobile typecheck & lint
+    name: Mobile typecheck, lint & test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -76,3 +79,7 @@ jobs:
       - name: Lint
         working-directory: mobile
         run: npm run lint
+
+      - name: Unit tests
+        working-directory: mobile
+        run: npm test
