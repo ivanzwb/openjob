@@ -12,19 +12,7 @@ import {
 } from '../campaign/repository';
 import { computePriority } from './priority';
 import { boostExamProbByNodeName, CREDIBILITY_WEIGHT } from './prior';
-import { REPORT_EXTRACT_SYSTEM, type ReportMatchResult } from './prompts';
-
-const MATCH_SYSTEM = `你是面试真题匹配助手。将每道面试题匹配到最相关的知识点节点。
-- 有合适节点时填 nodeName（必须与节点列表完全一致）
-- 匹配不上时 nodeName 为 null，并给出 suggestedName 作为新考点名
-- confidence 0-1
-
-输出 JSON：
-{
-  "matches": [
-    { "questionIndex": 0, "nodeName": "Redis 持久化", "confidence": 0.85, "suggestedName": null }
-  ]
-}`;
+import { type ReportMatchResult } from '@shared/diagnosis/prompts';
 
 function ensureBlindSpotDomain(campaignId: string): string {
   const db = getDb();
@@ -100,7 +88,7 @@ async function matchQuestions(
 
   const result = await completeJson<ReportMatchResult>(
     'outline',
-    MATCH_SYSTEM,
+    'diagnosis.matchQuestions',
     JSON.stringify({
       questions,
       nodes: nodes.map((n) => n.name),
@@ -191,7 +179,7 @@ export async function ingestInterviewReport(
   const campaign = getCampaignRow(campaignId);
   const extracted = await completeJson<{ questions: string[] }>(
     'outline',
-    REPORT_EXTRACT_SYSTEM,
+    'diagnosis.extractQuestions',
     rawText,
   );
 

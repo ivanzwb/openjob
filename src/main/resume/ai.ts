@@ -7,8 +7,8 @@ import {
 } from '@shared/resume/aiEdit';
 import { completeJson } from '../llm/json';
 
-const complete: ResumeJsonCompleter = (system, user) =>
-  completeJson('resumeOptimize', system, user);
+const complete: ResumeJsonCompleter = (promptId, user) =>
+  completeJson('resumeOptimize', promptId, user);
 
 export function structureResumeWithLlm(rawText: string): Promise<ResumeStructureOutcome> {
   return structureWithLlm(complete, rawText);

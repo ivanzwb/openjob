@@ -17,6 +17,7 @@ import { mergedCodeAgentTools, runCodeRepoTool } from '../repo/tools';
 import { getCampaignRow } from '../campaign/repository';
 import { decideSearchTrigger, triggerInstruction } from '../search/trigger';
 import { normalizeChatMessages } from './messages';
+import { buildRepoAnalyzeSystem } from '@shared/prompts/repo';
 
 /** 工具调用的最大轮数，防止 Agent 陷入反复检索 */
 const MAX_TOOL_ROUNDS = 4;
@@ -143,12 +144,7 @@ async function runChat(
       }
       messages.unshift({
         role: 'system',
-        content:
-          `你正在分析仓库：${repo.url}\n\n` +
-          `## 项目摘要\n${repo.summaryMd ?? '（无）'}\n\n` +
-          `## Repo Map（节选）\n${(repo.repoMapMd ?? '').slice(0, 8000)}\n\n` +
-          '规则：所有代码结论必须带 `path:line` 引用；流程梳理用 mermaid 图，每步标注文件行号；' +
-          '设计意图类问题可联网搜索 why。',
+        content: buildRepoAnalyzeSystem(repo.url, repo.summaryMd ?? '（无）', repo.repoMapMd ?? ''),
       });
     }
 

@@ -15,15 +15,13 @@ import {
 } from './document';
 import { structureResumeText } from './importStructure';
 import {
-  RESUME_POLISH_SYSTEM,
-  RESUME_STRUCTURE_SYSTEM,
   buildResumePolishUserPrompt,
   buildResumeStructureUserPrompt,
   type ResumeOptimizeSection,
 } from './prompts';
 
-/** 用 resumeOptimize 角色请求一段 JSON，由调用方决定怎么访问模型 */
-export type ResumeJsonCompleter = <T>(system: string, user: string) => Promise<T>;
+/** 用 resumeOptimize 角色请求一段 JSON，由调用方决定怎么访问模型。传 promptId 而非 system 文本 */
+export type ResumeJsonCompleter = <T>(promptId: string, user: string) => Promise<T>;
 
 export interface ResumePolishRequest {
   /** 整份简历 markdown，供模型理解上下文 */
@@ -98,7 +96,7 @@ export async function structureResumeWithLlm(
   let failure: string;
   try {
     const generated = await complete<{ sections?: ResumeOptimizeSection[] }>(
-      RESUME_STRUCTURE_SYSTEM,
+      'resume.structure',
       buildResumeStructureUserPrompt(text),
     );
     const blocks = (generated.sections ?? [])
@@ -127,7 +125,7 @@ export async function polishResumeSection(
   if (!resumeMd && !input.contentMd.trim()) throw new Error('简历还没有内容可供优化');
 
   const generated = await complete<{ contentMd?: string }>(
-    RESUME_POLISH_SYSTEM,
+    'resume.polish',
     buildResumePolishUserPrompt({
       sectionTitle: sectionTitle(input.sectionKey),
       scopeLabel: input.scopeLabel,

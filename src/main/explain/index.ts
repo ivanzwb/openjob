@@ -2,38 +2,11 @@ import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import type { Explanation } from '@shared/entities';
 import type { ExplanationTier } from '@shared/enums';
-import { userRequestBlock } from '@shared/explain/prompt';
+import { RESUME_ALIGN_RULES } from '@shared/prompts/explain';
 import { completeJson } from '../llm/json';
 import { resolveLlmRole } from '../config';
 import { getDb, schema } from '../db';
 import { getCampaignRow, getResumeRow, rowToNode } from '../campaign/repository';
-
-const TIER_GUIDE: Record<ExplanationTier, string> = {
-  oneliner: '一句话本质，30 秒内能说完，口语化',
-  spoken:
-    '可背诵的口语稿，约 2 分钟。必须是口语而不是书面语，有逻辑连接词，可以直接念出来。' +
-    '例如用「其实是…配合着…」而不是「采用…相结合的方式」',
-  deep: '深挖版本：原理、实现细节、取舍与常见陷阱，可稍书面但仍要能说出口',
-};
-
-const EXPLAIN_TEMPLATE = `按以下结构输出 markdown（不要 JSON）：
-
-## 一句话本质
-## 面试真实问法
-（2-3 个面试官可能问的方式）
-## 口语化答案框架
-（分点，可背诵长度；spoken 档这是核心）
-## 代码 / 实例
-（如适用；**必须优先用候选人简历里的项目、技术栈、职责来举例**）
-## 常见追问 & 陷阱
-## 关联知识点`;
-
-const RESUME_ALIGN_RULES = `
-## 简历对齐要求（非常重要）
-- 面试问法、举例、项目经历、技术名词必须尽量与候选人简历一致，让候选人能直接用自己的经历口述。
-- 优先引用简历中的公司、项目名、技术栈、职责描述；不要编造候选人没做过的项目。
-- 若简历与考点关联弱，用通用框架回答，并明确标注「可换成你简历里的 XXX 项目/经历」。
-- 问答示例里的背景、数据、角色要与简历角色匹配（如后端岗不要举纯前端项目为主例）。`;
 
 function buildResumeContext(campaignId: string): string {
   const campaign = getCampaignRow(campaignId);
@@ -96,12 +69,7 @@ export async function generateExplanation(
 
   const content = await completeJson<{ markdown: string }>(
     'explain',
-    `你是面试口语教练。为候选人写考点讲解。
-档位要求：${TIER_GUIDE[tier]}
-${EXPLAIN_TEMPLATE}
-${RESUME_ALIGN_RULES}
-${userRequestBlock(instruction)}
-输出 JSON：{ "markdown": "..." }`,
+    'explain.generate',
     `公司：${campaign.company}
 岗位：${campaign.roleTitle}
 考点：${node.name}
@@ -109,6 +77,8 @@ ${userRequestBlock(instruction)}
 考察形式：${node.examForms.join(', ')}
 
 ${resumeContext}`,
+    undefined,
+    { tier, instruction },
   );
 
   const now = Date.now();
@@ -166,13 +136,12 @@ export async function generateFallbackScript(
 
   const content = await completeJson<{ markdown: string }>(
     'explain',
-    `写一段 30 秒兜底口语稿。被问到不熟的知识点时不露怯，能说出框架和学习态度。
-不要装懂，但要体面。若简历有相关邻近经历可轻量提及。
-${userRequestBlock(instruction)}
-输出 JSON：{ "markdown": "..." }`,
+    'explain.fallback',
     `公司：${campaign.company} 岗位：${campaign.roleTitle} 考点：${node.name}
 
 ${resumeContext}`,
+    undefined,
+    instruction ? { instruction } : undefined,
   );
 
   const now = Date.now();
@@ -242,12 +211,7 @@ export async function elaborateExplanationSelection(
 
   const content = await completeJson<{ markdown: string }>(
     'explain',
-    `你是面试口语教练。候选人正在学习考点讲解，划选了其中一段文字需要进一步解释。
-要求：
-- 只解释被选中的词句/概念/名称，结合当前考点与讲解上下文
-- 口语化、1 分钟内能说完；可举小例子
-- 若与简历相关，举例尽量贴合候选人简历
-输出 JSON：{ "markdown": "..." }`,
+    'explain.elaborate',
     `公司：${campaign.company}
 岗位：${campaign.roleTitle}
 考点：${node.name}
@@ -287,15 +251,9 @@ export async function rewriteExplanationSelection(
   const campaign = getCampaignRow(node.campaignId);
   const resumeContext = buildResumeContext(node.campaignId);
 
-  const content = await completeJson<{ markdown: string }>(
+const content = await completeJson<{ markdown: string }>(
     'explain',
-    `你是面试口语教练。候选人划选了讲解中的一段文字，需要你重写这一段。
-要求：
-- 只输出替换后的这一段正文，不要标题、不要 JSON 外壳
-- 保持与前后文语气一致，口语化、适合面试口述
-- 举例与简历对齐；无相关经历时用通用表述并提示可替换
-- 长度与原文相当，不要无故扩写太多
-输出 JSON：{ "markdown": "..." }`,
+    'explain.rewrite',
     `公司：${campaign.company}
 岗位：${campaign.roleTitle}
 考点：${node.name}

@@ -4,7 +4,6 @@ import {
   assembleResumeMarkdown,
   buildResumeOptimizeUserPrompt,
   defaultVariantLabel,
-  RESUME_OPTIMIZE_SYSTEM,
 } from '@shared/resume/prompts';
 import { completeJson } from '../llm/json';
 import type { getResumeVariant } from './variantRepository';
@@ -23,7 +22,7 @@ export async function optimizeResumeForJobTarget(
 
   const generated = await completeJson<ResumeOptimizeGenerated>(
     'resumeOptimize',
-    RESUME_OPTIMIZE_SYSTEM,
+    'resume.optimize',
     buildResumeOptimizeUserPrompt(target.company, target.roleTitle, target.jdRaw, resumeText),
   );
 

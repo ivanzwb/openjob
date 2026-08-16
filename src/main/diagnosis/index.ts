@@ -16,16 +16,11 @@ import {
 } from '../campaign/repository';
 import { emit } from '../ipc/bridge';
 import {
-  crossAnalyzeSystem,
   crossAnalyzeUser,
-  EXPAND_SYSTEM,
   type CrossAnalyzeResult,
   type ExpandNodeResult,
   type JdDiagnosisResult,
-  JD_SYSTEM,
-  RESUME_SYSTEM,
-  INTEL_SYSTEM,
-} from './prompts';
+} from '@shared/diagnosis/prompts';
 import { insertEdgesByName } from '../campaign/edges';
 import { findDuplicateByName, flattenChildren, flattenGeneratedTree } from './tree';
 import { filterDuplicatesByEmbedding } from './embedding';
@@ -56,7 +51,7 @@ export async function diagnoseFromJd(campaignId: string, jobId: string): Promise
     report(jobId, label, '正在解析 JD…', 0.1);
     const result = await completeJson<JdDiagnosisResult>(
       'outline',
-      JD_SYSTEM,
+      'diagnosis.jd',
       `公司：${campaign.company}\n岗位：${campaign.roleTitle}\n\nJD：\n${campaign.jdRaw}`,
     );
 
@@ -96,7 +91,7 @@ export async function diagnoseAttachResume(
     report(jobId, label, '正在解析简历…', 0.15);
     let parsed = resume.parsed;
     if (!parsed) {
-      parsed = await completeJson<ResumeParsed>('outline', RESUME_SYSTEM, resume.rawText);
+      parsed = await completeJson<ResumeParsed>('outline', 'diagnosis.resume', resume.rawText);
       saveResumeParsed(resumeId, parsed);
     }
 
@@ -115,7 +110,7 @@ export async function diagnoseAttachResume(
 
     const cross = await completeJson<CrossAnalyzeResult>(
       'outline',
-      crossAnalyzeSystem(),
+      'diagnosis.crossAnalyze',
       crossAnalyzeUser(
         campaign.jdParsed ?? { roleTitle: campaign.roleTitle, requirements: [], seniority: null },
         parsed,
@@ -160,7 +155,7 @@ export async function diagnoseExpandNode(nodeId: string, jobId: string): Promise
 
     const result = await completeJson<ExpandNodeResult>(
       'outline',
-      EXPAND_SYSTEM,
+      'diagnosis.expand',
       `公司：${campaign.company}\n岗位：${campaign.roleTitle}\n主题：${parent.name}\nJD 摘要：${campaign.jdRaw.slice(0, 2000)}`,
     );
 
@@ -235,7 +230,7 @@ export async function diagnoseFetchIntel(campaignId: string, jobId: string): Pro
       interviewProcessMd: string;
       hotTopicsMd: string;
       talkingPointsMd: string;
-    }>('outline', INTEL_SYSTEM, `公司：${campaign.company}\n岗位：${campaign.roleTitle}\n\n检索结果：\n${context}`);
+    }>('outline', 'diagnosis.intel', `公司：${campaign.company}\n岗位：${campaign.roleTitle}\n\n检索结果：\n${context}`);
 
     const db = getDb();
     const now = Date.now();

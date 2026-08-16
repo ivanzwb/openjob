@@ -1,6 +1,9 @@
 import type OpenAI from 'openai';
 import type { LlmRole } from '@shared/enums';
 import { parseJsonResponse } from '@shared/llm/parseJson';
+import { resolvePrompt } from '@shared/prompts/registry';
+import { getExperiment } from '../ab/experiments';
+import { getFingerprint, recordPromptRun } from '../ab/promptRun';
 import { createRoleClient } from './client';
 import {
   foldSystemIntoUser,
@@ -82,16 +85,26 @@ function buildAttempts(baseMessages: ChatMessage[]): JsonAttempt[] {
 /**
  * 向模型请求 JSON 并解析。诊断流水线（解析 JD、建树、交叉分析）都走这条路，
  * 用 outline 角色——结构化输出、token 用量相对可控。
+ *
+ * 传 promptId 而不是直接传 system 文本：文本由 @shared/prompts/registry 解析，
+ * AB 实验换版本只改注册表，调用点不变。params 只对 build 型 prompt 生效。
  */
 export async function completeJson<T>(
   role: LlmRole,
-  system: string,
+  promptId: string,
   user: string,
   signal?: AbortSignal,
+  params?: Record<string, string | undefined>,
 ): Promise<T> {
-  const { client, model, temperature } = createRoleClient(role);
+  const { client, model, temperature, tier } = createRoleClient(role);
+  // AB 实验：按 promptId 查开关，按设备指纹稳定分流。未开启/拿不到指纹时退化为 v1。
+  const experiment = getExperiment(promptId);
+  const fingerprint = getFingerprint();
+  const resolved = resolvePrompt(promptId, params, experiment, fingerprint);
+  const startedAt = Date.now();
+
   const systemContent =
-    system +
+    resolved.text +
     '\n\n只输出合法 JSON，不要 markdown 代码块，不要任何解释文字。' +
     '字符串值里的双引号必须写成 \\"，换行必须写成 \\n。';
 
@@ -104,6 +117,7 @@ export async function completeJson<T>(
   /** 只拿到思考过程时先记下来，所有 attempt 都失败后再用 */
   let reasoningRaw: string | undefined;
   let lastError: unknown;
+  let lastUsage: { promptTokens?: number; completionTokens?: number } | undefined;
   let maxTokens = JSON_MAX_TOKENS;
   const attempts = buildAttempts(baseMessages);
 
@@ -120,6 +134,11 @@ export async function completeJson<T>(
           },
           { signal },
         );
+
+        lastUsage = {
+          promptTokens: res.usage?.prompt_tokens,
+          completionTokens: res.usage?.completion_tokens,
+        };
 
         const choice = res.choices[0];
         const text = extractMessageText(choice?.message)?.trim();
@@ -151,8 +170,49 @@ export async function completeJson<T>(
 
   if (!raw) {
     const detail = lastError instanceof Error ? lastError.message : lastError ? String(lastError) : '未知原因';
+    recordPromptRun({
+      promptId,
+      versionId: resolved.versionId,
+      fingerprint: fingerprint ?? 'unknown',
+      role,
+      model,
+      tier,
+      ok: false,
+      error: `模型未返回可用 JSON（${model}）：${detail}`,
+      latencyMs: Date.now() - startedAt,
+    });
     throw new Error(`模型未返回可用 JSON（${model}）：${detail}`);
   }
 
-  return parseJsonResponse<T>(raw);
+  try {
+    const parsed = parseJsonResponse<T>(raw);
+    recordPromptRun({
+      promptId,
+      versionId: resolved.versionId,
+      fingerprint: fingerprint ?? 'unknown',
+      role,
+      model,
+      tier,
+      ok: true,
+      promptTokens: lastUsage?.promptTokens,
+      completionTokens: lastUsage?.completionTokens,
+      latencyMs: Date.now() - startedAt,
+      outputJson: raw,
+    });
+    return parsed;
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    recordPromptRun({
+      promptId,
+      versionId: resolved.versionId,
+      fingerprint: fingerprint ?? 'unknown',
+      role,
+      model,
+      tier,
+      ok: false,
+      error: `JSON 解析失败：${detail}`,
+      latencyMs: Date.now() - startedAt,
+    });
+    throw err;
+  }
 }

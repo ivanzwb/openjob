@@ -14,6 +14,15 @@ vi.mock('./client', () => ({
   createRoleClient: (...args: unknown[]) => mockCreate(...args),
 }));
 
+// AB 打标与实验开关依赖 electron/db，Node 测试环境不可用，整体 mock 掉
+vi.mock('../ab/experiments', () => ({
+  getExperiment: () => undefined,
+}));
+vi.mock('../ab/promptRun', () => ({
+  getFingerprint: () => 'test-fingerprint',
+  recordPromptRun: () => {},
+}));
+
 const { completeJson } = await import('./json');
 
 type ChatMessage = OpenAI.Chat.Completions.ChatCompletionMessageParam;
@@ -91,7 +100,7 @@ beforeEach(() => {
 describe('completeJson 正常路径', () => {
   it('端点返回合法 JSON -> 解析并返回', async () => {
     setupClient(() => completion([responseMessage({ content: '{"ok":true}' })]));
-    const result = await completeJson('outline', 'sys', 'user');
+    const result = await completeJson('outline', 'quiz.question', 'user');
     expect(result).toEqual({ ok: true });
     // 默认打开 json_object 格式
     expect(calls[0]?.response_format).toEqual({ type: 'json_object' });
@@ -99,7 +108,7 @@ describe('completeJson 正常路径', () => {
 
   it('返回带 markdown 围栏的 JSON -> 剥掉围栏再解析', async () => {
     setupClient(() => completion([responseMessage({ content: '```json\n{"ok":1}\n```' })]));
-    const result = await completeJson('outline', 'sys', 'user');
+    const result = await completeJson('outline', 'quiz.question', 'user');
     expect(result).toEqual({ ok: 1 });
   });
 });
@@ -114,7 +123,7 @@ describe('completeJson token 降档', () => {
       }
       return completion([responseMessage({ content: '{"ok":true}' })]);
     });
-    const result = await completeJson('outline', 'sys', 'user');
+    const result = await completeJson('outline', 'quiz.question', 'user');
     expect(result).toEqual({ ok: true });
     // 第一次 16384，报错后降到 8192
     expect(calls[0]?.max_tokens).toBe(16384);
@@ -128,7 +137,7 @@ describe('completeJson token 降档', () => {
       if (attempt === 1) throw new Error('max_tokens must be <= 4096');
       return completion([responseMessage({ content: '{"ok":true}' })]);
     });
-    const result = await completeJson('outline', 'sys', 'user');
+    const result = await completeJson('outline', 'quiz.question', 'user');
     expect(result).toEqual({ ok: true });
     expect(calls[1]?.max_tokens).toBe(8192); // 16384 / 2
   });
@@ -141,7 +150,7 @@ describe('completeJson token 降档', () => {
         throw new Error('max_tokens must be <= 1024'); // 16384 -> 8192 -> 4096 -> 2048 后停
       }),
     );
-    await expect(completeJson('outline', 'sys', 'user')).rejects.toThrow('模型未返回可用 JSON');
+    await expect(completeJson('outline', 'quiz.question', 'user')).rejects.toThrow('模型未返回可用 JSON');
     // 前四次按对折降档：16384 -> 8192 -> 4096 -> 2048
     expect(calls.slice(0, 4).map((c) => c.max_tokens)).toEqual([16384, 8192, 4096, 2048]);
     // 撞到下限后不再降，剩余尝试都停在 2048
@@ -162,7 +171,7 @@ describe('completeJson 空正文与推理兜底', () => {
         } as never),
       ]),
     );
-    const result = await completeJson('outline', 'sys', 'user');
+    const result = await completeJson('outline', 'quiz.question', 'user');
     expect(result).toEqual({ ok: 'reasoned' });
   });
 
@@ -178,7 +187,7 @@ describe('completeJson 空正文与推理兜底', () => {
         ]),
       ),
     );
-    await expect(completeJson('outline', 'sys', 'user')).rejects.toThrow('模型未返回可用 JSON');
+    await expect(completeJson('outline', 'quiz.question', 'user')).rejects.toThrow('模型未返回可用 JSON');
   });
 });
 
@@ -190,7 +199,7 @@ describe('completeJson 端点能力回退', () => {
       if (attempt === 1) throw new Error('response_format json_object is not supported');
       return completion([responseMessage({ content: '{"ok":true}' })]);
     });
-    const result = await completeJson('outline', 'sys', 'user');
+    const result = await completeJson('outline', 'quiz.question', 'user');
     expect(result).toEqual({ ok: true });
     expect(calls[0]?.response_format).toEqual({ type: 'json_object' });
     expect(calls[1]?.response_format).toBeUndefined();
@@ -205,7 +214,7 @@ describe('completeJson 端点能力回退', () => {
       if (attempt <= 2) throw new Error('system message must be at the beginning');
       return completion([responseMessage({ content: '{"ok":true}' })]);
     });
-    const result = await completeJson('outline', 'sys', 'user');
+    const result = await completeJson('outline', 'quiz.question', 'user');
     expect(result).toEqual({ ok: true });
     // 前两次尝试是折叠前的原始消息（含 system）
     expect(calls[0]!.messages.some((m) => m.role === 'system')).toBe(true);
@@ -213,6 +222,8 @@ describe('completeJson 端点能力回退', () => {
     // 成功的那次是折叠后的消息：无 system，指令折叠进首条 user
     const successful = calls.at(-1)!;
     expect(successful.messages.every((m) => m.role !== 'system')).toBe(true);
-    expect(successful.messages.some((m) => m.role === 'user' && String(m.content).includes('sys'))).toBe(true);
+    expect(
+      successful.messages.some((m) => m.role === 'user' && String(m.content).includes('你是面试官')),
+    ).toBe(true);
   });
 });

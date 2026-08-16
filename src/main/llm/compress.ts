@@ -4,14 +4,6 @@ import { completeJson } from './json';
 const COMPRESS_THRESHOLD = 3000;
 const TARGET_CHARS = 1200;
 
-const SYSTEM = `你是上下文压缩器。把网页正文压成要点，供另一个模型回答问题时引用。
-- 只保留与问题相关的事实、数字、结论、代码片段
-- 丢弃导航栏、广告、评论、无关寒暄、重复内容
-- 保留原文中的关键术语与专有名词，不要改写成同义词
-- 不要添加原文没有的信息
-
-输出 JSON：{ "digest": "压缩后的要点，markdown 分点" }`;
-
 /**
  * 网页正文进上下文前先摘要。
  *
@@ -31,7 +23,7 @@ export async function compressForContext(
   try {
     const res = await completeJson<{ digest: string }>(
       'explain',
-      SYSTEM,
+      'compress.forContext',
       `目的：${purpose}\n\n正文：\n${trimmed.slice(0, 24000)}`,
     );
     const digest = res.digest?.trim();

@@ -176,12 +176,7 @@ export async function cloneAndIndex(url: string, jobId: string): Promise<void> {
     report('正在生成项目摘要…', 0.7);
     const summary = await completeJson<{ summaryMd: string }>(
       'codeAgent',
-      `你是资深工程师。根据 repo map 写项目摘要，markdown 格式，包含：
-- 模块划分与目录职责
-- 核心数据结构
-- 启动/主流程
-- 关键设计决策
-输出 JSON：{ "summaryMd": "..." }`,
+      'repo.summary',
       `仓库 URL：${url}\n语言：${languages.join(', ')}\n\nRepo Map：\n${repoMapMd.slice(0, 12000)}`,
     );
 

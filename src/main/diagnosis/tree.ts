@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { CoverageType, ExamForm } from '@shared/enums';
 import { computePriority } from './priority';
-import type { GeneratedNode } from './prompts';
+import type { GeneratedNode } from '@shared/diagnosis/prompts';
 import type * as schema from '../db/schema';
 
 type NodeInsert = typeof schema.knowledgeNode.$inferInsert;
