@@ -574,3 +574,44 @@ export const syncMeta = sqliteTable('sync_meta', {
   key: text('key').primaryKey(),
   value: text('value').notNull(),
 });
+
+// ---------------------------------------------------------------------------
+// Prompt AB 实验（本机专属，不参与端间同步）
+// ---------------------------------------------------------------------------
+
+/**
+ * 每次 completeJson 调用的落库记录：AB 实验与质量分析的原料。
+ *
+ * 刻意不进 SYNCED_TABLES——实验数据只在产生它的设备上有意义，同步过去
+ * 只会让对端设备多一份无用的重复记录。打标失败也不得影响主流程（吞掉）。
+ */
+export const promptRun = sqliteTable(
+  'prompt_run',
+  {
+    id: text('id').primaryKey(),
+    /** promptId，如 'quiz.question' */
+    promptId: text('prompt_id').notNull(),
+    /** 实际命中的版本，如 'quiz.question@v1' */
+    versionId: text('version_id').notNull(),
+    /** 分流指纹：设备 id，决定该调用稳定落在哪个版本 */
+    fingerprint: text('fingerprint').notNull(),
+    role: text('role').notNull(),
+    model: text('model').notNull(),
+    tier: text('tier').notNull(),
+    /** 本次调用是否成功产出 JSON */
+    ok: integer('ok', { mode: 'boolean' }).notNull(),
+    /** 失败原因（ok=false 时） */
+    error: text('error'),
+    promptTokens: integer('prompt_tokens').notNull().default(0),
+    completionTokens: integer('completion_tokens').notNull().default(0),
+    /** 从发起调用到拿到结果的毫秒数 */
+    latencyMs: integer('latency_ms').notNull(),
+    /** 原始输出（截断存），供离线回归对比字段完整性 */
+    outputJson: text('output_json'),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => [
+    index('idx_prompt_run_prompt_version').on(t.promptId, t.versionId),
+    index('idx_prompt_run_created').on(t.createdAt),
+  ],
+);
