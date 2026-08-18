@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Pressable, Text, TextInput, View } from 'react-native';
+import {
+  Alert,
+  Pressable,
+  Text,
+  TextInput,
+  View,
+  type NativeSyntheticEvent,
+  type TextInputSelectionChangeEventData,
+} from 'react-native';
 import type { Annotation, Explanation } from '@shared/entities';
 import type { ExplanationTier } from '@shared/enums';
 import {
@@ -21,7 +29,6 @@ import { saveSpeechFromNode } from '../data/mutations';
 import { useApp } from '../context/AppContext';
 import { isTaskRunning, runTask, useTaskResult, useTaskState } from '../context/RemoteTaskContext';
 import { useTheme, type Palette } from '../theme';
-import { AnnotatedExplanationText } from './AnnotatedExplanationText';
 import {
   DEFAULT_HIGHLIGHT_COLOR,
   ExplanationActionModal,
@@ -30,8 +37,6 @@ import {
 import {
   findHighlightMark,
   phraseSelectionStart,
-  type InlineAnnotation,
-  type TextHighlight,
 } from '../lib/annotationMarks';
 
 const TIERS: { id: ExplanationTier; label: string }[] = [
@@ -72,7 +77,6 @@ export function ExplanationStudyPanel({
   const [modalDraft, setModalDraft] = useState('');
   const [highlightColor, setHighlightColor] = useState<string>(DEFAULT_HIGHLIGHT_COLOR);
   const [viewMarker, setViewMarker] = useState<Annotation | null>(null);
-  const [focusedMarkId, setFocusedMarkId] = useState<string | null>(null);
 
   // 按「考点 + 档位」记讲解任务，按考点记标注类操作：
   // 切页、换档位、关掉弹窗再回来，都能看到还在跑，也不会重复发起同一件事
@@ -115,16 +119,6 @@ export function ExplanationStudyPanel({
     (a) => a.kind === 'highlight' || a.kind === 'note' || a.kind === 'elaboration',
   );
   const markCount = contentMarks.length;
-
-  const highlights: TextHighlight[] = useMemo(
-    () =>
-      highlightMarks.map((m) => ({
-        text: m.selectedText ?? '',
-        color: m.highlightColor ?? DEFAULT_HIGHLIGHT_COLOR,
-        ...(m.selectionStart != null ? { start: m.selectionStart } : {}),
-      })),
-    [highlightMarks],
-  );
 
   const existingHighlight = useMemo(
     () =>
@@ -198,32 +192,6 @@ export function ExplanationStudyPanel({
     setModalMode(mode);
   };
 
-  const onSegmentPress = (text: string, start: number, markers?: InlineAnnotation[]): void => {
-    setPhrase(text);
-    setSelectionStart(start);
-    if (markers?.length === 1) {
-      const ann = annotations.find((a) => a.id === markers[0]!.id);
-      if (ann) {
-        setViewMarker(ann);
-        setModalMode('viewMarker');
-      }
-      return;
-    }
-    if (markers && markers.length > 1) {
-      const buttons = markers.map((m) => ({
-        text: m.kind === 'note' ? '查看笔记' : '查看细化',
-        onPress: () => {
-          const ann = annotations.find((a) => a.id === m.id);
-          if (ann) {
-            setViewMarker(ann);
-            setModalMode('viewMarker');
-          }
-        },
-      }));
-      Alert.alert('选择标记', '该词句有多个标记', [...buttons, { text: '取消', style: 'cancel' }]);
-    }
-  };
-
   const locateMark = (mark: Annotation): void => {
     const text = mark.selectedText?.trim();
     if (text) {
@@ -233,12 +201,10 @@ export function ExplanationStudyPanel({
           (content ? phraseSelectionStart(content.contentMd, text) : undefined),
       );
     }
-    setFocusedMarkId(mark.id);
     if (mark.kind === 'note' || mark.kind === 'elaboration') {
       setViewMarker(mark);
       setModalMode('viewMarker');
     }
-    setTimeout(() => setFocusedMarkId(null), 2400);
   };
 
   const showMarkList = (): void => {
@@ -255,6 +221,30 @@ export function ExplanationStudyPanel({
         { text: '取消', style: 'cancel' },
       ],
     );
+  };
+
+  const adoptNativeSelection = (
+    event: NativeSyntheticEvent<TextInputSelectionChangeEventData>,
+  ): void => {
+    if (editing || modalMode !== null) return;
+    const { start, end } = event.nativeEvent.selection;
+    if (start === end) {
+      setPhrase('');
+      setSelectionStart(undefined);
+      return;
+    }
+    const from = Math.min(start, end);
+    const to = Math.max(start, end);
+    const raw = content?.contentMd.slice(from, to) ?? '';
+    const leading = raw.search(/\S/);
+    const selected = raw.trim();
+    if (!selected || leading < 0) {
+      setPhrase('');
+      setSelectionStart(undefined);
+      return;
+    }
+    setPhrase(selected);
+    setSelectionStart(from + leading);
   };
 
   const saveFullEdit = (): void => {
@@ -384,7 +374,11 @@ export function ExplanationStudyPanel({
       notifyDataChanged();
       return saved.existing ? '这段已经在话术库里' : '已存入话术库';
     })
-      .then((message) => Alert.alert('话术库', message))
+      .then((message) => {
+        Alert.alert('话术库', message);
+        setPhrase('');
+        setSelectionStart(undefined);
+      })
       .catch(() => undefined);
   };
 
@@ -539,40 +533,41 @@ export function ExplanationStudyPanel({
           </View>
         </>
       ) : (
-        <AnnotatedExplanationText
-          contentMd={content.contentMd}
-          highlights={highlights}
-          annotations={annotations}
-          onSegmentPress={onSegmentPress}
-          focusedMarkId={focusedMarkId}
+        <TextInput
+          multiline
+          value={content.contentMd}
+          onChangeText={() => undefined}
+          onSelectionChange={adoptNativeSelection}
+          scrollEnabled={false}
+          showSoftInputOnFocus={false}
+          textAlignVertical="top"
+          style={{
+            color: theme.text,
+            borderWidth: 1,
+            borderColor: phrase.trim() ? theme.accent : theme.border,
+            borderRadius: 10,
+            padding: 10,
+            fontSize: 13,
+            lineHeight: 20,
+            backgroundColor: theme.bg,
+          }}
         />
       )}
 
-      {!editing && (
-        <View style={{ gap: 6 }}>
-          <Text style={{ color: theme.muted, fontSize: 11 }}>
-            输入或点选讲解中的词句，再进行高亮 / 笔记 / 细化 / 存入话术库
+      {!editing && phrase.trim() && (
+        <View
+          style={{
+            gap: 6,
+            borderWidth: 1,
+            borderColor: theme.border,
+            borderRadius: 12,
+            padding: 8,
+            backgroundColor: theme.surface,
+          }}
+        >
+          <Text style={{ color: theme.muted, fontSize: 11 }} numberOfLines={2}>
+            已选中：{phrase.trim()}
           </Text>
-          <TextInput
-            value={phrase}
-            onChangeText={(v) => {
-              setPhrase(v);
-              setSelectionStart(
-                content && v.trim() ? phraseSelectionStart(content.contentMd, v) : undefined,
-              );
-            }}
-            placeholder="例如：CAS、双亲委派…"
-            placeholderTextColor={theme.muted}
-            style={{
-              color: theme.text,
-              borderWidth: 1,
-              borderColor: theme.border,
-              borderRadius: 8,
-              paddingHorizontal: 10,
-              paddingVertical: 8,
-              fontSize: 13,
-            }}
-          />
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
             <Pressable
               onPress={() => openModal('highlight')}
@@ -614,6 +609,15 @@ export function ExplanationStudyPanel({
               <Text style={{ color: theme.accent, fontSize: 12 }}>
                 {savingSpeech ? '保存中…' : '存入话术库'}
               </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                setPhrase('');
+                setSelectionStart(undefined);
+              }}
+              style={actionBtn}
+            >
+              <Text style={{ color: theme.muted, fontSize: 12 }}>取消选择</Text>
             </Pressable>
           </View>
           {doneLabels.length > 0 && (

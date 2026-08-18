@@ -269,7 +269,7 @@ function NodeRow({
                       e.stopPropagation();
                       onToggleChildren(node.id);
                     }}
-                    className="flex h-4 w-4 items-center justify-center rounded text-[var(--color-muted)] hover:bg-black/20 hover:text-[var(--color-fg)]"
+                    className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--color-muted)] hover:bg-black/20 hover:text-[var(--color-fg)]"
                     title={childrenCollapsed ? '展开子考点' : '收起子考点'}
                     aria-label={childrenCollapsed ? '展开子考点' : '收起子考点'}
                     aria-expanded={!childrenCollapsed}
@@ -277,7 +277,7 @@ function NodeRow({
                     <svg
                       viewBox="0 0 12 12"
                       aria-hidden="true"
-                      className={`h-3 w-3 transition-transform ${childrenCollapsed ? '' : 'rotate-90'}`}
+                      className={`h-4 w-4 transition-transform ${childrenCollapsed ? '' : 'rotate-90'}`}
                     >
                       <path d="M4.25 2.5 8 6 4.25 9.5z" fill="currentColor" />
                     </svg>

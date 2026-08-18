@@ -35,6 +35,7 @@ interface KnowledgeTreeProps {
   selectedNodeId?: string | null;
   visibleNodeIds?: Set<string> | null;
   expandingId?: string | null;
+  renderNodeDetail?: (node: KnowledgeNodeView) => React.ReactNode;
   onSelectNode?: (nodeId: string) => void;
   onExpand?: (nodeId: string) => void;
   onUpdate?: (nodeId: string, patch: NodePatch) => void;
@@ -46,6 +47,7 @@ export function KnowledgeTree({
   selectedNodeId,
   visibleNodeIds,
   expandingId,
+  renderNodeDetail,
   onSelectNode,
   onExpand,
   onUpdate,
@@ -88,6 +90,7 @@ export function KnowledgeTree({
         onExpand={onExpand}
         onUpdate={onUpdate}
         onCreateChild={onCreateChild}
+        detail={renderNodeDetail?.(node)}
       >
         {!collapsed && children.map((child) => renderNode(child, depth + 1))}
       </NodeRow>
@@ -117,6 +120,7 @@ function NodeRow({
   onExpand,
   onUpdate,
   onCreateChild,
+  detail,
   children,
 }: {
   node: KnowledgeNodeView;
@@ -130,6 +134,7 @@ function NodeRow({
   onExpand?: (nodeId: string) => void;
   onUpdate?: (nodeId: string, patch: NodePatch) => void;
   onCreateChild?: (parentId: string, name: string) => void;
+  detail?: React.ReactNode;
   children?: React.ReactNode;
 }): React.JSX.Element {
   const theme = useTheme();
@@ -159,14 +164,21 @@ function NodeRow({
                 event.stopPropagation();
                 onToggleChildren(node.id);
               }}
-              hitSlop={8}
+              hitSlop={10}
+              style={{
+                width: 32,
+                height: 32,
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: 8,
+              }}
             >
-              <Text style={{ color: theme.muted, width: 16 }}>
+              <Text style={{ color: theme.muted, fontSize: 22, lineHeight: 26 }}>
                 {childrenCollapsed ? '▸' : '▾'}
               </Text>
             </Pressable>
           ) : (
-            <Text style={{ width: 16 }} />
+            <Text style={{ width: 32 }} />
           )}
           <Text style={{ color: theme.text, flex: 1, fontWeight: selected ? '700' : '600' }}>
             {node.name}
@@ -301,6 +313,7 @@ function NodeRow({
           </View>
         )}
       </Pressable>
+      {detail}
       <View style={{ marginTop: 6, gap: 6 }}>{children}</View>
     </View>
   );

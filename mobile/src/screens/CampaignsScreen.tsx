@@ -422,6 +422,70 @@ function CampaignDetailView({
         visibleNodeIds={visibleNodeIds}
         selectedNodeId={selectedNode?.id ?? null}
         expandingId={expandingNodeId}
+        renderNodeDetail={(node) => {
+          if (selectedNode?.id !== node.id) return null;
+          return (
+            <View style={[sectionStyle(theme), { marginTop: 6 }]}>
+              <Text style={{ color: theme.text, fontWeight: '600', marginBottom: 8 }}>{selectedNode.name}</Text>
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+                <Pressable
+                  onPress={() => setNodeStudyMode('explain')}
+                  style={{
+                    paddingHorizontal: 10,
+                    paddingVertical: 6,
+                    borderRadius: 8,
+                    backgroundColor: nodeStudyMode === 'explain' ? theme.accent : theme.bg,
+                  }}
+                >
+                  <Text style={{ color: nodeStudyMode === 'explain' ? '#fff' : theme.muted, fontSize: 12 }}>
+                    讲解
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => setNodeStudyMode('drill')}
+                  style={{
+                    paddingHorizontal: 10,
+                    paddingVertical: 6,
+                    borderRadius: 8,
+                    backgroundColor: nodeStudyMode === 'drill' ? theme.accent : theme.bg,
+                  }}
+                >
+                  <Text style={{ color: nodeStudyMode === 'drill' ? '#fff' : theme.muted, fontSize: 12 }}>
+                    考我
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => setNodeStudyMode('followUp')}
+                  style={{
+                    paddingHorizontal: 10,
+                    paddingVertical: 6,
+                    borderRadius: 8,
+                    backgroundColor: nodeStudyMode === 'followUp' ? theme.accent : theme.bg,
+                  }}
+                >
+                  <Text style={{ color: nodeStudyMode === 'followUp' ? '#fff' : theme.muted, fontSize: 12 }}>
+                    追问
+                  </Text>
+                </Pressable>
+              </View>
+              {nodeStudyMode === 'followUp' ? (
+                <NodeFollowUpPanel
+                  key={selectedNode.id}
+                  campaignId={id}
+                  nodeId={selectedNode.id}
+                  nodeName={selectedNode.name}
+                />
+              ) : (
+                <NodeStudyPanel
+                  key={`${selectedNode.id}-${nodeStudyMode}`}
+                  nodeId={selectedNode.id}
+                  nodeName={selectedNode.name}
+                  mode={nodeStudyMode}
+                />
+              )}
+            </View>
+          );
+        }}
         onSelectNode={(nodeId) => {
           const node = detail.nodes.find((n) => n.id === nodeId);
           if (!node) return;
@@ -431,61 +495,6 @@ function CampaignDetailView({
         onUpdate={updateNode}
         onCreateChild={createChildNode}
       />
-      {selectedNode && (
-        <View style={sectionStyle(theme)}>
-          <Text style={{ color: theme.text, fontWeight: '600', marginBottom: 8 }}>{selectedNode.name}</Text>
-          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
-            <Pressable
-              onPress={() => setNodeStudyMode('explain')}
-              style={{
-                paddingHorizontal: 10,
-                paddingVertical: 6,
-                borderRadius: 8,
-                backgroundColor: nodeStudyMode === 'explain' ? theme.accent : theme.bg,
-              }}
-            >
-              <Text style={{ color: nodeStudyMode === 'explain' ? '#fff' : theme.muted, fontSize: 12 }}>讲解</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => setNodeStudyMode('drill')}
-              style={{
-                paddingHorizontal: 10,
-                paddingVertical: 6,
-                borderRadius: 8,
-                backgroundColor: nodeStudyMode === 'drill' ? theme.accent : theme.bg,
-              }}
-            >
-              <Text style={{ color: nodeStudyMode === 'drill' ? '#fff' : theme.muted, fontSize: 12 }}>考我</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => setNodeStudyMode('followUp')}
-              style={{
-                paddingHorizontal: 10,
-                paddingVertical: 6,
-                borderRadius: 8,
-                backgroundColor: nodeStudyMode === 'followUp' ? theme.accent : theme.bg,
-              }}
-            >
-              <Text style={{ color: nodeStudyMode === 'followUp' ? '#fff' : theme.muted, fontSize: 12 }}>追问</Text>
-            </Pressable>
-          </View>
-          {nodeStudyMode === 'followUp' ? (
-            <NodeFollowUpPanel
-              key={selectedNode.id}
-              campaignId={id}
-              nodeId={selectedNode.id}
-              nodeName={selectedNode.name}
-            />
-          ) : (
-            <NodeStudyPanel
-              key={`${selectedNode.id}-${nodeStudyMode}`}
-              nodeId={selectedNode.id}
-              nodeName={selectedNode.name}
-              mode={nodeStudyMode}
-            />
-          )}
-        </View>
-      )}
     </ScrollView>
     <StudyPlanCalendarPopover
       open={calendarOpen}
