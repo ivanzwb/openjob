@@ -40,6 +40,7 @@ const SYNCED_TABLES: Array<{ table: Table; deviceLocal?: string[] }> = [
   { table: schema.explanation },
   { table: schema.source },
   { table: schema.companyIntel },
+  { table: schema.designCase },
   { table: schema.interviewReport },
   { table: schema.interviewQuestion },
   { table: schema.planDay },

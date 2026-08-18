@@ -30,8 +30,8 @@ export function DesignPractice(): React.JSX.Element {
   const [answer, setAnswer] = useState('');
   const [result, setResult] = useState<DesignSubmitResult | null>(null);
 
-  // 出题与评分按 Campaign 取 key，切页/切 Campaign 回来还能接上同一次
-  const caseKey = `design:case:${campaignId}`;
+  // 出题与评分按 Campaign + 题型取 key，切页回来还能接上同一次题目
+  const caseKey = `design:case:${campaignId}:${interviewType}`;
   const submitKey = `design:submit:${campaignId}`;
   const caseTask = useTask(caseKey);
   const submitTask = useTask(submitKey);
@@ -58,9 +58,9 @@ export function DesignPractice(): React.JSX.Element {
   });
   useTaskResult<DesignSubmitResult>(submitKey, setResult);
 
-  const start = (): void => {
+  const start = (force = false): void => {
     if (!campaignId) return;
-    void runTask(caseKey, () => invoke('design:case', { campaignId, interviewType })).catch(
+    void runTask(caseKey, () => invoke('design:case', { campaignId, interviewType, force })).catch(
       () => undefined,
     );
   };
@@ -140,11 +140,14 @@ export function DesignPractice(): React.JSX.Element {
         <button
           type="button"
           disabled={!campaignId || loading}
-          onClick={start}
+          onClick={() => start(Boolean(designCase))}
           className="rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm text-white disabled:opacity-40"
         >
-          {caseTask.running ? '出题中…' : designCase ? '换一题' : '开始模拟'}
+          {caseTask.running ? '出题中…' : designCase ? '重新出题' : '开始模拟'}
         </button>
+        <p className="mt-2 text-xs text-[var(--color-muted)]">
+          已生成的题目会自动保存；再次进入会直接显示保存题，只有点击「重新出题」才会生成新题。
+        </p>
       </div>
 
       {error && <p className="text-sm text-red-400">{error}</p>}

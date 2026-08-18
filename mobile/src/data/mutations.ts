@@ -1,6 +1,7 @@
 import * as Crypto from 'expo-crypto';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import type { TaskView } from '@shared/ipc';
+import type { ExplanationTier } from '@shared/enums';
 import { getDeviceIdentity } from '../sync/identity';
 import { writingAs } from '../sync/triggers';
 
@@ -90,6 +91,41 @@ export async function deleteSpeech(db: SQLiteDatabase, id: string): Promise<void
   writingAs(db, identity.deviceId, () => {
     db.runSync(`DELETE FROM speech_snippet WHERE id = ?`, id);
   });
+}
+
+export async function saveSpeechFromNode(
+  db: SQLiteDatabase,
+  nodeId: string,
+  contentMd: string,
+  tier: ExplanationTier,
+): Promise<{ id: string; existing: boolean }> {
+  const trimmed = contentMd.trim();
+  if (!trimmed) throw new Error('话术内容为空');
+
+  const existing = db.getFirstSync<{ id: string }>(
+    `SELECT id FROM speech_snippet
+     WHERE source_type = 'node' AND source_id = ? AND content_md = ?
+     LIMIT 1`,
+    nodeId,
+    trimmed,
+  );
+  if (existing) return { id: existing.id, existing: true };
+
+  const identity = await getDeviceIdentity(db);
+  const id = Crypto.randomUUID();
+  const now = Date.now();
+  writingAs(db, identity.deviceId, () => {
+    db.runSync(
+      `INSERT INTO speech_snippet (id, source_type, source_id, tier, content_md, is_user_edited, created_at)
+       VALUES (?, 'node', ?, ?, ?, 0, ?)`,
+      id,
+      nodeId,
+      tier,
+      trimmed,
+      now,
+    );
+  });
+  return { id, existing: false };
 }
 
 export async function createCampaign(

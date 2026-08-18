@@ -68,6 +68,7 @@ export function KnowledgeTree({
   onSelectNode,
   visibleNodeIds,
 }: TreeProps): React.JSX.Element {
+  const [collapsedIds, setCollapsedIds] = useState<Set<string>>(() => new Set());
   const filteredNodes =
     visibleNodeIds && visibleNodeIds.size > 0
       ? nodes.filter((n) => visibleNodeIds.has(n.id))
@@ -85,6 +86,7 @@ export function KnowledgeTree({
   const renderNode = (node: KnowledgeNodeView, depth: number): React.JSX.Element => {
     const children = byParent.get(node.id) ?? [];
     const masteryPct = Math.round((node.mastery / 5) * 100);
+    const collapsed = collapsedIds.has(node.id);
 
     return (
       <NodeRow
@@ -104,8 +106,18 @@ export function KnowledgeTree({
         onAddNote={onAddNote}
         selected={selectedNodeId === node.id}
         onSelect={onSelectNode}
+        hasChildren={children.length > 0}
+        childrenCollapsed={collapsed}
+        onToggleChildren={(nodeId) => {
+          setCollapsedIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(nodeId)) next.delete(nodeId);
+            else next.add(nodeId);
+            return next;
+          });
+        }}
       >
-        {children.map((c) => renderNode(c, depth + 1))}
+        {!collapsed && children.map((c) => renderNode(c, depth + 1))}
       </NodeRow>
     );
   };
@@ -139,6 +151,9 @@ function NodeRow({
   onAddNote,
   selected,
   onSelect,
+  hasChildren,
+  childrenCollapsed,
+  onToggleChildren,
   children,
 }: {
   node: KnowledgeNodeView;
@@ -156,6 +171,9 @@ function NodeRow({
   onAddNote?: (nodeId: string, noteMd: string) => void;
   selected?: boolean;
   onSelect?: (nodeId: string) => void;
+  hasChildren: boolean;
+  childrenCollapsed: boolean;
+  onToggleChildren: (nodeId: string) => void;
   children?: React.ReactNode;
 }): React.JSX.Element {
   const [editing, setEditing] = useState(false);
@@ -244,6 +262,27 @@ function NodeRow({
           ) : (
             <>
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                {hasChildren && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleChildren(node.id);
+                    }}
+                    className="flex h-4 w-4 items-center justify-center rounded text-[var(--color-muted)] hover:bg-black/20 hover:text-[var(--color-fg)]"
+                    title={childrenCollapsed ? '展开子考点' : '收起子考点'}
+                    aria-label={childrenCollapsed ? '展开子考点' : '收起子考点'}
+                    aria-expanded={!childrenCollapsed}
+                  >
+                    <svg
+                      viewBox="0 0 12 12"
+                      aria-hidden="true"
+                      className={`h-3 w-3 transition-transform ${childrenCollapsed ? '' : 'rotate-90'}`}
+                    >
+                      <path d="M4.25 2.5 8 6 4.25 9.5z" fill="currentColor" />
+                    </svg>
+                  </button>
+                )}
                 {bookmarked && (
                   <span className="text-amber-400" title="已收藏">
                     ★

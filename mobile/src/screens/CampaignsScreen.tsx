@@ -1,15 +1,18 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import type { CampaignSummary, KnowledgeNodeView, TaskView } from '@shared/ipc';
-import { nodeIdsForPlanFilter } from '@shared/planFilter';
+import type { NodeStatus } from '@shared/enums';
+import { nodeIdsForPlanFilter, nodeIdsForTreeFilter } from '@shared/planFilter';
 import { KeepAlivePanel } from '../components/KeepAlivePanel';
+import { KnowledgeTree, type NodePatch } from '../components/KnowledgeTree';
 import { NodeFollowUpPanel } from '../components/NodeFollowUpPanel';
 import { NodeStudyPanel } from '../components/NodeStudyPanel';
 import { StudyPlanCalendarPopover } from '../components/StudyPlanCalendarPopover';
 import { getRawDb } from '../db';
-import { getCampaignDetail, getTodayPlan, listCampaigns } from '../data/queries';
+import { getCampaignDetail, getNodeAnnotationSummary, getTodayPlan, listCampaigns } from '../data/queries';
 import { createCampaign } from '../data/mutations';
-import { diagnoseFetchIntel, diagnoseFromJd } from '../data/diagnosisLocal';
+import { diagnoseExpandNode, diagnoseFetchIntel, diagnoseFromJd } from '../data/diagnosisLocal';
+import { createKnowledgeChild, updateKnowledgeNode } from '../data/nodesLocal';
 import { generatePlan } from '../data/planLocal';
 import { useApp } from '../context/AppContext';
 import { runTask, useTaskResult, useTaskState } from '../context/RemoteTaskContext';
@@ -17,6 +20,26 @@ import { useLocalDataReload } from '../hooks/useLocalDataReload';
 import { useTheme, type Palette } from '../theme';
 
 const CREATE_CAMPAIGN_KEY = 'campaign:create';
+
+function lastNodeKey(campaignId: string): string {
+  return `ui.lastNode.${campaignId}`;
+}
+
+function readLastNodeId(campaignId: string): string | null {
+  return getRawDb().getFirstSync<{ value: string }>(
+    `SELECT value FROM sync_meta WHERE key = ?`,
+    lastNodeKey(campaignId),
+  )?.value ?? null;
+}
+
+function writeLastNodeId(campaignId: string, nodeId: string): void {
+  getRawDb().runSync(
+    `INSERT INTO sync_meta (key, value) VALUES (?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    lastNodeKey(campaignId),
+    nodeId,
+  );
+}
 
 function CampaignListView({
   onOpenDetail,
@@ -100,17 +123,25 @@ function CampaignDetailView({
   const { running: diagnosing } = useTaskState(diagnoseKey);
   const { running: fetchingIntel } = useTaskState(intelKey);
   const [detail, setDetail] = useState(() => getCampaignDetail(getRawDb(), id));
+  const [nodeAnnotations, setNodeAnnotations] = useState(() =>
+    getNodeAnnotationSummary(getRawDb(), id),
+  );
   const [selectedNode, setSelectedNode] = useState<KnowledgeNodeView | null>(null);
   const [nodeStudyMode, setNodeStudyMode] = useState<'explain' | 'drill' | 'followUp'>('explain');
   const [interviewDate, setInterviewDate] = useState(detail.campaign.interviewDate ?? '');
   const [dailyMinutes, setDailyMinutes] = useState(String(detail.campaign.dailyMinutes ?? 90));
   const [calendarFilterDate, setCalendarFilterDate] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<NodeStatus | 'all'>('all');
+  const [markFilter, setMarkFilter] = useState<'all' | 'bookmarked' | 'marked' | 'last'>('all');
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const [expandingNodeId, setExpandingNodeId] = useState<string | null>(null);
+  const [lastNodeId, setLastNodeId] = useState<string | null>(() => readLastNodeId(id));
 
   // setDetail 每次都换新对象，重渲染由它带动，不需要额外的计数器
   const reload = useCallback(() => {
     const next = getCampaignDetail(getRawDb(), id);
     setDetail(next);
+    setNodeAnnotations(getNodeAnnotationSummary(getRawDb(), id));
     setInterviewDate(next.campaign.interviewDate ?? '');
     setDailyMinutes(String(next.campaign.dailyMinutes ?? 90));
   }, [id]);
@@ -119,22 +150,46 @@ function CampaignDetailView({
 
   const filterPlan = calendarFilterDate ? getTodayPlan(getRawDb(), id, calendarFilterDate) : null;
   const visibleNodeIds = useMemo(() => {
-    if (!calendarFilterDate || !filterPlan) return null;
-    return nodeIdsForPlanFilter(detail.nodes, filterPlan.tasks);
-  }, [calendarFilterDate, filterPlan, detail.nodes]);
-  const visibleNodes = useMemo(() => {
-    if (!visibleNodeIds || visibleNodeIds.size === 0) {
-      return calendarFilterDate ? [] : detail.nodes;
-    }
-    return detail.nodes.filter((n) => visibleNodeIds.has(n.id));
-  }, [calendarFilterDate, detail.nodes, visibleNodeIds]);
+    const calendarIds = calendarFilterDate && filterPlan ? nodeIdsForPlanFilter(detail.nodes, filterPlan.tasks) : null;
+    const hasListFilter = statusFilter !== 'all' || markFilter !== 'all';
+    if (!calendarIds && !hasListFilter) return null;
+
+    const matched = detail.nodes
+      .filter((node) => !calendarIds || calendarIds.has(node.id))
+      .filter((node) => statusFilter === 'all' || node.status === statusFilter)
+      .filter((node) => {
+        if (markFilter === 'all') return true;
+        if (markFilter === 'bookmarked') return nodeAnnotations.bookmarkedIds.has(node.id);
+        if (markFilter === 'marked') return nodeAnnotations.markedIds.has(node.id);
+        return node.id === lastNodeId;
+      })
+      .map((node) => node.id);
+
+    const treeIds = hasListFilter ? nodeIdsForTreeFilter(detail.nodes, matched) : (calendarIds ?? new Set<string>());
+    if (!calendarIds) return treeIds;
+    return new Set([...treeIds].filter((nodeId) => calendarIds.has(nodeId)));
+  }, [
+    calendarFilterDate,
+    detail.nodes,
+    filterPlan,
+    lastNodeId,
+    markFilter,
+    nodeAnnotations,
+    statusFilter,
+  ]);
+
+  const selectNodeForStudy = (node: KnowledgeNodeView, mode: typeof nodeStudyMode = 'explain'): void => {
+    setSelectedNode(node);
+    setNodeStudyMode(mode);
+    setLastNodeId(node.id);
+    writeLastNodeId(id, node.id);
+  };
 
   const openTaskInStudy = (task: TaskView): void => {
     if (!task.nodeId) return;
     const node = detail.nodes.find((n) => n.id === task.nodeId);
     if (!node) return;
-    setSelectedNode(node);
-    setNodeStudyMode(task.kind === 'drill' ? 'drill' : 'explain');
+    selectNodeForStudy(node, task.kind === 'drill' ? 'drill' : 'explain');
   };
 
   // 结果都写进了 SQLite，任务里通知一次数据变化，界面无论在不在都会重新读库
@@ -156,6 +211,44 @@ function CampaignDetailView({
       const res = await diagnoseFetchIntel(getRawDb(), id);
       await afterWrite();
       return res;
+    }).catch(() => undefined);
+  };
+
+  const expandNode = (nodeId: string): void => {
+    if (expandingNodeId) return;
+    const taskKey = `campaign:${id}:expandNode:${nodeId}`;
+    setExpandingNodeId(nodeId);
+    void runTask(taskKey, '细化考点', async () => {
+      const result = await diagnoseExpandNode(getRawDb(), nodeId);
+      await afterWrite();
+      reload();
+      return result;
+    })
+      .catch(() => undefined)
+      .finally(() => setExpandingNodeId(null));
+  };
+
+  const updateNode = (nodeId: string, patch: NodePatch): void => {
+    const taskKey = `node:${nodeId}:update`;
+    void runTask(taskKey, '更新学习进度', async () => {
+      await updateKnowledgeNode(getRawDb(), nodeId, patch);
+      await afterWrite();
+      reload();
+      const nextStatus = patch.status;
+      if (nextStatus) {
+        setSelectedNode((prev) => (prev?.id === nodeId ? { ...prev, status: nextStatus } : prev));
+      }
+      return '学习进度已更新';
+    }).catch(() => undefined);
+  };
+
+  const createChildNode = (parentId: string, name: string): void => {
+    const taskKey = `node:${parentId}:createChild`;
+    void runTask(taskKey, '添加子考点', async () => {
+      await createKnowledgeChild(getRawDb(), parentId, name);
+      await afterWrite();
+      reload();
+      return '子考点已添加';
     }).catch(() => undefined);
   };
 
@@ -234,33 +327,110 @@ function CampaignDetailView({
           </Text>
         </Pressable>
       </View>
-      {visibleNodes.length === 0 ? (
-        <Text style={{ color: theme.muted, fontSize: 12 }}>
-          {calendarFilterDate ? '该日无排期考点' : '暂无考点'}
-        </Text>
-      ) : (
-        visibleNodes.map((n) => (
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+        {[
+          ['all', '全部状态'],
+          ['todo', '未开始'],
+          ['learning', '学习中'],
+          ['shaky', '不牢'],
+          ['mastered', '已掌握'],
+        ].map(([value, label]) => (
           <Pressable
-            key={n.id}
+            key={value}
+            onPress={() => setStatusFilter(value as NodeStatus | 'all')}
+            style={{
+              borderWidth: 1,
+              borderColor: statusFilter === value ? theme.accent : theme.border,
+              backgroundColor: statusFilter === value ? `${theme.accent}18` : theme.surface,
+              borderRadius: 999,
+              paddingHorizontal: 10,
+              paddingVertical: 6,
+            }}
+          >
+            <Text style={{ color: statusFilter === value ? theme.accent : theme.muted, fontSize: 11 }}>
+              {label}
+            </Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+        {[
+          ['all', '全部标记'],
+          ['bookmarked', '收藏'],
+          ['marked', '有笔记/高亮'],
+          ['last', '上次学习'],
+        ].map(([value, label]) => (
+          <Pressable
+            key={value}
+            onPress={() => setMarkFilter(value as 'all' | 'bookmarked' | 'marked' | 'last')}
+            disabled={value === 'last' && !lastNodeId}
+            style={{
+              borderWidth: 1,
+              borderColor: markFilter === value ? theme.accent : theme.border,
+              backgroundColor: markFilter === value ? `${theme.accent}18` : theme.surface,
+              borderRadius: 999,
+              paddingHorizontal: 10,
+              paddingVertical: 6,
+              opacity: value === 'last' && !lastNodeId ? 0.5 : 1,
+            }}
+          >
+            <Text style={{ color: markFilter === value ? theme.accent : theme.muted, fontSize: 11 }}>
+              {label}
+            </Text>
+          </Pressable>
+        ))}
+        <Pressable
+          onPress={() => {
+            const node = detail.nodes.find((n) => n.id === lastNodeId);
+            if (!node) return;
+            setMarkFilter('last');
+            selectNodeForStudy(node);
+          }}
+          disabled={!lastNodeId || !detail.nodes.some((n) => n.id === lastNodeId)}
+          style={{
+            borderWidth: 1,
+            borderColor: theme.border,
+            borderRadius: 999,
+            paddingHorizontal: 10,
+            paddingVertical: 6,
+            opacity: !lastNodeId ? 0.5 : 1,
+          }}
+        >
+          <Text style={{ color: theme.accent, fontSize: 11 }}>继续上次</Text>
+        </Pressable>
+        {(calendarFilterDate || statusFilter !== 'all' || markFilter !== 'all') && (
+          <Pressable
             onPress={() => {
-              setSelectedNode(n);
-              setNodeStudyMode('explain');
+              setCalendarFilterDate(null);
+              setStatusFilter('all');
+              setMarkFilter('all');
             }}
             style={{
               borderWidth: 1,
-              borderColor: selectedNode?.id === n.id ? theme.accent : theme.border,
-              borderRadius: 8,
-              padding: 10,
-              backgroundColor: theme.surface,
+              borderColor: theme.border,
+              borderRadius: 999,
+              paddingHorizontal: 10,
+              paddingVertical: 6,
             }}
           >
-            <Text style={{ color: theme.text }}>{n.name}</Text>
-            <Text style={{ color: theme.muted, fontSize: 11 }}>
-              {n.kind} · {n.coverageType} · 掌握 {n.mastery.toFixed(1)}
-            </Text>
+            <Text style={{ color: theme.muted, fontSize: 11 }}>清空过滤</Text>
           </Pressable>
-        ))
-      )}
+        )}
+      </ScrollView>
+      <KnowledgeTree
+        nodes={detail.nodes}
+        visibleNodeIds={visibleNodeIds}
+        selectedNodeId={selectedNode?.id ?? null}
+        expandingId={expandingNodeId}
+        onSelectNode={(nodeId) => {
+          const node = detail.nodes.find((n) => n.id === nodeId);
+          if (!node) return;
+          selectNodeForStudy(node);
+        }}
+        onExpand={expandNode}
+        onUpdate={updateNode}
+        onCreateChild={createChildNode}
+      />
       {selectedNode && (
         <View style={sectionStyle(theme)}>
           <Text style={{ color: theme.text, fontWeight: '600', marginBottom: 8 }}>{selectedNode.name}</Text>

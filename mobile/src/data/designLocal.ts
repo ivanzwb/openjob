@@ -13,6 +13,47 @@ import { getCampaign } from './campaignLocal';
 import { getDeviceIdentity } from '../sync/identity';
 import { writingAs } from '../sync/triggers';
 
+interface DesignCaseRow {
+  campaign_id: string;
+  interview_type: ExamForm;
+  related_node_name: string | null;
+  title: string;
+  scenario_md: string;
+  constraints: string;
+  evaluation_criteria: string;
+}
+
+function designCaseCacheId(campaignId: string, interviewType: MockInterviewType): string {
+  return `${campaignId}:${interviewType}`;
+}
+
+function parseStringList(value: string | null | undefined): string[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function rowToDesignCaseResult(
+  row: DesignCaseRow,
+  campaign: ReturnType<typeof getCampaign>,
+): DesignCaseResult {
+  return {
+    campaignId: row.campaign_id,
+    company: campaign.company,
+    roleTitle: campaign.roleTitle,
+    interviewType: row.interview_type,
+    relatedNodeName: row.related_node_name ?? null,
+    title: row.title,
+    scenarioMd: row.scenario_md,
+    constraints: parseStringList(row.constraints),
+    evaluationCriteria: parseStringList(row.evaluation_criteria),
+  };
+}
+
 function buildInterviewContext(db: SQLiteDatabase, campaignId: string): string {
   const campaign = getCampaign(db, campaignId);
   const nodes = db.getAllSync<{
@@ -103,8 +144,20 @@ export async function generateDesignCase(
   db: SQLiteDatabase,
   campaignId: string,
   interviewType: MockInterviewType = 'mixed',
+  force = false,
 ): Promise<DesignCaseResult> {
   const campaign = getCampaign(db, campaignId);
+  const cacheId = designCaseCacheId(campaignId, interviewType);
+  const cached = db.getFirstSync<DesignCaseRow>(
+    `SELECT campaign_id, interview_type, related_node_name, title, scenario_md, constraints, evaluation_criteria
+     FROM design_case WHERE id = ?`,
+    cacheId,
+  );
+
+  if (cached && !force) {
+    return rowToDesignCaseResult(cached, campaign);
+  }
+
   const context = buildInterviewContext(db, campaignId);
 
   const generated = await completeJson<DesignCaseGenerated>(
@@ -114,6 +167,36 @@ export async function generateDesignCase(
     undefined,
     { type: interviewType },
   );
+
+  const identity = await getDeviceIdentity(db);
+  const now = Date.now();
+  writingAs(db, identity.deviceId, () => {
+    db.runSync(
+      `INSERT INTO design_case (
+        id, campaign_id, requested_type, interview_type, related_node_name, title,
+        scenario_md, constraints, evaluation_criteria, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        interview_type = excluded.interview_type,
+        related_node_name = excluded.related_node_name,
+        title = excluded.title,
+        scenario_md = excluded.scenario_md,
+        constraints = excluded.constraints,
+        evaluation_criteria = excluded.evaluation_criteria,
+        updated_at = excluded.updated_at`,
+      cacheId,
+      campaignId,
+      interviewType,
+      generated.interviewType,
+      generated.relatedNodeName ?? null,
+      generated.title,
+      generated.scenarioMd,
+      JSON.stringify(generated.constraints ?? []),
+      JSON.stringify(generated.evaluationCriteria ?? []),
+      now,
+      now,
+    );
+  });
 
   return {
     campaignId,

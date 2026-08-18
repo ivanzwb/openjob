@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Alert, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
 import type { Repo } from '@shared/entities';
 import { RepoQaPanel } from '../components/RepoQaPanel';
 import { getRawDb } from '../db';
@@ -22,7 +22,6 @@ export function ReposScreen(): React.JSX.Element {
   const [repos, setRepos] = useState<Repo[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedTab, setSelectedTab] = useState<RepoTab>('summary');
-  const [cloneUrl, setCloneUrl] = useState('');
   const [filePath, setFilePath] = useState('');
   const [content, setContent] = useState('');
   const [viewingRepoId, setViewingRepoId] = useState<string | null>(null);
@@ -50,14 +49,6 @@ export function ReposScreen(): React.JSX.Element {
     setContent('');
     setSelectedTab('summary');
   }
-
-  const addRepo = (): void => {
-    if (!cloneUrl.trim()) return;
-    Alert.alert(
-      '需在桌面端添加',
-      '克隆与索引仓库需要本机文件系统，请在桌面端添加仓库后同步到手机。',
-    );
-  };
 
   const openFile = (repo: Repo, path: string): void => {
     const raw = getRepoFileContent(getRawDb(), repo.id, path);
@@ -184,43 +175,8 @@ export function ReposScreen(): React.JSX.Element {
       </Pressable>
 
       <Text style={{ color: theme.muted, fontSize: 11 }}>
-        仓库列表来自本地同步。克隆与索引在桌面端完成，源码快照同步后可读。
+        手机端只读取桌面端同步过来的源码快照。新增仓库、克隆和索引请在桌面端完成。
       </Text>
-
-      <View style={{ flexDirection: 'row', gap: 8 }}>
-        <TextInput
-          value={cloneUrl}
-          onChangeText={setCloneUrl}
-          placeholder="https://github.com/..."
-          placeholderTextColor={theme.muted}
-          autoCapitalize="none"
-          style={{
-            flex: 1,
-            color: theme.text,
-            borderWidth: 1,
-            borderColor: theme.border,
-            borderRadius: 8,
-            paddingHorizontal: 10,
-            paddingVertical: 8,
-            fontSize: 13,
-          }}
-        />
-        <Pressable
-          onPress={addRepo}
-          disabled={!cloneUrl.trim()}
-          style={{
-            backgroundColor: theme.surface,
-            paddingHorizontal: 14,
-            justifyContent: 'center',
-            borderRadius: 8,
-            borderWidth: 1,
-            borderColor: theme.border,
-            opacity: !cloneUrl.trim() ? 0.5 : 1,
-          }}
-        >
-          <Text style={{ color: theme.text, fontSize: 12 }}>添加</Text>
-        </Pressable>
-      </View>
 
       {repos.length === 0 && (
         <Text style={{ color: theme.muted, fontSize: 13 }}>暂无仓库，请在桌面端添加后同步</Text>

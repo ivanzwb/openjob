@@ -23,6 +23,7 @@ import type {
   ToolName,
 } from '../../shared/enums';
 import type { Citation, JdParsed, ResumeParsed } from '../../shared/entities';
+import type { MockInterviewType } from '../../shared/design/prompts';
 
 /**
  * 全量 schema 一次到位——后续阶段只填数据不改结构，避免频繁迁移。
@@ -225,6 +226,26 @@ export const companyIntel = sqliteTable('company_intel', {
   sourceIds: text('source_ids', { mode: 'json' }).$type<string[]>().notNull().default([]),
   updatedAt: integer('updated_at').notNull(),
 });
+
+export const designCase = sqliteTable(
+  'design_case',
+  {
+    id: text('id').primaryKey(),
+    campaignId: text('campaign_id')
+      .notNull()
+      .references(() => campaign.id, { onDelete: 'cascade' }),
+    requestedType: text('requested_type').$type<MockInterviewType>().notNull(),
+    interviewType: text('interview_type').$type<ExamForm>().notNull(),
+    relatedNodeName: text('related_node_name'),
+    title: text('title').notNull(),
+    scenarioMd: text('scenario_md').notNull(),
+    constraints: text('constraints', { mode: 'json' }).$type<string[]>().notNull().default([]),
+    evaluationCriteria: text('evaluation_criteria', { mode: 'json' }).$type<string[]>().notNull().default([]),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (t) => [index('idx_design_case_campaign_type').on(t.campaignId, t.requestedType)],
+);
 
 // ---------------------------------------------------------------------------
 // 面经摄入（三入口统一管道）

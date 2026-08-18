@@ -9,13 +9,13 @@ import type {
   TodayPlan,
 } from '@shared/ipc';
 import type { Resume } from '@shared/entities';
-import type { EdgeRelation, NodeKind } from '@shared/enums';
+import type { EdgeRelation, NodeKind, NodeStatus } from '@shared/enums';
 import { AnnotationDigest } from '../components/AnnotationDigest';
 import { AnnotationTools } from '../components/AnnotationTools';
 import { CompanyIntelCard } from '../components/CompanyIntelCard';
 import { EdgeEditor } from '../components/EdgeEditor';
 import { StudyPlanCalendarPopover } from '../components/StudyPlanCalendarPopover';
-import { nodeIdsForPlanFilter } from '@shared/planFilter';
+import { nodeIdsForPlanFilter, nodeIdsForTreeFilter } from '@shared/planFilter';
 import { KnowledgeGraph } from '../components/KnowledgeGraph';
 import { KnowledgeTree, type NodePatch } from '../components/KnowledgeTree';
 import { NodeFollowUpChat } from '../components/NodeFollowUpChat';
@@ -62,10 +62,15 @@ export function CampaignDetail({
   const [annotations, setAnnotations] = useState<AnnotationView[]>([]);
   const [pageTab, setPageTab] = useState<'intel' | 'study' | 'materials'>('intel');
   const [calendarFilterDate, setCalendarFilterDate] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<NodeStatus | 'all'>('all');
+  const [markFilter, setMarkFilter] = useState<'all' | 'bookmarked' | 'marked' | 'last'>('all');
   const [filterPlan, setFilterPlan] = useState<TodayPlan | null>(null);
   const [prevCalendarFilterDate, setPrevCalendarFilterDate] = useState<string | null>(calendarFilterDate);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [lastNodeId, setLastNodeId] = useState<string | null>(() =>
+    window.localStorage.getItem(`openjob:lastNode:${id}`),
+  );
   const [nodeStudyMode, setNodeStudyMode] = useState<'explain' | 'drill' | 'followUp'>('explain');
   const { active: job, lastResult } = useJobProgress();
   const jdJob = useJobFeedback('JD 诊断');
@@ -346,9 +351,44 @@ export function CampaignDetail({
   };
 
   const visibleNodeIds = useMemo(() => {
-    if (!detail || !calendarFilterDate || !filterPlan) return null;
-    return nodeIdsForPlanFilter(detail.nodes, filterPlan.tasks);
-  }, [detail, calendarFilterDate, filterPlan]);
+    if (!detail) return null;
+    const calendarIds = calendarFilterDate && filterPlan ? nodeIdsForPlanFilter(detail.nodes, filterPlan.tasks) : null;
+    const hasListFilter = statusFilter !== 'all' || markFilter !== 'all';
+    if (!calendarIds && !hasListFilter) return null;
+
+    const nodeMarkIds = new Set(
+      annotations
+        .filter(
+          (a) =>
+            a.targetType === 'node' &&
+            (a.kind === 'note' || a.kind === 'highlight' || a.kind === 'elaboration'),
+        )
+        .map((a) => a.targetId),
+    );
+    const matched = detail.nodes
+      .filter((n) => !calendarIds || calendarIds.has(n.id))
+      .filter((n) => statusFilter === 'all' || n.status === statusFilter)
+      .filter((n) => {
+        if (markFilter === 'all') return true;
+        if (markFilter === 'bookmarked') return bookmarkedIds.has(n.id);
+        if (markFilter === 'marked') return nodeMarkIds.has(n.id);
+        return n.id === lastNodeId;
+      })
+      .map((n) => n.id);
+
+    const treeIds = hasListFilter ? nodeIdsForTreeFilter(detail.nodes, matched) : (calendarIds ?? new Set<string>());
+    if (!calendarIds) return treeIds;
+    return new Set([...treeIds].filter((nodeId) => calendarIds.has(nodeId)));
+  }, [
+    annotations,
+    bookmarkedIds,
+    calendarFilterDate,
+    detail,
+    filterPlan,
+    lastNodeId,
+    markFilter,
+    statusFilter,
+  ]);
 
   if (!detail) {
     return <p className="p-6 text-sm text-[var(--color-muted)]">加载中…</p>;
@@ -363,6 +403,8 @@ export function CampaignDetail({
     setPageTab('study');
     setSelectedNodeId(nodeId);
     setNodeStudyMode('explain');
+    setLastNodeId(nodeId);
+    window.localStorage.setItem(`openjob:lastNode:${id}`, nodeId);
   };
 
   const openTaskInStudy = (task: TaskView): void => {
@@ -370,6 +412,8 @@ export function CampaignDetail({
     setPageTab('study');
     setSelectedNodeId(task.nodeId);
     setNodeStudyMode(task.kind === 'drill' ? 'drill' : 'explain');
+    setLastNodeId(task.nodeId);
+    window.localStorage.setItem(`openjob:lastNode:${id}`, task.nodeId);
   };
 
   return (
@@ -652,6 +696,67 @@ export function CampaignDetail({
                       />
                     </div>
                   </div>
+                  <div className="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--color-border)]/70 bg-[var(--color-bg)] px-2 py-2">
+                    <label className="flex items-center gap-1 text-[11px] text-[var(--color-muted)]">
+                      状态
+                      <select
+                        value={statusFilter}
+                        onChange={(e) => {
+                          setShowGraph(false);
+                          setStatusFilter(e.target.value as NodeStatus | 'all');
+                        }}
+                        className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1.5 py-0.5 text-xs text-[var(--color-fg)]"
+                      >
+                        <option value="all">全部</option>
+                        <option value="todo">未开始</option>
+                        <option value="learning">学习中</option>
+                        <option value="shaky">不牢</option>
+                        <option value="mastered">已掌握</option>
+                      </select>
+                    </label>
+                    <label className="flex items-center gap-1 text-[11px] text-[var(--color-muted)]">
+                      标记
+                      <select
+                        value={markFilter}
+                        onChange={(e) => {
+                          setShowGraph(false);
+                          setMarkFilter(e.target.value as 'all' | 'bookmarked' | 'marked' | 'last');
+                        }}
+                        className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1.5 py-0.5 text-xs text-[var(--color-fg)]"
+                      >
+                        <option value="all">全部</option>
+                        <option value="bookmarked">收藏</option>
+                        <option value="marked">有笔记/高亮/细化</option>
+                        <option value="last">上次学习</option>
+                      </select>
+                    </label>
+                    <button
+                      type="button"
+                      disabled={!lastNodeId || !nodes.some((n) => n.id === lastNodeId)}
+                      onClick={() => {
+                        if (!lastNodeId) return;
+                        setShowGraph(false);
+                        setMarkFilter('last');
+                        jumpToNode(lastNodeId);
+                      }}
+                      className="rounded border border-[var(--color-border)] px-2 py-0.5 text-xs text-sky-400 disabled:opacity-40"
+                    >
+                      继续上次
+                    </button>
+                    {(calendarFilterDate || statusFilter !== 'all' || markFilter !== 'all') && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCalendarFilterDate(null);
+                          setStatusFilter('all');
+                          setMarkFilter('all');
+                        }}
+                        className="ml-auto text-xs text-[var(--color-muted)] hover:text-[var(--color-fg)]"
+                      >
+                        清空过滤
+                      </button>
+                    )}
+                  </div>
                   {showEdges && (
                     <div className="shrink-0 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] p-2">
                       <EdgeEditor
@@ -684,10 +789,7 @@ export function CampaignDetail({
                         expandingId={expandJob.isRunning ? pendingExpandNodeId : null}
                         jobsBusy={Boolean(job)}
                         selectedNodeId={selectedNodeId}
-                        onSelectNode={(nid) => {
-                          setSelectedNodeId(nid);
-                          setNodeStudyMode('explain');
-                        }}
+                        onSelectNode={jumpToNode}
                       />
                     )}
                   </div>

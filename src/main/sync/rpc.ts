@@ -216,7 +216,7 @@ const RPC_HANDLERS: Partial<Record<IpcInvokeChannel, RpcHandler>> = {
   'speech:delete': (p) => deleteSpeechSnippet((p as { id: string }).id),
   'design:case': (p) => {
     const input = p as IpcReq<'design:case'>;
-    return generateDesignCase(input.campaignId, input.interviewType ?? 'mixed');
+    return generateDesignCase(input.campaignId, input.interviewType ?? 'mixed', input.force ?? false);
   },
   'design:submit': (p) => {
     const input = p as IpcReq<'design:submit'>;

@@ -17,6 +17,7 @@ import {
   updateExplanation,
 } from '../data/study';
 import { elaborateExplanationSelection, generateExplanation } from '../data/explainGen';
+import { saveSpeechFromNode } from '../data/mutations';
 import { useApp } from '../context/AppContext';
 import { isTaskRunning, runTask, useTaskResult, useTaskState } from '../context/RemoteTaskContext';
 import { useTheme, type Palette } from '../theme';
@@ -84,6 +85,7 @@ export function ExplanationStudyPanel({
   const clearHighlightKey = `explain:clearHighlight:${nodeId}`;
   const noteKey = `explain:note:${nodeId}`;
   const excerptKey = `explain:excerpt:${nodeId}`;
+  const speechKey = `explain:speech:${nodeId}`;
   const deleteMarkKey = `explain:deleteMark:${nodeId}`;
 
   const { running: generating, error: loadError } = useTaskState(loadKey);
@@ -94,6 +96,7 @@ export function ExplanationStudyPanel({
   const { running: clearingHighlight } = useTaskState(clearHighlightKey);
   const { running: savingNote } = useTaskState(noteKey);
   const { running: savingExcerpt } = useTaskState(excerptKey);
+  const { running: savingSpeech } = useTaskState(speechKey);
   const { running: deletingMark } = useTaskState(deleteMarkKey);
   const busy =
     elaborating ||
@@ -101,6 +104,7 @@ export function ExplanationStudyPanel({
     clearingHighlight ||
     savingNote ||
     savingExcerpt ||
+    savingSpeech ||
     deletingMark;
 
   const regenerateTargetLabel = TIERS.find((t) => t.id === tier)?.label ?? tier;
@@ -372,6 +376,18 @@ export function ExplanationStudyPanel({
       .catch(() => undefined);
   };
 
+  const saveSpeech = (): void => {
+    const text = phrase.trim();
+    if (!text) return;
+    void runTask(speechKey, '存入话术库', async () => {
+      const saved = await saveSpeechFromNode(getRawDb(), nodeId, text, tier);
+      notifyDataChanged();
+      return saved.existing ? '这段已经在话术库里' : '已存入话术库';
+    })
+      .then((message) => Alert.alert('话术库', message))
+      .catch(() => undefined);
+  };
+
   const saveElaboration = (): void => {
     const text = phrase.trim();
     // 已细化过就别再请求模型：白花一次调用，落库那头也会当重复丢掉
@@ -464,7 +480,7 @@ export function ExplanationStudyPanel({
         {!editing && (
           <>
             <Pressable onPress={() => setEditing(true)} style={btnGhost}>
-              <Text style={{ color: theme.accent, fontSize: 12 }}>编辑全文</Text>
+              <Text style={{ color: theme.accent, fontSize: 12 }}>编辑讲解</Text>
             </Pressable>
             <Pressable
               onPress={() => openModal('regenerate')}
@@ -535,7 +551,7 @@ export function ExplanationStudyPanel({
       {!editing && (
         <View style={{ gap: 6 }}>
           <Text style={{ color: theme.muted, fontSize: 11 }}>
-            输入或点选讲解中的词句，再进行高亮 / 笔记 / 细化
+            输入或点选讲解中的词句，再进行高亮 / 笔记 / 细化 / 存入话术库
           </Text>
           <TextInput
             value={phrase}
@@ -588,7 +604,16 @@ export function ExplanationStudyPanel({
               disabled={!phrase.trim()}
               style={[actionBtn, !phrase.trim() && { opacity: 0.5 }]}
             >
-              <Text style={{ color: theme.accent, fontSize: 12 }}>编辑词句</Text>
+              <Text style={{ color: theme.accent, fontSize: 12 }}>编辑选中句</Text>
+            </Pressable>
+            <Pressable
+              onPress={saveSpeech}
+              disabled={!phrase.trim() || savingSpeech}
+              style={[actionBtn, (!phrase.trim() || savingSpeech) && { opacity: 0.5 }]}
+            >
+              <Text style={{ color: theme.accent, fontSize: 12 }}>
+                {savingSpeech ? '保存中…' : '存入话术库'}
+              </Text>
             </Pressable>
           </View>
           {doneLabels.length > 0 && (

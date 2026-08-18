@@ -78,6 +78,32 @@ export function listSpeechSnippets(db: SQLiteDatabase): SpeechSnippetView[] {
   });
 }
 
+export function getNodeAnnotationSummary(
+  db: SQLiteDatabase,
+  campaignId: string,
+): { bookmarkedIds: Set<string>; markedIds: Set<string> } {
+  const nodeIds = new Set(
+    db
+      .getAllSync<{ id: string }>(`SELECT id FROM knowledge_node WHERE campaign_id = ?`, campaignId)
+      .map((row) => row.id),
+  );
+  if (nodeIds.size === 0) return { bookmarkedIds: new Set(), markedIds: new Set() };
+
+  const rows = db.getAllSync<{ target_id: string; kind: string }>(
+    `SELECT target_id, kind FROM annotation WHERE target_type = 'node'`,
+  );
+  const bookmarkedIds = new Set<string>();
+  const markedIds = new Set<string>();
+  for (const row of rows) {
+    if (!nodeIds.has(row.target_id)) continue;
+    if (row.kind === 'bookmark') bookmarkedIds.add(row.target_id);
+    if (row.kind === 'note' || row.kind === 'highlight' || row.kind === 'elaboration') {
+      markedIds.add(row.target_id);
+    }
+  }
+  return { bookmarkedIds, markedIds };
+}
+
 function resolveSpeechSourceLabel(
   db: SQLiteDatabase,
   sourceType: SpeechSnippetView['sourceType'],

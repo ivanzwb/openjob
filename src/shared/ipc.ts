@@ -990,7 +990,7 @@ export interface IpcInvokeMap {
   'speech:export': { req: SpeechExportInput; res: SpeechExportResult };
 
   'design:case': {
-    req: { campaignId: string; interviewType?: MockInterviewType };
+    req: { campaignId: string; interviewType?: MockInterviewType; force?: boolean };
     res: DesignCaseResult;
   };
   'design:submit': { req: DesignSubmitInput; res: DesignSubmitResult };

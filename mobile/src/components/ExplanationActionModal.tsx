@@ -142,14 +142,15 @@ export function ExplanationActionModal({
 
   const resizable = mode === 'note' || mode === 'edit' || mode === 'viewMarker';
   const { width, height, resizeResponder } = useResizablePanel(mode);
-  const useCenterPanel = mode === 'note' || mode === 'edit' || mode === 'viewMarker';
+  const screen = Dimensions.get('window');
+  const useCenterPanel = mode === 'note' || mode === 'edit' || mode === 'viewMarker' || mode === 'regenerate';
 
   const panelBody = (
     <View
       style={{
-        width: resizable ? width : undefined,
+        width: resizable ? width : useCenterPanel ? Math.min(screen.width - 32, 420) : undefined,
         height: resizable ? height : undefined,
-        maxHeight: resizable ? undefined : '80%',
+        maxHeight: resizable ? undefined : screen.height * 0.8,
         minWidth: resizable ? PANEL_PRESETS[panelPreset(mode)].minWidth : undefined,
         backgroundColor: theme.surface,
         borderRadius: 16,
@@ -210,8 +211,9 @@ export function ExplanationActionModal({
       {mode === 'regenerate' && (
         <>
           <Text style={{ color: theme.muted, fontSize: 12, lineHeight: 18 }}>{regenerateHint}</Text>
-          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start' }}>
             <TextInput
+              multiline
               value={draft}
               onChangeText={onDraftChange}
               onSubmitEditing={onSubmitRegenerate}
@@ -222,13 +224,16 @@ export function ExplanationActionModal({
               placeholderTextColor={theme.muted}
               style={{
                 flex: 1,
+                minHeight: 120,
+                maxHeight: 180,
                 color: theme.text,
                 borderWidth: 1,
                 borderColor: theme.border,
                 borderRadius: 8,
-                paddingHorizontal: 10,
-                paddingVertical: 8,
+                padding: 10,
+                textAlignVertical: 'top',
                 fontSize: 13,
+                lineHeight: 20,
               }}
             />
             <VoiceInputButton

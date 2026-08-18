@@ -40,8 +40,8 @@ export function DesignScreen(): React.JSX.Element {
 
   useLocalDataReload(reload);
 
-  // 出题与评分按 Campaign 记：切到别的 Tab 再回来，题目和评分都还在
-  const caseKey = `design:case:${campaignId}`;
+  // 出题与评分按 Campaign + 题型记：切到别的 Tab 再回来，题目和评分都还在
+  const caseKey = `design:case:${campaignId}:${interviewType}`;
   const submitKey = `design:submit:${campaignId}`;
   const { running: loadingCase, error: caseError } = useTaskState(caseKey);
   const { running: submitting, error: submitError } = useTaskState(submitKey);
@@ -53,10 +53,10 @@ export function DesignScreen(): React.JSX.Element {
   });
   useTaskResult<DesignSubmitResult>(submitKey, setResult);
 
-  const loadCase = (): void => {
+  const loadCase = (force = false): void => {
     const input = { campaignId, interviewType };
     void runTask(caseKey, '模拟面试出题', () =>
-      generateDesignCase(getRawDb(), input.campaignId, input.interviewType),
+      generateDesignCase(getRawDb(), input.campaignId, input.interviewType, force),
     ).catch(() => undefined);
   };
 
@@ -143,7 +143,7 @@ export function DesignScreen(): React.JSX.Element {
       </ScrollView>
 
       <Pressable
-        onPress={loadCase}
+        onPress={() => loadCase(Boolean(designCase))}
         disabled={loadingCase || !campaignId}
         style={{
           backgroundColor: theme.accent,
@@ -153,8 +153,11 @@ export function DesignScreen(): React.JSX.Element {
           opacity: loadingCase || !campaignId ? 0.6 : 1,
         }}
       >
-        <Text style={{ color: '#fff' }}>{loadingCase ? '出题中…' : '开始模拟'}</Text>
+        <Text style={{ color: '#fff' }}>{loadingCase ? '出题中…' : designCase ? '重新出题' : '开始模拟'}</Text>
       </Pressable>
+      <Text style={{ color: theme.muted, fontSize: 11 }}>
+        已生成的题目会自动保存；再次进入会直接显示保存题，只有点「重新出题」才会生成新题。
+      </Text>
       {caseError !== null && <Text style={{ color: theme.danger, fontSize: 12 }}>{caseError}</Text>}
 
       {designCase && (

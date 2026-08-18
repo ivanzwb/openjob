@@ -1,8 +1,10 @@
 import * as Crypto from 'expo-crypto';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import type { JdParsed } from '@shared/entities';
-import type { EdgeRelation } from '@shared/enums';
+import type { CoverageType, EdgeRelation, NodeStatus } from '@shared/enums';
 import type { KnowledgeNodeInsert } from '@shared/diagnosis/tree';
+import { flattenGeneratedTree } from '@shared/diagnosis/tree';
+import type { GeneratedNode } from '@shared/diagnosis/prompts';
 import { computePriority } from '@shared/priority';
 import { getDeviceIdentity } from '../sync/identity';
 import { writingAs } from '../sync/triggers';
@@ -99,6 +101,106 @@ export function refreshAllPriorities(db: SQLiteDatabase, campaignId: string): vo
     });
     db.runSync(`UPDATE knowledge_node SET priority_score = ? WHERE id = ?`, score, row.id);
   }
+}
+
+export async function updateKnowledgeNode(
+  db: SQLiteDatabase,
+  nodeId: string,
+  fields: {
+    status?: NodeStatus;
+    name?: string;
+    coverageType?: CoverageType;
+  },
+): Promise<void> {
+  const row = db.getFirstSync<{
+    id: string;
+    coverage_type: string;
+    exam_prob: number;
+    mastery: number;
+    est_minutes: number;
+  }>(
+    `SELECT id, coverage_type, exam_prob, mastery, est_minutes FROM knowledge_node WHERE id = ?`,
+    nodeId,
+  );
+  if (!row) throw new Error('考点不存在');
+
+  const coverageType = fields.coverageType ?? (row.coverage_type as CoverageType);
+  const { score } = computePriority({
+    id: row.id,
+    coverageType,
+    examProb: row.exam_prob,
+    mastery: row.mastery,
+    estMinutes: row.est_minutes,
+  });
+
+  const sets: string[] = ['priority_score = ?'];
+  const vals: (string | number)[] = [score];
+  if (fields.status !== undefined) {
+    sets.push('status = ?');
+    vals.push(fields.status);
+  }
+  if (fields.name !== undefined) {
+    const trimmed = fields.name.trim();
+    if (!trimmed) throw new Error('考点名称不能为空');
+    sets.push('name = ?');
+    vals.push(trimmed);
+  }
+  if (fields.coverageType !== undefined) {
+    sets.push('coverage_type = ?');
+    vals.push(fields.coverageType);
+  }
+  vals.push(nodeId);
+
+  const identity = await getDeviceIdentity(db);
+  writingAs(db, identity.deviceId, () => {
+    db.runSync(`UPDATE knowledge_node SET ${sets.join(', ')} WHERE id = ?`, ...vals);
+  });
+}
+
+export async function createKnowledgeChild(
+  db: SQLiteDatabase,
+  parentId: string,
+  name: string,
+): Promise<void> {
+  const parent = db.getFirstSync<{
+    id: string;
+    campaign_id: string;
+    coverage_type: string;
+  }>(`SELECT id, campaign_id, coverage_type FROM knowledge_node WHERE id = ?`, parentId);
+  if (!parent) throw new Error('父考点不存在');
+
+  const row: KnowledgeNodeInsert = {
+    id: Crypto.randomUUID(),
+    campaignId: parent.campaign_id,
+    parentId: parent.id,
+    name: name.trim(),
+    kind: 'point',
+    coverageType: parent.coverage_type as CoverageType,
+    examProb: 0.3,
+    difficulty: 3,
+    estMinutes: 30,
+    examForms: ['concept'],
+    mastery: 0,
+    masterySource: 'self',
+    priorityScore: 0,
+    status: 'todo',
+    isUserAdded: true,
+    createdAt: Date.now(),
+  };
+  if (!row.name) throw new Error('考点名称不能为空');
+  const { score } = computePriority(row);
+
+  const identity = await getDeviceIdentity(db);
+  writingAs(db, identity.deviceId, () => {
+    insertNodes(db, [{ ...row, priorityScore: score }]);
+  });
+}
+
+export async function deleteKnowledgeNode(db: SQLiteDatabase, nodeId: string): Promise<void> {
+  const identity = await getDeviceIdentity(db);
+  writingAs(db, identity.deviceId, () => {
+    db.runSync(`DELETE FROM knowledge_node WHERE id = ?`, nodeId);
+  });
 }
 
 export async function insertEdgesByName(
@@ -203,4 +305,36 @@ export function applyHistoricalPrior(
 
 export function getNodeById(db: SQLiteDatabase, nodeId: string) {
   return getKnowledgeNode(db, nodeId);
+}
+
+export function flattenChildrenForParent(
+  campaignId: string,
+  parentId: string,
+  parentCoverage: CoverageType,
+  children: GeneratedNode[],
+): KnowledgeNodeInsert[] {
+  return flattenGeneratedTree(
+    campaignId,
+    children.map((child) => ({
+      ...child,
+      kind: 'point' as const,
+      coverageType: child.coverageType ?? parentCoverage,
+    })),
+  ).map((row) => ({ ...row, parentId }));
+}
+
+export function findDuplicateNodeName(existingNames: string[], candidate: string): string | null {
+  const norm = normalizeNodeName(candidate);
+  for (const name of existingNames) {
+    const current = normalizeNodeName(name);
+    if (current === norm || current.includes(norm) || norm.includes(current)) return name;
+  }
+  return null;
+}
+
+function normalizeNodeName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .replace(/[·、，,（）()/\\_-]/g, '');
 }

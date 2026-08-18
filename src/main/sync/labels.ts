@@ -9,6 +9,7 @@ const TABLE_LABELS: Record<string, string> = {
   explanation: '讲解',
   source: '来源',
   company_intel: '公司情报',
+  design_case: '模拟面试题',
   interview_report: '面经',
   interview_question: '真题',
   plan_day: '计划日',
@@ -32,6 +33,7 @@ const FIELD_LABELS: Record<string, string> = {
   content_md: '内容',
   note_md: '笔记',
   question_text: '题目',
+  scenario_md: '题干',
   delete: '删除冲突',
 };
 

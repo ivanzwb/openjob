@@ -327,8 +327,8 @@ export function registerIpcHandlers(): void {
   });
   handle('speech:export', (input) => exportSpeechSnippets(input));
 
-  handle('design:case', ({ campaignId, interviewType }) =>
-    generateDesignCase(campaignId, interviewType ?? 'mixed'),
+  handle('design:case', ({ campaignId, interviewType, force }) =>
+    generateDesignCase(campaignId, interviewType ?? 'mixed', force ?? false),
   );
   handle('design:submit', (input) =>
     submitDesignAnswer(

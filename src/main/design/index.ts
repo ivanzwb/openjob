@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import type { DesignCaseResult, DesignSubmitResult } from '@shared/ipc';
 import type { ExamForm } from '@shared/enums';
+import type { InferSelectModel } from 'drizzle-orm';
 import { completeJson } from '../llm/json';
 import { getCampaignRow } from '../campaign/repository';
 import { getDb, schema } from '../db';
@@ -11,6 +12,29 @@ import {
   type DesignScoreGenerated,
   type MockInterviewType,
 } from '@shared/design/prompts';
+
+type DesignCaseRow = InferSelectModel<typeof schema.designCase>;
+
+function designCaseCacheId(campaignId: string, interviewType: MockInterviewType): string {
+  return `${campaignId}:${interviewType}`;
+}
+
+function rowToDesignCaseResult(
+  row: DesignCaseRow,
+  campaign: ReturnType<typeof getCampaignRow>,
+): DesignCaseResult {
+  return {
+    campaignId: row.campaignId,
+    company: campaign.company,
+    roleTitle: campaign.roleTitle,
+    interviewType: row.interviewType,
+    relatedNodeName: row.relatedNodeName ?? null,
+    title: row.title,
+    scenarioMd: row.scenarioMd,
+    constraints: row.constraints ?? [],
+    evaluationCriteria: row.evaluationCriteria ?? [],
+  };
+}
 
 function buildInterviewContext(campaignId: string): string {
   const campaign = getCampaignRow(campaignId);
@@ -95,8 +119,17 @@ ${projectSummary}
 export async function generateDesignCase(
   campaignId: string,
   interviewType: MockInterviewType = 'mixed',
+  force = false,
 ): Promise<DesignCaseResult> {
   const campaign = getCampaignRow(campaignId);
+  const db = getDb();
+  const cacheId = designCaseCacheId(campaignId, interviewType);
+  const cached = db.select().from(schema.designCase).where(eq(schema.designCase.id, cacheId)).get();
+
+  if (cached && !force) {
+    return rowToDesignCaseResult(cached, campaign);
+  }
+
   const context = buildInterviewContext(campaignId);
 
   const generated = await completeJson<DesignCaseGenerated>(
@@ -106,6 +139,35 @@ export async function generateDesignCase(
     undefined,
     { type: interviewType },
   );
+
+  const now = Date.now();
+  db.insert(schema.designCase)
+    .values({
+      id: cacheId,
+      campaignId,
+      requestedType: interviewType,
+      interviewType: generated.interviewType,
+      relatedNodeName: generated.relatedNodeName ?? null,
+      title: generated.title,
+      scenarioMd: generated.scenarioMd,
+      constraints: generated.constraints ?? [],
+      evaluationCriteria: generated.evaluationCriteria ?? [],
+      createdAt: cached?.createdAt ?? now,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: schema.designCase.id,
+      set: {
+        interviewType: generated.interviewType,
+        relatedNodeName: generated.relatedNodeName ?? null,
+        title: generated.title,
+        scenarioMd: generated.scenarioMd,
+        constraints: generated.constraints ?? [],
+        evaluationCriteria: generated.evaluationCriteria ?? [],
+        updatedAt: now,
+      },
+    })
+    .run();
 
   return {
     campaignId,
