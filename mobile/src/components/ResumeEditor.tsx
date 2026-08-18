@@ -7,9 +7,6 @@ import {
   Text,
   TextInput,
   View,
-  type LayoutChangeEvent,
-  type NativeScrollEvent,
-  type NativeSyntheticEvent,
 } from 'react-native';
 import type { ResumeDocument, ResumeSectionKey } from '@shared/resume/document';
 import {
@@ -25,6 +22,7 @@ import { polishResume, structureResume } from '../data/resumeAi';
 import { useApp } from '../context/AppContext';
 import { runTask, useTaskResult, useTaskState } from '../context/RemoteTaskContext';
 import { useTheme } from '../theme';
+import { OverflowHintScrollView } from './OverflowHintScrollView';
 import { ResumeSectionForm, type SectionPolish } from './ResumeSectionForm';
 import { ResumePreviewModal } from './ResumePreviewModal';
 
@@ -62,8 +60,6 @@ export function ResumeEditor({
   const [previewOpen, setPreviewOpen] = useState(false);
   /** AI 识别会整体换掉正文，用它强制重建表单的本地状态 */
   const [formNonce, setFormNonce] = useState(0);
-  const [sectionTabsOverflow, setSectionTabsOverflow] = useState(false);
-  const [sectionTabsAtEnd, setSectionTabsAtEnd] = useState(false);
 
   const contentMd = useMemo(() => documentToMarkdown(doc), [doc]);
   // 基线取序列化后的正文：解析会顺手规范化格式，直接拿库里的原文比会白存一次
@@ -71,24 +67,6 @@ export function ResumeEditor({
   const savedRef = useRef(baseline);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRef = useRef<{ contentMd: string; label: string } | null>(null);
-  const sectionTabsWidthRef = useRef(0);
-  const sectionTabsContentWidthRef = useRef(0);
-
-  const refreshSectionTabsOverflow = (): void => {
-    const overflow = sectionTabsContentWidthRef.current - sectionTabsWidthRef.current > 12;
-    setSectionTabsOverflow(overflow);
-    if (!overflow) setSectionTabsAtEnd(true);
-  };
-
-  const handleSectionTabsLayout = (event: LayoutChangeEvent): void => {
-    sectionTabsWidthRef.current = event.nativeEvent.layout.width;
-    refreshSectionTabsOverflow();
-  };
-
-  const handleSectionTabsScroll = (event: NativeSyntheticEvent<NativeScrollEvent>): void => {
-    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-    setSectionTabsAtEnd(contentOffset.x + layoutMeasurement.width >= contentSize.width - 16);
-  };
 
   const persist = useCallback(
     async (next: { contentMd: string; label: string }) => {
@@ -327,87 +305,44 @@ export function ResumeEditor({
         </View>
 
         <View style={{ gap: 4 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Text style={{ color: theme.muted, fontSize: 11 }}>简历模块</Text>
-            <Text style={{ color: theme.muted, fontSize: 10 }}>
-              左右滑动查看更多 · 共 {RESUME_SECTION_CATALOG.length} 块
-            </Text>
-          </View>
-          <View onLayout={handleSectionTabsLayout} style={{ position: 'relative' }}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator
-              scrollEventThrottle={16}
-              onScroll={handleSectionTabsScroll}
-              onContentSizeChange={(width) => {
-                sectionTabsContentWidthRef.current = width;
-                refreshSectionTabsOverflow();
-              }}
-              style={{ flexGrow: 0 }}
-              contentContainerStyle={{ gap: 6, paddingVertical: 2, paddingRight: 88 }}
-            >
-              {RESUME_SECTION_CATALOG.map((item) => {
-                const section = doc.sections.find((s) => s.key === item.key);
-                const filled = Boolean(section?.contentMd.trim());
-                const active = item.key === activeKey;
-                return (
-                  <Pressable
-                    key={item.key}
-                    onPress={() => setActiveKey(item.key)}
+          <Text style={{ color: theme.muted, fontSize: 11 }}>简历模块</Text>
+          <OverflowHintScrollView
+            style={{ flexGrow: 0 }}
+            contentContainerStyle={{ gap: 6, paddingVertical: 2 }}
+          >
+            {RESUME_SECTION_CATALOG.map((item) => {
+              const section = doc.sections.find((s) => s.key === item.key);
+              const filled = Boolean(section?.contentMd.trim());
+              const active = item.key === activeKey;
+              return (
+                <Pressable
+                  key={item.key}
+                  onPress={() => setActiveKey(item.key)}
                   style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      gap: 6,
-                      borderWidth: 1,
-                      borderColor: active ? theme.accent : theme.border,
-                      backgroundColor: active ? `${theme.accent}22` : theme.surface,
-                      borderRadius: 999,
-                      paddingHorizontal: 12,
-                      paddingVertical: 6,
-                    }}
-                  >
-                    <View
-                      style={{
-                        width: 6,
-                        height: 6,
-                        borderRadius: 3,
-                        backgroundColor: filled ? theme.success : theme.border,
-                      }}
-                    />
-                    <Text style={{ color: active ? theme.text : theme.muted, fontSize: 12 }}>{item.title}</Text>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-            {sectionTabsOverflow && !sectionTabsAtEnd && (
-              <View
-                pointerEvents="none"
-                style={{
-                  position: 'absolute',
-                  right: 0,
-                  top: 2,
-                  bottom: 8,
-                  justifyContent: 'center',
-                  paddingLeft: 10,
-                  paddingRight: 2,
-                  backgroundColor: theme.bg,
-                }}
-              >
-                <View
-                  style={{
-                    borderRadius: 999,
-                    backgroundColor: theme.surface,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 6,
                     borderWidth: 1,
-                    borderColor: theme.border,
-                    paddingHorizontal: 8,
-                    paddingVertical: 4,
+                    borderColor: active ? theme.accent : theme.border,
+                    backgroundColor: active ? `${theme.accent}22` : theme.surface,
+                    borderRadius: 999,
+                    paddingHorizontal: 12,
+                    paddingVertical: 6,
                   }}
                 >
-                  <Text style={{ color: theme.accent, fontSize: 10 }}>还有模块 →</Text>
-                </View>
-              </View>
-            )}
-          </View>
+                  <View
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: 3,
+                      backgroundColor: filled ? theme.success : theme.border,
+                    }}
+                  />
+                  <Text style={{ color: active ? theme.text : theme.muted, fontSize: 12 }}>{item.title}</Text>
+                </Pressable>
+              );
+            })}
+          </OverflowHintScrollView>
         </View>
       </View>
 

@@ -3,10 +3,11 @@ import { readFile } from 'node:fs/promises';
 import { basename, extname } from 'node:path';
 import { PDFParse } from 'pdf-parse';
 import mammoth from 'mammoth';
+import WordExtractor from 'word-extractor';
 import type { Resume } from '@shared/entities';
 import { createResume } from './repository';
 
-const SUPPORTED_EXTENSIONS = ['pdf', 'docx', 'txt', 'md'];
+const SUPPORTED_EXTENSIONS = ['pdf', 'doc', 'docx', 'txt', 'md'];
 
 /** 从简历文件中提取纯文本（pdf 走 pdf-parse，docx 走 mammoth，其余按 utf-8 读取） */
 async function extractResumeText(filePath: string): Promise<string> {
@@ -28,8 +29,19 @@ async function extractResumeText(filePath: string): Promise<string> {
     return result.value ?? '';
   }
 
-  // txt / md 等纯文本格式
-  return buffer.toString('utf8');
+  if (ext === 'doc') {
+    const doc = await new WordExtractor().extract(buffer);
+    return [doc.getBody(), doc.getTextboxes({ includeHeadersAndFooters: false })]
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .join('\n\n');
+  }
+
+  if (ext === 'txt' || ext === 'md') {
+    return buffer.toString('utf8');
+  }
+
+  throw new Error(`不支持的简历文件格式：.${ext || 'unknown'}`);
 }
 
 /**

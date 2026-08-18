@@ -14,6 +14,7 @@ import { useApp } from '../context/AppContext';
 import { runTask, useTaskResult, useTaskState } from '../context/RemoteTaskContext';
 import { useLocalDataReload } from '../hooks/useLocalDataReload';
 import { useTheme } from '../theme';
+import { OverflowHintScrollView } from '../components/OverflowHintScrollView';
 
 function campaignLabel(c: CampaignSummary): string {
   return `${c.company} · ${c.roleTitle}`;
@@ -79,15 +80,13 @@ export function DesignScreen(): React.JSX.Element {
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: theme.bg }} contentContainerStyle={{ padding: 16, gap: 10 }}>
-      <Text style={{ color: theme.muted, fontSize: 12 }}>
-        结合公司、JD、简历与考点出题，覆盖概念、编码、系统设计、项目场景
-      </Text>
-
       {campaigns.length === 0 ? (
         <Text style={{ color: theme.muted, fontSize: 13 }}>请先创建 Campaign 或从桌面端同步</Text>
       ) : (
         <>
-          <Text style={{ color: theme.muted, fontSize: 11 }}>关联 Campaign</Text>
+          <Text style={{ color: theme.muted, fontSize: 12 }}>
+            结合公司、JD、简历与考点出题，覆盖概念、编码、系统设计、项目场景 · 关联 Campaign
+          </Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             {campaigns.map((c) => (
               <Pressable
@@ -117,7 +116,7 @@ export function DesignScreen(): React.JSX.Element {
         </>
       )}
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+      <OverflowHintScrollView contentContainerStyle={{ gap: 8 }}>
         {MOCK_INTERVIEW_TYPE_OPTIONS.map((o) => (
           <Pressable
             key={o.value}
@@ -140,7 +139,7 @@ export function DesignScreen(): React.JSX.Element {
             </Text>
           </Pressable>
         ))}
-      </ScrollView>
+      </OverflowHintScrollView>
 
       <Pressable
         onPress={() => loadCase(Boolean(designCase))}
