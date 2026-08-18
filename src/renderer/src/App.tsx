@@ -50,6 +50,63 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
   }
 }
 
+function WindowControls(): React.JSX.Element {
+  const [maximized, setMaximized] = useState(false);
+
+  useEffect(() => {
+    void invoke('window:getState', undefined).then(({ maximized: next }) => setMaximized(next));
+    return onEvent('window:state', ({ maximized: next }) => setMaximized(next));
+  }, []);
+
+  const controlClass =
+    'flex h-full w-11 items-center justify-center text-[var(--color-muted)] hover:bg-black/10 hover:text-[var(--color-fg)]';
+
+  return (
+    <div className="app-region-no-drag flex h-full items-stretch">
+      <button
+        type="button"
+        className={controlClass}
+        aria-label="最小化窗口"
+        onClick={() => void invoke('window:minimize', undefined)}
+      >
+        <svg viewBox="0 0 12 12" aria-hidden="true" className="h-3.5 w-3.5">
+          <path d="M2 6.5h8v1H2z" fill="currentColor" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        className={controlClass}
+        aria-label={maximized ? '还原窗口' : '最大化窗口'}
+        onClick={() => void invoke('window:toggleMaximize', undefined).then(({ maximized: next }) => setMaximized(next))}
+      >
+        {maximized ? (
+          <svg viewBox="0 0 12 12" aria-hidden="true" className="h-3.5 w-3.5">
+            <path d="M4 2h6v6H8V4H4z" fill="none" stroke="currentColor" strokeWidth="1.1" />
+            <path d="M2 4h6v6H2z" fill="none" stroke="currentColor" strokeWidth="1.1" />
+          </svg>
+        ) : (
+          <svg viewBox="0 0 12 12" aria-hidden="true" className="h-3.5 w-3.5">
+            <path d="M2.5 2.5h7v7h-7z" fill="none" stroke="currentColor" strokeWidth="1.2" />
+          </svg>
+        )}
+      </button>
+      <button
+        type="button"
+        className={`${controlClass} hover:bg-red-500 hover:text-white`}
+        aria-label="关闭窗口"
+        onClick={() => void invoke('window:close', undefined)}
+      >
+        <svg viewBox="0 0 12 12" aria-hidden="true" className="h-3.5 w-3.5">
+          <path
+            d="m3.2 2.5 6.3 6.3-.7.7-6.3-6.3zm6.3.7L3.2 9.5l-.7-.7 6.3-6.3z"
+            fill="currentColor"
+          />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
 export default function App(): React.JSX.Element {
   const [tab, setTab] = useState<Tab>('campaigns');
   const [mountedTabs, setMountedTabs] = useState<Set<Tab>>(() => new Set(['campaigns']));
@@ -79,14 +136,16 @@ export default function App(): React.JSX.Element {
   return (
     <ErrorBoundary>
       <div className="flex h-full flex-col">
-        <header className="flex shrink-0 items-center gap-4 border-b border-[var(--color-border)] px-5 py-3">
+        <header className="app-region-drag flex h-12 shrink-0 items-center gap-4 border-b border-[var(--color-border)] pl-5">
           <div className="flex items-center gap-2.5">
             <img src="./logo.png" alt="" className="h-7 w-7 rounded-lg" />
             <span className="font-semibold">OpenJob</span>
           </div>
           <span className="text-xs text-[var(--color-muted)]">v{version}</span>
-          <UpdateBadge onOpenSettings={() => selectTab('settings')} />
-          <nav className="ml-4 flex gap-1">
+          <div className="app-region-no-drag">
+            <UpdateBadge onOpenSettings={() => selectTab('settings')} />
+          </div>
+          <nav className="app-region-no-drag ml-4 flex gap-1">
             {TABS.map(({ key, label }) => (
               <button
                 key={key}
@@ -102,13 +161,16 @@ export default function App(): React.JSX.Element {
               </button>
             ))}
           </nav>
-          {job && (
-            <div className="ml-auto max-w-md truncate text-xs text-[var(--color-muted)]">
-              <span className="text-[var(--color-fg)]">{job.label}</span>
-              {job.message ? ` · ${job.message}` : null}
-              {job.progress != null ? ` (${Math.round(job.progress * 100)}%)` : null}
-            </div>
-          )}
+          <div className="ml-auto flex h-full min-w-0 items-center justify-end gap-3">
+            {job && (
+              <div className="min-w-0 max-w-md truncate text-xs text-[var(--color-muted)]">
+                <span className="text-[var(--color-fg)]">{job.label}</span>
+                {job.message ? ` · ${job.message}` : null}
+                {job.progress != null ? ` (${Math.round(job.progress * 100)}%)` : null}
+              </div>
+            )}
+            <WindowControls />
+          </div>
         </header>
 
         <main className="flex min-h-0 flex-1 flex-col overflow-hidden">

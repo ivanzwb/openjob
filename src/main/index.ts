@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { app, BrowserWindow, shell } from 'electron';
 import { ensureDirs } from './paths';
 import { registerIpcHandlers } from './ipc';
+import { emit } from './ipc/bridge';
 import { closeDb, getDb } from './db';
 import { scheduleStartupCheck } from './updater';
 import { startSyncServer } from './sync';
@@ -41,6 +42,7 @@ function createWindow(): void {
     minWidth: 1000,
     minHeight: 640,
     show: false,
+    frame: false,
     autoHideMenuBar: true,
     backgroundColor: WINDOW_BACKGROUND[theme],
     title: 'OpenJob',
@@ -57,6 +59,12 @@ function createWindow(): void {
   });
   trackWindowTheme(mainWindow);
 
+  const emitWindowState = (): void => {
+    emit('window:state', { maximized: mainWindow?.isMaximized() ?? false });
+  };
+  mainWindow.on('maximize', emitWindowState);
+  mainWindow.on('unmaximize', emitWindowState);
+  mainWindow.on('restore', emitWindowState);
   mainWindow.on('ready-to-show', () => mainWindow?.show());
 
   // 冒烟模式：renderer 加载完成即视为启动链全通，打标退出

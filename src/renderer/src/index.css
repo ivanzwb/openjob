@@ -127,6 +127,14 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+.app-region-drag {
+  -webkit-app-region: drag;
+}
+
+.app-region-no-drag {
+  -webkit-app-region: no-drag;
+}
+
 /* Shiki 自带主题背景，这里改回应用底色，并用 data-line 画出文件真实行号 */
 .shiki-host pre.shiki {
   margin: 0;

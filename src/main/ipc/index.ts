@@ -1,4 +1,4 @@
-import { app } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import { getConfig, deleteSecret, hasSecret, setSecret, updateConfig } from '../config';
 import { getCampaignOverview } from '../campaign/overview';
 import { compareCampaigns } from '../campaign/compare';
@@ -114,9 +114,30 @@ import {
   restoreBackup,
 } from '../sync';
 
+function currentWindow(): BrowserWindow | undefined {
+  return BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows().find((win) => !win.isDestroyed());
+}
+
 export function registerIpcHandlers(): void {
   handle('app:getPaths', () => getAppPaths());
   handle('app:getVersion', () => app.getVersion());
+  handle('window:getState', () => ({ maximized: currentWindow()?.isMaximized() ?? false }));
+  handle('window:minimize', () => {
+    currentWindow()?.minimize();
+  });
+  handle('window:toggleMaximize', () => {
+    const win = currentWindow();
+    if (!win) return { maximized: false };
+    if (win.isMaximized()) {
+      win.unmaximize();
+    } else {
+      win.maximize();
+    }
+    return { maximized: win.isMaximized() };
+  });
+  handle('window:close', () => {
+    currentWindow()?.close();
+  });
 
   handle('update:status', () => getUpdateStatus());
   handle('update:check', () => checkForUpdates());

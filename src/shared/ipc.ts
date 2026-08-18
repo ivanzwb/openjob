@@ -860,6 +860,10 @@ export interface SttStatus {
 export interface IpcInvokeMap {
   'app:getPaths': { req: void; res: AppPaths };
   'app:getVersion': { req: void; res: string };
+  'window:getState': { req: void; res: { maximized: boolean } };
+  'window:minimize': { req: void; res: void };
+  'window:toggleMaximize': { req: void; res: { maximized: boolean } };
+  'window:close': { req: void; res: void };
 
   'update:status': { req: void; res: UpdateStatus };
   'update:check': { req: void; res: UpdateStatus };
@@ -1032,6 +1036,7 @@ export interface IpcInvokeMap {
 
 /** 主进程 → 渲染进程的单向推送 */
 export interface IpcEventMap {
+  'window:state': { maximized: boolean };
   'stream:delta': StreamDelta;
   'stream:tool': StreamToolCall;
   'stream:done': StreamDone;
@@ -1059,6 +1064,10 @@ export type IpcRes<C extends IpcInvokeChannel> = IpcInvokeMap[C]['res'];
 export const IPC_INVOKE_CHANNELS = [
   'app:getPaths',
   'app:getVersion',
+  'window:getState',
+  'window:minimize',
+  'window:toggleMaximize',
+  'window:close',
   'update:status',
   'update:check',
   'update:install',
@@ -1174,6 +1183,7 @@ export const IPC_INVOKE_CHANNELS = [
 ] as const satisfies readonly IpcInvokeChannel[];
 
 export const IPC_EVENT_CHANNELS = [
+  'window:state',
   'stream:delta',
   'stream:tool',
   'stream:done',
