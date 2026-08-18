@@ -75,7 +75,17 @@ export function UpdatePanel({
         <div className="flex items-center gap-3 border-t border-[var(--color-border)] pt-3 text-xs">
           <button
             type="button"
-            onClick={() => void invoke('update:check', undefined).then(setStatus)}
+            onClick={() =>
+              void invoke('update:check', undefined)
+                .then(setStatus)
+                // IPC 层兜底：主进程任何意外抛错都落成可见的错误状态，而不是静默无反应
+                .catch((err: unknown) =>
+                  setStatus({
+                    state: 'error',
+                    message: err instanceof Error ? err.message : String(err),
+                  }),
+                )
+            }
             disabled={status.state === 'checking' || status.state === 'downloading'}
             className="rounded border border-[var(--color-border)] px-3 py-1.5 disabled:opacity-40"
           >
