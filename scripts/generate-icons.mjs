@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const src = join(root, 'resources', 'logo.png');
+const winSrc = join(root, 'resources', 'logo-win.png');
 const buildDir = join(root, 'build');
 
 if (!existsSync(src)) {
@@ -14,7 +15,7 @@ if (!existsSync(src)) {
 mkdirSync(buildDir, { recursive: true });
 copyFileSync(src, join(buildDir, 'icon.png'));
 const { default: pngToIco } = await import('png-to-ico');
-const buf = await pngToIco(src);
+const buf = await pngToIco(existsSync(winSrc) ? winSrc : src);
 const fs = await import('node:fs/promises');
 await fs.writeFile(join(buildDir, 'icon.ico'), buf);
 
