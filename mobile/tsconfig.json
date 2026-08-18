@@ -10,5 +10,6 @@
       "whisper.rn/index": ["./node_modules/whisper.rn/lib/typescript/index.d.ts"]
     }
   },
-  "include": ["**/*.ts", "**/*.tsx", "../src/shared/**/*.ts"]
+  "include": ["**/*.ts", "**/*.tsx", "../src/shared/**/*.ts"],
+  "exclude": ["../src/shared/**/*.test.ts"]
 }

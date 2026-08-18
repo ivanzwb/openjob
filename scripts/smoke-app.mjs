@@ -22,10 +22,15 @@ const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const electronPath = require_('electron');
 const timeoutMs = Number(process.env['SMOKE_TIMEOUT_MS'] ?? 60_000);
 
+// CI runner（rootless Docker / GitHub Actions）常缺 SUID sandbox 配置
+// （chrome-sandbox 需 root:4755），Electron 会直接 FATAL 退出。冒烟只验证
+// 启动链（DB/IPC/sync/renderer），与 sandbox 无关，CI 下显式关掉。
+const args = process.env['CI'] ? ['--no-sandbox', projectRoot] : [projectRoot];
+
 console.log(`[smoke] launching electron: ${electronPath}`);
 console.log(`[smoke] timeout: ${timeoutMs}ms`);
 
-const child = spawn(electronPath, [projectRoot], {
+const child = spawn(electronPath, args, {
   env: {
     ...process.env,
     OPENJOB_SMOKE: '1',
