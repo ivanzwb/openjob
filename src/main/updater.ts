@@ -33,38 +33,55 @@ function setStatus(next: UpdateStatus): void {
   emit('update:status', next);
 }
 
-async function getUpdater(): Promise<Updater | null> {
-  updaterPromise ??= (async (): Promise<Updater | null> => {
-    // 开发态没有 app-update.yml，electron-updater 会直接抛错
-    if (!app.isPackaged) return null;
+function getUpdater(): Promise<Updater | null> {
+  if (updaterPromise == null) {
+    updaterPromise = (async (): Promise<Updater | null> => {
+      // 开发态没有 app-update.yml，electron-updater 会直接抛错
+      if (!app.isPackaged) return null;
 
-    const { autoUpdater } = await import('electron-updater');
-    // 下载完不自动重启，交给用户点「立即重启安装」
-    autoUpdater.autoDownload = false;
-    autoUpdater.autoInstallOnAppQuit = true;
+      // electron-updater 是 CJS 模块：autoUpdater 由 Object.defineProperty 的 getter
+      // 惰性导出。Node 的 ESM-CJS 互操作（cjs-module-lexer 静态分析）识别不到 getter
+      // 式导出，import() 解构拿到的 autoUpdater 是 undefined——这是线上「立即检查」
+      // 点了没反应的根因。default 就是 module.exports，只有它能触达这个 getter。
+      const mod = (await import('electron-updater')) as unknown as {
+        default?: { autoUpdater: Updater };
+      };
+      const { autoUpdater } = (mod.default ?? mod) as { autoUpdater: Updater };
 
-    autoUpdater.on('checking-for-update', () => setStatus({ state: 'checking' }));
-    autoUpdater.on('update-available', (info) => {
-      setStatus({ state: 'available', version: info.version });
-      void autoUpdater.downloadUpdate().catch((err: unknown) => {
-        setStatus({ state: 'error', message: err instanceof Error ? err.message : String(err) });
+      // 下载完不自动重启，交给用户点「立即重启安装」
+      autoUpdater.autoDownload = false;
+      autoUpdater.autoInstallOnAppQuit = true;
+
+      autoUpdater.on('checking-for-update', () => setStatus({ state: 'checking' }));
+      autoUpdater.on('update-available', (info) => {
+        setStatus({ state: 'available', version: info.version });
+        void autoUpdater.downloadUpdate().catch((err: unknown) => {
+          setStatus({ state: 'error', message: err instanceof Error ? err.message : String(err) });
+        });
       });
-    });
-    autoUpdater.on('update-not-available', () =>
-      setStatus({ state: 'upToDate', version: app.getVersion() }),
-    );
-    autoUpdater.on('download-progress', (p) =>
-      setStatus({ state: 'downloading', percent: Math.round(p.percent) }),
-    );
-    autoUpdater.on('update-downloaded', (info) =>
-      setStatus({ state: 'downloaded', version: info.version }),
-    );
-    autoUpdater.on('error', (err) =>
-      setStatus({ state: 'error', message: err instanceof Error ? err.message : String(err) }),
-    );
+      autoUpdater.on('update-not-available', () =>
+        setStatus({ state: 'upToDate', version: app.getVersion() }),
+      );
+      autoUpdater.on('download-progress', (p) =>
+        setStatus({ state: 'downloading', percent: Math.round(p.percent) }),
+      );
+      autoUpdater.on('update-downloaded', (info) =>
+        setStatus({ state: 'downloaded', version: info.version }),
+      );
+      autoUpdater.on('error', (err) =>
+        setStatus({ state: 'error', message: err instanceof Error ? err.message : String(err) }),
+      );
 
-    return autoUpdater;
-  })();
+      return autoUpdater;
+    })();
+
+    // 初始化失败不缓存 rejected promise：清掉缓存，下次点「立即检查」还能重试，
+    // 而不是永久静默失败
+    updaterPromise = updaterPromise.catch((err: unknown) => {
+      updaterPromise = null;
+      throw err;
+    });
+  }
 
   return updaterPromise;
 }
@@ -74,13 +91,12 @@ export function getUpdateStatus(): UpdateStatus {
 }
 
 export async function checkForUpdates(): Promise<UpdateStatus> {
-  const updater = await getUpdater();
-  if (!updater) {
-    setStatus({ state: 'disabled', message: '开发模式下不检查更新' });
-    return status;
-  }
-
   try {
+    const updater = await getUpdater();
+    if (!updater) {
+      setStatus({ state: 'disabled', message: '开发模式下不检查更新' });
+      return status;
+    }
     updater.setFeedURL(resolveFeed());
     await updater.checkForUpdates();
   } catch (err) {
@@ -92,8 +108,13 @@ export async function checkForUpdates(): Promise<UpdateStatus> {
 /** 重启并安装已下载的包；未下载完时无操作 */
 export async function quitAndInstall(): Promise<void> {
   if (status.state !== 'downloaded') return;
-  const updater = await getUpdater();
-  updater?.quitAndInstall();
+  try {
+    const updater = await getUpdater();
+    updater?.quitAndInstall();
+  } catch (err) {
+    // 安装前的初始化失败同样落成 error 状态，而不是静默
+    setStatus({ state: 'error', message: err instanceof Error ? err.message : String(err) });
+  }
 }
 
 /** 启动时的静默检查，失败不打扰用户 */
