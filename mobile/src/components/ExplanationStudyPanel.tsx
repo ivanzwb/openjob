@@ -26,7 +26,13 @@ import {
 import { elaborateExplanationSelection, generateExplanation } from '../data/explainGen';
 import { saveSpeechFromNode } from '../data/mutations';
 import { useApp } from '../context/AppContext';
-import { isTaskRunning, runTask, useTaskResult, useTaskState } from '../context/RemoteTaskContext';
+import {
+  isTaskRunning,
+  runTask,
+  useRunningTaskCount,
+  useTaskResult,
+  useTaskState,
+} from '../context/RemoteTaskContext';
 import { useTheme, type Palette } from '../theme';
 import {
   DEFAULT_HIGHLIGHT_COLOR,
@@ -43,6 +49,11 @@ const TIERS: { id: ExplanationTier; label: string }[] = [
   { id: 'spoken', label: '口语稿' },
   { id: 'deep', label: '深挖' },
 ];
+
+const EXPLANATION_GENERATION_GROUP = 'explain:generation';
+const EXPLANATION_ELABORATION_GROUP = 'explain:elaboration';
+const MAX_PARALLEL_GENERATIONS = 1;
+const MAX_PARALLEL_ELABORATIONS = 1;
 
 type SelectionAction = 'highlight' | 'note' | 'elaboration' | 'edit' | 'speech';
 
@@ -149,6 +160,7 @@ function buildSelectionHtml(
   annotations: Annotation[],
   savedSpeechTexts: Set<string>,
   theme: Palette,
+  options: { elaborationDisabled: boolean },
 ): string {
   const body = buildMarkedContentHtml(contentMd, annotations);
   const markerMeta = Object.fromEntries(
@@ -172,6 +184,7 @@ function buildSelectionHtml(
   const markerMetaJson = safeJson(markerMeta);
   const selectionMarksJson = safeJson(selectionMarks);
   const savedSpeechJson = safeJson([...savedSpeechTexts]);
+  const actionLocksJson = safeJson(options);
   return `<!doctype html>
 <html>
 <head>
@@ -289,6 +302,7 @@ function buildSelectionHtml(
     const markerMeta = ${markerMetaJson};
     const selectionMarks = ${selectionMarksJson};
     const savedSpeeches = new Set(${savedSpeechJson});
+    const actionLocks = ${actionLocksJson};
     let current = null;
     function post(payload) {
       window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify(payload));
@@ -331,8 +345,9 @@ function buildSelectionHtml(
         noteBtn.disabled = noteDone;
       }
       if (elaborationBtn) {
-        elaborationBtn.textContent = elaborationDone ? '已细化' : '细化';
-        elaborationBtn.disabled = elaborationDone;
+        const elaborationLocked = actionLocks.elaborationDisabled === true;
+        elaborationBtn.textContent = elaborationDone ? '已细化' : elaborationLocked ? '细化忙碌' : '细化';
+        elaborationBtn.disabled = elaborationDone || elaborationLocked;
       }
       if (speechBtn) {
         speechBtn.textContent = speechDone ? '已存话术' : '话术';
@@ -485,6 +500,12 @@ export function ExplanationStudyPanel({
   const { running: savingExcerpt } = useTaskState(excerptKey);
   const { running: savingSpeech } = useTaskState(speechKey);
   const { running: deletingMark } = useTaskState(deleteMarkKey);
+  const runningGenerationCount = useRunningTaskCount(EXPLANATION_GENERATION_GROUP);
+  const runningElaborationCount = useRunningTaskCount(EXPLANATION_ELABORATION_GROUP);
+  const generationBlocked =
+    runningGenerationCount >= MAX_PARALLEL_GENERATIONS && !generating && !regenerating;
+  const elaborationBlocked =
+    runningElaborationCount >= MAX_PARALLEL_ELABORATIONS && !elaborating;
   const busy =
     elaborating ||
     savingHighlight ||
@@ -519,8 +540,13 @@ export function ExplanationStudyPanel({
     ? findMarkOnSelection(contentMarks, 'elaboration', phrase, selectionStart)
     : undefined;
   const selectionHtml = useMemo(
-    () => (content ? buildSelectionHtml(content.contentMd, annotations, savedSpeechTexts, theme) : ''),
-    [annotations, content, savedSpeechTexts, theme],
+    () =>
+      content
+        ? buildSelectionHtml(content.contentMd, annotations, savedSpeechTexts, theme, {
+            elaborationDisabled: elaborationBlocked,
+          })
+        : '',
+    [annotations, content, elaborationBlocked, savedSpeechTexts, theme],
   );
 
   const loadAnnotations = useCallback((explanationId: string) => {
@@ -568,13 +594,23 @@ export function ExplanationStudyPanel({
       return;
     }
     setContent(null);
+    if (generationBlocked) return;
     if (isTaskRunning(loadKey)) return;
-    void runTask(loadKey, '生成讲解', async () => {
-      const generated = await generateExplanation(getRawDb(), nodeId, tier);
-      notifyDataChanged();
-      return generated;
-    }).catch(() => undefined);
-  }, [nodeId, tier, loadKey, adopt, loadSavedSpeech, notifyDataChanged]);
+    void runTask(
+      loadKey,
+      '生成讲解',
+      async () => {
+        const generated = await generateExplanation(getRawDb(), nodeId, tier);
+        notifyDataChanged();
+        return generated;
+      },
+      {
+        group: EXPLANATION_GENERATION_GROUP,
+        maxConcurrent: MAX_PARALLEL_GENERATIONS,
+        limitMessage: '已有讲解生成任务进行中，请稍后再试',
+      },
+    ).catch(() => undefined);
+  }, [nodeId, tier, loadKey, adopt, loadSavedSpeech, notifyDataChanged, generationBlocked]);
 
   const openModal = (mode: ActionModalMode): void => {
     // 重新生成和查看标记都不针对选区，其余动作没选中词句就无从下手
@@ -686,14 +722,24 @@ export function ExplanationStudyPanel({
 
   // 这次的要求只拼进本次提示词，不落库：先取出来再收面板，避免清空 state 后拿到空串
   const submitRegenerate = (): void => {
+    if (generationBlocked) return;
     const instruction = modalDraft.trim();
     setModalMode(null);
     setModalDraft('');
-    void runTask(regenerateKey, '重新生成讲解', async () => {
-      const generated = await generateExplanation(getRawDb(), nodeId, tier, instruction);
-      notifyDataChanged();
-      return generated;
-    }).catch(() => undefined);
+    void runTask(
+      regenerateKey,
+      '重新生成讲解',
+      async () => {
+        const generated = await generateExplanation(getRawDb(), nodeId, tier, instruction);
+        notifyDataChanged();
+        return generated;
+      },
+      {
+        group: EXPLANATION_GENERATION_GROUP,
+        maxConcurrent: MAX_PARALLEL_GENERATIONS,
+        limitMessage: '已有讲解生成任务进行中，请稍后再试',
+      },
+    ).catch(() => undefined);
   };
 
   const toggleBookmark = (): void => {
@@ -816,27 +862,36 @@ export function ExplanationStudyPanel({
   const saveElaboration = (): void => {
     const text = phrase.trim();
     // 已细化过就别再请求模型：白花一次调用，落库那头也会当重复丢掉
-    if (!text || !content || elaborationMark) return;
+    if (!text || !content || elaborationMark || elaborationBlocked) return;
     const target = { id: content.id, contentMd: content.contentMd };
     // 细化要请求模型，落库放在任务里：切走再回来，标记已经在正文上了
-    void runTask(elaborateKey, '细化讲解', async () => {
-      const result = await elaborateExplanationSelection(
-        getRawDb(),
-        nodeId,
-        tier,
-        text,
-        target.contentMd,
-      );
-      await createAnnotation(getRawDb(), {
-        targetType: 'explanation',
-        targetId: target.id,
-        kind: 'elaboration',
-        noteMd: result.elaborationMd,
-        selectedText: result.selectedText.slice(0, 500),
-        ...(selectionStart !== undefined ? { selectionStart } : {}),
-      });
-      return '细化讲解已保存';
-    }).catch(() => undefined);
+    void runTask(
+      elaborateKey,
+      '细化讲解',
+      async () => {
+        const result = await elaborateExplanationSelection(
+          getRawDb(),
+          nodeId,
+          tier,
+          text,
+          target.contentMd,
+        );
+        await createAnnotation(getRawDb(), {
+          targetType: 'explanation',
+          targetId: target.id,
+          kind: 'elaboration',
+          noteMd: result.elaborationMd,
+          selectedText: result.selectedText.slice(0, 500),
+          ...(selectionStart !== undefined ? { selectionStart } : {}),
+        });
+        return '细化讲解已保存';
+      },
+      {
+        group: EXPLANATION_ELABORATION_GROUP,
+        maxConcurrent: MAX_PARALLEL_ELABORATIONS,
+        limitMessage: '已有细化讲解任务进行中，请稍后再试',
+      },
+    ).catch(() => undefined);
   };
 
   useTaskResult(elaborateKey, () => {
@@ -864,6 +919,10 @@ export function ExplanationStudyPanel({
 
   if (!content && (generating || regenerating)) {
     return <Text style={{ color: theme.muted, fontSize: 13 }}>生成讲解中…</Text>;
+  }
+
+  if (!content && generationBlocked) {
+    return <Text style={{ color: theme.muted, fontSize: 13 }}>已有讲解生成任务进行中，当前讲解会稍后自动开始…</Text>;
   }
 
   const failure = loadError ?? regenerateError;
@@ -912,11 +971,11 @@ export function ExplanationStudyPanel({
             </Pressable>
             <Pressable
               onPress={() => openModal('regenerate')}
-              disabled={regenerating}
+              disabled={regenerating || generationBlocked}
               style={btnGhost}
             >
-              <Text style={{ color: theme.muted, fontSize: 12, opacity: regenerating ? 0.5 : 1 }}>
-                {regenerating ? '重新生成中…' : '重新生成'}
+              <Text style={{ color: theme.muted, fontSize: 12, opacity: regenerating || generationBlocked ? 0.5 : 1 }}>
+                {regenerating ? '重新生成中…' : generationBlocked ? '生成忙碌' : '重新生成'}
               </Text>
             </Pressable>
           </>
@@ -989,7 +1048,13 @@ export function ExplanationStudyPanel({
         highlightColor={highlightColor}
         existingHighlight={existingHighlight}
         marker={viewMarker}
-        busy={modalMode === 'regenerate' ? regenerating : busy}
+        busy={
+          modalMode === 'regenerate'
+            ? regenerating || generationBlocked
+            : modalMode === 'elaboration'
+              ? busy || elaborationBlocked
+              : busy
+        }
         regenerateHint={
           content.modelUsed === 'user-edit'
             ? `你手动修改过这份讲解，重新生成会覆盖当前「${regenerateTargetLabel}」的内容。`

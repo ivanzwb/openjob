@@ -40,6 +40,9 @@ const states = new Map<string, TaskState>();
 const inflight = new Map<string, Promise<unknown>>();
 const listeners = new Map<string, Set<() => void>>();
 const activeListeners = new Set<() => void>();
+const groupListeners = new Map<string, Set<() => void>>();
+const taskGroups = new Map<string, string>();
+const runningGroups = new Map<string, Set<string>>();
 /** 按开始顺序记录在跑的任务，头部这个用来给标题栏显示 */
 let runningKeys: string[] = [];
 let activeTask: ActiveTask | null = null;
@@ -57,6 +60,37 @@ function refreshActive(): void {
   const label = key ? states.get(key)?.label ?? null : null;
   activeTask = key && label ? { key, label, count: runningKeys.length } : null;
   for (const listener of activeListeners) listener();
+}
+
+function emitGroup(group: string): void {
+  const set = groupListeners.get(group);
+  if (set) for (const listener of set) listener();
+}
+
+function groupCount(group: string): number {
+  return runningGroups.get(group)?.size ?? 0;
+}
+
+function addToGroup(key: string, group: string | undefined): void {
+  if (!group) return;
+  let keys = runningGroups.get(group);
+  if (!keys) {
+    keys = new Set();
+    runningGroups.set(group, keys);
+  }
+  keys.add(key);
+  taskGroups.set(key, group);
+  emitGroup(group);
+}
+
+function removeFromGroup(key: string): void {
+  const group = taskGroups.get(key);
+  if (!group) return;
+  taskGroups.delete(key);
+  const keys = runningGroups.get(group);
+  keys?.delete(key);
+  if (keys?.size === 0) runningGroups.delete(group);
+  emitGroup(group);
 }
 
 function stateOf(key: string): TaskState {
@@ -86,6 +120,10 @@ export interface RunTaskOptions {
   toastSuccess?: boolean;
   /** 成功提示文案。结果是 id 这类不该给用户看的东西时必须给一个 */
   successMessage?: string;
+  /** 把同类任务归组后可以按组限制并行数量 */
+  group?: string;
+  maxConcurrent?: number;
+  limitMessage?: string;
 }
 
 /**
@@ -100,9 +138,19 @@ export function runTask<T>(
 ): Promise<T> {
   const existing = inflight.get(key);
   if (existing) return existing as Promise<T>;
+  if (
+    options?.group &&
+    options.maxConcurrent !== undefined &&
+    groupCount(options.group) >= options.maxConcurrent
+  ) {
+    const message = options.limitMessage ?? `${label}任务已达并行上限`;
+    notifier?.(message, 'error');
+    return Promise.reject(new Error(message));
+  }
 
   update(key, { running: true, label, error: null });
   runningKeys = [...runningKeys, key];
+  addToGroup(key, options?.group);
   refreshActive();
 
   const promise = (async () => {
@@ -122,6 +170,7 @@ export function runTask<T>(
     } finally {
       inflight.delete(key);
       runningKeys = runningKeys.filter((k) => k !== key);
+      removeFromGroup(key);
       refreshActive();
     }
   })();
@@ -133,6 +182,10 @@ export function runTask<T>(
 
 export function isTaskRunning(key: string): boolean {
   return stateOf(key).running;
+}
+
+export function runningTaskCount(group: string): number {
+  return groupCount(group);
 }
 
 export function clearTaskError(key: string): void {
@@ -178,6 +231,25 @@ function activeSnapshot(): ActiveTask | null {
 /** 最早开始且还在跑的任务，标题栏用它提示后台还有活儿 */
 export function useActiveTask(): ActiveTask | null {
   return useSyncExternalStore(subscribeActive, activeSnapshot, activeSnapshot);
+}
+
+function subscribeGroup(group: string, listener: () => void): () => void {
+  let set = groupListeners.get(group);
+  if (!set) {
+    set = new Set();
+    groupListeners.set(group, set);
+  }
+  set.add(listener);
+  return () => {
+    set!.delete(listener);
+    if (set!.size === 0) groupListeners.delete(group);
+  };
+}
+
+export function useRunningTaskCount(group: string): number {
+  const sub = useCallback((listener: () => void) => subscribeGroup(group, listener), [group]);
+  const snapshot = useCallback(() => groupCount(group), [group]);
+  return useSyncExternalStore(sub, snapshot, snapshot);
 }
 
 /** 把 toast 接到任务仓库上：任务在哪个页面跑完，提示都能弹出来 */
