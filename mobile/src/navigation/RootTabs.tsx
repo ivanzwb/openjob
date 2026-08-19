@@ -107,27 +107,47 @@ export function RootTabs(): React.JSX.Element {
       <Tab.Screen
         name="Overview"
         component={OverviewScreen}
-        options={{ title: '总览', tabBarLabel: '总览', headerTitle: () => <AppHeaderTitle title="总览" /> }}
+        options={{
+          title: '总览',
+          tabBarLabel: '总览',
+          headerTitle: () => <AppHeaderTitle title="总览" icon={TAB_ICONS.Overview.active} />,
+        }}
       />
       <Tab.Screen
         name="Campaigns"
         component={CampaignsScreen}
-        options={{ title: '备考', tabBarLabel: '备考', headerTitle: () => <AppHeaderTitle title="备考" /> }}
+        options={{
+          title: '备考',
+          tabBarLabel: '备考',
+          headerTitle: () => <AppHeaderTitle title="备考" icon={TAB_ICONS.Campaigns.active} />,
+        }}
       />
       <Tab.Screen
         name="Resumes"
         component={ResumesScreen}
-        options={{ title: '简历', tabBarLabel: '简历', headerTitle: () => <AppHeaderTitle title="简历" /> }}
+        options={{
+          title: '简历',
+          tabBarLabel: '简历',
+          headerTitle: () => <AppHeaderTitle title="简历" icon={TAB_ICONS.Resumes.active} />,
+        }}
       />
       <Tab.Screen
         name="Design"
         component={DesignScreen}
-        options={{ title: '模拟面试', tabBarLabel: '面试', headerTitle: () => <AppHeaderTitle title="模拟面试" /> }}
+        options={{
+          title: '模拟面试',
+          tabBarLabel: '面试',
+          headerTitle: () => <AppHeaderTitle title="模拟面试" icon={TAB_ICONS.Design.active} />,
+        }}
       />
       <Tab.Screen
         name="More"
         component={MoreScreen}
-        options={{ title: '更多', tabBarLabel: '更多', headerTitle: () => <AppHeaderTitle title="更多" /> }}
+        options={{
+          title: '更多',
+          tabBarLabel: '更多',
+          headerTitle: () => <AppHeaderTitle title="更多" icon={TAB_ICONS.More.active} />,
+        }}
       />
       <Tab.Screen
         name="Repos"
@@ -135,7 +155,7 @@ export function RootTabs(): React.JSX.Element {
         options={{
           title: '源码',
           tabBarButton: () => null,
-          headerTitle: () => <AppHeaderTitle title="源码" />,
+          headerTitle: () => <AppHeaderTitle title="源码" icon={TAB_ICONS.Repos.active} />,
         }}
       />
       <Tab.Screen
@@ -144,7 +164,7 @@ export function RootTabs(): React.JSX.Element {
         options={{
           title: '话术',
           tabBarButton: () => null,
-          headerTitle: () => <AppHeaderTitle title="话术" />,
+          headerTitle: () => <AppHeaderTitle title="话术" icon={TAB_ICONS.Scripts.active} />,
         }}
       />
       <Tab.Screen
@@ -153,7 +173,7 @@ export function RootTabs(): React.JSX.Element {
         options={{
           title: '同步',
           tabBarButton: () => null,
-          headerTitle: () => <AppHeaderTitle title="同步" />,
+          headerTitle: () => <AppHeaderTitle title="同步" icon={TAB_ICONS.Sync.active} />,
         }}
       />
     </Tab.Navigator>
