@@ -83,9 +83,21 @@ jobs:
           if-no-files-found: error
 
       # 仅 tag 推送时挂到 release；手动 dispatch 不发布
+      # 用 gh release upload 而非 softprops：release.yml 的 electron-builder 与本 workflow
+      # 并发操作同一 release，softprops 会撞上 tag_name already_exists 的竞态。
+      # gh 只对已存在的 release 上传资产，不创建/更新 release 元数据，天然避开竞态；
+      # 重试兜底「本 workflow 先跑完、release 还没建好」的情况。
       - name: Attach APK to GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: mobile/dist/OpenJob-*.apk
-          fail_on_unmatched_files: false
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for i in $(seq 1 30); do
+            if gh release upload "$GITHUB_REF_NAME" mobile/dist/OpenJob-*.apk --clobber; then
+              exit 0
+            fi
+            echo "release not ready yet (attempt $i/30), retrying in 20s..."
+            sleep 20
+          done
+          echo "::error::failed to upload APK to release after retries"
+          exit 1
