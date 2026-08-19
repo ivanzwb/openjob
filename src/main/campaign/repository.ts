@@ -132,9 +132,28 @@ export function getCampaignDetail(id: string): CampaignDetail {
     .all();
 
   const orderedNodes = sortNodesByStudyOrder(nodeRows, edgeRows);
+  const explanationNodeIds =
+    nodeRows.length > 0
+      ? new Set(
+          db
+            .select({ nodeId: schema.explanation.nodeId })
+            .from(schema.explanation)
+            .where(
+              inArray(
+                schema.explanation.nodeId,
+                nodeRows.map((n) => n.id),
+              ),
+            )
+            .all()
+            .map((row) => row.nodeId),
+        )
+      : new Set<string>();
 
   const nodes: KnowledgeNodeView[] = orderedNodes.map((n) =>
-    attachPriorityReason(rowToNode(n)),
+    {
+      const node = attachPriorityReason(rowToNode(n));
+      return { ...node, hasExplanation: explanationNodeIds.has(node.id) };
+    },
   );
 
   const intel =

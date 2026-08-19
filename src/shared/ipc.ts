@@ -250,6 +250,7 @@ export interface CampaignOverview {
 /** 带优先级依据的节点，供考点清单展示 */
 export interface KnowledgeNodeView extends KnowledgeNode {
   priorityReason: string;
+  hasExplanation?: boolean;
 }
 
 export interface CampaignDetail {

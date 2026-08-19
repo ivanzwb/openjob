@@ -309,6 +309,18 @@ export function getCampaignDetail(db: SQLiteDatabase, id: string): CampaignDetai
   }>(`SELECT * FROM campaign WHERE id = ?`, id);
   if (!row) throw new Error('Campaign 不存在');
 
+  const explanationNodeIds = new Set(
+    db
+      .getAllSync<{ node_id: string }>(
+        `SELECT DISTINCT e.node_id
+         FROM explanation e
+         INNER JOIN knowledge_node kn ON kn.id = e.node_id
+         WHERE kn.campaign_id = ?`,
+        id,
+      )
+      .map((item) => item.node_id),
+  );
+
   const nodes = db
     .getAllSync<{
       id: string;
@@ -346,6 +358,7 @@ export function getCampaignDetail(db: SQLiteDatabase, id: string): CampaignDetai
       isUserAdded: Boolean(n.is_user_added),
       createdAt: n.created_at,
       priorityReason: '',
+      hasExplanation: explanationNodeIds.has(n.id),
     }));
 
   const intel = db.getFirstSync<{

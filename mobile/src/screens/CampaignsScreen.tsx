@@ -178,7 +178,15 @@ function CampaignDetailView({
     statusFilter,
   ]);
 
-  const selectNodeForStudy = (node: KnowledgeNodeView, mode: typeof nodeStudyMode = 'explain'): void => {
+  const selectNodeForStudy = (
+    node: KnowledgeNodeView,
+    mode: typeof nodeStudyMode = 'explain',
+    options?: { toggle?: boolean },
+  ): void => {
+    if (options?.toggle && selectedNode?.id === node.id) {
+      setSelectedNode(null);
+      return;
+    }
     setSelectedNode(node);
     setNodeStudyMode(mode);
     setLastNodeId(node.id);
@@ -489,7 +497,7 @@ function CampaignDetailView({
         onSelectNode={(nodeId) => {
           const node = detail.nodes.find((n) => n.id === nodeId);
           if (!node) return;
-          selectNodeForStudy(node);
+          selectNodeForStudy(node, 'explain', { toggle: true });
         }}
         onExpand={expandNode}
         onUpdate={updateNode}

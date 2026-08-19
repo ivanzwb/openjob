@@ -183,6 +183,11 @@ function NodeRow({
           <Text style={{ color: theme.text, flex: 1, fontWeight: selected ? '700' : '600' }}>
             {node.name}
           </Text>
+          {node.hasExplanation && (
+            <Text accessibilityLabel="已生成讲解" style={{ color: theme.accent, fontSize: 15 }}>
+              📖
+            </Text>
+          )}
         </View>
 
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>

@@ -288,6 +288,11 @@ function NodeRow({
                     ★
                   </span>
                 )}
+                {node.hasExplanation && (
+                  <span className="text-[11px]" title="已生成讲解" aria-label="已生成讲解">
+                    📖
+                  </span>
+                )}
                 <span className="text-sm font-medium leading-snug">{node.name}</span>
                 <span className="text-[10px] text-[var(--color-muted)]">
                   {KIND_LABEL[node.kind]}

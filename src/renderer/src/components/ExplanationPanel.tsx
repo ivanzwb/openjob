@@ -506,8 +506,14 @@ export function ExplanationPanel({
     highlightTask.error ??
     clearHighlightTask.error;
 
-  useTaskResult<Explanation>(loadKey, setContent);
-  useTaskResult<Explanation>(regenerateKey, setContent);
+  useTaskResult<Explanation>(loadKey, (result) => {
+    setContent(result);
+    onAnnotationChange?.();
+  });
+  useTaskResult<Explanation>(regenerateKey, (result) => {
+    setContent(result);
+    onAnnotationChange?.();
+  });
   const isUserEdited = content?.modelUsed === 'user-edit';
   const hasSelection = Boolean(selection);
 
