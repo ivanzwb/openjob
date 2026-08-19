@@ -130,12 +130,15 @@ export function ResumesScreen(): React.JSX.Element {
   const opened = openedKey ? (entries.find((e) => entryKey(e) === openedKey) ?? null) : null;
 
   // 新建在任务里落库，跑完后不管界面有没有被重建，回到这页都能看到并直接进编辑器
-  useTaskResult<string>(CREATE_KEY, (id) => {
+  useTaskResult<{ id: string; fallbackReason?: string }>(CREATE_KEY, (created) => {
     setCreateOpen(false);
     setNewLabel('');
     setNewText('');
     reload();
-    setOpenedKey(`resume:${id}`);
+    setOpenedKey(`resume:${created.id}`);
+    if (created.fallbackReason) {
+      Alert.alert('已按规则识别', `模型解析未成功，已退回规则识别：${created.fallbackReason}\n\n可在编辑器中点「AI 识别」重新归类。`);
+    }
   });
 
   const create = (): void => {

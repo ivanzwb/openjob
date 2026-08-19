@@ -27,7 +27,7 @@ export const RESUME_SECTION_CATALOG: Array<{
   {
     key: 'basic',
     title: '基本信息',
-    hint: '姓名会作为简历标题，求职岗位作为副标题，其余信息按两列排版',
+    hint: '姓名会作为简历标题，其余信息按两列排版',
   },
   { key: 'intention', title: '求职意向', hint: '期望岗位、城市、薪资范围（选填）' },
   { key: 'summary', title: '个人优势', hint: '3–5 条亮点，一条一句，尽量带上量化结果' },

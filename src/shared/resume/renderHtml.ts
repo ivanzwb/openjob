@@ -75,24 +75,30 @@ function parseInfoFields(md: string): InfoField[] {
 
 interface BasicInfo {
   name: string;
-  tagline: string;
-  taglineLabel: string;
   fields: InfoField[];
+}
+
+/** 岗位类标签：基本信息里不再保留，统一由「求职意向」承担，避免重复 */
+function isRoleLabel(label: string): boolean {
+  return /岗位|职位|意向|应聘/.test(label.replace(/\s+/g, ''));
 }
 
 function extractBasicInfo(section: ResumeSection | undefined): BasicInfo | null {
   if (!section?.contentMd.trim()) return null;
   const fields = parseInfoFields(section.contentMd);
   const nameField = fields.find((f) => /姓名|名字/.test(f.label.replace(/\s+/g, '')));
-  const roleField = fields.find((f) =>
-    /岗位|职位|意向|应聘/.test(f.label.replace(/\s+/g, '')),
-  );
   return {
     name: nameField?.value ?? '',
-    tagline: roleField?.value ?? '',
-    taglineLabel: roleField?.label ?? '',
-    fields: fields.filter((f) => f !== nameField),
+    fields: fields.filter((f) => f !== nameField && !isRoleLabel(f.label)),
   };
+}
+
+/** 头部副标题：取「求职意向」里的期望岗位（期望岗位/期望职位/意向岗位等） */
+function extractIntentionRole(doc: ResumeDocument): string {
+  const intention = doc.sections.find((s) => s.key === 'intention');
+  if (!intention?.contentMd.trim()) return '';
+  const roleField = parseInfoFields(intention.contentMd).find((f) => isRoleLabel(f.label));
+  return roleField?.value.trim() ?? '';
 }
 
 function renderInfoItems(fields: InfoField[]): string {
@@ -375,12 +381,10 @@ export function buildResumeDocumentHtml(
   const template = style.template;
   const basic = extractBasicInfo(doc.sections.find((s) => s.key === 'basic'));
   const name = basic?.name || meta?.headline?.trim() || '个人简历';
-  const tagline = basic?.tagline || meta?.subtitle?.trim() || '';
+  const tagline = extractIntentionRole(doc) || meta?.subtitle?.trim() || '';
 
-  // 姓名与求职岗位已进入头部，信息表里不再重复
-  const infoFields = (basic?.fields ?? []).filter(
-    (f) => !basic?.taglineLabel || f.label !== basic.taglineLabel,
-  );
+  // 姓名已进入头部；岗位字段在「求职意向」里已作为副标题，信息表不再重复
+  const infoFields = basic?.fields ?? [];
 
   const headerKind = HEADER_KIND[template];
   const photo = photoSrc(meta?.photo);

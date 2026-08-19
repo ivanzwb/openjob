@@ -10,12 +10,13 @@ import { catalogTitleForKey } from './document';
 const HEADING_ALIASES: Array<{ pattern: RegExp; key: ResumeSectionKey }> = [
   { pattern: /^(基本信息|个人信息|个人资料|基本资料|个人档案|联系方式|profile|contact)$/i, key: 'basic' },
   {
-    pattern: /^(求职意向|求职意愿|求职目标|职业意向|期望职位|期望岗位|意向岗位|objective)$/i,
+    pattern:
+      /^(求职意向|求职意愿|求职目标|职业意向|期望职位|期望岗位|意向岗位|目标岗位|应聘岗位|岗位意向|职业目标|工作目标|求职方向|objective)$/i,
     key: 'intention',
   },
   {
     pattern:
-      /^(个人优势|个人总结|个人简介|个人评价|自我评价|自我描述|自我介绍|专业概述|职业概述|亮点|summary)$/i,
+      /^(个人优势|个人总结|个人简介|个人评价|自我评价|自我描述|自我介绍|专业概述|职业概述|亮点|核心优势|summary)$/i,
     key: 'summary',
   },
   {
@@ -24,21 +25,21 @@ const HEADING_ALIASES: Array<{ pattern: RegExp; key: ResumeSectionKey }> = [
     key: 'experience',
   },
   {
-    pattern: /^(项目经历|项目经验|项目实践|项目介绍|主要项目|代表项目|projects?)$/i,
+    pattern: /^(项目经历|项目经验|项目实践|项目介绍|主要项目|代表项目|个人项目|项目作品|projects?)$/i,
     key: 'project',
   },
   {
-    pattern: /^(教育经历|教育背景|教育信息|学习经历|教育与培训|培训经历|education)$/i,
+    pattern: /^(教育经历|教育背景|教育信息|学习经历|教育与培训|培训经历|学历背景|education)$/i,
     key: 'education',
   },
   {
     pattern:
-      /^(专业技能|技能专长|专业能力|专业技术|技术栈|技能清单|技能|IT技能|计算机技能|语言技能|skills?)$/i,
+      /^(专业技能|技能专长|专业能力|专业技术|技术栈|技能清单|技能|IT技能|计算机技能|语言技能|技能特长|核心技能|能力特长|skills?)$/i,
     key: 'skills',
   },
   {
     pattern:
-      /^(资格证书|技能证书|荣誉证书|证书奖项|荣誉奖项|奖励荣誉|获奖情况|荣誉|证书|certificat(e|ions?))$/i,
+      /^(资格证书|技能证书|荣誉证书|证书奖项|荣誉奖项|奖励荣誉|获奖情况|荣誉|证书|所获荣誉|certificat(e|ions?))$/i,
     key: 'certificate',
   },
 ];

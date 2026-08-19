@@ -4,7 +4,8 @@ import { basename, extname } from 'node:path';
 import { PDFParse } from 'pdf-parse';
 import mammoth from 'mammoth';
 import WordExtractor from 'word-extractor';
-import type { Resume } from '@shared/entities';
+import type { ResumeImportResult } from '@shared/ipc';
+import { structureResumeWithLlm } from '../resume/ai';
 import { createResume } from './repository';
 
 const SUPPORTED_EXTENSIONS = ['pdf', 'doc', 'docx', 'txt', 'md'];
@@ -49,7 +50,7 @@ async function extractResumeText(filePath: string): Promise<string> {
  * 取消返回 null，提取失败抛错（由 IPC 层转为错误返回）。
  * 导入成功后直接写入简历库，可被任意 Campaign 复用。
  */
-export async function importResumeFromFile(): Promise<Resume | null> {
+export async function importResumeFromFile(): Promise<ResumeImportResult | null> {
   const { canceled, filePaths } = await dialog.showOpenDialog({
     title: '导入简历',
     properties: ['openFile'],
@@ -66,5 +67,7 @@ export async function importResumeFromFile(): Promise<Resume | null> {
     throw new Error('未能从该文件中提取到简历文本，请确认内容有效（暂不支持扫描件 PDF）');
   }
   const label = basename(filePath, extname(filePath));
-  return createResume(label, rawText);
+  // 纯文本先用模型归类成固定模块，模型不可用时退回规则识别（返回里带 fallbackReason）
+  const structured = await structureResumeWithLlm(rawText);
+  return { ...createResume(label, structured.contentMd), fallbackReason: structured.fallbackReason };
 }

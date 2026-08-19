@@ -194,7 +194,9 @@ export function CampaignDetail({
       if (!r) return '已取消导入';
       refresh();
       if (attach) await attachResume(r.id);
-      return `已导入：${r.label}`;
+      return r.fallbackReason
+        ? `已导入：${r.label}（已退回规则识别：${r.fallbackReason}）`
+        : `已导入：${r.label}`;
     }).catch(() => undefined);
   };
 
@@ -206,7 +208,9 @@ export function CampaignDetail({
         rawText: newResumeText.trim(),
       });
       await attachResume(r.id);
-      return `已保存并交叉分析：${r.label}`;
+      return r.fallbackReason
+        ? `已保存并交叉分析：${r.label}（已退回规则识别：${r.fallbackReason}）`
+        : `已保存并交叉分析：${r.label}`;
     })
       .then(() => {
         setShowResumeForm(false);
@@ -986,7 +990,7 @@ export function CampaignDetail({
                           onClick={() => importResumeFile(true)}
                           className="text-xs text-sky-400 hover:underline disabled:opacity-40"
                         >
-                          {importingResume ? '导入中…' : '从文件导入'}
+                          {importingResume ? 'AI 解析中…' : '从文件导入'}
                         </button>
                         <button
                           type="button"

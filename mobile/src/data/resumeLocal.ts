@@ -2,6 +2,7 @@ import * as Crypto from 'expo-crypto';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import type { Resume } from '@shared/entities';
 import { structureResumeText } from '@shared/resume/importStructure';
+import { structureResume } from './resumeAi';
 import { getDeviceIdentity } from '../sync/identity';
 import { writingAs } from '../sync/triggers';
 
@@ -162,12 +163,12 @@ export async function updateResumeEntry(
   });
 }
 
-/** 粘贴进来的纯文本先按规则识别成固定模块，识别不了时原样保存 */
+/** 粘贴进来的纯文本先让模型归类成固定模块，模型不可用时退回规则识别；返回 fallbackReason 供界面提示 */
 export async function createResumeFromText(
   db: SQLiteDatabase,
   label: string,
   rawText: string,
-): Promise<Resume['id']> {
+): Promise<{ id: Resume['id']; fallbackReason?: string }> {
   const text = rawText.trim();
   if (!text) throw new Error('简历内容为空');
 
@@ -175,19 +176,30 @@ export async function createResumeFromText(
   const id = Crypto.randomUUID();
   const now = Date.now();
 
+  // 本地 LLM 归类，失败（未配置模型/网络不可用等）时退回规则识别
+  let contentMd = structureResumeText(text);
+  let fallbackReason: string | undefined;
+  try {
+    const outcome = await structureResume(text);
+    contentMd = outcome.contentMd;
+    fallbackReason = outcome.fallbackReason;
+  } catch {
+    // 模型与规则兜底都没拆出来，保留规则识别的结果，不阻塞创建
+  }
+
   writingAs(db, identity.deviceId, () => {
     db.runSync(
       `INSERT INTO resume (id, label, raw_text, parsed, preview_style, created_at, updated_at)
        VALUES (?, ?, ?, NULL, NULL, ?, ?)`,
       id,
       label.trim() || '新建简历',
-      structureResumeText(text),
+      contentMd,
       now,
       now,
     );
   });
 
-  return id;
+  return { id, fallbackReason };
 }
 
 export async function deleteResumeEntry(

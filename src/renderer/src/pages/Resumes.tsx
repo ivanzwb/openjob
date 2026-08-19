@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import type { JobTarget, Resume } from '@shared/entities';
-import type { ResumeVariantView } from '@shared/ipc';
+import type { ResumeImportResult, ResumeVariantView } from '@shared/ipc';
 import type { ResumeEditorSavePayload } from '../components/ResumeEditorPane';
 import { ResumeEditorPane } from '../components/ResumeEditorPane';
 import { PageShell } from '../components/PageShell';
@@ -225,12 +225,12 @@ export function Resumes(): React.JSX.Element {
     }).catch(() => undefined);
   };
 
-  useTaskResult<Resume>(createResumeKey, (saved) => {
+  useTaskResult<ResumeImportResult>(createResumeKey, (saved) => {
     setResumeForm({ label: '', rawText: '' });
     setResumeFormOpen(false);
     setSelectedResumeId(saved.id);
     setListSelection({ kind: 'resume', id: saved.id });
-    setMessage('简历已保存');
+    setMessage(saved.fallbackReason ? `简历已保存（已退回规则识别：${saved.fallbackReason}）` : '简历已保存');
   });
 
   const openNewResumeForm = (): void => {
@@ -285,13 +285,13 @@ export function Resumes(): React.JSX.Element {
     }).catch(() => undefined);
   };
 
-  useTaskResult<Resume | null>(importResumeKey, (r) => {
+  useTaskResult<ResumeImportResult | null>(importResumeKey, (r) => {
     if (!r) return;
     setSelectedResumeId(r.id);
     setListSelection({ kind: 'resume', id: r.id });
     setResumeFormOpen(false);
     setResumeForm({ label: '', rawText: '' });
-    setMessage(`已导入：${r.label}`);
+    setMessage(r.fallbackReason ? `已导入：${r.label}（已退回规则识别：${r.fallbackReason}）` : `已导入：${r.label}`);
   });
 
   const runOptimizeFromNewResume = (): void => {
@@ -682,7 +682,7 @@ export function Resumes(): React.JSX.Element {
                       onClick={importResume}
                       className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm disabled:opacity-40"
                     >
-                      {importingResume ? '导入中…' : '导入文件'}
+                      {importingResume ? 'AI 解析中…' : '导入文件'}
                     </button>
                   </div>
                 </div>

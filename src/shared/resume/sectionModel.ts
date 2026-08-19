@@ -35,8 +35,8 @@ export function formKindForSection(key: ResumeSectionKey): SectionFormKind {
 
 /** 表单里固定展示的字段行；留空的行不会写入 markdown。 */
 const PRESET_FIELDS: Partial<Record<ResumeSectionKey, string[]>> = {
-  // 姓名与求职岗位排在最前：渲染时它们会成为简历的标题与副标题
-  basic: ['姓名', '求职岗位', '性别', '年龄', '城市', '工作年限', '电话', '邮箱'],
+  // 姓名排在最前：渲染时它会成为简历的标题；岗位信息统一填在「求职意向」
+  basic: ['姓名', '性别', '年龄', '城市', '工作年限', '电话', '邮箱'],
   intention: ['期望岗位', '期望城市', '期望薪资', '到岗时间'],
 };
 

@@ -396,6 +396,9 @@ export interface ResumeStructureResult {
   fallbackReason?: string;
 }
 
+/** 创建/导入简历的返回：模型归类失败退回规则时带原因，供界面提示用户 */
+export type ResumeImportResult = Resume & { fallbackReason?: string };
+
 /** 只优化当前编辑的那一块，整份简历作为上下文，不落库 */
 export interface ResumePolishInput {
   /** 整份简历 markdown，供模型理解上下文 */
@@ -915,11 +918,12 @@ export interface IpcInvokeMap {
   'campaign:delete': { req: { id: string }; res: void };
 
   'resume:list': { req: void; res: Resume[] };
-  'resume:create': { req: CreateResumeInput; res: Resume };
+  /** 创建简历时先用模型归类到固定模块；模型不可用退回规则识别，fallbackReason 说明这一点 */
+  'resume:create': { req: CreateResumeInput; res: ResumeImportResult };
   'resume:update': { req: UpdateResumeInput; res: Resume };
   'resume:delete': { req: { id: string }; res: void };
   /** 弹出文件选择框导入简历（pdf/docx/txt/md），取消或失败时返回 null */
-  'resume:importFile': { req: void; res: Resume | null };
+  'resume:importFile': { req: void; res: ResumeImportResult | null };
   'resume:exportPdf': { req: ResumeExportInput; res: ResumeExportResult };
   /** 用模型把内容重新归类到固定模块，返回 markdown 交给渲染进程预览后再保存 */
   'resume:aiStructure': { req: ResumeStructureInput; res: ResumeStructureResult };

@@ -176,7 +176,11 @@ export function registerIpcHandlers(): void {
   });
 
   handle('resume:list', () => listResumes());
-  handle('resume:create', (input) => createResume(input.label, input.rawText));
+  // 导入/粘贴的纯文本先用模型归类成固定模块，模型不可用时退回规则识别
+  handle('resume:create', async (input) => {
+    const structured = await structureResumeWithLlm(input.rawText);
+    return { ...createResume(input.label, structured.contentMd), fallbackReason: structured.fallbackReason };
+  });
   handle('resume:update', (input) => updateResume(input));
   handle('resume:importFile', () => importResumeFromFile());
   handle('resume:delete', ({ id }) => {
