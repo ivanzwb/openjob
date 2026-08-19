@@ -10,7 +10,7 @@
  * 未开启实验时永远取 versions[0]（行为与改注册表前完全一致）。
  */
 
-import type { ExamForm, ExplanationTier } from '@shared/enums';
+import type { ExplanationTier } from '@shared/enums';
 import {
   EXPAND_SYSTEM,
   INTEL_SYSTEM,
@@ -19,7 +19,13 @@ import {
   RESUME_SYSTEM,
   crossAnalyzeSystem,
 } from '../diagnosis/prompts';
-import { caseSystemForType, scoreSystemForType, type MockInterviewType } from '../design/prompts';
+import {
+  caseSystemForType,
+  scoreSystemForType,
+  type MockInterviewKind,
+  type MockInterviewLanguage,
+  type MockInterviewType,
+} from '../design/prompts';
 import {
   RESUME_OPTIMIZE_SYSTEM,
   RESUME_POLISH_SYSTEM,
@@ -165,7 +171,11 @@ export const PROMPT_REGISTRY: Record<string, PromptEntry> = {
     versions: [
       {
         id: 'design.score@v1',
-        build: (p) => scoreSystemForType(p.type as ExamForm),
+        build: (p) =>
+          scoreSystemForType(
+            p.type as MockInterviewKind,
+            (p.language as MockInterviewLanguage | undefined) ?? 'zh',
+          ),
         note: '初始版本',
       },
     ],

@@ -6,7 +6,13 @@ import type {
   DesignSubmitResult,
   MockInterviewType,
 } from '@shared/ipc';
-import { MOCK_INTERVIEW_TYPE_LABELS, MOCK_INTERVIEW_TYPE_OPTIONS } from '@shared/ipc';
+import {
+  MOCK_INTERVIEW_LANGUAGE_LABELS,
+  MOCK_INTERVIEW_LANGUAGE_OPTIONS,
+  MOCK_INTERVIEW_TYPE_LABELS,
+  MOCK_INTERVIEW_TYPE_OPTIONS,
+} from '@shared/ipc';
+import type { MockInterviewKind, MockInterviewLanguage } from '@shared/design/prompts';
 import { getRawDb } from '../db';
 import { listCampaigns } from '../data/queries';
 import { generateDesignCase, submitDesignAnswer } from '../data/designLocal';
@@ -20,12 +26,36 @@ function campaignLabel(c: CampaignSummary): string {
   return `${c.company} · ${c.roleTitle}`;
 }
 
+const ANSWER_PLACEHOLDERS: Record<MockInterviewKind, Record<MockInterviewLanguage, string>> = {
+  concept: {
+    zh: '先给结论，再讲原理，最后补充 trade-off 和实际踩坑…',
+    en: 'Start with the conclusion, explain the mechanism, then add trade-offs and examples...',
+  },
+  coding: {
+    zh: '说明思路 → 核心代码/伪代码 → 复杂度 → 边界情况…',
+    en: 'Explain your approach, core code or pseudocode, complexity, and edge cases...',
+  },
+  design: {
+    zh: '需求澄清 → 高层架构 → 核心模块 → 扩展与权衡…',
+    en: 'Clarify requirements, outline the architecture, key components, scaling, and trade-offs...',
+  },
+  scenario: {
+    zh: '背景 → 你的职责 → 具体行动 → 结果与复盘…',
+    en: 'Use STAR: situation, your role, actions, results, and lessons learned...',
+  },
+  selfIntro: {
+    zh: '用 60-90 秒介绍你的背景、核心项目、技术亮点，以及为什么匹配这个岗位…',
+    en: 'Give a 60-90 second intro covering your background, key projects, strengths, and role fit...',
+  },
+};
+
 export function DesignScreen(): React.JSX.Element {
   const theme = useTheme();
   const { notifyDataChanged } = useApp();
   const [campaigns, setCampaigns] = useState<CampaignSummary[]>([]);
   const [campaignId, setCampaignId] = useState('');
   const [interviewType, setInterviewType] = useState<MockInterviewType>('mixed');
+  const [interviewLanguage, setInterviewLanguage] = useState<MockInterviewLanguage>('zh');
   const [designCase, setDesignCase] = useState<DesignCaseResult | null>(null);
   const [answer, setAnswer] = useState('');
   const [result, setResult] = useState<DesignSubmitResult | null>(null);
@@ -42,7 +72,7 @@ export function DesignScreen(): React.JSX.Element {
   useLocalDataReload(reload);
 
   // 出题与评分按 Campaign + 题型记：切到别的 Tab 再回来，题目和评分都还在
-  const caseKey = `design:case:${campaignId}:${interviewType}`;
+  const caseKey = `design:case:${campaignId}:${interviewType}:${interviewLanguage}`;
   const submitKey = `design:submit:${campaignId}`;
   const { running: loadingCase, error: caseError } = useTaskState(caseKey);
   const { running: submitting, error: submitError } = useTaskState(submitKey);
@@ -55,9 +85,9 @@ export function DesignScreen(): React.JSX.Element {
   useTaskResult<DesignSubmitResult>(submitKey, setResult);
 
   const loadCase = (force = false): void => {
-    const input = { campaignId, interviewType };
+    const input = { campaignId, interviewType, interviewLanguage };
     void runTask(caseKey, '模拟面试出题', () =>
-      generateDesignCase(getRawDb(), input.campaignId, input.interviewType, force),
+      generateDesignCase(getRawDb(), input.campaignId, input.interviewType, input.interviewLanguage, force),
     ).catch(() => undefined);
   };
 
@@ -72,6 +102,7 @@ export function DesignScreen(): React.JSX.Element {
         input.designCase.scenarioMd,
         input.answer,
         input.designCase.interviewType,
+        input.designCase.interviewLanguage,
       );
       notifyDataChanged();
       return res;
@@ -141,6 +172,31 @@ export function DesignScreen(): React.JSX.Element {
         ))}
       </OverflowHintScrollView>
 
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        {MOCK_INTERVIEW_LANGUAGE_OPTIONS.map((o) => (
+          <Pressable
+            key={o.value}
+            onPress={() => {
+              setInterviewLanguage(o.value);
+              setDesignCase(null);
+              setResult(null);
+            }}
+            style={{
+              paddingHorizontal: 10,
+              paddingVertical: 6,
+              borderRadius: 8,
+              borderWidth: 1,
+              borderColor: interviewLanguage === o.value ? theme.accent : theme.border,
+              backgroundColor: theme.surface,
+            }}
+          >
+            <Text style={{ color: interviewLanguage === o.value ? theme.accent : theme.muted, fontSize: 12 }}>
+              {o.label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+
       <Pressable
         onPress={() => loadCase(Boolean(designCase))}
         disabled={loadingCase || !campaignId}
@@ -165,6 +221,8 @@ export function DesignScreen(): React.JSX.Element {
             <Text style={{ color: theme.text, fontWeight: '600' }}>{designCase.title}</Text>
             <Text style={{ color: theme.accent, fontSize: 11 }}>
               {MOCK_INTERVIEW_TYPE_LABELS[designCase.interviewType]}
+              {' · '}
+              {MOCK_INTERVIEW_LANGUAGE_LABELS[designCase.interviewLanguage]}
             </Text>
           </View>
           {designCase.relatedNodeName && (
@@ -180,7 +238,7 @@ export function DesignScreen(): React.JSX.Element {
             multiline
             value={answer}
             onChangeText={setAnswer}
-            placeholder="你的回答…"
+            placeholder={ANSWER_PLACEHOLDERS[designCase.interviewType][designCase.interviewLanguage]}
             placeholderTextColor={theme.muted}
             style={{
               minHeight: 120,

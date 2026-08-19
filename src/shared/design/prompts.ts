@@ -1,9 +1,11 @@
 import type { ExamForm } from '@shared/enums';
 
-export type MockInterviewType = ExamForm | 'mixed';
+export type MockInterviewKind = ExamForm | 'selfIntro';
+export type MockInterviewType = MockInterviewKind | 'mixed';
+export type MockInterviewLanguage = 'zh' | 'en';
 
 export interface DesignCaseGenerated {
-  interviewType: ExamForm;
+  interviewType: MockInterviewKind;
   relatedNodeName?: string | null;
   title: string;
   scenarioMd: string;
@@ -19,7 +21,7 @@ export interface DesignScoreGenerated {
 
 const CASE_OUTPUT_SCHEMA = `输出 JSON：
 {
-  "interviewType": "concept|coding|design|scenario",
+  "interviewType": "concept|coding|design|scenario|selfIntro",
   "relatedNodeName": "关联考点名或 null",
   "title": "短标题",
   "scenarioMd": "markdown 题目正文（含追问提示）",
@@ -57,6 +59,12 @@ export const SCENARIO_CASE_SYSTEM = `${CASE_BASE_RULES}
 题型：项目深挖 / 行为场景。围绕简历项目或 JD 职责，追问决策、权衡、踩坑与复盘。
 ${CASE_OUTPUT_SCHEMA}`;
 
+export const SELF_INTRO_CASE_SYSTEM = `${CASE_BASE_RULES}
+
+题型：自我介绍。请围绕候选人的岗位目标、简历亮点、核心项目和与 JD 的匹配度，给出一段真实面试开场自我介绍题。
+题目里要明确时长要求（如 60-90 秒）和 1-2 个可能追问方向。
+${CASE_OUTPUT_SCHEMA}`;
+
 export function caseSystemForType(type: MockInterviewType): string {
   switch (type) {
     case 'concept':
@@ -67,20 +75,33 @@ export function caseSystemForType(type: MockInterviewType): string {
       return DESIGN_CASE_SYSTEM;
     case 'scenario':
       return SCENARIO_CASE_SYSTEM;
+    case 'selfIntro':
+      return SELF_INTRO_CASE_SYSTEM;
     default:
       return MIXED_CASE_SYSTEM;
   }
 }
 
-export function caseUserHintForType(type: MockInterviewType): string {
-  if (type === 'mixed') return '请根据候选人背景自动选择最合适的题型并出题。';
-  const labels: Record<ExamForm, string> = {
+function languageInstruction(language: MockInterviewLanguage): string {
+  return language === 'en'
+    ? '请用英文模拟真实面试：题目、追问、评分反馈和改进稿都使用英文。'
+    : '请用中文模拟真实面试：题目、追问、评分反馈和改进稿都使用中文。';
+}
+
+export function caseUserHintForType(
+  type: MockInterviewType,
+  language: MockInterviewLanguage = 'zh',
+): string {
+  const languageHint = languageInstruction(language);
+  if (type === 'mixed') return `${languageHint}\n请根据候选人背景自动选择最合适的题型并出题。`;
+  const labels: Record<MockInterviewKind, string> = {
     concept: '概念 / 八股',
     coding: '编码 / 算法',
     design: '系统设计',
     scenario: '项目 / 场景',
+    selfIntro: '自我介绍',
   };
-  return `请出一道【${labels[type]}】类型的面试题。`;
+  return `${languageHint}\n请出一道【${labels[type]}】类型的面试题。`;
 }
 
 const SCORE_BASE = `你是面试评委。按 1-5 分评分（5=能扛追问），给出逐点反馈和改进后的口语答题稿（markdown）。
@@ -98,6 +119,13 @@ export const SCORE_SYSTEM_BY_TYPE: Record<ExamForm, string> = {
   scenario: `${SCORE_BASE}\n侧重：STAR 结构、个人贡献真实性、决策复盘深度。`,
 };
 
-export function scoreSystemForType(type: ExamForm): string {
-  return SCORE_SYSTEM_BY_TYPE[type];
+export const SELF_INTRO_SCORE_SYSTEM = `${SCORE_BASE}
+侧重：开场结构、岗位匹配度、亮点可信度、表达自然度、能否引导后续追问。`;
+
+export function scoreSystemForType(
+  type: MockInterviewKind,
+  language: MockInterviewLanguage = 'zh',
+): string {
+  const base = type === 'selfIntro' ? SELF_INTRO_SCORE_SYSTEM : SCORE_SYSTEM_BY_TYPE[type];
+  return `${base}\n${languageInstruction(language)}`;
 }

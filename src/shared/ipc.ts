@@ -25,7 +25,6 @@ import type {
   SessionKind,
   EdgeRelation,
   TaskKind,
-  ExamForm,
 } from './enums';
 import type {
   Campaign,
@@ -45,6 +44,7 @@ import type {
   JdParsed,
 } from './entities';
 import type { ConflictChoice, FieldConflict, PairingPayload, SyncRunSummary, SyncStatus } from './sync';
+import type { MockInterviewKind, MockInterviewLanguage } from './design/prompts';
 
 // ---------------------------------------------------------------------------
 // 通用
@@ -741,7 +741,7 @@ export interface SpeechExportResult {
 // 模拟面试（原系统设计，现覆盖多类题型）
 // ---------------------------------------------------------------------------
 
-export type MockInterviewType = ExamForm | 'mixed';
+export type MockInterviewType = MockInterviewKind | 'mixed';
 
 export const MOCK_INTERVIEW_TYPE_OPTIONS: Array<{
   value: MockInterviewType;
@@ -753,20 +753,36 @@ export const MOCK_INTERVIEW_TYPE_OPTIONS: Array<{
   { value: 'coding', label: '编码 / 算法', hint: '手写代码、复杂度分析' },
   { value: 'design', label: '系统设计', hint: '架构、扩展性、权衡' },
   { value: 'scenario', label: '项目 / 场景', hint: '简历深挖、行为场景' },
+  { value: 'selfIntro', label: '自我介绍', hint: '开场介绍、亮点匹配、表达自然度' },
 ];
 
-export const MOCK_INTERVIEW_TYPE_LABELS: Record<ExamForm, string> = {
+export const MOCK_INTERVIEW_TYPE_LABELS: Record<MockInterviewKind, string> = {
   concept: '概念 / 八股',
   coding: '编码 / 算法',
   design: '系统设计',
   scenario: '项目 / 场景',
+  selfIntro: '自我介绍',
+};
+
+export const MOCK_INTERVIEW_LANGUAGE_OPTIONS: Array<{
+  value: MockInterviewLanguage;
+  label: string;
+}> = [
+  { value: 'zh', label: '中文面试' },
+  { value: 'en', label: '英文面试' },
+];
+
+export const MOCK_INTERVIEW_LANGUAGE_LABELS: Record<MockInterviewLanguage, string> = {
+  zh: '中文',
+  en: '英文',
 };
 
 export interface DesignCaseResult {
   campaignId: string;
   company: string;
   roleTitle: string;
-  interviewType: ExamForm;
+  interviewType: MockInterviewKind;
+  interviewLanguage: MockInterviewLanguage;
   relatedNodeName: string | null;
   title: string;
   scenarioMd: string;
@@ -779,7 +795,8 @@ export interface DesignSubmitInput {
   caseTitle: string;
   scenarioMd: string;
   userAnswer: string;
-  interviewType?: ExamForm;
+  interviewType?: MockInterviewKind;
+  interviewLanguage?: MockInterviewLanguage;
 }
 
 export interface DesignSubmitResult {
@@ -991,7 +1008,12 @@ export interface IpcInvokeMap {
   'speech:export': { req: SpeechExportInput; res: SpeechExportResult };
 
   'design:case': {
-    req: { campaignId: string; interviewType?: MockInterviewType; force?: boolean };
+    req: {
+      campaignId: string;
+      interviewType?: MockInterviewType;
+      interviewLanguage?: MockInterviewLanguage;
+      force?: boolean;
+    };
     res: DesignCaseResult;
   };
   'design:submit': { req: DesignSubmitInput; res: DesignSubmitResult };

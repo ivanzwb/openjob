@@ -6,32 +6,52 @@ import type {
   MockInterviewType,
 } from '@shared/ipc';
 import {
+  MOCK_INTERVIEW_LANGUAGE_LABELS,
+  MOCK_INTERVIEW_LANGUAGE_OPTIONS,
   MOCK_INTERVIEW_TYPE_LABELS,
   MOCK_INTERVIEW_TYPE_OPTIONS,
 } from '@shared/ipc';
+import type { MockInterviewKind, MockInterviewLanguage } from '@shared/design/prompts';
 import { VoiceInputButton } from '../components/VoiceInputButton';
 import { PageShell } from '../components/PageShell';
 import { invoke } from '../ipc';
 import { useDataRefresh } from '../ipc/dataVersion';
 import { runTask, useTask, useTaskResult } from '../ipc/taskStore';
 
-const ANSWER_PLACEHOLDER: Record<string, string> = {
-  concept: '先给结论，再讲原理，最后补充 trade-off 和实际踩坑…',
-  coding: '说明思路 → 写出核心代码 → 分析时间/空间复杂度 → 边界情况…',
-  design: '需求澄清 → 高层架构 → 核心模块 → 扩展与权衡…',
-  scenario: '背景 → 你的职责 → 具体行动 → 结果与复盘…',
+const ANSWER_PLACEHOLDER: Record<MockInterviewKind, Record<MockInterviewLanguage, string>> = {
+  concept: {
+    zh: '先给结论，再讲原理，最后补充 trade-off 和实际踩坑…',
+    en: 'Start with the conclusion, explain the mechanism, then add trade-offs and examples...',
+  },
+  coding: {
+    zh: '说明思路 → 写出核心代码 → 分析时间/空间复杂度 → 边界情况…',
+    en: 'Explain your approach, core code or pseudocode, complexity, and edge cases...',
+  },
+  design: {
+    zh: '需求澄清 → 高层架构 → 核心模块 → 扩展与权衡…',
+    en: 'Clarify requirements, outline the architecture, key components, scaling, and trade-offs...',
+  },
+  scenario: {
+    zh: '背景 → 你的职责 → 具体行动 → 结果与复盘…',
+    en: 'Use STAR: situation, your role, actions, results, and lessons learned...',
+  },
+  selfIntro: {
+    zh: '用 60-90 秒介绍你的背景、核心项目、技术亮点，以及为什么匹配这个岗位…',
+    en: 'Give a 60-90 second intro covering your background, key projects, strengths, and role fit...',
+  },
 };
 
 export function DesignPractice(): React.JSX.Element {
   const [campaigns, setCampaigns] = useState<CampaignSummary[]>([]);
   const [campaignId, setCampaignId] = useState('');
   const [interviewType, setInterviewType] = useState<MockInterviewType>('mixed');
+  const [interviewLanguage, setInterviewLanguage] = useState<MockInterviewLanguage>('zh');
   const [designCase, setDesignCase] = useState<DesignCaseResult | null>(null);
   const [answer, setAnswer] = useState('');
   const [result, setResult] = useState<DesignSubmitResult | null>(null);
 
   // 出题与评分按 Campaign + 题型取 key，切页回来还能接上同一次题目
-  const caseKey = `design:case:${campaignId}:${interviewType}`;
+  const caseKey = `design:case:${campaignId}:${interviewType}:${interviewLanguage}`;
   const submitKey = `design:submit:${campaignId}`;
   const caseTask = useTask(caseKey);
   const submitTask = useTask(submitKey);
@@ -60,9 +80,9 @@ export function DesignPractice(): React.JSX.Element {
 
   const start = (force = false): void => {
     if (!campaignId) return;
-    void runTask(caseKey, () => invoke('design:case', { campaignId, interviewType, force })).catch(
-      () => undefined,
-    );
+    void runTask(caseKey, () =>
+      invoke('design:case', { campaignId, interviewType, interviewLanguage, force }),
+    ).catch(() => undefined);
   };
 
   const submit = (): void => {
@@ -76,6 +96,7 @@ export function DesignPractice(): React.JSX.Element {
         scenarioMd: current.scenarioMd,
         userAnswer: said,
         interviewType: current.interviewType,
+        interviewLanguage: current.interviewLanguage,
       }),
     ).catch(() => undefined);
   };
@@ -92,7 +113,7 @@ export function DesignPractice(): React.JSX.Element {
         </p>
       </header>
 
-      <div className="grid gap-3 lg:grid-cols-2">
+      <div className="grid gap-3 lg:grid-cols-3">
         <label className="space-y-1">
           <span className="text-xs text-[var(--color-muted)]">关联 Campaign</span>
           <select
@@ -134,6 +155,24 @@ export function DesignPractice(): React.JSX.Element {
           </select>
           {typeHint && <p className="text-[10px] text-[var(--color-muted)]">{typeHint}</p>}
         </label>
+        <label className="space-y-1">
+          <span className="text-xs text-[var(--color-muted)]">面试语言</span>
+          <select
+            value={interviewLanguage}
+            onChange={(e) => {
+              setInterviewLanguage(e.target.value as MockInterviewLanguage);
+              setDesignCase(null);
+              setResult(null);
+            }}
+            className="w-full rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm"
+          >
+            {MOCK_INTERVIEW_LANGUAGE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
       <div>
@@ -159,6 +198,9 @@ export function DesignPractice(): React.JSX.Element {
               <h3 className="font-medium">{designCase.title}</h3>
               <span className="rounded bg-sky-900/40 px-2 py-0.5 text-[10px] text-sky-300">
                 {MOCK_INTERVIEW_TYPE_LABELS[designCase.interviewType]}
+              </span>
+              <span className="rounded bg-emerald-900/40 px-2 py-0.5 text-[10px] text-emerald-300">
+                {MOCK_INTERVIEW_LANGUAGE_LABELS[designCase.interviewLanguage]}
               </span>
               {designCase.relatedNodeName && (
                 <span className="text-[10px] text-[var(--color-muted)]">
@@ -199,8 +241,7 @@ export function DesignPractice(): React.JSX.Element {
                 onChange={(e) => setAnswer(e.target.value)}
                 rows={10}
                 placeholder={
-                  ANSWER_PLACEHOLDER[designCase.interviewType] ??
-                  '口述你的回答，尽量结构化…'
+                  ANSWER_PLACEHOLDER[designCase.interviewType][designCase.interviewLanguage]
                 }
                 className="w-full resize-y rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm"
               />

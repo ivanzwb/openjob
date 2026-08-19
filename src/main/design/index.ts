@@ -10,24 +10,32 @@ import {
   caseUserHintForType,
   type DesignCaseGenerated,
   type DesignScoreGenerated,
+  type MockInterviewKind,
+  type MockInterviewLanguage,
   type MockInterviewType,
 } from '@shared/design/prompts';
 
 type DesignCaseRow = InferSelectModel<typeof schema.designCase>;
 
-function designCaseCacheId(campaignId: string, interviewType: MockInterviewType): string {
-  return `${campaignId}:${interviewType}`;
+function designCaseCacheId(
+  campaignId: string,
+  interviewType: MockInterviewType,
+  interviewLanguage: MockInterviewLanguage,
+): string {
+  return `${campaignId}:${interviewType}:${interviewLanguage}`;
 }
 
 function rowToDesignCaseResult(
   row: DesignCaseRow,
   campaign: ReturnType<typeof getCampaignRow>,
+  interviewLanguage: MockInterviewLanguage,
 ): DesignCaseResult {
   return {
     campaignId: row.campaignId,
     company: campaign.company,
     roleTitle: campaign.roleTitle,
     interviewType: row.interviewType,
+    interviewLanguage,
     relatedNodeName: row.relatedNodeName ?? null,
     title: row.title,
     scenarioMd: row.scenarioMd,
@@ -119,15 +127,16 @@ ${projectSummary}
 export async function generateDesignCase(
   campaignId: string,
   interviewType: MockInterviewType = 'mixed',
+  interviewLanguage: MockInterviewLanguage = 'zh',
   force = false,
 ): Promise<DesignCaseResult> {
   const campaign = getCampaignRow(campaignId);
   const db = getDb();
-  const cacheId = designCaseCacheId(campaignId, interviewType);
+  const cacheId = designCaseCacheId(campaignId, interviewType, interviewLanguage);
   const cached = db.select().from(schema.designCase).where(eq(schema.designCase.id, cacheId)).get();
 
   if (cached && !force) {
-    return rowToDesignCaseResult(cached, campaign);
+    return rowToDesignCaseResult(cached, campaign, interviewLanguage);
   }
 
   const context = buildInterviewContext(campaignId);
@@ -135,9 +144,9 @@ export async function generateDesignCase(
   const generated = await completeJson<DesignCaseGenerated>(
     'quiz',
     'design.case',
-    `${context}\n\n${caseUserHintForType(interviewType)}`,
+    `${context}\n\n${caseUserHintForType(interviewType, interviewLanguage)}`,
     undefined,
-    { type: interviewType },
+    { type: interviewType, language: interviewLanguage },
   );
 
   const now = Date.now();
@@ -174,6 +183,7 @@ export async function generateDesignCase(
     company: campaign.company,
     roleTitle: campaign.roleTitle,
     interviewType: generated.interviewType,
+    interviewLanguage,
     relatedNodeName: generated.relatedNodeName ?? null,
     title: generated.title,
     scenarioMd: generated.scenarioMd,
@@ -187,7 +197,8 @@ export async function submitDesignAnswer(
   caseTitle: string,
   scenarioMd: string,
   userAnswer: string,
-  interviewType: ExamForm = 'design',
+  interviewType: MockInterviewKind = 'design',
+  interviewLanguage: MockInterviewLanguage = 'zh',
 ): Promise<DesignSubmitResult> {
   const context = buildInterviewContext(campaignId);
 
@@ -197,11 +208,12 @@ export async function submitDesignAnswer(
     `${context}
 
 题目类型：${interviewType}
+面试语言：${interviewLanguage === 'en' ? '英文' : '中文'}
 题目：${caseTitle}
 题干：${scenarioMd}
 候选人回答：${userAnswer}`,
     undefined,
-    { type: interviewType },
+    { type: interviewType, language: interviewLanguage },
   );
 
   const score = Math.min(5, Math.max(1, Math.round(scored.score)));

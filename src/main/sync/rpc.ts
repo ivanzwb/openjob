@@ -216,7 +216,12 @@ const RPC_HANDLERS: Partial<Record<IpcInvokeChannel, RpcHandler>> = {
   'speech:delete': (p) => deleteSpeechSnippet((p as { id: string }).id),
   'design:case': (p) => {
     const input = p as IpcReq<'design:case'>;
-    return generateDesignCase(input.campaignId, input.interviewType ?? 'mixed', input.force ?? false);
+    return generateDesignCase(
+      input.campaignId,
+      input.interviewType ?? 'mixed',
+      input.interviewLanguage ?? 'zh',
+      input.force ?? false,
+    );
   },
   'design:submit': (p) => {
     const input = p as IpcReq<'design:submit'>;
@@ -226,6 +231,7 @@ const RPC_HANDLERS: Partial<Record<IpcInvokeChannel, RpcHandler>> = {
       input.scenarioMd,
       input.userAnswer,
       input.interviewType,
+      input.interviewLanguage,
     );
   },
   'annotation:list': (p) => listAnnotations((p as { targetType: string; targetId: string }).targetType as IpcReq<'annotation:list'>['targetType'], (p as { targetType: string; targetId: string }).targetId),

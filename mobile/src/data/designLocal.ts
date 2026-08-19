@@ -6,6 +6,8 @@ import {
   caseUserHintForType,
   type DesignCaseGenerated,
   type DesignScoreGenerated,
+  type MockInterviewKind,
+  type MockInterviewLanguage,
   type MockInterviewType,
 } from '@shared/design/prompts';
 import { completeJson } from '../llm/json';
@@ -15,7 +17,7 @@ import { writingAs } from '../sync/triggers';
 
 interface DesignCaseRow {
   campaign_id: string;
-  interview_type: ExamForm;
+  interview_type: MockInterviewKind;
   related_node_name: string | null;
   title: string;
   scenario_md: string;
@@ -23,8 +25,12 @@ interface DesignCaseRow {
   evaluation_criteria: string;
 }
 
-function designCaseCacheId(campaignId: string, interviewType: MockInterviewType): string {
-  return `${campaignId}:${interviewType}`;
+function designCaseCacheId(
+  campaignId: string,
+  interviewType: MockInterviewType,
+  interviewLanguage: MockInterviewLanguage,
+): string {
+  return `${campaignId}:${interviewType}:${interviewLanguage}`;
 }
 
 function parseStringList(value: string | null | undefined): string[] {
@@ -40,12 +46,14 @@ function parseStringList(value: string | null | undefined): string[] {
 function rowToDesignCaseResult(
   row: DesignCaseRow,
   campaign: ReturnType<typeof getCampaign>,
+  interviewLanguage: MockInterviewLanguage,
 ): DesignCaseResult {
   return {
     campaignId: row.campaign_id,
     company: campaign.company,
     roleTitle: campaign.roleTitle,
     interviewType: row.interview_type,
+    interviewLanguage,
     relatedNodeName: row.related_node_name ?? null,
     title: row.title,
     scenarioMd: row.scenario_md,
@@ -144,10 +152,11 @@ export async function generateDesignCase(
   db: SQLiteDatabase,
   campaignId: string,
   interviewType: MockInterviewType = 'mixed',
+  interviewLanguage: MockInterviewLanguage = 'zh',
   force = false,
 ): Promise<DesignCaseResult> {
   const campaign = getCampaign(db, campaignId);
-  const cacheId = designCaseCacheId(campaignId, interviewType);
+  const cacheId = designCaseCacheId(campaignId, interviewType, interviewLanguage);
   const cached = db.getFirstSync<DesignCaseRow>(
     `SELECT campaign_id, interview_type, related_node_name, title, scenario_md, constraints, evaluation_criteria
      FROM design_case WHERE id = ?`,
@@ -155,7 +164,7 @@ export async function generateDesignCase(
   );
 
   if (cached && !force) {
-    return rowToDesignCaseResult(cached, campaign);
+    return rowToDesignCaseResult(cached, campaign, interviewLanguage);
   }
 
   const context = buildInterviewContext(db, campaignId);
@@ -163,9 +172,9 @@ export async function generateDesignCase(
   const generated = await completeJson<DesignCaseGenerated>(
     'quiz',
     'design.case',
-    `${context}\n\n${caseUserHintForType(interviewType)}`,
+    `${context}\n\n${caseUserHintForType(interviewType, interviewLanguage)}`,
     undefined,
-    { type: interviewType },
+    { type: interviewType, language: interviewLanguage },
   );
 
   const identity = await getDeviceIdentity(db);
@@ -203,6 +212,7 @@ export async function generateDesignCase(
     company: campaign.company,
     roleTitle: campaign.roleTitle,
     interviewType: generated.interviewType,
+    interviewLanguage,
     relatedNodeName: generated.relatedNodeName ?? null,
     title: generated.title,
     scenarioMd: generated.scenarioMd,
@@ -217,7 +227,8 @@ export async function submitDesignAnswer(
   caseTitle: string,
   scenarioMd: string,
   userAnswer: string,
-  interviewType: ExamForm = 'design',
+  interviewType: MockInterviewKind = 'design',
+  interviewLanguage: MockInterviewLanguage = 'zh',
 ): Promise<DesignSubmitResult> {
   const context = buildInterviewContext(db, campaignId);
 
@@ -227,11 +238,12 @@ export async function submitDesignAnswer(
     `${context}
 
 题目类型：${interviewType}
+面试语言：${interviewLanguage === 'en' ? '英文' : '中文'}
 题目：${caseTitle}
 题干：${scenarioMd}
 候选人回答：${userAnswer}`,
     undefined,
-    { type: interviewType },
+    { type: interviewType, language: interviewLanguage },
   );
 
   const score = Math.min(5, Math.max(1, Math.round(scored.score)));

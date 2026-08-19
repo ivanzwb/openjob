@@ -23,7 +23,7 @@ import type {
   ToolName,
 } from '../../shared/enums';
 import type { Citation, JdParsed, ResumeParsed } from '../../shared/entities';
-import type { MockInterviewType } from '../../shared/design/prompts';
+import type { MockInterviewKind, MockInterviewType } from '../../shared/design/prompts';
 
 /**
  * 全量 schema 一次到位——后续阶段只填数据不改结构，避免频繁迁移。
@@ -235,7 +235,7 @@ export const designCase = sqliteTable(
       .notNull()
       .references(() => campaign.id, { onDelete: 'cascade' }),
     requestedType: text('requested_type').$type<MockInterviewType>().notNull(),
-    interviewType: text('interview_type').$type<ExamForm>().notNull(),
+    interviewType: text('interview_type').$type<MockInterviewKind>().notNull(),
     relatedNodeName: text('related_node_name'),
     title: text('title').notNull(),
     scenarioMd: text('scenario_md').notNull(),
