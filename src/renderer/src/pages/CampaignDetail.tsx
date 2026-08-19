@@ -933,6 +933,7 @@ export function CampaignDetail({
                       nudges={nudges}
                       applying={applyingHistory}
                       onApplyHistory={applyHistory}
+                      onOpenNode={jumpToNode}
                     />
                   </div>
                 </section>
