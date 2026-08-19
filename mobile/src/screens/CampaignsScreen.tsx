@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Alert, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import type { CampaignSummary, KnowledgeNodeView, TaskView } from '@shared/ipc';
 import type { NodeStatus } from '@shared/enums';
@@ -11,7 +11,7 @@ import { NodeStudyPanel } from '../components/NodeStudyPanel';
 import { StudyPlanCalendarPopover } from '../components/StudyPlanCalendarPopover';
 import { getRawDb } from '../db';
 import { getCampaignDetail, getNodeAnnotationSummary, getTodayPlan, listCampaigns } from '../data/queries';
-import { createCampaign } from '../data/mutations';
+import { createCampaign, deleteCampaign } from '../data/mutations';
 import { diagnoseExpandNode, diagnoseFetchIntel, diagnoseFromJd } from '../data/diagnosisLocal';
 import { createKnowledgeChild, updateKnowledgeNode } from '../data/nodesLocal';
 import { generatePlan } from '../data/planLocal';
@@ -55,6 +55,7 @@ function CampaignListView({
   const [company, setCompany] = useState('');
   const [role, setRole] = useState('');
   const [jd, setJd] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
 
   const reload = useCallback(() => setCampaigns(listCampaigns(getRawDb())), []);
 
@@ -65,6 +66,7 @@ function CampaignListView({
     setCompany('');
     setRole('');
     setJd('');
+    setCreateOpen(false);
     onOpenDetail(id);
   });
 
@@ -84,28 +86,126 @@ function CampaignListView({
     ).catch(() => undefined);
   };
 
+  const remove = (campaign: CampaignSummary): void => {
+    Alert.alert(
+      '删除备考职位',
+      `确定删除「${campaign.company} · ${campaign.roleTitle}」吗？相关考点、计划和讲解也会一起删除。`,
+      [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '删除',
+          style: 'destructive',
+          onPress: () => {
+            void runTask(`campaign:delete:${campaign.id}`, '删除备考', async () => {
+              await deleteCampaign(getRawDb(), campaign.id);
+              notifyDataChanged();
+              await triggerSync().catch(() => undefined);
+              reload();
+              return '备考已删除';
+            }).catch(() => undefined);
+          },
+        },
+      ],
+    );
+  };
+
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: theme.bg }} contentContainerStyle={{ padding: 16, gap: 10 }}>
-      <TextInput placeholder="公司" placeholderTextColor={theme.muted} value={company} onChangeText={setCompany} style={inputStyle(theme)} />
-      <TextInput placeholder="岗位" placeholderTextColor={theme.muted} value={role} onChangeText={setRole} style={inputStyle(theme)} />
-      <TextInput placeholder="JD" placeholderTextColor={theme.muted} value={jd} onChangeText={setJd} multiline style={[inputStyle(theme), { minHeight: 80 }]} />
-      <Pressable
-        onPress={create}
-        disabled={creating}
-        style={[btnStyle(theme), { opacity: creating ? 0.6 : 1 }]}
-      >
-        <Text style={{ color: '#fff' }}>{creating ? '创建中…' : '创建'}</Text>
-      </Pressable>
-      {campaigns.length === 0 && (
-        <Text style={{ color: theme.muted, fontSize: 13 }}>暂无备考，可在上方创建或从桌面端同步</Text>
-      )}
-      {campaigns.map((c) => (
-        <Pressable key={c.id} onPress={() => onOpenDetail(c.id)} style={cardStyle(theme)}>
-          <Text style={{ color: theme.text }}>{c.company} · {c.roleTitle}</Text>
-          <Text style={{ color: theme.muted, fontSize: 11 }}>{c.nodeCount} 考点 · {c.status}</Text>
+    <>
+      <ScrollView style={{ flex: 1, backgroundColor: theme.bg }} contentContainerStyle={{ padding: 16, gap: 10 }}>
+        {campaigns.length === 0 && (
+          <Text style={{ color: theme.muted, fontSize: 13 }}>暂无备考，可创建新职位或从桌面端同步</Text>
+        )}
+        {campaigns.map((c) => (
+          <View
+            key={c.id}
+            style={[
+              cardStyle(theme),
+              { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+            ]}
+          >
+            <Pressable onPress={() => onOpenDetail(c.id)} style={{ flex: 1, minWidth: 0 }}>
+              <Text style={{ color: theme.text }}>{c.company} · {c.roleTitle}</Text>
+              <Text style={{ color: theme.muted, fontSize: 11 }}>{c.nodeCount} 考点 · {c.status}</Text>
+            </Pressable>
+            <Pressable onPress={() => remove(c)} hitSlop={8}>
+              <Text style={{ color: theme.danger, fontSize: 12 }}>删除</Text>
+            </Pressable>
+          </View>
+        ))}
+        <Pressable
+          onPress={() => setCreateOpen(true)}
+          style={[btnStyle(theme), { marginTop: campaigns.length ? 4 : 0 }]}
+        >
+          <Text style={{ color: '#fff' }}>创建备考职位</Text>
         </Pressable>
-      ))}
-    </ScrollView>
+      </ScrollView>
+
+      <Modal visible={createOpen} transparent animationType="fade" onRequestClose={() => setCreateOpen(false)}>
+        <Pressable
+          onPress={() => setCreateOpen(false)}
+          style={{
+            flex: 1,
+            backgroundColor: theme.scrim,
+            justifyContent: 'center',
+            padding: 18,
+          }}
+        >
+          <Pressable
+            onPress={(e) => e.stopPropagation()}
+            style={{
+              gap: 10,
+              borderRadius: 16,
+              borderWidth: 1,
+              borderColor: theme.border,
+              backgroundColor: theme.surface,
+              padding: 16,
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text style={{ color: theme.text, fontSize: 16, fontWeight: '600' }}>创建备考职位</Text>
+              <Pressable onPress={() => setCreateOpen(false)} hitSlop={8}>
+                <Text style={{ color: theme.muted, fontSize: 13 }}>关闭</Text>
+              </Pressable>
+            </View>
+            <TextInput
+              placeholder="公司"
+              placeholderTextColor={theme.muted}
+              value={company}
+              onChangeText={setCompany}
+              editable={!creating}
+              style={inputStyle(theme)}
+            />
+            <TextInput
+              placeholder="岗位"
+              placeholderTextColor={theme.muted}
+              value={role}
+              onChangeText={setRole}
+              editable={!creating}
+              style={inputStyle(theme)}
+            />
+            <TextInput
+              placeholder="JD"
+              placeholderTextColor={theme.muted}
+              value={jd}
+              onChangeText={setJd}
+              editable={!creating}
+              multiline
+              style={[inputStyle(theme), { minHeight: 120, textAlignVertical: 'top' }]}
+            />
+            <Pressable
+              onPress={create}
+              disabled={creating || !company.trim() || !role.trim() || !jd.trim()}
+              style={[
+                btnStyle(theme),
+                { opacity: creating || !company.trim() || !role.trim() || !jd.trim() ? 0.55 : 1 },
+              ]}
+            >
+              <Text style={{ color: '#fff' }}>{creating ? '创建中…' : '创建'}</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </>
   );
 }
 

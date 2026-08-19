@@ -151,3 +151,10 @@ export async function createCampaign(
   });
   return id;
 }
+
+export async function deleteCampaign(db: SQLiteDatabase, id: string): Promise<void> {
+  const identity = await getDeviceIdentity(db);
+  writingAs(db, identity.deviceId, () => {
+    db.runSync(`DELETE FROM campaign WHERE id = ?`, id);
+  });
+}
