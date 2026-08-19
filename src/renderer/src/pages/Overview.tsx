@@ -7,8 +7,12 @@ import { PageShell } from '../components/PageShell';
 
 export function Overview({
   onOpenCampaign,
+  onOpenCampaignsList,
+  onOpenScripts,
 }: {
-  onOpenCampaign: (id: string) => void;
+  onOpenCampaign: (id: string, nodeId?: string) => void;
+  onOpenCampaignsList: () => void;
+  onOpenScripts: () => void;
 }): React.JSX.Element {
   const [data, setData] = useState<CampaignOverview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -61,18 +65,20 @@ export function Overview({
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
-          ['Campaign', String(data.campaignCount)],
-          ['进行中', String(data.activeCampaignCount)],
-          ['话术', String(data.totalSpeechSnippets)],
-          ['盲区题', String(data.totalBlindSpots)],
-        ].map(([label, value]) => (
-          <div
-            key={label}
-            className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
+          { label: 'Campaign', value: String(data.campaignCount), onClick: onOpenCampaignsList },
+          { label: '进行中', value: String(data.activeCampaignCount), onClick: onOpenCampaignsList },
+          { label: '话术', value: String(data.totalSpeechSnippets), onClick: onOpenScripts },
+          { label: '盲区题', value: String(data.totalBlindSpots), onClick: onOpenCampaignsList },
+        ].map((stat) => (
+          <button
+            type="button"
+            onClick={stat.onClick}
+            key={stat.label}
+            className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-left hover:border-[var(--color-muted)]"
           >
-            <div className="text-2xl font-semibold">{value}</div>
-            <div className="text-xs text-[var(--color-muted)]">{label}</div>
-          </div>
+            <div className="text-2xl font-semibold">{stat.value}</div>
+            <div className="text-xs text-[var(--color-muted)]">{stat.label}</div>
+          </button>
         ))}
       </div>
 
@@ -111,7 +117,7 @@ export function Overview({
               <li key={n.nodeId}>
                 <button
                   type="button"
-                  onClick={() => onOpenCampaign(n.campaignId)}
+                  onClick={() => onOpenCampaign(n.campaignId, n.nodeId)}
                   className="flex w-full items-center justify-between rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-left text-sm hover:border-[var(--color-muted)]"
                 >
                   <span>

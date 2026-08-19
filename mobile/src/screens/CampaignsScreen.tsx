@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import type { CampaignSummary, KnowledgeNodeView, TaskView } from '@shared/ipc';
 import type { NodeStatus } from '@shared/enums';
 import { nodeIdsForPlanFilter, nodeIdsForTreeFilter } from '@shared/planFilter';
@@ -17,6 +18,7 @@ import { generatePlan } from '../data/planLocal';
 import { useApp } from '../context/AppContext';
 import { runTask, useTaskResult, useTaskState } from '../context/RemoteTaskContext';
 import { useLocalDataReload } from '../hooks/useLocalDataReload';
+import type { RootTabParamList } from '../navigation/RootTabs';
 import { useTheme, type Palette } from '../theme';
 
 const CREATE_CAMPAIGN_KEY = 'campaign:create';
@@ -109,9 +111,13 @@ function CampaignListView({
 
 function CampaignDetailView({
   id,
+  initialNodeId,
+  initialNodeKey,
   onBack,
 }: {
   id: string;
+  initialNodeId?: string;
+  initialNodeKey?: number;
   onBack: () => void;
 }): React.JSX.Element {
   const theme = useTheme();
@@ -136,6 +142,7 @@ function CampaignDetailView({
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [expandingNodeId, setExpandingNodeId] = useState<string | null>(null);
   const [lastNodeId, setLastNodeId] = useState<string | null>(() => readLastNodeId(id));
+  const [appliedInitialNodeKey, setAppliedInitialNodeKey] = useState('');
 
   // setDetail 每次都换新对象，重渲染由它带动，不需要额外的计数器
   const reload = useCallback(() => {
@@ -278,6 +285,21 @@ function CampaignDetailView({
   // planKey 的结果由日历弹窗认领（一个 key 只能被领走一次），它会回调 onTasksChanged 触发这里的 reload
   useTaskResult(diagnoseKey, reload);
   useTaskResult(intelKey, reload);
+
+  const initialNodeRequestKey = initialNodeId ? `${initialNodeId}:${initialNodeKey ?? 0}` : '';
+  if (initialNodeId && initialNodeRequestKey !== appliedInitialNodeKey) {
+    const node = detail.nodes.find((n) => n.id === initialNodeId);
+    if (node) {
+      setAppliedInitialNodeKey(initialNodeRequestKey);
+      setCalendarFilterDate(null);
+      setStatusFilter('all');
+      setMarkFilter('all');
+      setSelectedNode(node);
+      setNodeStudyMode('explain');
+      setLastNodeId(node.id);
+      writeLastNodeId(id, node.id);
+    }
+  }
 
   return (
     <>
@@ -528,23 +550,43 @@ function CampaignDetailView({
   );
 }
 
-export function CampaignsScreen(): React.JSX.Element {
+type CampaignsProps = BottomTabScreenProps<RootTabParamList, 'Campaigns'>;
+
+export function CampaignsScreen({ route }: CampaignsProps): React.JSX.Element {
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [focusNodeId, setFocusNodeId] = useState<string | undefined>(undefined);
+  const [focusKey, setFocusKey] = useState<number | undefined>(undefined);
+  const [handledRouteKey, setHandledRouteKey] = useState('');
   const [mountedDetails, setMountedDetails] = useState<Set<string>>(() => new Set());
 
-  const openDetail = (id: string) => {
+  const openDetail = useCallback((id: string, nodeId?: string, key?: number) => {
     setDetailId(id);
+    setFocusNodeId(nodeId);
+    setFocusKey(key);
     setMountedDetails((prev) => new Set(prev).add(id));
-  };
+  }, []);
+
+  const routeKey = route.params?.campaignId
+    ? `${route.params.campaignId}:${route.params.nodeId ?? ''}:${route.params.focusKey ?? 0}`
+    : '';
+  if (route.params?.campaignId && routeKey !== handledRouteKey) {
+    setHandledRouteKey(routeKey);
+    openDetail(route.params.campaignId, route.params.nodeId, route.params.focusKey);
+  }
 
   return (
     <View style={{ flex: 1 }}>
       <KeepAlivePanel active={detailId === null}>
-        <CampaignListView onOpenDetail={openDetail} />
+          <CampaignListView onOpenDetail={(id) => openDetail(id)} />
       </KeepAlivePanel>
       {[...mountedDetails].map((id) => (
         <KeepAlivePanel key={id} active={detailId === id}>
-          <CampaignDetailView id={id} onBack={() => setDetailId(null)} />
+          <CampaignDetailView
+            id={id}
+            initialNodeId={detailId === id ? focusNodeId : undefined}
+            initialNodeKey={detailId === id ? focusKey : undefined}
+            onBack={() => setDetailId(null)}
+          />
         </KeepAlivePanel>
       ))}
     </View>

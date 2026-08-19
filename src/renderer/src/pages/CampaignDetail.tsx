@@ -32,10 +32,14 @@ import { runTask, useTask, useTaskResult } from '../ipc/taskStore';
 export function CampaignDetail({
   id,
   autoDiagnose,
+  initialNodeId,
+  initialNodeKey,
   onBack,
 }: {
   id: string;
   autoDiagnose?: boolean;
+  initialNodeId?: string;
+  initialNodeKey?: number;
   onBack: () => void;
 }): React.JSX.Element {
   const [detail, setDetail] = useState<CampaignDetailData | null>(null);
@@ -68,6 +72,7 @@ export function CampaignDetail({
   const [prevCalendarFilterDate, setPrevCalendarFilterDate] = useState<string | null>(calendarFilterDate);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [appliedInitialNodeKey, setAppliedInitialNodeKey] = useState('');
   const [lastNodeId, setLastNodeId] = useState<string | null>(() =>
     window.localStorage.getItem(`openjob:lastNode:${id}`),
   );
@@ -392,6 +397,21 @@ export function CampaignDetail({
 
   if (!detail) {
     return <p className="p-6 text-sm text-[var(--color-muted)]">加载中…</p>;
+  }
+
+  if (initialNodeId) {
+    const requestKey = `${initialNodeId}:${initialNodeKey ?? 0}`;
+    if (
+      appliedInitialNodeKey !== requestKey &&
+      detail.nodes.some((node) => node.id === initialNodeId)
+    ) {
+      setAppliedInitialNodeKey(requestKey);
+      setPageTab('study');
+      setSelectedNodeId(initialNodeId);
+      setNodeStudyMode('explain');
+      setLastNodeId(initialNodeId);
+      window.localStorage.setItem(`openjob:lastNode:${id}`, initialNodeId);
+    }
   }
 
   const { campaign, nodes, intel } = detail;

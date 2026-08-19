@@ -7,7 +7,7 @@ import { CampaignList } from './CampaignList';
 export type CampaignView =
   | { kind: 'list' }
   | { kind: 'create' }
-  | { kind: 'detail'; id: string; autoDiagnose?: boolean };
+  | { kind: 'detail'; id: string; autoDiagnose?: boolean; focusNodeId?: string; focusKey?: number };
 
 function viewKey(view: CampaignView): string {
   return view.kind === 'detail' ? `detail:${view.id}` : view.kind;
@@ -59,6 +59,8 @@ export function CampaignsPanel({
             autoDiagnose={
               view.kind === 'detail' && view.id === id ? view.autoDiagnose : undefined
             }
+            initialNodeId={view.kind === 'detail' && view.id === id ? view.focusNodeId : undefined}
+            initialNodeKey={view.kind === 'detail' && view.id === id ? view.focusKey : undefined}
             onBack={() => setView({ kind: 'list' })}
           />
         </TabPanel>

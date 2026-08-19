@@ -177,10 +177,15 @@ export default function App(): React.JSX.Element {
           {mountedTabs.has('overview') && (
             <TabPanel active={tab === 'overview'} className="overflow-y-auto">
               <Overview
-                onOpenCampaign={(id) => {
-                  setView({ kind: 'detail', id });
+                onOpenCampaign={(id, nodeId) => {
+                  setView({ kind: 'detail', id, focusNodeId: nodeId, focusKey: Date.now() });
                   selectTab('campaigns');
                 }}
+                onOpenCampaignsList={() => {
+                  setView({ kind: 'list' });
+                  selectTab('campaigns');
+                }}
+                onOpenScripts={() => selectTab('scripts')}
               />
             </TabPanel>
           )}
