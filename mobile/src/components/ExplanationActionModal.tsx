@@ -157,9 +157,10 @@ export function ExplanationActionModal({
         padding: 16,
         gap: 10,
         alignSelf: useCenterPanel ? 'center' : 'stretch',
+        overflow: 'hidden',
       }}
     >
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
         <Text style={{ color: theme.text, fontSize: 15, fontWeight: '600' }}>{title}</Text>
         <Pressable onPress={onClose} hitSlop={8}>
           <Text style={{ color: theme.muted, fontSize: 13 }}>关闭</Text>
@@ -167,7 +168,7 @@ export function ExplanationActionModal({
       </View>
 
       {phrase && mode !== 'viewMarker' && mode !== 'regenerate' && (
-        <Text style={{ color: theme.muted, fontSize: 11 }} numberOfLines={2}>
+        <Text style={{ color: theme.muted, fontSize: 11, flexShrink: 0 }} numberOfLines={2}>
           「{phrase}」
         </Text>
       )}
@@ -249,36 +250,37 @@ export function ExplanationActionModal({
 
       {(mode === 'note' || mode === 'edit') && (
         <>
-          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'flex-end' }}>
+          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'flex-end', flexShrink: 0 }}>
             <VoiceInputButton
               onTranscript={(text) => onDraftChange(draft + text)}
               disabled={busy}
             />
           </View>
-          <TextInput
-          multiline
-          value={draft}
-          onChangeText={onDraftChange}
-          placeholder={mode === 'note' ? '写下你的笔记…' : '替换为新的讲解内容…'}
-          placeholderTextColor={theme.muted}
-          editable={!busy}
-          style={{
-            flex: 1,
-            minHeight: mode === 'edit' ? 200 : 160,
-            color: theme.text,
-            borderWidth: 1,
-            borderColor: theme.border,
-            borderRadius: 8,
-            padding: 10,
-            textAlignVertical: 'top',
-            fontSize: 13,
-            lineHeight: 20,
-          }}
-        />
+          <View style={{ flex: 1, minHeight: 0 }}>
+            <TextInput
+              multiline
+              value={draft}
+              onChangeText={onDraftChange}
+              placeholder={mode === 'note' ? '写下你的笔记…' : '替换为新的讲解内容…'}
+              placeholderTextColor={theme.muted}
+              editable={!busy}
+              style={{
+                height: '100%',
+                color: theme.text,
+                borderWidth: 1,
+                borderColor: theme.border,
+                borderRadius: 8,
+                padding: 10,
+                textAlignVertical: 'top',
+                fontSize: 13,
+                lineHeight: 20,
+              }}
+            />
+          </View>
         </>
       )}
 
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'flex-end' }}>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'flex-end', flexShrink: 0 }}>
         {mode === 'viewMarker' && marker && (
           <Pressable onPress={onDeleteMarker} disabled={busy} style={{ paddingHorizontal: 12, paddingVertical: 8 }}>
             <Text style={{ color: theme.danger, fontSize: 13 }}>删除</Text>

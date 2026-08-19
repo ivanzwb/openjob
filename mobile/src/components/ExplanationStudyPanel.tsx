@@ -5,9 +5,8 @@ import {
   Text,
   TextInput,
   View,
-  type NativeSyntheticEvent,
-  type TextInputSelectionChangeEventData,
 } from 'react-native';
+import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import type { Annotation, Explanation } from '@shared/entities';
 import type { ExplanationTier } from '@shared/enums';
 import {
@@ -45,6 +44,262 @@ const TIERS: { id: ExplanationTier; label: string }[] = [
   { id: 'deep', label: '深挖' },
 ];
 
+type SelectionAction = 'highlight' | 'note' | 'elaboration' | 'edit' | 'speech';
+
+type SelectionWebMessage =
+  | { type: 'height'; height: number }
+  | { type: 'clear' }
+  | { type: 'marker'; id: string }
+  | { type: 'selection'; text: string; start: number }
+  | { type: 'action'; action: SelectionAction; text: string; start: number };
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function annotationStart(contentMd: string, mark: Annotation): number | undefined {
+  const selected = mark.selectedText?.trim();
+  if (!selected) return undefined;
+  if (
+    mark.selectionStart != null &&
+    contentMd.slice(mark.selectionStart, mark.selectionStart + selected.length) === selected
+  ) {
+    return mark.selectionStart;
+  }
+  const fallback = contentMd.indexOf(selected);
+  return fallback >= 0 ? fallback : undefined;
+}
+
+function buildMarkedContentHtml(contentMd: string, annotations: Annotation[]): string {
+  type Range = {
+    start: number;
+    end: number;
+    highlightColor?: string;
+    markers: Annotation[];
+  };
+
+  const ranges: Range[] = [];
+  for (const mark of annotations) {
+    if (mark.kind !== 'highlight' && mark.kind !== 'note' && mark.kind !== 'elaboration') continue;
+    const selected = mark.selectedText?.trim();
+    const start = annotationStart(contentMd, mark);
+    if (!selected || start === undefined) continue;
+    const end = start + selected.length;
+    const existing = ranges.find((r) => r.start === start && r.end === end);
+    if (existing) {
+      if (mark.kind === 'highlight') {
+        existing.highlightColor = mark.highlightColor ?? DEFAULT_HIGHLIGHT_COLOR;
+      } else {
+        existing.markers.push(mark);
+      }
+      continue;
+    }
+    const overlaps = ranges.some((r) => !(end <= r.start || start >= r.end));
+    if (overlaps) continue;
+    ranges.push({
+      start,
+      end,
+      ...(mark.kind === 'highlight'
+        ? { highlightColor: mark.highlightColor ?? DEFAULT_HIGHLIGHT_COLOR }
+        : {}),
+      markers: mark.kind === 'note' || mark.kind === 'elaboration' ? [mark] : [],
+    });
+  }
+
+  ranges.sort((a, b) => a.start - b.start);
+  let cursor = 0;
+  let html = '';
+  for (const range of ranges) {
+    if (range.start > cursor) html += escapeHtml(contentMd.slice(cursor, range.start));
+    const text = escapeHtml(contentMd.slice(range.start, range.end));
+    const markerIds = range.markers.map((m) => m.id).join(' ');
+    const primaryMarker = range.markers[0];
+    const markerBadge = range.markers.some((m) => m.kind === 'note') && range.markers.some((m) => m.kind === 'elaboration')
+      ? '笔/细'
+      : range.markers.some((m) => m.kind === 'note')
+        ? '笔'
+        : range.markers.some((m) => m.kind === 'elaboration')
+          ? '细'
+          : '';
+    const classes = [
+      range.highlightColor ? 'highlight-mark' : '',
+      range.markers.length ? 'annotation-mark' : '',
+    ].filter(Boolean).join(' ');
+    const style = range.highlightColor ? ` style="background:${escapeHtml(range.highlightColor)}"` : '';
+    const badge = markerBadge ? ` data-badge="${markerBadge}"` : '';
+    const ids = markerIds ? ` data-annotation-id="${escapeHtml(markerIds)}"` : '';
+    const click = primaryMarker ? ` onclick="openMarker('${escapeHtml(primaryMarker.id)}')"` : '';
+    html += `<span class="${classes}"${style}${ids}${badge}${click}>${text}</span>`;
+    cursor = range.end;
+  }
+  if (cursor < contentMd.length) html += escapeHtml(contentMd.slice(cursor));
+  return html || escapeHtml(contentMd);
+}
+
+function buildSelectionHtml(contentMd: string, annotations: Annotation[], theme: Palette): string {
+  const body = buildMarkedContentHtml(contentMd, annotations);
+  const textColor = escapeHtml(theme.text);
+  const bgColor = escapeHtml(theme.bg);
+  const surfaceColor = escapeHtml(theme.surface);
+  const borderColor = escapeHtml(theme.border);
+  const accentColor = escapeHtml(theme.accent);
+  return `<!doctype html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: ${bgColor};
+      color: ${textColor};
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      -webkit-user-select: text;
+      user-select: text;
+    }
+    #content {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      border: 1px solid ${borderColor};
+      border-radius: 10px;
+      padding: 10px;
+      font-size: 13px;
+      line-height: 20px;
+      min-height: 120px;
+      box-sizing: border-box;
+    }
+    .highlight-mark {
+      border-radius: 3px;
+      padding: 0 2px;
+      color: #1f2937;
+    }
+    .annotation-mark {
+      border-bottom: 1px dashed ${accentColor};
+      cursor: pointer;
+    }
+    .annotation-mark::after {
+      content: attr(data-badge);
+      display: inline-block;
+      margin-left: 2px;
+      padding: 0 3px;
+      border-radius: 999px;
+      background: ${surfaceColor};
+      color: ${accentColor};
+      border: 1px solid ${borderColor};
+      font-size: 9px;
+      line-height: 13px;
+      vertical-align: super;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    #toolbar {
+      position: absolute;
+      z-index: 20;
+      display: none;
+      align-items: center;
+      gap: 6px;
+      max-width: calc(100vw - 16px);
+      padding: 6px;
+      border: 1px solid ${borderColor};
+      border-radius: 12px;
+      background: ${surfaceColor};
+      box-shadow: 0 8px 24px rgba(0,0,0,.28);
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    #toolbar button {
+      border: 0;
+      border-radius: 8px;
+      padding: 6px 8px;
+      background: ${bgColor};
+      color: ${accentColor};
+      font-size: 12px;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+  <div id="content">${body}</div>
+  <div id="toolbar">
+    <button onclick="runAction('highlight')">高亮</button>
+    <button onclick="runAction('note')">笔记</button>
+    <button onclick="runAction('elaboration')">细化</button>
+    <button onclick="runAction('edit')">编辑</button>
+    <button onclick="runAction('speech')">话术</button>
+  </div>
+  <script>
+    const content = document.getElementById('content');
+    const toolbar = document.getElementById('toolbar');
+    let current = null;
+    function post(payload) {
+      window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify(payload));
+    }
+    function selectionStartInContent(range) {
+      const pre = range.cloneRange();
+      pre.selectNodeContents(content);
+      pre.setEnd(range.startContainer, range.startOffset);
+      return pre.toString().length;
+    }
+    function hideToolbar() {
+      toolbar.style.display = 'none';
+      current = null;
+      post({ type: 'clear' });
+    }
+    function updateHeight() {
+      post({ type: 'height', height: Math.ceil(document.body.scrollHeight) });
+    }
+    function updateSelection() {
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
+        hideToolbar();
+        return;
+      }
+      const range = sel.getRangeAt(0);
+      if (!content.contains(range.commonAncestorContainer)) {
+        hideToolbar();
+        return;
+      }
+      const raw = range.toString();
+      const text = raw.trim();
+      const leading = raw.search(/\\S/);
+      if (!text || leading < 0) {
+        hideToolbar();
+        return;
+      }
+      const start = selectionStartInContent(range) + leading;
+      current = { text, start };
+      const rect = range.getBoundingClientRect();
+      toolbar.style.display = 'flex';
+      const top = Math.max(8, rect.top + window.scrollY - toolbar.offsetHeight - 8);
+      const left = Math.min(Math.max(8, rect.left + window.scrollX), window.innerWidth - toolbar.offsetWidth - 8);
+      toolbar.style.top = top + 'px';
+      toolbar.style.left = left + 'px';
+      post({ type: 'selection', text, start });
+      updateHeight();
+    }
+    function runAction(action) {
+      if (!current) updateSelection();
+      if (!current) return;
+      post({ type: 'action', action, text: current.text, start: current.start });
+    }
+    function openMarker(id) {
+      post({ type: 'marker', id });
+    }
+    document.addEventListener('selectionchange', () => setTimeout(updateSelection, 0));
+    document.addEventListener('mouseup', () => setTimeout(updateSelection, 0));
+    document.addEventListener('touchend', () => setTimeout(updateSelection, 80));
+    new ResizeObserver(updateHeight).observe(document.body);
+    updateHeight();
+  </script>
+</body>
+</html>`;
+}
+
 function replaceExcerpt(contentMd: string, selected: string, replacement: string): string {
   const sel = selected.trim();
   const rep = replacement.trim();
@@ -64,7 +319,6 @@ export function ExplanationStudyPanel({
 }): React.JSX.Element {
   const theme = useTheme();
   const btnGhost = makeBtnGhost(theme);
-  const actionBtn = makeActionBtn(theme);
   const { notifyDataChanged } = useApp();
   const [tier, setTier] = useState<ExplanationTier>(initialTier);
   const [content, setContent] = useState<Explanation | null>(null);
@@ -77,6 +331,7 @@ export function ExplanationStudyPanel({
   const [modalDraft, setModalDraft] = useState('');
   const [highlightColor, setHighlightColor] = useState<string>(DEFAULT_HIGHLIGHT_COLOR);
   const [viewMarker, setViewMarker] = useState<Annotation | null>(null);
+  const [webHeight, setWebHeight] = useState(180);
 
   // 按「考点 + 档位」记讲解任务，按考点记标注类操作：
   // 切页、换档位、关掉弹窗再回来，都能看到还在跑，也不会重复发起同一件事
@@ -135,10 +390,10 @@ export function ExplanationStudyPanel({
   const elaborationMark = phrase.trim()
     ? findMarkOnSelection(contentMarks, 'elaboration', phrase, selectionStart)
     : undefined;
-  const doneLabels = [
-    noteMark ? '记过笔记' : null,
-    elaborationMark ? '细化过' : null,
-  ].filter((v): v is string => v !== null);
+  const selectionHtml = useMemo(
+    () => (content ? buildSelectionHtml(content.contentMd, annotations, theme) : ''),
+    [annotations, content, theme],
+  );
 
   const loadAnnotations = useCallback((explanationId: string) => {
     setAnnotations(listAnnotations(getRawDb(), 'explanation', explanationId));
@@ -223,28 +478,56 @@ export function ExplanationStudyPanel({
     );
   };
 
-  const adoptNativeSelection = (
-    event: NativeSyntheticEvent<TextInputSelectionChangeEventData>,
-  ): void => {
-    if (editing || modalMode !== null) return;
-    const { start, end } = event.nativeEvent.selection;
-    if (start === end) {
-      setPhrase('');
-      setSelectionStart(undefined);
-      return;
-    }
-    const from = Math.min(start, end);
-    const to = Math.max(start, end);
-    const raw = content?.contentMd.slice(from, to) ?? '';
-    const leading = raw.search(/\S/);
-    const selected = raw.trim();
-    if (!selected || leading < 0) {
-      setPhrase('');
-      setSelectionStart(undefined);
-      return;
-    }
+  const setSelectionFromWeb = (text: string, start: number): string => {
+    const selected = text.trim();
     setPhrase(selected);
-    setSelectionStart(from + leading);
+    setSelectionStart(start);
+    return selected;
+  };
+
+  const openSelectionModal = (mode: ActionModalMode, text: string, start: number): void => {
+    const selected = setSelectionFromWeb(text, start);
+    if (!selected && mode !== 'viewMarker' && mode !== 'regenerate') return;
+    if (mode === 'highlight') {
+      const existing = findHighlightMark(selected, highlightMarks, start);
+      setHighlightColor(existing?.highlightColor ?? DEFAULT_HIGHLIGHT_COLOR);
+    }
+    if (mode === 'edit') setModalDraft(selected);
+    if (mode === 'note' || mode === 'elaboration' || mode === 'regenerate') setModalDraft('');
+    setModalMode(mode);
+  };
+
+  const handleSelectionWebMessage = (event: WebViewMessageEvent): void => {
+    let message: SelectionWebMessage;
+    try {
+      message = JSON.parse(event.nativeEvent.data) as SelectionWebMessage;
+    } catch {
+      return;
+    }
+    if (message.type === 'height') {
+      setWebHeight(Math.max(140, message.height));
+      return;
+    }
+    if (message.type === 'clear') {
+      setPhrase('');
+      setSelectionStart(undefined);
+      return;
+    }
+    if (message.type === 'marker') {
+      const mark = contentMarks.find((m) => m.id === message.id);
+      if (mark) locateMark(mark);
+      return;
+    }
+    if (message.type === 'selection') {
+      setSelectionFromWeb(message.text, message.start);
+      return;
+    }
+    if (message.action === 'speech') {
+      setSelectionFromWeb(message.text, message.start);
+      saveSpeech(message.text);
+      return;
+    }
+    openSelectionModal(message.action, message.text, message.start);
   };
 
   const saveFullEdit = (): void => {
@@ -336,6 +619,7 @@ export function ExplanationStudyPanel({
         kind: 'note',
         noteMd,
         ...(trimmed ? { selectedText: trimmed } : {}),
+        ...(selectionStart !== undefined ? { selectionStart } : {}),
       });
       return '笔记已保存';
     })
@@ -366,8 +650,8 @@ export function ExplanationStudyPanel({
       .catch(() => undefined);
   };
 
-  const saveSpeech = (): void => {
-    const text = phrase.trim();
+  const saveSpeech = (selectedText = phrase): void => {
+    const text = selectedText.trim();
     if (!text) return;
     void runTask(speechKey, '存入话术库', async () => {
       const saved = await saveSpeechFromNode(getRawDb(), nodeId, text, tier);
@@ -402,6 +686,7 @@ export function ExplanationStudyPanel({
         kind: 'elaboration',
         noteMd: result.elaborationMd,
         selectedText: result.selectedText.slice(0, 500),
+        ...(selectionStart !== undefined ? { selectionStart } : {}),
       });
       return '细化讲解已保存';
     }).catch(() => undefined);
@@ -533,99 +818,17 @@ export function ExplanationStudyPanel({
           </View>
         </>
       ) : (
-        <TextInput
-          multiline
-          value={content.contentMd}
-          onChangeText={() => undefined}
-          onSelectionChange={adoptNativeSelection}
+        <WebView
+          originWhitelist={['*']}
+          source={{ html: selectionHtml }}
+          onMessage={handleSelectionWebMessage}
           scrollEnabled={false}
-          showSoftInputOnFocus={false}
-          textAlignVertical="top"
+          hideKeyboardAccessoryView
           style={{
-            color: theme.text,
-            borderWidth: 1,
-            borderColor: phrase.trim() ? theme.accent : theme.border,
-            borderRadius: 10,
-            padding: 10,
-            fontSize: 13,
-            lineHeight: 20,
+            height: webHeight,
             backgroundColor: theme.bg,
           }}
         />
-      )}
-
-      {!editing && phrase.trim() && (
-        <View
-          style={{
-            gap: 6,
-            borderWidth: 1,
-            borderColor: theme.border,
-            borderRadius: 12,
-            padding: 8,
-            backgroundColor: theme.surface,
-          }}
-        >
-          <Text style={{ color: theme.muted, fontSize: 11 }} numberOfLines={2}>
-            已选中：{phrase.trim()}
-          </Text>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-            <Pressable
-              onPress={() => openModal('highlight')}
-              disabled={!phrase.trim()}
-              style={[actionBtn, !phrase.trim() && { opacity: 0.5 }]}
-            >
-              <Text style={{ color: theme.accent, fontSize: 12 }}>划词高亮</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => openModal('note')}
-              disabled={!phrase.trim() || Boolean(noteMark)}
-              style={[actionBtn, (!phrase.trim() || Boolean(noteMark)) && { opacity: 0.5 }]}
-            >
-              <Text style={{ color: theme.accent, fontSize: 12 }}>
-                {noteMark ? '已有笔记' : '记笔记'}
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={() => openModal('elaboration')}
-              disabled={!phrase.trim() || Boolean(elaborationMark)}
-              style={[actionBtn, (!phrase.trim() || Boolean(elaborationMark)) && { opacity: 0.5 }]}
-            >
-              <Text style={{ color: theme.accent, fontSize: 12 }}>
-                {elaborationMark ? '已细化' : '细化讲解'}
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={() => openModal('edit')}
-              disabled={!phrase.trim()}
-              style={[actionBtn, !phrase.trim() && { opacity: 0.5 }]}
-            >
-              <Text style={{ color: theme.accent, fontSize: 12 }}>编辑选中句</Text>
-            </Pressable>
-            <Pressable
-              onPress={saveSpeech}
-              disabled={!phrase.trim() || savingSpeech}
-              style={[actionBtn, (!phrase.trim() || savingSpeech) && { opacity: 0.5 }]}
-            >
-              <Text style={{ color: theme.accent, fontSize: 12 }}>
-                {savingSpeech ? '保存中…' : '存入话术库'}
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={() => {
-                setPhrase('');
-                setSelectionStart(undefined);
-              }}
-              style={actionBtn}
-            >
-              <Text style={{ color: theme.muted, fontSize: 12 }}>取消选择</Text>
-            </Pressable>
-          </View>
-          {doneLabels.length > 0 && (
-            <Text style={{ color: theme.muted, fontSize: 11 }}>
-              这段已经{doneLabels.join('、')}，想重做就先在正文里点开原来的标记删掉
-            </Text>
-          )}
-        </View>
       )}
 
       <ExplanationActionModal
@@ -664,15 +867,6 @@ function makeBtnGhost(theme: Palette) {
   return {
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 8,
-    backgroundColor: theme.bg,
-  } as const;
-}
-
-function makeActionBtn(theme: Palette) {
-  return {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
     borderRadius: 8,
     backgroundColor: theme.bg,
   } as const;
