@@ -54,7 +54,7 @@ export function OverflowHintScrollView({
           refreshOverflow();
           props.onContentSizeChange?.(width, height);
         }}
-        contentContainerStyle={[{ paddingRight: overflow ? 48 : 0 }, contentContainerStyle]}
+        contentContainerStyle={[{ paddingRight: overflow ? 24 : 0 }, contentContainerStyle]}
       >
         {children}
       </ScrollView>
@@ -66,26 +66,12 @@ export function OverflowHintScrollView({
             right: 0,
             top: 0,
             bottom: 0,
-            width: 44,
+            width: 24,
             alignItems: 'flex-end',
             justifyContent: 'center',
-            backgroundColor: `${theme.bg}F2`,
           }}
         >
-          <View
-            style={{
-              width: 28,
-              height: 28,
-              borderRadius: 14,
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: theme.surface,
-              borderWidth: 1,
-              borderColor: theme.border,
-            }}
-          >
-            <Text style={{ color: theme.accent, fontSize: 22, lineHeight: 24 }}>›</Text>
-          </View>
+          <Text style={{ color: theme.accent, fontSize: 24, lineHeight: 26 }}>›</Text>
         </View>
       )}
     </View>
