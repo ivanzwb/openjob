@@ -1,7 +1,7 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import type { ComponentProps } from 'react';
-import { Text, View } from 'react-native';
+import { ActivityIndicator, Text, View } from 'react-native';
 import { OverviewScreen } from '../screens/OverviewScreen';
 import { ScriptsScreen } from '../screens/ScriptsScreen';
 import { CampaignsScreen } from '../screens/CampaignsScreen';
@@ -70,8 +70,12 @@ function TaskHeaderRight(): React.JSX.Element {
         backgroundColor: theme.bg,
         paddingHorizontal: 8,
         paddingVertical: 4,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
       }}
     >
+      <ActivityIndicator size="small" color={theme.accent} />
       <Text style={{ color: theme.accent, fontSize: 11 }} numberOfLines={1}>
         正在 {active.label}
         {active.count > 1 ? ` +${active.count - 1}` : ''}
@@ -155,6 +159,7 @@ export function RootTabs(): React.JSX.Element {
         options={{
           title: '源码',
           tabBarButton: () => null,
+          tabBarItemStyle: { display: 'none' },
           headerTitle: () => <AppHeaderTitle title="源码" icon={TAB_ICONS.Repos.active} />,
         }}
       />
@@ -164,6 +169,7 @@ export function RootTabs(): React.JSX.Element {
         options={{
           title: '话术',
           tabBarButton: () => null,
+          tabBarItemStyle: { display: 'none' },
           headerTitle: () => <AppHeaderTitle title="话术" icon={TAB_ICONS.Scripts.active} />,
         }}
       />
@@ -173,6 +179,7 @@ export function RootTabs(): React.JSX.Element {
         options={{
           title: '同步',
           tabBarButton: () => null,
+          tabBarItemStyle: { display: 'none' },
           headerTitle: () => <AppHeaderTitle title="同步" icon={TAB_ICONS.Sync.active} />,
         }}
       />
