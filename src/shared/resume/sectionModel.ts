@@ -216,6 +216,28 @@ export function createEmptyEntry(): SectionEntry {
 }
 
 /**
+ * 教育经历的表头 role 约定是「专业 · 学历」：`### 学校 | 计算机科学与技术 · 本科 | 2018-09 ~ 2022-06`。
+ * 表单里拆成「专业」「学历」两个输入框，落库仍合并进 role，保持 markdown 契约不变。
+ * 历史数据可能只有专业或只有学历（如「计算机科学与技术」「本科」），都能正确拆开。
+ */
+const DEGREE_WORDS = ['高中及以下', '中专', '大专', '专科', '本科', '硕士', '博士', '研究生', '学士', 'MBA'];
+
+export function splitEducationRole(role: string): { major: string; degree: string } {
+  const text = role.trim();
+  if (!text) return { major: '', degree: '' };
+  const matched = DEGREE_WORDS.find((word) => text.endsWith(word));
+  if (matched) {
+    const major = text.slice(0, -matched.length).replace(/[·、,，|｜\s]+$/, '').trim();
+    return { major, degree: matched };
+  }
+  return { major: text, degree: '' };
+}
+
+export function joinEducationRole(major: string, degree: string): string {
+  return [major.trim(), degree.trim()].filter(Boolean).join(' · ');
+}
+
+/**
  * 所有内容都落进条目字段：`### ` 之外也认「机构 | 岗位 | 时间」和以时间结尾的表头，
  * 表头之外的内容原样进描述，格式（分条、分段）由用户自己掌握。
  */

@@ -10,6 +10,7 @@ import {
   fieldSpecFor,
   formatUnitNumber,
   formKindForSection,
+  joinEducationRole,
   parseBulletsSection,
   parseEntriesSection,
   parseFieldsSection,
@@ -18,6 +19,7 @@ import {
   serializeBulletsSection,
   serializeEntriesSection,
   serializeFieldsSection,
+  splitEducationRole,
   moveInList,
   toMonthInputValue,
 } from '@shared/resume/sectionModel';
@@ -30,13 +32,21 @@ const GHOST_BTN =
 const ADD_BTN =
   'inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-dashed border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-muted)] hover:border-[var(--color-accent)] hover:text-[var(--color-fg)]';
 
-const ENTRY_LABELS: Record<string, { org: string; role: string; title: string }> = {
+const ENTRY_LABELS: Record<
+  string,
+  { org: string; role: string; title: string; splitRole?: boolean }
+> = {
   experience: { org: '公司名称', role: '岗位', title: '工作经历' },
   project: { org: '项目名称', role: '角色', title: '项目' },
-  education: { org: '学校名称', role: '专业与学历', title: '教育经历' },
+  education: { org: '学校名称', role: '专业与学历', title: '教育经历', splitRole: true },
 };
 
-function entryLabels(key: ResumeSectionKey): { org: string; role: string; title: string } {
+function entryLabels(key: ResumeSectionKey): {
+  org: string;
+  role: string;
+  title: string;
+  splitRole?: boolean;
+} {
   return ENTRY_LABELS[key] ?? { org: '名称', role: '角色', title: '条目' };
 }
 
@@ -524,7 +534,7 @@ function EntryCard({
   entry: SectionEntry;
   index: number;
   total: number;
-  labels: { org: string; role: string; title: string };
+  labels: { org: string; role: string; title: string; splitRole?: boolean };
   polish?: SectionPolish;
   taskKey: string;
   mergeSection: (polished: string) => string;
@@ -533,6 +543,8 @@ function EntryCard({
   onRemove: () => void;
 }): React.JSX.Element {
   const isCurrent = entry.end.trim() === '至今';
+  // 教育经历的 role 是「专业 · 学历」，表单拆两个输入框，落库仍合并
+  const edu = labels.splitRole ? splitEducationRole(entry.role) : null;
 
   return (
     <div className="rounded-lg border border-[var(--color-border)] p-3 space-y-3">
@@ -565,23 +577,58 @@ function EntryCard({
         </div>
       </div>
 
+      {edu ? (
+        <div className="grid grid-cols-3 gap-3">
+          <div>
+            <label className={FIELD_LABEL}>{labels.org}</label>
+            <input
+              value={entry.org}
+              onChange={(e) => onChange({ org: e.target.value })}
+              className={INPUT}
+            />
+          </div>
+          <div>
+            <label className={FIELD_LABEL}>专业</label>
+            <input
+              value={edu.major}
+              onChange={(e) =>
+                onChange({ role: joinEducationRole(e.target.value, edu.degree) })
+              }
+              className={INPUT}
+            />
+          </div>
+          <div>
+            <label className={FIELD_LABEL}>学历</label>
+            <input
+              value={edu.degree}
+              onChange={(e) =>
+                onChange({ role: joinEducationRole(edu.major, e.target.value) })
+              }
+              className={INPUT}
+            />
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={FIELD_LABEL}>{labels.org}</label>
+            <input
+              value={entry.org}
+              onChange={(e) => onChange({ org: e.target.value })}
+              className={INPUT}
+            />
+          </div>
+          <div>
+            <label className={FIELD_LABEL}>{labels.role}</label>
+            <input
+              value={entry.role}
+              onChange={(e) => onChange({ role: e.target.value })}
+              className={INPUT}
+            />
+          </div>
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className={FIELD_LABEL}>{labels.org}</label>
-          <input
-            value={entry.org}
-            onChange={(e) => onChange({ org: e.target.value })}
-            className={INPUT}
-          />
-        </div>
-        <div>
-          <label className={FIELD_LABEL}>{labels.role}</label>
-          <input
-            value={entry.role}
-            onChange={(e) => onChange({ role: e.target.value })}
-            className={INPUT}
-          />
-        </div>
         <div>
           <label className={FIELD_LABEL}>开始时间</label>
           <MonthField

@@ -8,6 +8,7 @@ import {
   fieldSpecFor,
   formatUnitNumber,
   formKindForSection,
+  joinEducationRole,
   moveInList,
   parseBulletsSection,
   parseEntriesSection,
@@ -17,6 +18,7 @@ import {
   serializeBulletsSection,
   serializeEntriesSection,
   serializeFieldsSection,
+  splitEducationRole,
   toMonthInputValue,
 } from '@shared/resume/sectionModel';
 import { IconButton, type IconName } from './IconButton';
@@ -50,10 +52,13 @@ function makeInput(theme: Palette) {
   return { ...makeInputBox(theme), color: theme.text, fontSize: 13 } as const;
 }
 
-const ENTRY_LABELS: Record<string, { org: string; role: string; title: string }> = {
+const ENTRY_LABELS: Record<
+  string,
+  { org: string; role: string; title: string; splitRole?: boolean }
+> = {
   experience: { org: '公司名称', role: '岗位', title: '工作经历' },
   project: { org: '项目名称', role: '角色', title: '项目' },
-  education: { org: '学校名称', role: '专业与学历', title: '教育经历' },
+  education: { org: '学校名称', role: '专业与学历', title: '教育经历', splitRole: true },
 };
 
 function FieldLabel({ children }: { children: string }): React.JSX.Element {
@@ -745,6 +750,7 @@ function EntriesForm({
     <View style={{ gap: 12 }}>
       {entries.map((entry, index) => {
         const isCurrent = entry.end.trim() === '至今';
+        const edu = labels.splitRole ? splitEducationRole(entry.role) : null;
         return (
           <View
             key={index}
@@ -791,15 +797,42 @@ function EntriesForm({
                 style={INPUT}
               />
             </View>
-            <View style={{ gap: 4 }}>
-              <FieldLabel>{labels.role}</FieldLabel>
-              <TextInput
-                value={entry.role}
-                onChangeText={(role) => patch(index, { role })}
-                placeholderTextColor={theme.muted}
-                style={INPUT}
-              />
-            </View>
+            {edu ? (
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <View style={{ flex: 1, gap: 4 }}>
+                  <FieldLabel>专业</FieldLabel>
+                  <TextInput
+                    value={edu.major}
+                    onChangeText={(major) =>
+                      patch(index, { role: joinEducationRole(major, edu.degree) })
+                    }
+                    placeholderTextColor={theme.muted}
+                    style={INPUT}
+                  />
+                </View>
+                <View style={{ flex: 1, gap: 4 }}>
+                  <FieldLabel>学历</FieldLabel>
+                  <TextInput
+                    value={edu.degree}
+                    onChangeText={(degree) =>
+                      patch(index, { role: joinEducationRole(edu.major, degree) })
+                    }
+                    placeholderTextColor={theme.muted}
+                    style={INPUT}
+                  />
+                </View>
+              </View>
+            ) : (
+              <View style={{ gap: 4 }}>
+                <FieldLabel>{labels.role}</FieldLabel>
+                <TextInput
+                  value={entry.role}
+                  onChangeText={(role) => patch(index, { role })}
+                  placeholderTextColor={theme.muted}
+                  style={INPUT}
+                />
+              </View>
+            )}
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <View style={{ flex: 1, gap: 4 }}>
                 <FieldLabel>开始时间</FieldLabel>
