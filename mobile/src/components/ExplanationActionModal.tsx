@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import type { Annotation } from '@shared/entities';
 import { DEFAULT_HIGHLIGHT_COLOR, HIGHLIGHT_COLORS } from '../lib/annotationMarks';
+import { visibleMarkdownBlocks } from '../lib/markdownBlocks';
 import { useTheme } from '../theme';
 import { VoiceInputButton } from './VoiceInputButton';
 
@@ -79,6 +80,104 @@ function useResizablePanel(mode: ActionModalMode | null): {
   );
 
   return { width: size.width, height: size.height, resizeResponder };
+}
+
+function normalizeInlineMarkdown(line: string): string {
+  return line
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+}
+
+function MarkdownPreview({ text }: { text: string }): React.JSX.Element {
+  const theme = useTheme();
+  const blocks = useMemo(() => visibleMarkdownBlocks(text), [text]);
+
+  if (blocks.length === 0) {
+    return <Text style={{ color: theme.muted, fontSize: 13 }}>（空）</Text>;
+  }
+
+  return (
+    <View style={{ gap: 8 }}>
+      {blocks.map((block, blockIdx) => {
+        if (block.type === 'code' || block.type === 'mermaid') {
+          return (
+            <View
+              key={`${block.type}-${blockIdx}`}
+              style={{
+                borderRadius: 8,
+                backgroundColor: theme.bg,
+                borderWidth: 1,
+                borderColor: theme.border,
+                padding: 10,
+              }}
+            >
+              <Text style={{ color: theme.muted, fontSize: 10, marginBottom: 4 }}>
+                {block.type === 'mermaid' ? 'mermaid' : block.lang ?? 'code'}
+              </Text>
+              <Text
+                selectable
+                style={{ color: theme.text, fontSize: 12, lineHeight: 18, fontFamily: 'monospace' }}
+              >
+                {block.value.trim()}
+              </Text>
+            </View>
+          );
+        }
+
+        const lines = block.value
+          .split('\n')
+          .map((line) => line.trim())
+          .filter(Boolean);
+        return (
+          <View key={`text-${blockIdx}`} style={{ gap: 4 }}>
+            {lines.map((line, lineIdx) => {
+              const heading = /^(#{1,3})\s+(.+)$/.exec(line);
+              if (heading) {
+                return (
+                  <Text
+                    key={`${blockIdx}-${lineIdx}`}
+                    selectable
+                    style={{
+                      color: theme.text,
+                      fontSize: heading[1]!.length === 1 ? 16 : 14,
+                      lineHeight: 22,
+                      fontWeight: '700',
+                    }}
+                  >
+                    {normalizeInlineMarkdown(heading[2]!)}
+                  </Text>
+                );
+              }
+              const bullet = /^[-*]\s+(.+)$/.exec(line);
+              const numbered = /^\d+\.\s+(.+)$/.exec(line);
+              if (bullet || numbered) {
+                return (
+                  <Text
+                    key={`${blockIdx}-${lineIdx}`}
+                    selectable
+                    style={{ color: theme.text, fontSize: 13, lineHeight: 20 }}
+                  >
+                    {'• '}
+                    {normalizeInlineMarkdown((bullet?.[1] ?? numbered?.[1])!)}
+                  </Text>
+                );
+              }
+              return (
+                <Text
+                  key={`${blockIdx}-${lineIdx}`}
+                  selectable
+                  style={{ color: theme.text, fontSize: 13, lineHeight: 20 }}
+                >
+                  {normalizeInlineMarkdown(line)}
+                </Text>
+              );
+            })}
+          </View>
+        );
+      })}
+    </View>
+  );
 }
 
 export function ExplanationActionModal({
@@ -180,7 +279,7 @@ export function ExplanationActionModal({
               「{marker.selectedText}」
             </Text>
           )}
-          <Text style={{ color: theme.text, fontSize: 13, lineHeight: 20 }}>{marker.noteMd}</Text>
+          <MarkdownPreview text={marker.noteMd ?? ''} />
         </ScrollView>
       )}
 

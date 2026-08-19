@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Pressable,
@@ -62,6 +62,10 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
+function safeJson(value: unknown): string {
+  return JSON.stringify(value).replace(/</g, '\\u003c');
+}
+
 function annotationStart(contentMd: string, mark: Annotation): number | undefined {
   const selected = mark.selectedText?.trim();
   if (!selected) return undefined;
@@ -118,7 +122,6 @@ function buildMarkedContentHtml(contentMd: string, annotations: Annotation[]): s
     if (range.start > cursor) html += escapeHtml(contentMd.slice(cursor, range.start));
     const text = escapeHtml(contentMd.slice(range.start, range.end));
     const markerIds = range.markers.map((m) => m.id).join(' ');
-    const primaryMarker = range.markers[0];
     const markerBadge = range.markers.some((m) => m.kind === 'note') && range.markers.some((m) => m.kind === 'elaboration')
       ? '笔/细'
       : range.markers.some((m) => m.kind === 'note')
@@ -133,7 +136,7 @@ function buildMarkedContentHtml(contentMd: string, annotations: Annotation[]): s
     const style = range.highlightColor ? ` style="background:${escapeHtml(range.highlightColor)}"` : '';
     const badge = markerBadge ? ` data-badge="${markerBadge}"` : '';
     const ids = markerIds ? ` data-annotation-id="${escapeHtml(markerIds)}"` : '';
-    const click = primaryMarker ? ` onclick="openMarker('${escapeHtml(primaryMarker.id)}')"` : '';
+    const click = markerIds ? ` onclick="openMarkerMenu(event, '${escapeHtml(markerIds)}')"` : '';
     html += `<span class="${classes}"${style}${ids}${badge}${click}>${text}</span>`;
     cursor = range.end;
   }
@@ -141,13 +144,34 @@ function buildMarkedContentHtml(contentMd: string, annotations: Annotation[]): s
   return html || escapeHtml(contentMd);
 }
 
-function buildSelectionHtml(contentMd: string, annotations: Annotation[], theme: Palette): string {
+function buildSelectionHtml(
+  contentMd: string,
+  annotations: Annotation[],
+  savedSpeechTexts: Set<string>,
+  theme: Palette,
+): string {
   const body = buildMarkedContentHtml(contentMd, annotations);
+  const markerMeta = Object.fromEntries(
+    annotations
+      .filter((a) => a.kind === 'note' || a.kind === 'elaboration')
+      .map((a) => [a.id, { kind: a.kind }]),
+  );
+  const selectionMarks = annotations
+    .filter((a) => a.kind === 'note' || a.kind === 'elaboration')
+    .map((a) => ({
+      kind: a.kind,
+      text: a.selectedText?.trim() ?? '',
+      start: annotationStart(contentMd, a),
+    }))
+    .filter((a) => a.text.length > 0);
   const textColor = escapeHtml(theme.text);
   const bgColor = escapeHtml(theme.bg);
   const surfaceColor = escapeHtml(theme.surface);
   const borderColor = escapeHtml(theme.border);
   const accentColor = escapeHtml(theme.accent);
+  const markerMetaJson = safeJson(markerMeta);
+  const selectionMarksJson = safeJson(selectionMarks);
+  const savedSpeechJson = safeJson([...savedSpeechTexts]);
   return `<!doctype html>
 <html>
 <head>
@@ -221,20 +245,50 @@ function buildSelectionHtml(contentMd: string, annotations: Annotation[], theme:
       font-size: 12px;
       white-space: nowrap;
     }
+    #toolbar button:disabled {
+      opacity: .42;
+    }
+    #markerMenu {
+      position: absolute;
+      z-index: 30;
+      display: none;
+      flex-direction: column;
+      gap: 4px;
+      padding: 4px;
+      border: 1px solid ${borderColor};
+      border-radius: 10px;
+      background: ${surfaceColor};
+      box-shadow: 0 8px 24px rgba(0,0,0,.28);
+    }
+    #markerMenu button {
+      border: 0;
+      border-radius: 7px;
+      padding: 6px 8px;
+      background: ${bgColor};
+      color: ${accentColor};
+      font-size: 12px;
+      text-align: left;
+      white-space: nowrap;
+    }
   </style>
 </head>
 <body>
   <div id="content">${body}</div>
   <div id="toolbar">
-    <button onclick="runAction('highlight')">高亮</button>
-    <button onclick="runAction('note')">笔记</button>
-    <button onclick="runAction('elaboration')">细化</button>
-    <button onclick="runAction('edit')">编辑</button>
-    <button onclick="runAction('speech')">话术</button>
+    <button data-action="highlight" onclick="runAction('highlight')">高亮</button>
+    <button data-action="note" onclick="runAction('note')">笔记</button>
+    <button data-action="elaboration" onclick="runAction('elaboration')">细化</button>
+    <button data-action="edit" onclick="runAction('edit')">编辑</button>
+    <button data-action="speech" onclick="runAction('speech')">话术</button>
   </div>
+  <div id="markerMenu"></div>
   <script>
     const content = document.getElementById('content');
     const toolbar = document.getElementById('toolbar');
+    const markerMenu = document.getElementById('markerMenu');
+    const markerMeta = ${markerMetaJson};
+    const selectionMarks = ${selectionMarksJson};
+    const savedSpeeches = new Set(${savedSpeechJson});
     let current = null;
     function post(payload) {
       window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify(payload));
@@ -249,6 +303,41 @@ function buildSelectionHtml(contentMd: string, annotations: Annotation[], theme:
       toolbar.style.display = 'none';
       current = null;
       post({ type: 'clear' });
+    }
+    function hideMarkerMenu() {
+      markerMenu.style.display = 'none';
+      markerMenu.replaceChildren();
+    }
+    function button(action) {
+      return toolbar.querySelector('[data-action="' + action + '"]');
+    }
+    function markExists(kind) {
+      if (!current) return false;
+      return selectionMarks.some((m) =>
+        m.kind === kind &&
+        m.text === current.text &&
+        (m.start === current.start || m.start === undefined || m.start === null)
+      );
+    }
+    function refreshToolbarState() {
+      const noteDone = markExists('note');
+      const elaborationDone = markExists('elaboration');
+      const speechDone = current ? savedSpeeches.has(current.text.trim()) : false;
+      const noteBtn = button('note');
+      const elaborationBtn = button('elaboration');
+      const speechBtn = button('speech');
+      if (noteBtn) {
+        noteBtn.textContent = noteDone ? '已有笔记' : '笔记';
+        noteBtn.disabled = noteDone;
+      }
+      if (elaborationBtn) {
+        elaborationBtn.textContent = elaborationDone ? '已细化' : '细化';
+        elaborationBtn.disabled = elaborationDone;
+      }
+      if (speechBtn) {
+        speechBtn.textContent = speechDone ? '已存话术' : '话术';
+        speechBtn.disabled = speechDone;
+      }
     }
     function updateHeight() {
       post({ type: 'height', height: Math.ceil(document.body.scrollHeight) });
@@ -280,16 +369,53 @@ function buildSelectionHtml(contentMd: string, annotations: Annotation[], theme:
       toolbar.style.top = top + 'px';
       toolbar.style.left = left + 'px';
       post({ type: 'selection', text, start });
+      refreshToolbarState();
       updateHeight();
     }
     function runAction(action) {
       if (!current) updateSelection();
       if (!current) return;
+      const btn = button(action);
+      if (btn && btn.disabled) return;
       post({ type: 'action', action, text: current.text, start: current.start });
     }
-    function openMarker(id) {
-      post({ type: 'marker', id });
+    function markerLabel(id) {
+      return markerMeta[id]?.kind === 'note' ? '笔记' : '细化讲解';
     }
+    function openMarkerMenu(event, idsText) {
+      event.stopPropagation();
+      const ids = idsText.split(' ').filter(Boolean);
+      if (ids.length === 0) return;
+      if (ids.length === 1) {
+        post({ type: 'marker', id: ids[0] });
+        return;
+      }
+      markerMenu.replaceChildren();
+      for (const id of ids) {
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.textContent = markerLabel(id);
+        item.onclick = function (e) {
+          e.stopPropagation();
+          hideMarkerMenu();
+          post({ type: 'marker', id });
+        };
+        markerMenu.appendChild(item);
+      }
+      markerMenu.style.display = 'flex';
+      markerMenu.style.left = Math.min(event.pageX, window.innerWidth - 140) + 'px';
+      markerMenu.style.top = Math.min(event.pageY + 6, document.body.scrollHeight - 80) + 'px';
+      updateHeight();
+    }
+    window.__clearSelection = function () {
+      window.getSelection()?.removeAllRanges();
+      hideToolbar();
+      hideMarkerMenu();
+      true;
+    };
+    document.addEventListener('click', (event) => {
+      if (!markerMenu.contains(event.target)) hideMarkerMenu();
+    });
     document.addEventListener('selectionchange', () => setTimeout(updateSelection, 0));
     document.addEventListener('mouseup', () => setTimeout(updateSelection, 0));
     document.addEventListener('touchend', () => setTimeout(updateSelection, 80));
@@ -318,6 +444,7 @@ export function ExplanationStudyPanel({
   tier?: ExplanationTier;
 }): React.JSX.Element {
   const theme = useTheme();
+  const webViewRef = useRef<WebView>(null);
   const btnGhost = makeBtnGhost(theme);
   const { notifyDataChanged } = useApp();
   const [tier, setTier] = useState<ExplanationTier>(initialTier);
@@ -332,6 +459,7 @@ export function ExplanationStudyPanel({
   const [highlightColor, setHighlightColor] = useState<string>(DEFAULT_HIGHLIGHT_COLOR);
   const [viewMarker, setViewMarker] = useState<Annotation | null>(null);
   const [webHeight, setWebHeight] = useState(180);
+  const [savedSpeechTexts, setSavedSpeechTexts] = useState<Set<string>>(() => new Set());
 
   // 按「考点 + 档位」记讲解任务，按考点记标注类操作：
   // 切页、换档位、关掉弹窗再回来，都能看到还在跑，也不会重复发起同一件事
@@ -391,12 +519,24 @@ export function ExplanationStudyPanel({
     ? findMarkOnSelection(contentMarks, 'elaboration', phrase, selectionStart)
     : undefined;
   const selectionHtml = useMemo(
-    () => (content ? buildSelectionHtml(content.contentMd, annotations, theme) : ''),
-    [annotations, content, theme],
+    () => (content ? buildSelectionHtml(content.contentMd, annotations, savedSpeechTexts, theme) : ''),
+    [annotations, content, savedSpeechTexts, theme],
   );
 
   const loadAnnotations = useCallback((explanationId: string) => {
     setAnnotations(listAnnotations(getRawDb(), 'explanation', explanationId));
+  }, []);
+
+  const loadSavedSpeech = useCallback(() => {
+    const rows = getRawDb().getAllSync<{ content_md: string }>(
+      `SELECT content_md FROM speech_snippet WHERE source_type = 'node' AND source_id = ?`,
+      nodeId,
+    );
+    setSavedSpeechTexts(new Set(rows.map((row) => row.content_md.trim()).filter(Boolean)));
+  }, [nodeId]);
+
+  const clearWebSelection = useCallback(() => {
+    webViewRef.current?.injectJavaScript('window.__clearSelection && window.__clearSelection(); true;');
   }, []);
 
   const adopt = useCallback(
@@ -421,6 +561,7 @@ export function ExplanationStudyPanel({
     setEditing(false);
     setModalMode(null);
     setModalDraft('');
+    loadSavedSpeech();
     const cached = getExplanation(getRawDb(), nodeId, tier);
     if (cached?.contentMd) {
       adopt(cached);
@@ -433,7 +574,7 @@ export function ExplanationStudyPanel({
       notifyDataChanged();
       return generated;
     }).catch(() => undefined);
-  }, [nodeId, tier, loadKey, adopt, notifyDataChanged]);
+  }, [nodeId, tier, loadKey, adopt, loadSavedSpeech, notifyDataChanged]);
 
   const openModal = (mode: ActionModalMode): void => {
     // 重新生成和查看标记都不针对选区，其余动作没选中词句就无从下手
@@ -587,6 +728,7 @@ export function ExplanationStudyPanel({
       .then(() => {
         loadAnnotations(explanationId);
         setModalMode(null);
+        clearWebSelection();
       })
       .catch(() => undefined);
   };
@@ -603,6 +745,7 @@ export function ExplanationStudyPanel({
       .then(() => {
         loadAnnotations(explanationId);
         setModalMode(null);
+        clearWebSelection();
       })
       .catch(() => undefined);
   };
@@ -627,6 +770,7 @@ export function ExplanationStudyPanel({
         loadAnnotations(explanationId);
         setModalMode(null);
         setModalDraft('');
+        clearWebSelection();
       })
       .catch(() => undefined);
   };
@@ -646,6 +790,7 @@ export function ExplanationStudyPanel({
         setModalMode(null);
         setPhrase('');
         setSelectionStart(undefined);
+        clearWebSelection();
       })
       .catch(() => undefined);
   };
@@ -660,8 +805,10 @@ export function ExplanationStudyPanel({
     })
       .then((message) => {
         Alert.alert('话术库', message);
+        loadSavedSpeech();
         setPhrase('');
         setSelectionStart(undefined);
+        clearWebSelection();
       })
       .catch(() => undefined);
   };
@@ -695,6 +842,7 @@ export function ExplanationStudyPanel({
   useTaskResult(elaborateKey, () => {
     if (content) loadAnnotations(content.id);
     setModalMode(null);
+    clearWebSelection();
   });
 
   const deleteMarker = (): void => {
@@ -709,6 +857,7 @@ export function ExplanationStudyPanel({
         loadAnnotations(explanationId);
         setModalMode(null);
         setViewMarker(null);
+        clearWebSelection();
       })
       .catch(() => undefined);
   };
@@ -819,6 +968,7 @@ export function ExplanationStudyPanel({
         </>
       ) : (
         <WebView
+          ref={webViewRef}
           originWhitelist={['*']}
           source={{ html: selectionHtml }}
           onMessage={handleSelectionWebMessage}
