@@ -748,12 +748,12 @@ export const MOCK_INTERVIEW_TYPE_OPTIONS: Array<{
   label: string;
   hint: string;
 }> = [
-  { value: 'mixed', label: '综合模拟', hint: '根据公司/JD/简历自动选题' },
+  { value: 'selfIntro', label: '自我介绍', hint: '开场介绍、亮点匹配、表达自然度' },
   { value: 'concept', label: '概念 / 八股', hint: '原理、机制、对比追问' },
   { value: 'coding', label: '编码 / 算法', hint: '手写代码、复杂度分析' },
   { value: 'design', label: '系统设计', hint: '架构、扩展性、权衡' },
   { value: 'scenario', label: '项目 / 场景', hint: '简历深挖、行为场景' },
-  { value: 'selfIntro', label: '自我介绍', hint: '开场介绍、亮点匹配、表达自然度' },
+  { value: 'mixed', label: '综合模拟', hint: '根据公司/JD/简历自动选题' },
 ];
 
 export const MOCK_INTERVIEW_TYPE_LABELS: Record<MockInterviewKind, string> = {

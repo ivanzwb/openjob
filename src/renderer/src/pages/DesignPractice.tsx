@@ -155,24 +155,26 @@ export function DesignPractice(): React.JSX.Element {
           </select>
           {typeHint && <p className="text-[10px] text-[var(--color-muted)]">{typeHint}</p>}
         </label>
-        <label className="space-y-1">
-          <span className="text-xs text-[var(--color-muted)]">面试语言</span>
-          <select
-            value={interviewLanguage}
-            onChange={(e) => {
-              setInterviewLanguage(e.target.value as MockInterviewLanguage);
-              setDesignCase(null);
-              setResult(null);
-            }}
-            className="w-full rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm"
-          >
-            {MOCK_INTERVIEW_LANGUAGE_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        {interviewType === 'selfIntro' && (
+          <label className="space-y-1">
+            <span className="text-xs text-[var(--color-muted)]">面试语言</span>
+            <select
+              value={interviewLanguage}
+              onChange={(e) => {
+                setInterviewLanguage(e.target.value as MockInterviewLanguage);
+                setDesignCase(null);
+                setResult(null);
+              }}
+              className="w-full rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm"
+            >
+              {MOCK_INTERVIEW_LANGUAGE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
 
       <div>

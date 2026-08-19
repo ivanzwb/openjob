@@ -172,30 +172,32 @@ export function DesignScreen(): React.JSX.Element {
         ))}
       </OverflowHintScrollView>
 
-      <View style={{ flexDirection: 'row', gap: 8 }}>
-        {MOCK_INTERVIEW_LANGUAGE_OPTIONS.map((o) => (
-          <Pressable
-            key={o.value}
-            onPress={() => {
-              setInterviewLanguage(o.value);
-              setDesignCase(null);
-              setResult(null);
-            }}
-            style={{
-              paddingHorizontal: 10,
-              paddingVertical: 6,
-              borderRadius: 8,
-              borderWidth: 1,
-              borderColor: interviewLanguage === o.value ? theme.accent : theme.border,
-              backgroundColor: theme.surface,
-            }}
-          >
-            <Text style={{ color: interviewLanguage === o.value ? theme.accent : theme.muted, fontSize: 12 }}>
-              {o.label}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
+      {interviewType === 'selfIntro' && (
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          {MOCK_INTERVIEW_LANGUAGE_OPTIONS.map((o) => (
+            <Pressable
+              key={o.value}
+              onPress={() => {
+                setInterviewLanguage(o.value);
+                setDesignCase(null);
+                setResult(null);
+              }}
+              style={{
+                paddingHorizontal: 10,
+                paddingVertical: 6,
+                borderRadius: 8,
+                borderWidth: 1,
+                borderColor: interviewLanguage === o.value ? theme.accent : theme.border,
+                backgroundColor: theme.surface,
+              }}
+            >
+              <Text style={{ color: interviewLanguage === o.value ? theme.accent : theme.muted, fontSize: 12 }}>
+                {o.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      )}
 
       <Pressable
         onPress={() => loadCase(Boolean(designCase))}
