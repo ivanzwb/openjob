@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import type { CampaignSummary, KnowledgeNodeView, TaskView } from '@shared/ipc';
@@ -221,6 +221,7 @@ function CampaignDetailView({
   onBack: () => void;
 }): React.JSX.Element {
   const theme = useTheme();
+  const scrollRef = useRef<ScrollView>(null);
   const { triggerSync, notifyDataChanged } = useApp();
   // 三个动作各有自己的 key：切页、返回列表再进来都能看到它还在跑
   const diagnoseKey = `campaign:${id}:diagnose`;
@@ -403,7 +404,11 @@ function CampaignDetailView({
 
   return (
     <>
-    <ScrollView style={{ flex: 1, backgroundColor: theme.bg }} contentContainerStyle={{ padding: 16, gap: 10 }}>
+    <ScrollView
+      ref={scrollRef}
+      style={{ flex: 1, backgroundColor: theme.bg }}
+      contentContainerStyle={{ padding: 16, gap: 10 }}
+    >
       <Pressable onPress={onBack}>
         <Text style={{ color: theme.accent }}>← 返回列表</Text>
       </Pressable>
@@ -552,6 +557,7 @@ function CampaignDetailView({
         visibleNodeIds={visibleNodeIds}
         selectedNodeId={selectedNode?.id ?? null}
         expandingId={expandingNodeId}
+        scrollContainerRef={scrollRef}
         renderNodeDetail={(node) => {
           if (selectedNode?.id !== node.id) return null;
           return (

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { KnowledgeNodeView } from '@shared/ipc';
 import type { CoverageType, NodeKind, NodeStatus } from '@shared/enums';
 import { CoverageBadge } from './CoverageBadge';
@@ -69,10 +69,27 @@ export function KnowledgeTree({
   visibleNodeIds,
 }: TreeProps): React.JSX.Element {
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(() => new Set());
+  const nodeRefs = useRef(new Map<string, HTMLDivElement>());
   const filteredNodes =
     visibleNodeIds && visibleNodeIds.size > 0
       ? nodes.filter((n) => visibleNodeIds.has(n.id))
       : nodes;
+  const parentById = useMemo(() => new Map(nodes.map((node) => [node.id, node.parentId])), [nodes]);
+  const selectedAncestorIds = useMemo(() => {
+    const ancestors = new Set<string>();
+    let parentId = selectedNodeId ? parentById.get(selectedNodeId) : null;
+    while (parentId) {
+      ancestors.add(parentId);
+      parentId = parentById.get(parentId) ?? null;
+    }
+    return ancestors;
+  }, [parentById, selectedNodeId]);
+
+  useEffect(() => {
+    if (!selectedNodeId) return;
+    const row = nodeRefs.current.get(selectedNodeId);
+    row?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+  }, [selectedNodeId, visibleNodeIds]);
 
   const roots = filteredNodes.filter((n) => !n.parentId);
   const byParent = new Map<string | null, KnowledgeNodeView[]>();
@@ -86,7 +103,7 @@ export function KnowledgeTree({
   const renderNode = (node: KnowledgeNodeView, depth: number): React.JSX.Element => {
     const children = byParent.get(node.id) ?? [];
     const masteryPct = Math.round((node.mastery / 5) * 100);
-    const collapsed = collapsedIds.has(node.id);
+    const collapsed = collapsedIds.has(node.id) && !selectedAncestorIds.has(node.id);
 
     return (
       <NodeRow
@@ -106,6 +123,10 @@ export function KnowledgeTree({
         onAddNote={onAddNote}
         selected={selectedNodeId === node.id}
         onSelect={onSelectNode}
+        rowRef={(el) => {
+          if (el) nodeRefs.current.set(node.id, el);
+          else nodeRefs.current.delete(node.id);
+        }}
         hasChildren={children.length > 0}
         childrenCollapsed={collapsed}
         onToggleChildren={(nodeId) => {
@@ -151,6 +172,7 @@ function NodeRow({
   onAddNote,
   selected,
   onSelect,
+  rowRef,
   hasChildren,
   childrenCollapsed,
   onToggleChildren,
@@ -171,6 +193,7 @@ function NodeRow({
   onAddNote?: (nodeId: string, noteMd: string) => void;
   selected?: boolean;
   onSelect?: (nodeId: string) => void;
+  rowRef?: (el: HTMLDivElement | null) => void;
   hasChildren: boolean;
   childrenCollapsed: boolean;
   onToggleChildren: (nodeId: string) => void;
@@ -199,6 +222,7 @@ function NodeRow({
   return (
     <div>
       <div
+        ref={rowRef}
         className={`rounded-md border px-2 py-2 ${
           selected
             ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10'

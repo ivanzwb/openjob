@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { Pressable, Text, TextInput, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { findNodeHandle, Pressable, Text, TextInput, View } from 'react-native';
+import type { ScrollView } from 'react-native';
 import type { CoverageType, NodeKind, NodeStatus } from '@shared/enums';
 import type { KnowledgeNodeView } from '@shared/ipc';
 import { useTheme } from '../theme';
@@ -35,6 +36,7 @@ interface KnowledgeTreeProps {
   selectedNodeId?: string | null;
   visibleNodeIds?: Set<string> | null;
   expandingId?: string | null;
+  scrollContainerRef?: React.RefObject<ScrollView | null>;
   renderNodeDetail?: (node: KnowledgeNodeView) => React.ReactNode;
   onSelectNode?: (nodeId: string) => void;
   onExpand?: (nodeId: string) => void;
@@ -47,6 +49,7 @@ export function KnowledgeTree({
   selectedNodeId,
   visibleNodeIds,
   expandingId,
+  scrollContainerRef,
   renderNodeDetail,
   onSelectNode,
   onExpand,
@@ -55,6 +58,38 @@ export function KnowledgeTree({
 }: KnowledgeTreeProps): React.JSX.Element {
   const theme = useTheme();
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(() => new Set());
+  const nodeRefs = useRef(new Map<string, View>());
+  const parentById = useMemo(() => new Map(nodes.map((node) => [node.id, node.parentId])), [nodes]);
+  const selectedAncestorIds = useMemo(() => {
+    const ancestors = new Set<string>();
+    let parentId = selectedNodeId ? parentById.get(selectedNodeId) : null;
+    while (parentId) {
+      ancestors.add(parentId);
+      parentId = parentById.get(parentId) ?? null;
+    }
+    return ancestors;
+  }, [parentById, selectedNodeId]);
+
+  useEffect(() => {
+    if (!selectedNodeId || !scrollContainerRef?.current) return;
+    const row = nodeRefs.current.get(selectedNodeId);
+    const scrollView = scrollContainerRef.current;
+    const scrollHandle = findNodeHandle(scrollView);
+    if (!row || !scrollHandle) return;
+
+    const timer = setTimeout(() => {
+      row.measureLayout(
+        scrollHandle,
+        (_x, y) => {
+          scrollView.scrollTo({ y: Math.max(0, y - 96), animated: true });
+        },
+        () => undefined,
+      );
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, [scrollContainerRef, selectedNodeId, visibleNodeIds]);
+
   const filtered = visibleNodeIds ? nodes.filter((n) => visibleNodeIds.has(n.id)) : nodes;
   const byParent = new Map<string | null, KnowledgeNodeView[]>();
   for (const node of filtered) {
@@ -75,7 +110,7 @@ export function KnowledgeTree({
 
   const renderNode = (node: KnowledgeNodeView, depth: number): React.JSX.Element => {
     const children = byParent.get(node.id) ?? [];
-    const collapsed = collapsedIds.has(node.id);
+    const collapsed = collapsedIds.has(node.id) && !selectedAncestorIds.has(node.id);
     return (
       <NodeRow
         key={node.id}
@@ -87,6 +122,10 @@ export function KnowledgeTree({
         childrenCollapsed={collapsed}
         onToggleChildren={toggleChildren}
         onSelect={onSelectNode}
+        rowRef={(el) => {
+          if (el) nodeRefs.current.set(node.id, el);
+          else nodeRefs.current.delete(node.id);
+        }}
         onExpand={onExpand}
         onUpdate={onUpdate}
         onCreateChild={onCreateChild}
@@ -117,6 +156,7 @@ function NodeRow({
   childrenCollapsed,
   onToggleChildren,
   onSelect,
+  rowRef,
   onExpand,
   onUpdate,
   onCreateChild,
@@ -131,6 +171,7 @@ function NodeRow({
   childrenCollapsed: boolean;
   onToggleChildren: (nodeId: string) => void;
   onSelect?: (nodeId: string) => void;
+  rowRef?: (el: View | null) => void;
   onExpand?: (nodeId: string) => void;
   onUpdate?: (nodeId: string, patch: NodePatch) => void;
   onCreateChild?: (parentId: string, name: string) => void;
@@ -145,7 +186,7 @@ function NodeRow({
   const status = STATUS_META[node.status] ?? STATUS_META.todo;
 
   return (
-    <View>
+    <View ref={rowRef}>
       <Pressable
         onPress={() => onSelect?.(node.id)}
         style={{

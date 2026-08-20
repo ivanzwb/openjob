@@ -411,6 +411,10 @@ export function CampaignDetail({
     ) {
       setAppliedInitialNodeKey(requestKey);
       setPageTab('study');
+      setShowGraph(false);
+      setCalendarFilterDate(null);
+      setStatusFilter('all');
+      setMarkFilter('all');
       setSelectedNodeId(initialNodeId);
       setNodeStudyMode('explain');
       setLastNodeId(initialNodeId);
@@ -423,8 +427,14 @@ export function CampaignDetail({
   const markCount = annotations.filter((a) => a.kind !== 'bookmark').length;
   const bookmarkCount = annotations.filter((a) => a.kind === 'bookmark').length;
 
-  const jumpToNode = (nodeId: string): void => {
+  const jumpToNode = (nodeId: string, options?: { clearFilters?: boolean }): void => {
     setPageTab('study');
+    setShowGraph(false);
+    if (options?.clearFilters) {
+      setCalendarFilterDate(null);
+      setStatusFilter('all');
+      setMarkFilter('all');
+    }
     setSelectedNodeId(nodeId);
     setNodeStudyMode('explain');
     setLastNodeId(nodeId);
@@ -434,6 +444,7 @@ export function CampaignDetail({
   const openTaskInStudy = (task: TaskView): void => {
     if (!task.nodeId) return;
     setPageTab('study');
+    setShowGraph(false);
     setSelectedNodeId(task.nodeId);
     setNodeStudyMode(task.kind === 'drill' ? 'drill' : 'explain');
     setLastNodeId(task.nodeId);
@@ -937,7 +948,7 @@ export function CampaignDetail({
                       nudges={nudges}
                       applying={applyingHistory}
                       onApplyHistory={applyHistory}
-                      onOpenNode={jumpToNode}
+                      onOpenNode={(nodeId) => jumpToNode(nodeId, { clearFilters: true })}
                     />
                   </div>
                 </section>
