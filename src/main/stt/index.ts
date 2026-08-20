@@ -23,6 +23,7 @@ const MODEL_ID = 'Xenova/whisper-base';
 const MODEL_DTYPE = 'q8';
 const HF_PREFIX = 'https://huggingface.co/';
 const PROXY_PREFIX = 'https://gh-proxy.com/';
+const HF_MIRROR_PREFIX = 'https://hf-mirror.com/';
 
 const nativeFetch = globalThis.fetch;
 
@@ -30,6 +31,10 @@ let pipelinePromise: Promise<AutomaticSpeechRecognitionPipeline> | null = null;
 let currentStatus: SttStatus = { state: 'idle' };
 /** 串行队列：上一次转写完成后才执行下一次 */
 let transcribeQueue: Promise<unknown> = Promise.resolve();
+
+function asErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
 
 function setStatus(status: SttStatus): void {
   currentStatus = status;
@@ -69,21 +74,44 @@ function configureEnv(): void {
   // 关闭 wasm 预缓存探测：Node 下 file:// 的探测会报 undici 不支持，纯噪音
   env.useWasmCache = false;
 
-  // 国内下载：HF 请求走 gh-proxy；403（Xet 重定向被拦截）时提取真实 CDN 直连
+  // 国内下载：优先走 gh-proxy，失败后回退到 hf-mirror 与 HF 直连。
+  // 403（Xet 重定向被拦截）时提取真实 CDN URL 直连。
   env.fetch = async (input: string | URL, init?: RequestInit): Promise<Response> => {
     const urlStr = typeof input === 'string' ? input : input.toString();
     if (!urlStr.startsWith(HF_PREFIX)) return nativeFetch(input, init);
 
-    const res = await nativeFetch(PROXY_PREFIX + urlStr, init);
-    if (res.status === 403) {
-      const body = await res.text();
-      const line = body.split('\n').find((l) => l.includes('Redirect to a disallowed URL'));
-      if (line) {
-        const xetUrl = line.replace('Redirect to a disallowed URL was blocked: ', '').trim();
-        return nativeFetch(xetUrl, init);
+    const candidates = [
+      PROXY_PREFIX + urlStr,
+      HF_MIRROR_PREFIX + urlStr.slice(HF_PREFIX.length),
+      urlStr,
+    ];
+    const failures: string[] = [];
+
+    for (const candidate of candidates) {
+      try {
+        const res = await nativeFetch(candidate, init);
+        if (res.status === 403) {
+          const body = await res.text();
+          const line = body.split('\n').find((l) => l.includes('Redirect to a disallowed URL'));
+          if (line) {
+            const xetUrl = line.replace('Redirect to a disallowed URL was blocked: ', '').trim();
+            try {
+              return await nativeFetch(xetUrl, init);
+            } catch (err) {
+              failures.push(`${xetUrl}: ${asErrorMessage(err)}`);
+              continue;
+            }
+          }
+          failures.push(`${candidate}: HTTP 403`);
+          continue;
+        }
+        return res;
+      } catch (err) {
+        failures.push(`${candidate}: ${asErrorMessage(err)}`);
       }
     }
-    return res;
+
+    throw new Error(`下载本地语音模型失败，请检查网络或代理。${failures.join('；')}`);
   };
 }
 
@@ -110,7 +138,7 @@ function getPipeline(): Promise<AutomaticSpeechRecognitionPipeline> {
     .catch((err: unknown) => {
       // 失败置空，允许下一次 transcribe 重新加载
       pipelinePromise = null;
-      const message = err instanceof Error ? err.message : String(err);
+      const message = asErrorMessage(err);
       setStatus({ state: 'error', error: message });
       throw err;
     });
