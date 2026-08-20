@@ -12,7 +12,7 @@ import { Resumes } from './pages/Resumes';
 import { invoke, onEvent } from './ipc';
 import { bumpDataVersion } from './ipc/dataVersion';
 import { useJobProgress } from './ipc/useJobProgress';
-import { reportBackgroundError, useBackgroundErrorToast } from './ipc/errorToast';
+import { useBackgroundErrorToast } from './ipc/errorToast';
 
 type Tab = 'overview' | 'campaigns' | 'resumes' | 'design' | 'repos' | 'scripts' | 'settings';
 
@@ -112,14 +112,9 @@ export default function App(): React.JSX.Element {
   const [mountedTabs, setMountedTabs] = useState<Set<Tab>>(() => new Set(['campaigns']));
   const [view, setView] = useState<CampaignView>({ kind: 'list' });
   const [version, setVersion] = useState('');
-  const { active: job, lastResult: jobResult } = useJobProgress();
+  const { active: job } = useJobProgress();
   // 任务与流式请求可能在用户已经切走的页面上失败，提示统一由这里弹出来
   useBackgroundErrorToast();
-
-  // 诊断、情报这类长任务跑在主进程：失败若不提示，用户只看到按钮悄悄变回可点
-  useEffect(() => {
-    if (jobResult?.error) reportBackgroundError(`${jobResult.label}失败：${jobResult.error}`);
-  }, [jobResult]);
 
   useEffect(() => {
     void invoke('app:getVersion', undefined).then(setVersion);

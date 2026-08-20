@@ -29,6 +29,8 @@ import { useDataRefresh } from '../ipc/dataVersion';
 import { useJobFeedback, useJobProgress } from '../ipc/useJobProgress';
 import { runTask, useTask, useTaskResult } from '../ipc/taskStore';
 
+const CAMPAIGN_JOB_LABELS = new Set(['JD 诊断', '公司情报', '简历交叉分析', '细化考点']);
+
 export function CampaignDetail({
   id,
   autoDiagnose,
@@ -77,7 +79,11 @@ export function CampaignDetail({
     window.localStorage.getItem(`openjob:lastNode:${id}`),
   );
   const [nodeStudyMode, setNodeStudyMode] = useState<'explain' | 'drill' | 'followUp'>('explain');
-  const { active: job, lastResult } = useJobProgress();
+  const { active: activeJob, lastResult } = useJobProgress();
+  const job = activeJob && CAMPAIGN_JOB_LABELS.has(activeJob.label) ? activeJob : null;
+  const campaignJobResult =
+    lastResult && CAMPAIGN_JOB_LABELS.has(lastResult.label) ? lastResult : null;
+  const handledCampaignJobResult = useRef('');
   const jdJob = useJobFeedback('JD 诊断');
   const intelJob = useJobFeedback('公司情报');
   const resumeJob = useJobFeedback('简历交叉分析');
@@ -171,8 +177,12 @@ export function CampaignDetail({
   }, [id, autoDiagnose]);
 
   useEffect(() => {
-    if (!job && lastResult) refresh();
-  }, [job, lastResult, refresh]);
+    if (!campaignJobResult) return;
+    const key = `${campaignJobResult.label}:${campaignJobResult.message}:${campaignJobResult.error ?? ''}`;
+    if (handledCampaignJobResult.current === key) return;
+    handledCampaignJobResult.current = key;
+    refresh();
+  }, [campaignJobResult, refresh]);
 
   // 细化任务结束时渲染期同步清空待展开节点
   if (!expandJob.isRunning && pendingExpandNodeId) {
@@ -487,7 +497,7 @@ export function CampaignDetail({
           </div>
         </div>
 
-        {(job || lastResult) && (
+        {(job || campaignJobResult) && (
           <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-xs">
             {job && (
               <p className="text-sky-400">
@@ -495,14 +505,14 @@ export function CampaignDetail({
                 {job.progress !== null ? ` (${Math.round(job.progress * 100)}%)` : ''}
               </p>
             )}
-            {!job && lastResult?.error && (
+            {!job && campaignJobResult?.error && (
               <p className="text-red-400">
-                {lastResult.label}失败：{lastResult.error}
+                {campaignJobResult.label}失败：{campaignJobResult.error}
               </p>
             )}
-            {!job && lastResult && !lastResult.error && (
+            {!job && campaignJobResult && !campaignJobResult.error && (
               <p className="text-emerald-400">
-                {lastResult.label}：{lastResult.message}
+                {campaignJobResult.label}：{campaignJobResult.message}
               </p>
             )}
           </div>

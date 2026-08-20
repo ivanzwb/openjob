@@ -60,7 +60,7 @@ export function Repos(): React.JSX.Element {
   const cloneWasRunning = useRef(false);
 
   useEffect(() => {
-    // 失败提示由 App 统一弹出，这里只补一条成功提示
+    // 失败显示在源码页本地；成功用 toast 轻提示即可
     if (cloneWasRunning.current && !cloneJob.isRunning && !cloneJob.error && cloneJob.message) {
       toast(cloneJob.message, { variant: 'success' });
     }
@@ -163,6 +163,13 @@ export function Repos(): React.JSX.Element {
                 />
               </div>
             )}
+          </div>
+        )}
+
+        {cloneJob.error && (
+          <div className="rounded border border-red-900/70 bg-red-950/30 p-3 text-xs text-red-300">
+            <div className="font-medium">克隆并索引仓库失败</div>
+            <div className="mt-1 whitespace-pre-wrap">{cloneJob.error}</div>
           </div>
         )}
 
