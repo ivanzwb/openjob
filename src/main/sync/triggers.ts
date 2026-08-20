@@ -86,11 +86,27 @@ export function buildTriggerSql(spec: SyncTableSpec, localDeviceId: string): str
  *
  * 每次启动都先 DROP 再 CREATE：schema 演进后列集合会变，旧触发器里的列
  * 清单是过时的，留着会漏采字段。重建成本可以忽略。
+ *
+ * 同时清理清单外表的残留：表从同步清单移除后，旧触发器不会自动消失，
+ * 仍会往 sync_oplog 写记录，collect 时 syncTableSpec 会抛「表不在同步清单
+ * 里」导致同步中断。启动时把清单外表的触发器和 oplog 残留一并清掉，自愈。
  */
 export function installSyncTriggers(raw: Database, localDeviceId: string): void {
   const specs = syncTableSpecs();
+  const known = new Set(specs.map((s) => s.name));
 
   raw.transaction(() => {
+    // 清理清单外表的残留触发器（如曾被移出清单的 search_cache）
+    const triggers = raw
+      .prepare(`SELECT name FROM sqlite_master WHERE type = 'trigger'`)
+      .all() as { name: string }[];
+    for (const { name } of triggers) {
+      const m = /^sync_(.+)_(ai|au|ad)$/.exec(name);
+      if (m && !known.has(m[1])) {
+        raw.exec(`DROP TRIGGER IF EXISTS ${name};`);
+      }
+    }
+
     for (const spec of specs) {
       for (const suffix of ['ai', 'au', 'ad']) {
         raw.exec(`DROP TRIGGER IF EXISTS sync_${spec.name}_${suffix};`);
@@ -99,6 +115,12 @@ export function installSyncTriggers(raw: Database, localDeviceId: string): void 
         raw.exec(sql);
       }
     }
+
+    // 清掉清单外表的 oplog 残留，collect/apply 不再读到未知表
+    const placeholders = specs.map(() => '?').join(', ');
+    raw
+      .prepare(`DELETE FROM sync_oplog WHERE table_name NOT IN (${placeholders})`)
+      .run(...specs.map((s) => s.name));
   })();
 }
 

@@ -66,8 +66,21 @@ function buildTriggerSql(spec: SyncTableSpec, localDeviceId: string): string[] {
 
 export function installSyncTriggers(raw: SQLiteDatabase, localDeviceId: string): void {
   const specs = syncTableSpecs();
+  const known = new Set(specs.map((s) => s.name));
+
   raw.execSync('BEGIN');
   try {
+    // 清理清单外表的残留触发器（如曾被移出清单的 search_cache）
+    const triggers = raw.getAllSync<{ name: string }>(
+      `SELECT name FROM sqlite_master WHERE type = 'trigger'`,
+    );
+    for (const { name } of triggers) {
+      const m = /^sync_(.+)_(ai|au|ad)$/.exec(name);
+      if (m && !known.has(m[1])) {
+        raw.execSync(`DROP TRIGGER IF EXISTS ${name};`);
+      }
+    }
+
     for (const spec of specs) {
       for (const suffix of ['ai', 'au', 'ad']) {
         raw.execSync(`DROP TRIGGER IF EXISTS sync_${spec.name}_${suffix};`);
@@ -76,6 +89,14 @@ export function installSyncTriggers(raw: SQLiteDatabase, localDeviceId: string):
         raw.execSync(sql);
       }
     }
+
+    // 清掉清单外表的 oplog 残留，collect/apply 不再读到未知表
+    const placeholders = specs.map(() => '?').join(', ');
+    raw.runSync(
+      `DELETE FROM sync_oplog WHERE table_name NOT IN (${placeholders})`,
+      ...(specs.map((s) => s.name) as (string | number | null)[]),
+    );
+
     raw.execSync('COMMIT');
   } catch (e) {
     raw.execSync('ROLLBACK');
