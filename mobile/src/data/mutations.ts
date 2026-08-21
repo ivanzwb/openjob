@@ -2,8 +2,146 @@ import * as Crypto from 'expo-crypto';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import type { TaskView } from '@shared/ipc';
 import type { ExplanationTier } from '@shared/enums';
+import type { FollowUpSummaryUpdate } from '@shared/llm/followUpContext';
 import { getDeviceIdentity } from '../sync/identity';
 import { writingAs } from '../sync/triggers';
+
+export type FollowUpMessage = { role: 'user' | 'assistant'; text: string };
+
+function legacyFollowUpKey(nodeId: string): string {
+  return `ui.followUpHistory.${nodeId}`;
+}
+
+async function ensureFollowUpSession(
+  db: SQLiteDatabase,
+  campaignId: string,
+  nodeId: string,
+  nodeName: string,
+): Promise<string> {
+  const existing = db.getFirstSync<{ id: string }>(
+    `SELECT id FROM session
+     WHERE node_id = ? AND kind = 'nodeFollowUp'
+     ORDER BY created_at DESC LIMIT 1`,
+    nodeId,
+  );
+  if (existing) return existing.id;
+
+  const identity = await getDeviceIdentity(db);
+  // 两端离线首次发问时也生成同一个会话 ID，后续同步会自然汇合。
+  const id = `node-follow-up:${nodeId}`;
+  writingAs(db, identity.deviceId, () => {
+    db.runSync(
+      `INSERT INTO session (id, campaign_id, node_id, kind, title, created_at)
+       VALUES (?, ?, ?, 'nodeFollowUp', ?, ?)`,
+      id,
+      campaignId,
+      nodeId,
+      nodeName,
+      Date.now(),
+    );
+  });
+  return id;
+}
+
+export async function migrateLegacyFollowUpHistory(
+  db: SQLiteDatabase,
+  campaignId: string,
+  nodeId: string,
+  nodeName: string,
+): Promise<void> {
+  const legacy = db.getFirstSync<{ value: string }>(
+    `SELECT value FROM sync_meta WHERE key = ?`,
+    legacyFollowUpKey(nodeId),
+  );
+  if (!legacy?.value) return;
+
+  let messages: FollowUpMessage[];
+  try {
+    messages = (JSON.parse(legacy.value) as FollowUpMessage[]).filter(
+      (message) =>
+        (message.role === 'user' || message.role === 'assistant') &&
+        typeof message.text === 'string',
+    );
+  } catch {
+    return;
+  }
+  if (messages.length === 0) return;
+
+  const sessionId = await ensureFollowUpSession(db, campaignId, nodeId, nodeName);
+  const identity = await getDeviceIdentity(db);
+  const now = Date.now();
+  writingAs(db, identity.deviceId, () => {
+    messages.forEach((message, index) => {
+      db.runSync(
+        `INSERT INTO message (id, session_id, role, content_md, citations, created_at)
+         VALUES (?, ?, ?, ?, '[]', ?)`,
+        Crypto.randomUUID(),
+        sessionId,
+        message.role,
+        message.text,
+        now + index,
+      );
+    });
+    db.runSync(`DELETE FROM sync_meta WHERE key = ?`, legacyFollowUpKey(nodeId));
+  });
+}
+
+export async function appendFollowUpMessage(
+  db: SQLiteDatabase,
+  campaignId: string,
+  nodeId: string,
+  nodeName: string,
+  message: FollowUpMessage,
+): Promise<void> {
+  const sessionId = await ensureFollowUpSession(db, campaignId, nodeId, nodeName);
+  const identity = await getDeviceIdentity(db);
+  writingAs(db, identity.deviceId, () => {
+    db.runSync(
+      `INSERT INTO message (id, session_id, role, content_md, citations, created_at)
+       VALUES (?, ?, ?, ?, '[]', ?)`,
+      Crypto.randomUUID(),
+      sessionId,
+      message.role,
+      message.text,
+      Date.now(),
+    );
+  });
+}
+
+export async function deleteFollowUpHistory(
+  db: SQLiteDatabase,
+  nodeId: string,
+): Promise<void> {
+  const identity = await getDeviceIdentity(db);
+  writingAs(db, identity.deviceId, () => {
+    db.runSync(
+      `DELETE FROM session WHERE node_id = ? AND kind = 'nodeFollowUp'`,
+      nodeId,
+    );
+    db.runSync(`DELETE FROM sync_meta WHERE key = ?`, legacyFollowUpKey(nodeId));
+  });
+}
+
+export async function updateFollowUpSummary(
+  db: SQLiteDatabase,
+  sessionId: string,
+  update: FollowUpSummaryUpdate,
+): Promise<void> {
+  const identity = await getDeviceIdentity(db);
+  writingAs(db, identity.deviceId, () => {
+    db.runSync(
+      `UPDATE session
+       SET context_summary_md = ?,
+           context_summary_through_id = ?,
+           context_summary_source_count = ?
+       WHERE id = ?`,
+      update.summary,
+      update.throughMessageId,
+      update.sourceCount,
+      sessionId,
+    );
+  });
+}
 
 function taskView(db: SQLiteDatabase, taskId: string): TaskView {
   const t = db.getFirstSync<{

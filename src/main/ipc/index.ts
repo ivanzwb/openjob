@@ -91,7 +91,10 @@ import {
   updateSpeechSnippet,
 } from '../speech';
 import {
+  bindSessionToNode,
   deleteSession,
+  deleteSessionsForNode,
+  getNodeFollowUpMessages,
   getSessionMessages,
   listSessions,
   searchSessions,
@@ -361,11 +364,18 @@ export function registerIpcHandlers(): void {
     bookmarked: toggleBookmark(targetType, targetId),
   }));
 
-  handle('session:list', ({ kind, limit }) => listSessions(kind, limit));
+  handle('session:list', ({ kind, nodeId, limit }) => listSessions(kind, limit, nodeId));
   handle('session:getMessages', ({ sessionId }) => getSessionMessages(sessionId));
+  handle('session:getMessagesForNode', ({ nodeId }) => getNodeFollowUpMessages(nodeId));
   handle('session:search', ({ query, limit }) => searchSessions(query, limit));
   handle('session:delete', ({ sessionId }) => {
     deleteSession(sessionId);
+  });
+  handle('session:deleteForNode', ({ nodeId }) => {
+    deleteSessionsForNode(nodeId);
+  });
+  handle('session:bindNode', ({ sessionId, nodeId, campaignId }) => {
+    bindSessionToNode(sessionId, nodeId, campaignId);
   });
 
   handle('sync:status', () => getSyncStatus());

@@ -12,6 +12,11 @@ import type {
   SessionMessageView,
 } from '@shared/ipc';
 import type { Repo as RepoEntity } from '@shared/entities';
+import type { FollowUpMessage } from './mutations';
+import type {
+  FollowUpStoredMessage,
+  FollowUpSummaryState,
+} from '@shared/llm/followUpContext';
 
 function todayLocal(): string {
   const d = new Date();
@@ -520,6 +525,7 @@ export function listSessions(db: SQLiteDatabase, limit = 30): SessionSummary[] {
     .getAllSync<{
       id: string;
       campaign_id: string | null;
+      node_id: string | null;
       kind: string;
       title: string;
       created_at: number;
@@ -527,6 +533,7 @@ export function listSessions(db: SQLiteDatabase, limit = 30): SessionSummary[] {
     .map((s) => ({
       id: s.id,
       campaignId: s.campaign_id,
+      nodeId: s.node_id,
       kind: s.kind as SessionSummary['kind'],
       title: s.title,
       createdAt: s.created_at,
@@ -536,6 +543,81 @@ export function listSessions(db: SQLiteDatabase, limit = 30): SessionSummary[] {
       )?.n ?? 0,
       totalTokens: 0,
     }));
+}
+
+export function getNodeFollowUpHistory(
+  db: SQLiteDatabase,
+  nodeId: string,
+): FollowUpMessage[] {
+  return db
+    .getAllSync<{ role: string; content_md: string }>(
+      `SELECT message.role, message.content_md
+       FROM message
+       INNER JOIN session ON session.id = message.session_id
+       WHERE session.node_id = ?
+         AND session.kind = 'nodeFollowUp'
+         AND message.role IN ('user', 'assistant')
+       ORDER BY message.created_at ASC, message.id ASC`,
+      nodeId,
+    )
+    .map((message) => ({
+      role: message.role as FollowUpMessage['role'],
+      text: message.content_md,
+    }));
+}
+
+export function getNodeFollowUpContext(
+  db: SQLiteDatabase,
+  nodeId: string,
+): {
+  sessionId: string;
+  state: FollowUpSummaryState;
+  messages: FollowUpStoredMessage[];
+} {
+  const current = db.getFirstSync<{
+    id: string;
+    context_summary_md: string;
+    context_summary_through_id: string | null;
+    context_summary_source_count: number;
+  }>(
+    `SELECT id, context_summary_md, context_summary_through_id,
+            context_summary_source_count
+     FROM session
+     WHERE node_id = ? AND kind = 'nodeFollowUp'
+     ORDER BY created_at DESC LIMIT 1`,
+    nodeId,
+  );
+  if (!current) throw new Error('追问会话不存在');
+
+  const messages = db
+    .getAllSync<{
+      id: string;
+      role: string;
+      content_md: string;
+    }>(
+      `SELECT message.id, message.role, message.content_md
+       FROM message
+       INNER JOIN session ON session.id = message.session_id
+       WHERE session.node_id = ?
+         AND session.kind = 'nodeFollowUp'
+         AND message.role IN ('user', 'assistant')
+       ORDER BY message.created_at ASC, message.id ASC`,
+      nodeId,
+    )
+    .map((message) => ({
+      id: message.id,
+      role: message.role as FollowUpStoredMessage['role'],
+      content: message.content_md,
+    }));
+  return {
+    sessionId: current.id,
+    state: {
+      summary: current.context_summary_md,
+      throughMessageId: current.context_summary_through_id,
+      sourceCount: current.context_summary_source_count,
+    },
+    messages,
+  };
 }
 
 export function getSessionMessages(db: SQLiteDatabase, sessionId: string): SessionMessageView[] {

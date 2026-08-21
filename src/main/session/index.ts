@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import type { Citation } from '@shared/entities';
 import type { EvidenceKind, SessionKind } from '@shared/enums';
 import type {
@@ -9,19 +9,35 @@ import type {
   TokenUsage,
   ToolCallView,
 } from '@shared/ipc';
+import type {
+  FollowUpStoredMessage,
+  FollowUpSummaryState,
+  FollowUpSummaryUpdate,
+} from '@shared/llm/followUpContext';
 import { getDb, schema } from '../db';
 
 export function createSession(
   kind: SessionKind,
   title: string,
   campaignId?: string | null,
+  nodeId?: string | null,
 ): string {
-  const id = randomUUID();
+  if (kind === 'nodeFollowUp' && nodeId) {
+    const existing = getDb()
+      .select({ id: schema.session.id })
+      .from(schema.session)
+      .where(and(eq(schema.session.nodeId, nodeId), eq(schema.session.kind, kind)))
+      .orderBy(desc(schema.session.createdAt))
+      .get();
+    if (existing) return existing.id;
+  }
+  const id = kind === 'nodeFollowUp' && nodeId ? `node-follow-up:${nodeId}` : randomUUID();
   getDb()
     .insert(schema.session)
     .values({
       id,
       campaignId: campaignId ?? null,
+      nodeId: nodeId ?? null,
       kind,
       title: title.slice(0, 120),
       createdAt: Date.now(),
@@ -80,14 +96,22 @@ export function appendToolCall(
     .run();
 }
 
-export function listSessions(kind?: SessionKind, limit = 50): SessionSummary[] {
+export function listSessions(
+  kind?: SessionKind,
+  limit = 50,
+  nodeId?: string,
+): SessionSummary[] {
+  const filters = [
+    kind ? eq(schema.session.kind, kind) : undefined,
+    nodeId ? eq(schema.session.nodeId, nodeId) : undefined,
+  ].filter((value): value is NonNullable<typeof value> => Boolean(value));
   const rows = getDb()
     .select()
     .from(schema.session)
+    .where(filters.length > 0 ? and(...filters) : undefined)
     .orderBy(desc(schema.session.createdAt))
-    .all()
-    .filter((s) => (kind ? s.kind === kind : true))
-    .slice(0, limit);
+    .limit(limit)
+    .all();
 
   const db = getDb();
   return rows.map((s) => {
@@ -103,6 +127,7 @@ export function listSessions(kind?: SessionKind, limit = 50): SessionSummary[] {
     return {
       id: s.id,
       campaignId: s.campaignId,
+      nodeId: s.nodeId,
       kind: s.kind,
       title: s.title,
       createdAt: s.createdAt,
@@ -154,6 +179,7 @@ export function searchSessions(query: string, limit = 30): SessionSearchHit[] {
     hits.push({
       id: s.id,
       campaignId: s.campaignId,
+      nodeId: s.nodeId,
       kind: s.kind,
       title: s.title,
       createdAt: s.createdAt,
@@ -184,12 +210,120 @@ export function deleteSession(sessionId: string): void {
   getDb().delete(schema.session).where(eq(schema.session.id, sessionId)).run();
 }
 
+export function deleteSessionsForNode(nodeId: string): void {
+  getDb()
+    .delete(schema.session)
+    .where(
+      and(eq(schema.session.nodeId, nodeId), eq(schema.session.kind, 'nodeFollowUp')),
+    )
+    .run();
+}
+
+export function bindSessionToNode(
+  sessionId: string,
+  nodeId: string,
+  campaignId?: string,
+): void {
+  getDb()
+    .update(schema.session)
+    .set({
+      nodeId,
+      ...(campaignId ? { campaignId } : {}),
+    })
+    .where(eq(schema.session.id, sessionId))
+    .run();
+}
+
+export function getFollowUpContext(sessionId: string): {
+  state: FollowUpSummaryState;
+  messages: FollowUpStoredMessage[];
+} {
+  const db = getDb();
+  const current = db
+    .select()
+    .from(schema.session)
+    .where(eq(schema.session.id, sessionId))
+    .get();
+  if (!current) throw new Error('追问会话不存在');
+
+  const sessionIds = current.nodeId
+    ? db
+        .select({ id: schema.session.id })
+        .from(schema.session)
+        .where(
+          and(
+            eq(schema.session.nodeId, current.nodeId),
+            eq(schema.session.kind, 'nodeFollowUp'),
+          ),
+        )
+        .all()
+        .map((session) => session.id)
+    : [sessionId];
+  const messages = db
+    .select()
+    .from(schema.message)
+    .where(inArray(schema.message.sessionId, sessionIds))
+    .orderBy(schema.message.createdAt, schema.message.id)
+    .all()
+    .filter(
+      (message): message is typeof message & { role: 'user' | 'assistant' } =>
+        message.role === 'user' || message.role === 'assistant',
+    )
+    .map((message) => ({
+      id: message.id,
+      role: message.role,
+      content: message.contentMd,
+    }));
+
+  return {
+    state: {
+      summary: current.contextSummaryMd,
+      throughMessageId: current.contextSummaryThroughId,
+      sourceCount: current.contextSummarySourceCount,
+    },
+    messages,
+  };
+}
+
+export function updateFollowUpSummary(
+  sessionId: string,
+  update: FollowUpSummaryUpdate,
+): void {
+  getDb()
+    .update(schema.session)
+    .set({
+      contextSummaryMd: update.summary,
+      contextSummaryThroughId: update.throughMessageId,
+      contextSummarySourceCount: update.sourceCount,
+    })
+    .where(eq(schema.session.id, sessionId))
+    .run();
+}
+
 export function getSessionMessages(sessionId: string): SessionMessageView[] {
+  return getMessagesForSessionIds([sessionId]);
+}
+
+export function getNodeFollowUpMessages(nodeId: string): SessionMessageView[] {
+  const db = getDb();
+  const sessionIds = db
+    .select({ id: schema.session.id })
+    .from(schema.session)
+    .where(
+      and(eq(schema.session.nodeId, nodeId), eq(schema.session.kind, 'nodeFollowUp')),
+    )
+    .all()
+    .map((session) => session.id);
+  return getMessagesForSessionIds(sessionIds);
+}
+
+function getMessagesForSessionIds(sessionIds: string[]): SessionMessageView[] {
+  if (sessionIds.length === 0) return [];
   const db = getDb();
   const messages = db
     .select()
     .from(schema.message)
-    .where(eq(schema.message.sessionId, sessionId))
+    .where(inArray(schema.message.sessionId, sessionIds))
     .orderBy(schema.message.createdAt)
     .all()
     .filter((m) => m.role === 'user' || m.role === 'assistant');

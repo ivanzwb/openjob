@@ -439,13 +439,22 @@ export const speechSnippet = sqliteTable(
 // 会话与可观测性
 // ---------------------------------------------------------------------------
 
-export const session = sqliteTable('session', {
-  id: text('id').primaryKey(),
-  campaignId: text('campaign_id').references(() => campaign.id, { onDelete: 'cascade' }),
-  kind: text('kind').$type<SessionKind>().notNull(),
-  title: text('title').notNull().default(''),
-  createdAt: integer('created_at').notNull(),
-});
+export const session = sqliteTable(
+  'session',
+  {
+    id: text('id').primaryKey(),
+    campaignId: text('campaign_id').references(() => campaign.id, { onDelete: 'cascade' }),
+    /** 追问会话绑定知识点；其它会话保持 null */
+    nodeId: text('node_id').references(() => knowledgeNode.id, { onDelete: 'cascade' }),
+    kind: text('kind').$type<SessionKind>().notNull(),
+    title: text('title').notNull().default(''),
+    contextSummaryMd: text('context_summary_md').notNull().default(''),
+    contextSummaryThroughId: text('context_summary_through_id'),
+    contextSummarySourceCount: integer('context_summary_source_count').notNull().default(0),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => [index('idx_session_node').on(t.nodeId, t.kind, t.createdAt)],
+);
 
 export const message = sqliteTable(
   'message',

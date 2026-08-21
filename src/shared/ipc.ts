@@ -92,10 +92,14 @@ export interface ChatRequest {
   messages: ChatMessage[];
   /** 开启后 Agent 可自行决定是否联网检索 */
   allowWebSearch?: boolean;
+  /** 关闭时不注入任何工具（图谱/联网/读代码等），仅多轮对话 */
+  allowTools?: boolean;
   /** 指定后启用代码 Agent 工具集（list_dir / read_file / grep） */
   repoId?: string;
   sessionId?: string;
   campaignId?: string;
+  /** nodeFollowUp 会话所属知识点，用于跨端恢复同一段历史 */
+  nodeId?: string;
   /** 新建会话时落库的分类；已有 sessionId 时忽略 */
   sessionKind?: SessionKind;
 }
@@ -472,6 +476,7 @@ export interface IngestWebResult {
 export interface SessionSummary {
   id: string;
   campaignId: string | null;
+  nodeId: string | null;
   kind: SessionKind;
   title: string;
   createdAt: number;
@@ -1033,10 +1038,19 @@ export interface IpcInvokeMap {
   /** 标记代码位置前先落一条 code_ref，返回其 id */
   'codeRef:ensure': { req: EnsureCodeRefInput; res: { id: string } };
 
-  'session:list': { req: { kind?: SessionKind; limit?: number }; res: SessionSummary[] };
+  'session:list': {
+    req: { kind?: SessionKind; nodeId?: string; limit?: number };
+    res: SessionSummary[];
+  };
   'session:getMessages': { req: { sessionId: string }; res: SessionMessageView[] };
+  'session:getMessagesForNode': { req: { nodeId: string }; res: SessionMessageView[] };
   'session:search': { req: { query: string; limit?: number }; res: SessionSearchHit[] };
   'session:delete': { req: { sessionId: string }; res: void };
+  'session:deleteForNode': { req: { nodeId: string }; res: void };
+  'session:bindNode': {
+    req: { sessionId: string; nodeId: string; campaignId?: string };
+    res: void;
+  };
 
   'sync:status': { req: void; res: SyncStatus };
   /** 启动配对并返回二维码载荷 */
@@ -1194,8 +1208,11 @@ export const IPC_INVOKE_CHANNELS = [
   'codeRef:ensure',
   'session:list',
   'session:getMessages',
+  'session:getMessagesForNode',
   'session:search',
   'session:delete',
+  'session:deleteForNode',
+  'session:bindNode',
   'sync:status',
   'sync:beginPairing',
   'sync:cancelPairing',

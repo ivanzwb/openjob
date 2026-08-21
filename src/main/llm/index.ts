@@ -3,12 +3,18 @@ import type OpenAI from 'openai';
 import type { EvidenceKind, LlmTier } from '@shared/enums';
 import type { Citation } from '@shared/entities';
 import type { ChatRequest, ProviderTestResult, StreamStarted, TokenUsage } from '@shared/ipc';
+import {
+  buildFollowUpSummaryPrompt,
+  compactFollowUpContext,
+} from '@shared/llm/followUpContext';
 // 直接引 bridge 而非 ipc/index，避免与 handler 注册形成循环依赖
 import { emit } from '../ipc/bridge';
 import {
   appendMessage,
   appendToolCall,
   createSession,
+  getFollowUpContext,
+  updateFollowUpSummary,
 } from '../session';
 import { createRoleClient, createTierClient } from './client';
 import { agentTools, AGENT_TOOLS, GRAPH_TOOLS, runTool, type ToolContext } from './tools';
@@ -110,14 +116,42 @@ async function runChat(
         req.sessionKind ?? (req.repoId ? 'repoQa' : 'freeChat'),
         lastUser.slice(0, 80),
         req.campaignId ?? null,
+        req.nodeId ?? null,
       );
     }
     if (userMessages.length > 0) {
       appendMessage(sessionId, 'user', userMessages[userMessages.length - 1]!.content);
     }
 
-    const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = req.messages.map(
-      (m) => ({ role: m.role, content: m.content }),
+    let requestMessages = req.messages;
+    if (req.sessionKind === 'nodeFollowUp' && sessionId) {
+      const systemPrompt =
+        req.messages.find((message) => message.role === 'system')?.content ?? '';
+      const context = getFollowUpContext(sessionId);
+      const compacted = await compactFollowUpContext({
+        systemPrompt,
+        messages: context.messages,
+        state: context.state,
+        summarize: async (previousSummary, olderMessages) => {
+          const response = await client.chat.completions.create(
+            {
+              model,
+              messages: normalizeChatMessages(
+                buildFollowUpSummaryPrompt(previousSummary, olderMessages),
+              ),
+              temperature: 0.1,
+            },
+            { signal: controller.signal },
+          );
+          return response.choices[0]?.message.content?.trim() ?? '';
+        },
+        saveSummary: (update) => updateFollowUpSummary(sessionId!, update),
+      });
+      requestMessages = compacted.messages;
+    }
+
+    const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = requestMessages.map(
+      (message) => ({ role: message.role, content: message.content }),
     );
 
     // 规则触发优先于 Agent 自主判断——模型对「我需不需要搜」判断不准
@@ -129,8 +163,11 @@ async function runChat(
         company = null;
       }
     }
+    const toolsEnabled =
+      req.allowTools ?? (req.sessionKind !== 'nodeFollowUp' && !req.repoId);
     const decision = decideSearchTrigger(lastUser, company);
-    const instruction = req.allowWebSearch ? triggerInstruction(decision) : null;
+    const instruction =
+      toolsEnabled && req.allowWebSearch ? triggerInstruction(decision) : null;
     if (instruction) messages.unshift({ role: 'system', content: instruction });
 
     const toolCtx: ToolContext = { campaignId: req.campaignId ?? null, purpose: lastUser };
@@ -156,14 +193,16 @@ async function runChat(
     const totals: TokenUsage = { promptTokens: 0, completionTokens: 0 };
     let lastPromptTokens: number | null = null;
     const maxRounds = req.repoId ? MAX_REPO_TOOL_ROUNDS : MAX_TOOL_ROUNDS;
-    const tools = req.repoId
-      ? mergedCodeAgentTools(toolCtx)
-      : req.allowWebSearch || decision.trigger === 'required'
-        ? agentTools(toolCtx)
-        : // 不联网也仍可读写知识图谱，这部分不产生外部调用
-          toolCtx.campaignId
-          ? GRAPH_TOOLS
-          : undefined;
+    const tools = !toolsEnabled
+      ? undefined
+      : req.repoId
+        ? mergedCodeAgentTools(toolCtx)
+        : req.allowWebSearch || decision.trigger === 'required'
+          ? agentTools(toolCtx)
+          : // 不联网也仍可读写知识图谱，这部分不产生外部调用
+            toolCtx.campaignId
+            ? GRAPH_TOOLS
+            : undefined;
 
     for (let round = 0; round <= maxRounds; round++) {
       const stream = await openStream(client, controller, {

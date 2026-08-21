@@ -3,6 +3,7 @@ import type { LlmRole, SessionKind } from '@shared/enums';
 import type { SessionMessageView, SessionSearchHit, SessionSummary } from '@shared/ipc';
 import { useStream } from '../ipc/useStream';
 import { invoke } from '../ipc';
+import { useDataRefresh } from '../ipc/dataVersion';
 import { MarkdownContent } from './MarkdownContent';
 import { CitationList, SourceBadge } from './SourceBadge';
 import { ToolTrace } from './ToolTrace';
@@ -17,7 +18,12 @@ export function StreamChat({
   placeholder = '问点什么…',
   sessionKind = 'freeChat',
   campaignId,
+  nodeId,
   compact = false,
+  allowWebSearch: allowWebSearchDefault = true,
+  allowTools = true,
+  sessionStorageKey,
+  showSessionHistory = true,
 }: {
   /** 这一路流的稳定标识：面板被卸载后按它接回，生成中的回答不会丢 */
   streamKey: string;
@@ -26,20 +32,39 @@ export function StreamChat({
   placeholder?: string;
   sessionKind?: SessionKind;
   campaignId?: string;
+  /** 会话所属知识点；用于追问历史跨端同步与恢复 */
+  nodeId?: string;
   /** 嵌入备考/总览时使用：默认隐藏历史侧栏、精简控件 */
   compact?: boolean;
+  allowWebSearch?: boolean;
+  allowTools?: boolean;
+  /** 保存当前会话 ID；适合按知识点恢复各自的对话 */
+  sessionStorageKey?: string;
+  /** 是否显示跨会话历史侧栏 */
+  showSessionHistory?: boolean;
 }): React.JSX.Element {
   const [input, setInput] = useState('');
-  const [allowWebSearch, setAllowWebSearch] = useState(true);
+  const [allowWebSearch, setAllowWebSearch] = useState(allowWebSearchDefault);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [history, setHistory] = useState<SessionMessageView[]>([]);
   const [showSidebar, setShowSidebar] = useState(!compact);
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<SessionSearchHit[] | null>(null);
+  const [initialSessionId] = useState<string | null>(() =>
+    sessionStorageKey ? window.localStorage.getItem(sessionStorageKey) : null,
+  );
 
   const loadSessions = useCallback(() => {
-    void invoke('session:list', { kind: sessionKind, limit: 40 }).then(setSessions);
-  }, [sessionKind]);
+    void invoke('session:list', { kind: sessionKind, nodeId, limit: 40 }).then(setSessions);
+  }, [nodeId, sessionKind]);
+
+  const fetchHistory = useCallback(
+    (sessionId: string) =>
+      nodeId
+        ? invoke('session:getMessagesForNode', { nodeId })
+        : invoke('session:getMessages', { sessionId }),
+    [nodeId],
+  );
 
   // 搜索跨 kind，因为「我之前在哪问过这个」时用户并不记得当时在哪个页面问的
   useEffect(() => {
@@ -56,36 +81,101 @@ export function StreamChat({
 
   const handleDone = useCallback(
     (done: { sessionId: string | null; contentMd: string }) => {
+      if (done.contentMd.trim()) {
+        setHistory((h) => {
+          const last = h[h.length - 1];
+          if (last?.role === 'assistant' && last.contentMd === done.contentMd) return h;
+          return [
+            ...h,
+            {
+              id: `assistant-${Date.now()}`,
+              sessionId: done.sessionId ?? '',
+              role: 'assistant' as const,
+              contentMd: done.contentMd,
+              citations: [],
+              createdAt: Date.now(),
+              usage: null,
+              evidenceKind: null,
+              toolCalls: [],
+            },
+          ];
+        });
+      }
       if (done.sessionId) {
-        void invoke('session:getMessages', { sessionId: done.sessionId }).then(setHistory);
+        void fetchHistory(done.sessionId).then(setHistory);
         loadSessions();
       }
     },
-    [loadSessions],
+    [fetchHistory, loadSessions],
   );
 
-  const { state, send, cancel, reset, setSessionId } = useStream(streamKey, null, handleDone);
+  const { state, send, cancel, reset, setSessionId } = useStream(
+    streamKey,
+    initialSessionId,
+    handleDone,
+  );
+
+  useEffect(() => {
+    if (!sessionStorageKey) return;
+    if (state.sessionId) window.localStorage.setItem(sessionStorageKey, state.sessionId);
+    else window.localStorage.removeItem(sessionStorageKey);
+  }, [sessionStorageKey, state.sessionId]);
 
   // 上一次的回答还留在流里（比如生成时切走过），把这一会话的消息补回来
   useEffect(() => {
     const sessionId = state.sessionId;
     if (!sessionId || history.length > 0) return;
-    void invoke('session:getMessages', { sessionId }).then(setHistory);
-  }, [state.sessionId, history.length]);
+    void fetchHistory(sessionId).then(setHistory);
+  }, [fetchHistory, state.sessionId, history.length]);
 
   const loadHistory = useCallback(
     async (sessionId: string) => {
-      const msgs = await invoke('session:getMessages', { sessionId });
+      const msgs = await fetchHistory(sessionId);
       setHistory(msgs);
-      setSessionId(sessionId);
       reset();
+      setSessionId(sessionId);
     },
-    [reset, setSessionId],
+    [fetchHistory, reset, setSessionId],
   );
 
+  useDataRefresh(() => {
+    if (!nodeId) return;
+    void invoke('session:list', { kind: sessionKind, nodeId, limit: 40 }).then((syncedSessions) => {
+      setSessions(syncedSessions);
+      const currentSessionId = state.sessionId;
+      if (!currentSessionId) return;
+      if (!syncedSessions.some((session) => session.id === currentSessionId)) {
+        setHistory([]);
+        reset();
+        setSessionId(null);
+        if (sessionStorageKey) window.localStorage.removeItem(sessionStorageKey);
+        return;
+      }
+      void fetchHistory(currentSessionId).then(setHistory);
+    });
+  });
+
   useEffect(() => {
+    if (!showSessionHistory && !nodeId) return;
     loadSessions();
-  }, [loadSessions]);
+  }, [loadSessions, nodeId, showSessionHistory]);
+
+  // 升级前桌面用 localStorage 绑定知识点；首次打开时补写 node_id，使旧历史进入同步。
+  useEffect(() => {
+    if (!nodeId || !initialSessionId) return;
+    void invoke('session:bindNode', {
+      sessionId: initialSessionId,
+      nodeId,
+      campaignId,
+    }).then(loadSessions);
+  }, [campaignId, initialSessionId, loadSessions, nodeId]);
+
+  // 新设备没有 localStorage，从已同步的知识点会话中恢复最近一次历史。
+  useEffect(() => {
+    if (!nodeId || state.sessionId || history.length > 0 || sessions.length === 0) return;
+    const timer = window.setTimeout(() => void loadHistory(sessions[0].id), 0);
+    return () => window.clearTimeout(timer);
+  }, [history.length, loadHistory, nodeId, sessions, state.sessionId]);
 
   const startNewSession = (): void => {
     setHistory([]);
@@ -97,6 +187,21 @@ export function StreamChat({
     await invoke('session:delete', { sessionId });
     if (state.sessionId === sessionId) startNewSession();
     loadSessions();
+  };
+
+  const clearCurrentHistory = async (): Promise<void> => {
+    const currentSessionId = state.sessionId;
+    if (nodeId) setSessions([]);
+    setHistory([]);
+    reset();
+    setSessionId(null);
+    if (sessionStorageKey) window.localStorage.removeItem(sessionStorageKey);
+    if (nodeId) {
+      await invoke('session:deleteForNode', { nodeId });
+    } else if (currentSessionId) {
+      await invoke('session:delete', { sessionId: currentSessionId });
+    }
+    if (showSessionHistory) loadSessions();
   };
 
   const submit = (): void => {
@@ -118,10 +223,12 @@ export function StreamChat({
       const next = [...h, userMsg];
       void send({
         role,
-        allowWebSearch,
+        allowWebSearch: allowTools ? allowWebSearch : false,
+        allowTools,
         sessionKind,
         sessionId: state.sessionId ?? undefined,
         campaignId,
+        nodeId,
         messages: [
           ...(systemPrompt ? [{ role: 'system' as const, content: systemPrompt }] : []),
           ...next
@@ -135,7 +242,7 @@ export function StreamChat({
 
   return (
     <div className="flex h-full min-h-0 gap-3">
-      {showSidebar && (
+      {showSessionHistory && showSidebar && (
         <aside className="flex w-52 shrink-0 flex-col gap-2 border-r border-[var(--color-border)] pr-3">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-[var(--color-muted)]">历史会话</span>
@@ -215,7 +322,7 @@ export function StreamChat({
 
       <div className="flex min-h-0 flex-1 flex-col gap-3">
         <div className="flex items-center gap-2 text-xs text-[var(--color-muted)]">
-          {!compact && (
+          {showSessionHistory && !compact && (
             <button
               type="button"
               onClick={() => setShowSidebar((v) => !v)}
@@ -224,7 +331,7 @@ export function StreamChat({
               {showSidebar ? '隐藏历史' : '显示历史'}
             </button>
           )}
-          {compact && (
+          {showSessionHistory && compact && (
             <button
               type="button"
               onClick={() => setShowSidebar((v) => !v)}
@@ -264,16 +371,14 @@ export function StreamChat({
               {state.running && !state.text && (
                 <p className="text-sm text-[var(--color-muted)]">生成中…</p>
               )}
-              {(state.text || state.running) && (
+              {state.running && (
                 <div className="leading-relaxed">
                   <div className="mb-2 flex items-center gap-2">
                     <span className="text-[10px] uppercase text-[var(--color-muted)]">助手</span>
                     <SourceBadge kind={state.evidenceKind} />
-                    {state.running && (
-                      <span className="text-xs text-[var(--color-muted)]">生成中…</span>
-                    )}
+                    <span className="text-xs text-[var(--color-muted)]">生成中…</span>
                   </div>
-                  <MarkdownContent text={state.text} />
+                  {state.text ? <MarkdownContent text={state.text} /> : null}
                   <ToolTrace calls={state.toolCalls} usage={state.usage} />
                   <CitationList citations={state.citations} />
                 </div>
@@ -286,22 +391,26 @@ export function StreamChat({
           ) : (
             <p className="text-sm text-[var(--color-muted)]">
               {compact
-                ? '可联网检索；回答会保存，需要时展开历史回看。'
+                ? allowTools
+                  ? '可联网检索；回答会保存，需要时展开历史回看。'
+                  : '围绕当前考点多轮追问，回答会保存，需要时展开历史回看。'
                 : '开启联网后，Agent 会自行判断是否需要检索，回答会落库并可在左侧回看。'}
             </p>
           )}
         </div>
 
         <div className="flex items-center gap-2 text-xs text-[var(--color-muted)]">
-          <label className="flex cursor-pointer items-center gap-1.5">
-            <input
-              type="checkbox"
-              checked={allowWebSearch}
-              onChange={(e) => setAllowWebSearch(e.target.checked)}
-            />
-            允许联网检索
-          </label>
-          <span>·</span>
+          {allowTools && (
+            <label className="flex cursor-pointer items-center gap-1.5">
+              <input
+                type="checkbox"
+                checked={allowWebSearch}
+                onChange={(e) => setAllowWebSearch(e.target.checked)}
+              />
+              允许联网检索
+            </label>
+          )}
+          {allowTools && <span>·</span>}
           {!compact && (
             <>
               <span>角色 {role}</span>
@@ -315,10 +424,10 @@ export function StreamChat({
             history.length > 0 && (
               <button
                 type="button"
-                onClick={startNewSession}
+                onClick={() => void (sessionStorageKey ? clearCurrentHistory() : startNewSession())}
                 className="ml-auto hover:text-[var(--color-fg)]"
               >
-                清空
+                {sessionStorageKey ? '清除历史' : '清空'}
               </button>
             )
           )}
