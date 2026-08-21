@@ -8,6 +8,7 @@ import { useApp } from '../context/AppContext';
 import { runTask, useTaskResult, useTaskState } from '../context/RemoteTaskContext';
 import { useLocalDataReload } from '../hooks/useLocalDataReload';
 import { markdownToPlainText } from '../lib/markdownBlocks';
+import { SpeechLibraryPreviewModal } from '../components/SpeechLibraryPreviewModal';
 import { useTheme } from '../theme';
 
 type PanelMode = 'preview' | 'edit';
@@ -59,6 +60,7 @@ export function ScriptsScreen(): React.JSX.Element {
   const [panelMode, setPanelMode] = useState<PanelMode>('preview');
   const [draft, setDraft] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [overallPreviewOpen, setOverallPreviewOpen] = useState(false);
 
   const reload = useCallback(() => {
     const list = listSpeechSnippets(getRawDb());
@@ -134,9 +136,26 @@ export function ScriptsScreen(): React.JSX.Element {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.bg, padding: 16, gap: 12 }}>
-      <Text style={{ color: theme.muted, fontSize: 12, lineHeight: 18 }}>
-        考点讲解、考我反馈、源码问答的口语素材汇总。可预览全文、改写成你自己的话再背。导出请用桌面端。
-      </Text>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+        <Text style={{ flex: 1, color: theme.muted, fontSize: 12, lineHeight: 18 }}>
+          考点讲解、考我反馈、源码问答的口语素材汇总。可预览全文、改写成你自己的话再背。
+        </Text>
+        <Pressable
+          onPress={() => setOverallPreviewOpen(true)}
+          disabled={items.length === 0}
+          style={{
+            borderWidth: 1,
+            borderColor: theme.border,
+            borderRadius: 8,
+            backgroundColor: theme.surface,
+            paddingHorizontal: 10,
+            paddingVertical: 7,
+            opacity: items.length === 0 ? 0.5 : 1,
+          }}
+        >
+          <Text style={{ color: theme.accent, fontSize: 12 }}>整体预览/打印</Text>
+        </Pressable>
+      </View>
 
       {items.length === 0 ? (
         <Text style={{ color: theme.muted, fontSize: 13 }}>
@@ -343,6 +362,9 @@ export function ScriptsScreen(): React.JSX.Element {
           </View>
         </View>
       </Modal>
+      {overallPreviewOpen && (
+        <SpeechLibraryPreviewModal items={items} onClose={() => setOverallPreviewOpen(false)} />
+      )}
     </View>
   );
 }
