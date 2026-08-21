@@ -1,4 +1,4 @@
-import { ActivityIndicator, View, Text } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, View, Text } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -22,10 +22,15 @@ function AppShell(): React.JSX.Element {
   }
 
   return (
-    <NavigationContainer>
-      <RootTabs />
-      <StatusBar style={theme.scheme === 'dark' ? 'light' : 'dark'} />
-    </NavigationContainer>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      style={{ flex: 1 }}
+    >
+      <NavigationContainer>
+        <RootTabs />
+        <StatusBar style={theme.scheme === 'dark' ? 'light' : 'dark'} />
+      </NavigationContainer>
+    </KeyboardAvoidingView>
   );
 }
 

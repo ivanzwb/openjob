@@ -15,6 +15,7 @@
     },
     "android": {
       "package": "com.openjob.mobile",
+      "softwareKeyboardLayoutMode": "pan",
       "permissions": [
         "CAMERA",
         "RECORD_AUDIO",

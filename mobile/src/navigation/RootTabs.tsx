@@ -103,6 +103,7 @@ export function RootTabs(): React.JSX.Element {
         tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
         tabBarActiveTintColor: theme.accent,
         tabBarInactiveTintColor: theme.muted,
+        tabBarHideOnKeyboard: true,
         tabBarIcon: (props) => <TabIcon routeName={route.name} {...props} />,
         lazy: false,
         freezeOnBlur: false,
