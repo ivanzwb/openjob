@@ -91,11 +91,14 @@ export function KnowledgeTree({
   }, [scrollContainerRef, selectedNodeId, visibleNodeIds]);
 
   const filtered = visibleNodeIds ? nodes.filter((n) => visibleNodeIds.has(n.id)) : nodes;
+  // 根节点按 falsy 判定，和桌面端一致：parentId 可能是 null、undefined 或空串
+  // （同步过来的行、手工造的数据都出现过），只认 null 会让整棵树凭空消失。
   const byParent = new Map<string | null, KnowledgeNodeView[]>();
   for (const node of filtered) {
-    const list = byParent.get(node.parentId) ?? [];
+    const key = node.parentId || null;
+    const list = byParent.get(key) ?? [];
     list.push(node);
-    byParent.set(node.parentId, list);
+    byParent.set(key, list);
   }
   const roots = byParent.get(null) ?? [];
 

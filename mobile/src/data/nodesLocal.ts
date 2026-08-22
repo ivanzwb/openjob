@@ -320,6 +320,7 @@ export function flattenChildrenForParent(
       kind: 'point' as const,
       coverageType: child.coverageType ?? parentCoverage,
     })),
+    Crypto.randomUUID,
   ).map((row) => ({ ...row, parentId }));
 }
 

@@ -23,17 +23,26 @@ export interface KnowledgeNodeInsert {
 
 const COVERAGE_VALUES: CoverageType[] = ['deepDive', 'gap', 'landmine', 'extra'];
 
-function newId(): string {
-  return globalThis.crypto.randomUUID();
-}
-
 function validCoverage(v: unknown): CoverageType {
   return typeof v === 'string' && (COVERAGE_VALUES as string[]).includes(v)
     ? (v as CoverageType)
     : 'gap';
 }
 
-export function flattenGeneratedTree(campaignId: string, nodes: GeneratedNode[]): KnowledgeNodeInsert[] {
+/**
+ * 把 LLM 生成的嵌套考点树拍平成待插入的行。
+ *
+ * `newId` 必须由调用方传进来，不给默认值：这里曾经直接用 `globalThis.crypto.randomUUID()`，
+ * 桌面端（Node）有这个全局，React Native 没有，于是手机端一诊断就抛
+ * 「Cannot read property 'randomUUID' of undefined」——而 clearCampaignNodes 已经先把
+ * 旧考点删了，用户看到的就是「点了诊断，考点全没了」。做成必填参数，
+ * 类型检查会逼每个调用方自己交代 ID 从哪来，这类事故不会再悄悄回来。
+ */
+export function flattenGeneratedTree(
+  campaignId: string,
+  nodes: GeneratedNode[],
+  newId: () => string,
+): KnowledgeNodeInsert[] {
   const out: KnowledgeNodeInsert[] = [];
   const now = Date.now();
   const globalNames: string[] = [];

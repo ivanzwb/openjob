@@ -30,11 +30,18 @@ export async function diagnoseFromJd(db: SQLiteDatabase, campaignId: string): Pr
     `公司：${campaign.company}\n岗位：${campaign.roleTitle}\n\nJD：\n${campaign.jdRaw}`,
   );
 
+  // 先把新考点全部算好再动库。诊断会清掉旧考点，中途出错就等于用户点一下
+  // 考点清单整个消失；事务保证要么换成新的，要么原样留着旧的。
+  const rows = flattenGeneratedTree(campaignId, result.nodes, Crypto.randomUUID);
+  if (rows.length === 0) throw new Error('这次没能从 JD 里解析出考点，已保留原有考点清单');
+
   const identity = await getDeviceIdentity(db);
   writingAs(db, identity.deviceId, () => {
-    clearCampaignNodes(db, campaignId);
-    saveJdParsed(db, campaignId, result.jdParsed);
-    insertNodes(db, flattenGeneratedTree(campaignId, result.nodes));
+    db.withTransactionSync(() => {
+      clearCampaignNodes(db, campaignId);
+      saveJdParsed(db, campaignId, result.jdParsed);
+      insertNodes(db, rows);
+    });
   });
 
   const edgesCreated = await insertEdgesByName(db, campaignId, result.edges ?? []);

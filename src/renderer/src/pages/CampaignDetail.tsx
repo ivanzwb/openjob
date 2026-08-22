@@ -189,7 +189,18 @@ export function CampaignDetail({
     setPendingExpandNodeId(null);
   }
 
+  // 重新诊断会用新树整体替换旧考点，学习进度、收藏和笔记一起没。
+  // 一个紧挨着「重新检索」的按钮，误点的代价不该是整场备考重来
   const runDiagnosis = async (): Promise<void> => {
+    const existing = detail?.nodes.length ?? 0;
+    if (
+      existing > 0 &&
+      !confirm(
+        `当前已有 ${existing} 个考点。重新诊断会用新的考点清单整体替换它们，已有的学习状态、收藏和笔记会跟着一起没了。确定继续？`,
+      )
+    ) {
+      return;
+    }
     await invoke('diagnosis:fromJd', { campaignId: id });
   };
 
@@ -241,6 +252,7 @@ export function CampaignDetail({
   };
 
   const fetchIntel = async (): Promise<void> => {
+    if (detail?.intel && !confirm('会联网重新检索并覆盖现在这份情报卡。确定继续？')) return;
     await invoke('diagnosis:fetchIntel', { campaignId: id });
   };
 

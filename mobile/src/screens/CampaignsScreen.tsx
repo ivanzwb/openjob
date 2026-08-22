@@ -4,6 +4,7 @@ import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import type { CampaignSummary, KnowledgeNodeView, TaskView } from '@shared/ipc';
 import type { NodeStatus } from '@shared/enums';
 import { nodeIdsForPlanFilter, nodeIdsForTreeFilter } from '@shared/planFilter';
+import { CompanyIntelCard } from '../components/CompanyIntelCard';
 import { KeepAlivePanel } from '../components/KeepAlivePanel';
 import { KnowledgeTree, type NodePatch } from '../components/KnowledgeTree';
 import { NodeFollowUpPanel } from '../components/NodeFollowUpPanel';
@@ -314,7 +315,7 @@ function CampaignDetailView({
     await triggerSync().catch(() => undefined);
   }, [notifyDataChanged, triggerSync]);
 
-  const diagnose = (): void => {
+  const runDiagnosis = (): void => {
     void runTask(diagnoseKey, 'JD 诊断', async () => {
       const res = await diagnoseFromJd(getRawDb(), id);
       await afterWrite();
@@ -322,12 +323,39 @@ function CampaignDetailView({
     }).catch(() => undefined);
   };
 
-  const fetchIntel = (): void => {
+  const runFetchIntel = (): void => {
     void runTask(intelKey, '公司情报', async () => {
       const res = await diagnoseFetchIntel(getRawDb(), id);
       await afterWrite();
       return res;
     }).catch(() => undefined);
+  };
+
+  // 重新诊断会把整棵考点树连着学习进度一起换掉，误点的代价太大，先问一句
+  const diagnose = (): void => {
+    if (detail.nodes.length === 0) {
+      runDiagnosis();
+      return;
+    }
+    Alert.alert(
+      '重新诊断？',
+      `当前已有 ${detail.nodes.length} 个考点。重新诊断会用新的考点清单整体替换它们，已有的学习状态、收藏和笔记会跟着一起没了。`,
+      [
+        { text: '取消', style: 'cancel' },
+        { text: '重新诊断', style: 'destructive', onPress: runDiagnosis },
+      ],
+    );
+  };
+
+  const fetchIntel = (): void => {
+    if (!detail.intel) {
+      runFetchIntel();
+      return;
+    }
+    Alert.alert('重新检索公司情报？', '会联网重新检索并覆盖现在这份情报卡。', [
+      { text: '取消', style: 'cancel' },
+      { text: '重新检索', style: 'destructive', onPress: runFetchIntel },
+    ]);
   };
 
   const expandNode = (nodeId: string): void => {
@@ -422,7 +450,9 @@ function CampaignDetailView({
           disabled={diagnosing}
           style={{ backgroundColor: theme.accent, padding: 10, borderRadius: 8, opacity: diagnosing ? 0.6 : 1 }}
         >
-          <Text style={{ color: '#fff', fontSize: 12 }}>{diagnosing ? '诊断中…' : 'JD 诊断'}</Text>
+          <Text style={{ color: '#fff', fontSize: 12 }}>
+            {diagnosing ? '诊断中…' : detail.nodes.length ? '重新诊断' : 'JD 诊断'}
+          </Text>
         </Pressable>
         <Pressable
           onPress={fetchIntel}
@@ -435,9 +465,19 @@ function CampaignDetailView({
             opacity: fetchingIntel ? 0.6 : 1,
           }}
         >
-          <Text style={{ color: theme.text, fontSize: 12 }}>{fetchingIntel ? '生成中…' : '公司情报'}</Text>
+          <Text style={{ color: theme.text, fontSize: 12 }}>
+            {fetchingIntel ? '生成中…' : detail.intel ? '重新检索情报' : '公司情报'}
+          </Text>
         </Pressable>
       </View>
+
+      {detail.intel ? (
+        <CompanyIntelCard intel={detail.intel} />
+      ) : (
+        <Text style={{ color: theme.muted, fontSize: 12 }}>
+          点「公司情报」联网检索公司与岗位信息
+        </Text>
+      )}
 
       <Text style={{ color: theme.muted, fontSize: 12 }}>点击考点学习；日历可筛选当日排期</Text>
 
