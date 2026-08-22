@@ -23,6 +23,25 @@ function assertSquare(file) {
   process.exit(1);
 }
 
+/**
+ * Windows 会按当前 DPI 挑最接近的档位，挑不到就拿更小的那档撑进框里显示——
+ * 任务栏 100% 缩放要的是 24x24，而 png-to-ico 只固定生成 16/32/48/256，
+ * 结果是 16 的图标摆在 24 的格子里，看着比别的应用小一圈。
+ * 这里用它内部的 resize/imagesToIco 自己铺满常用档位。
+ */
+const ICO_SIZES = [16, 20, 24, 32, 40, 48, 64, 128, 256];
+
+async function buildIco(file) {
+  const { imagesToIco } = await import('png-to-ico');
+  const { readPNG, resize } = await import('png-to-ico/lib/png.js');
+
+  const source = await readPNG(file);
+  // 先降到 256 再逐档缩放，与 png-to-ico 自身的两步做法一致，小尺寸更干净
+  const base = source.width === 256 ? source : resize(source, 256, 256);
+  const images = ICO_SIZES.map((size) => (size === 256 ? base : resize(base, size, size)));
+  return imagesToIco(images);
+}
+
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const src = join(root, 'resources', 'logo.png');
 const winSrc = join(root, 'resources', 'logo-win.png');
@@ -37,8 +56,7 @@ mkdirSync(buildDir, { recursive: true });
 copyFileSync(src, join(buildDir, 'icon.png'));
 const icoSrc = existsSync(winSrc) ? winSrc : src;
 assertSquare(icoSrc);
-const { default: pngToIco } = await import('png-to-ico');
-const buf = await pngToIco(icoSrc);
+const buf = await buildIco(icoSrc);
 const fs = await import('node:fs/promises');
 await fs.writeFile(join(buildDir, 'icon.ico'), buf);
 
