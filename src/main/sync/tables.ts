@@ -25,9 +25,10 @@ export interface SyncTableSpec {
 }
 
 /**
- * 排除项说明：
+ * 排除项说明（全表清单见 docs/DESIGN.md §6.1）：
  * - search_cache 是纯缓存，两端各自重建即可，同步它只是浪费带宽
- * - sync_* 自身不参与同步，否则会递归
+ * - prompt_run 是 AB 实验数据，只在产生它的设备上有意义
+ * - sync_* 自身不参与同步，否则会递归；水位线表达的本就是两端各自的进度
  */
 const SYNCED_TABLES: Array<{ table: Table; deviceLocal?: string[] }> = [
   { table: schema.appSetting },
