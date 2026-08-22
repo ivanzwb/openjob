@@ -3,6 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import type { Explanation } from '@shared/entities';
 import type { ExplanationTier } from '@shared/enums';
 import { RESUME_ALIGN_RULES } from '@shared/prompts/explain';
+import { normalizeDisplayText } from '@shared/lib/markdownDisplay';
 import { completeJson } from '../llm/json';
 import { resolveLlmRole } from '../config';
 import { getDb, schema } from '../db';
@@ -226,7 +227,7 @@ ${(contextMd ?? '').slice(0, 6000)}
 ${text}`,
   );
 
-  return { selectedText: text, elaborationMd: content.markdown };
+  return { selectedText: text, elaborationMd: normalizeDisplayText(content.markdown) };
 }
 
 /** 重写讲解中选中的一段，替换进全文 */
@@ -268,7 +269,7 @@ ${(contextMd ?? '').slice(0, 6000)}
 ${text}`,
   );
 
-  return { selectedText: text, rewrittenMd: content.markdown };
+  return { selectedText: text, rewrittenMd: normalizeDisplayText(content.markdown) };
 }
 
 export function replaceExplanationExcerpt(

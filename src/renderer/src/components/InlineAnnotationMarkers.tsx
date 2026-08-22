@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Annotation } from '@shared/entities';
 import { MARKER_ICON, MARKER_LABEL, markerKinds, type InlineMarkerKind } from '@shared/inlineMarkers';
+import { normalizeDisplayText } from '@shared/lib/markdownDisplay';
 import { highlightTextStyle } from '../lib/highlightStyle';
 import { useAdaptivePopover } from '../lib/popoverLayout';
 import { ResizeHandleGlyph, useResizablePanel } from './ResizablePopover';
@@ -115,7 +116,7 @@ function InlineMarkerPopover({
         </p>
       )}
       <div className="min-h-0 flex-1 overflow-y-auto break-words text-xs leading-relaxed [overflow-wrap:anywhere] [&_.shiki-host]:overflow-x-hidden [&_pre]:whitespace-pre-wrap">
-        <MarkdownContent text={marker.noteMd ?? ''} />
+        <MarkdownContent text={normalizeDisplayText(marker.noteMd ?? '')} />
       </div>
       <button type="button" {...resizeHandleProps} aria-label="拖动调整大小">
         <ResizeHandleGlyph />

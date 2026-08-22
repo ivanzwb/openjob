@@ -2,6 +2,7 @@ import * as Crypto from 'expo-crypto';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import type { Explanation } from '@shared/entities';
 import type { ExplanationTier } from '@shared/enums';
+import { normalizeDisplayText } from '@shared/lib/markdownDisplay';
 import { completeJson } from '../llm/json';
 import { resolveLlmRole } from '../llm/resolve';
 import { buildResumeContext, getCampaign, getKnowledgeNode } from './campaignLocal';
@@ -153,5 +154,5 @@ ${(contextMd ?? '').slice(0, 6000)}
 ${text}`,
   );
 
-  return { selectedText: text, elaborationMd: content.markdown };
+  return { selectedText: text, elaborationMd: normalizeDisplayText(content.markdown) };
 }
