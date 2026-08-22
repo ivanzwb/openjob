@@ -5,6 +5,7 @@ import { findMarkOnSelection } from '@shared/annotationMarkList';
 import { highlightTextStyle } from '../lib/highlightStyle';
 import { getSelectionStartInMarkdown } from '../lib/selectionOffset';
 import { invoke } from '../ipc';
+import { useDataRefresh } from '../ipc/dataVersion';
 
 /**
  * 划词 / 高亮 / 笔记等标注工具（讲解、真题、情报卡等正文区域复用）。
@@ -155,6 +156,10 @@ export function useAnnotationTools({
   }, [targetType, targetId]);
 
   useEffect(load, [load]);
+
+  // 细化/笔记可能是在别处落库的（手机端同步过来、或面板卸载期间任务才跑完），
+  // 数据版本 bump 时重拉，标记才不会等到下次重挂载才出现
+  useDataRefresh(load);
 
   const refresh = (): void => {
     load();

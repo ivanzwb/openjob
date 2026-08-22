@@ -43,6 +43,8 @@ import {
   findHighlightMark,
   phraseSelectionStart,
 } from '../lib/annotationMarks';
+import { markdownToDisplayHtml, normalizeDisplayText } from '../lib/markdownDisplay';
+import { useLocalDataReload } from '../hooks/useLocalDataReload';
 
 const TIERS: { id: ExplanationTier; label: string }[] = [
   { id: 'oneliner', label: '一句话' },
@@ -155,14 +157,22 @@ function buildMarkedContentHtml(contentMd: string, annotations: Annotation[]): s
   return html || escapeHtml(contentMd);
 }
 
+/**
+ * 划词模式渲染的是原文（靠 pre-wrap 换行）：标注的 selectionStart 是 contentMd 的下标，
+ * 一旦渲染成 markdown，WebView 量出来的选区偏移就对不上原文，高亮会错位、编辑词句会定位不到。
+ * 所以 markdown 渲染只用在只读的阅读模式，那里不提供划词动作。
+ */
 function buildSelectionHtml(
   contentMd: string,
   annotations: Annotation[],
   savedSpeechTexts: Set<string>,
   theme: Palette,
-  options: { elaborationDisabled: boolean },
+  options: { elaborationDisabled: boolean; readable: boolean },
 ): string {
-  const body = buildMarkedContentHtml(contentMd, annotations);
+  // 划词模式必须用原文：归一化会改变字符数，标注存的 selectionStart 会整体错位
+  const body = options.readable
+    ? markdownToDisplayHtml(normalizeDisplayText(contentMd))
+    : buildMarkedContentHtml(contentMd, annotations);
   const markerMeta = Object.fromEntries(
     annotations
       .filter((a) => a.kind === 'note' || a.kind === 'elaboration')
@@ -199,8 +209,29 @@ function buildSelectionHtml(
       -webkit-user-select: text;
       user-select: text;
     }
-    #content {
+    #content table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 8px 0;
+      font-size: 12px;
+    }
+    #content th, #content td {
+      border: 1px solid ${borderColor};
+      padding: 6px 8px;
+      vertical-align: top;
+    }
+    #content th {
+      background: ${surfaceColor};
+    }
+    #content pre {
+      background: ${surfaceColor};
+      border-radius: 8px;
+      padding: 8px;
+      overflow-x: auto;
       white-space: pre-wrap;
+    }
+    #content {
+      white-space: ${options.readable ? 'normal' : 'pre-wrap'};
       overflow-wrap: anywhere;
       border: 1px solid ${borderColor};
       border-radius: 10px;
@@ -358,6 +389,11 @@ function buildSelectionHtml(
       post({ type: 'height', height: Math.ceil(document.body.scrollHeight) });
     }
     function updateSelection() {
+      // 阅读模式渲染过 markdown，选区偏移映射不回原文，所以只允许原生复制，不出划词工具条
+      if (actionLocks.readable === true) {
+        updateHeight();
+        return;
+      }
       const sel = window.getSelection();
       if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
         hideToolbar();
@@ -475,6 +511,8 @@ export function ExplanationStudyPanel({
   const [viewMarker, setViewMarker] = useState<Annotation | null>(null);
   const [webHeight, setWebHeight] = useState(180);
   const [savedSpeechTexts, setSavedSpeechTexts] = useState<Set<string>>(() => new Set());
+  // 阅读模式把表格等 markdown 渲染出来，代价是不能划词，所以默认还是划词模式
+  const [readable, setReadable] = useState(false);
 
   // 按「考点 + 档位」记讲解任务，按考点记标注类操作：
   // 切页、换档位、关掉弹窗再回来，都能看到还在跑，也不会重复发起同一件事
@@ -544,9 +582,10 @@ export function ExplanationStudyPanel({
       content
         ? buildSelectionHtml(content.contentMd, annotations, savedSpeechTexts, theme, {
             elaborationDisabled: elaborationBlocked,
+            readable,
           })
         : '',
-    [annotations, content, elaborationBlocked, savedSpeechTexts, theme],
+    [annotations, content, elaborationBlocked, readable, savedSpeechTexts, theme],
   );
 
   const loadAnnotations = useCallback((explanationId: string) => {
@@ -560,6 +599,12 @@ export function ExplanationStudyPanel({
     );
     setSavedSpeechTexts(new Set(rows.map((row) => row.content_md.trim()).filter(Boolean)));
   }, [nodeId]);
+
+  const reloadPanelData = useCallback(() => {
+    loadSavedSpeech();
+    if (content) loadAnnotations(content.id);
+  }, [content, loadAnnotations, loadSavedSpeech]);
+  useLocalDataReload(reloadPanelData);
 
   const clearWebSelection = useCallback(() => {
     webViewRef.current?.injectJavaScript('window.__clearSelection && window.__clearSelection(); true;');
@@ -895,7 +940,8 @@ export function ExplanationStudyPanel({
   };
 
   useTaskResult(elaborateKey, () => {
-    if (content) loadAnnotations(content.id);
+    const explanationId = content?.id ?? getExplanation(getRawDb(), nodeId, tier)?.id;
+    if (explanationId) loadAnnotations(explanationId);
     setModalMode(null);
     clearWebSelection();
   });
@@ -966,6 +1012,11 @@ export function ExplanationStudyPanel({
         )}
         {!editing && (
           <>
+            <Pressable onPress={() => setReadable((v) => !v)} style={btnGhost}>
+              <Text style={{ color: readable ? theme.accent : theme.muted, fontSize: 12 }}>
+                {readable ? '阅读模式' : '划词模式'}
+              </Text>
+            </Pressable>
             <Pressable onPress={() => setEditing(true)} style={btnGhost}>
               <Text style={{ color: theme.accent, fontSize: 12 }}>编辑讲解</Text>
             </Pressable>
@@ -1026,18 +1077,25 @@ export function ExplanationStudyPanel({
           </View>
         </>
       ) : (
-        <WebView
-          ref={webViewRef}
-          originWhitelist={['*']}
-          source={{ html: selectionHtml }}
-          onMessage={handleSelectionWebMessage}
-          scrollEnabled={false}
-          hideKeyboardAccessoryView
-          style={{
-            height: webHeight,
-            backgroundColor: theme.bg,
-          }}
-        />
+        <>
+          {readable && (
+            <Text style={{ color: theme.muted, fontSize: 11 }}>
+              阅读模式会把表格、列表排版出来，但不能划词标注；要高亮、记笔记或细化请切回划词模式。
+            </Text>
+          )}
+          <WebView
+            ref={webViewRef}
+            originWhitelist={['*']}
+            source={{ html: selectionHtml }}
+            onMessage={handleSelectionWebMessage}
+            scrollEnabled={false}
+            hideKeyboardAccessoryView
+            style={{
+              height: webHeight,
+              backgroundColor: theme.bg,
+            }}
+          />
+        </>
       )}
 
       <ExplanationActionModal

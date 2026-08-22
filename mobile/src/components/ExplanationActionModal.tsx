@@ -13,8 +13,8 @@ import {
 } from 'react-native';
 import type { Annotation } from '@shared/entities';
 import { DEFAULT_HIGHLIGHT_COLOR, HIGHLIGHT_COLORS } from '../lib/annotationMarks';
-import { visibleMarkdownBlocks } from '../lib/markdownBlocks';
 import { useTheme } from '../theme';
+import { MarkdownPreview } from './MarkdownPreview';
 import { VoiceInputButton } from './VoiceInputButton';
 
 export type ActionModalMode =
@@ -27,6 +27,9 @@ export type ActionModalMode =
 
 type PanelPreset = 'edit' | 'note' | 'default';
 
+/** 遮罩层左右各 16 的内边距：面板再宽也占不到，上限得按这个算，否则拖到边缘像卡住 */
+const PANEL_HORIZONTAL_INSET = 32;
+
 const PANEL_PRESETS: Record<
   PanelPreset,
   { minWidth: number; minHeight: number; defaultWidth: number; defaultHeight: number }
@@ -38,7 +41,7 @@ const PANEL_PRESETS: Record<
 
 function panelPreset(mode: ActionModalMode | null): PanelPreset {
   if (mode === 'edit') return 'edit';
-  if (mode === 'note') return 'note';
+  if (mode === 'note' || mode === 'elaboration') return 'note';
   return 'default';
 }
 
@@ -51,9 +54,12 @@ function useResizablePanel(mode: ActionModalMode | null): {
   const preset = PANEL_PRESETS[panelPreset(mode)];
   const defaultW = preset.defaultWidth <= 1 ? screen.width * preset.defaultWidth : preset.defaultWidth;
   const [size, setSize] = useState({
-    width: Math.min(screen.width - 24, Math.max(preset.minWidth, defaultW)),
+    width: Math.min(screen.width - PANEL_HORIZONTAL_INSET, Math.max(preset.minWidth, defaultW)),
     height: Math.min(screen.height * 0.75, Math.max(preset.minHeight, preset.defaultHeight)),
   });
+  // 当前尺寸也存一份 ref：PanResponder 不能把 size 放进 deps，否则每次 setSize 都会重建
+  // 手势实例，dx/dy 从零重算而起始尺寸没变，拖动就会一直被弹回原点（看起来就是拖不动）
+  const sizeRef = useRef(size);
   const startSizeRef = useRef(size);
 
   const resizeResponder = useMemo(
@@ -64,120 +70,24 @@ function useResizablePanel(mode: ActionModalMode | null): {
         onStartShouldSetPanResponder: () => true,
         onMoveShouldSetPanResponder: () => true,
         onPanResponderGrant: () => {
-          startSizeRef.current = size;
+          startSizeRef.current = sizeRef.current;
         },
         onPanResponderMove: (_evt: GestureResponderEvent, gesture: PanResponderGestureState) => {
-          const maxW = screen.width - 24;
+          const maxW = screen.width - PANEL_HORIZONTAL_INSET;
           const maxH = screen.height * 0.8;
           const start = startSizeRef.current;
-          setSize({
+          const next = {
             width: Math.min(maxW, Math.max(preset.minWidth, start.width + gesture.dx)),
             height: Math.min(maxH, Math.max(preset.minHeight, start.height + gesture.dy)),
-          });
+          };
+          sizeRef.current = next;
+          setSize(next);
         },
       }),
-    [preset.minHeight, preset.minWidth, screen.height, screen.width, size],
+    [preset.minHeight, preset.minWidth, screen.height, screen.width],
   );
 
   return { width: size.width, height: size.height, resizeResponder };
-}
-
-function normalizeInlineMarkdown(line: string): string {
-  return line
-    .replace(/\*\*([^*]+)\*\*/g, '$1')
-    .replace(/`([^`]+)`/g, '$1')
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
-}
-
-function MarkdownPreview({ text }: { text: string }): React.JSX.Element {
-  const theme = useTheme();
-  const blocks = useMemo(() => visibleMarkdownBlocks(text), [text]);
-
-  if (blocks.length === 0) {
-    return <Text style={{ color: theme.muted, fontSize: 13 }}>（空）</Text>;
-  }
-
-  return (
-    <View style={{ gap: 8 }}>
-      {blocks.map((block, blockIdx) => {
-        if (block.type === 'code' || block.type === 'mermaid') {
-          return (
-            <View
-              key={`${block.type}-${blockIdx}`}
-              style={{
-                borderRadius: 8,
-                backgroundColor: theme.bg,
-                borderWidth: 1,
-                borderColor: theme.border,
-                padding: 10,
-              }}
-            >
-              <Text style={{ color: theme.muted, fontSize: 10, marginBottom: 4 }}>
-                {block.type === 'mermaid' ? 'mermaid' : block.lang ?? 'code'}
-              </Text>
-              <Text
-                selectable
-                style={{ color: theme.text, fontSize: 12, lineHeight: 18, fontFamily: 'monospace' }}
-              >
-                {block.value.trim()}
-              </Text>
-            </View>
-          );
-        }
-
-        const lines = block.value
-          .split('\n')
-          .map((line) => line.trim())
-          .filter(Boolean);
-        return (
-          <View key={`text-${blockIdx}`} style={{ gap: 4 }}>
-            {lines.map((line, lineIdx) => {
-              const heading = /^(#{1,3})\s+(.+)$/.exec(line);
-              if (heading) {
-                return (
-                  <Text
-                    key={`${blockIdx}-${lineIdx}`}
-                    selectable
-                    style={{
-                      color: theme.text,
-                      fontSize: heading[1]!.length === 1 ? 16 : 14,
-                      lineHeight: 22,
-                      fontWeight: '700',
-                    }}
-                  >
-                    {normalizeInlineMarkdown(heading[2]!)}
-                  </Text>
-                );
-              }
-              const bullet = /^[-*]\s+(.+)$/.exec(line);
-              const numbered = /^\d+\.\s+(.+)$/.exec(line);
-              if (bullet || numbered) {
-                return (
-                  <Text
-                    key={`${blockIdx}-${lineIdx}`}
-                    selectable
-                    style={{ color: theme.text, fontSize: 13, lineHeight: 20 }}
-                  >
-                    {'• '}
-                    {normalizeInlineMarkdown((bullet?.[1] ?? numbered?.[1])!)}
-                  </Text>
-                );
-              }
-              return (
-                <Text
-                  key={`${blockIdx}-${lineIdx}`}
-                  selectable
-                  style={{ color: theme.text, fontSize: 13, lineHeight: 20 }}
-                >
-                  {normalizeInlineMarkdown(line)}
-                </Text>
-              );
-            })}
-          </View>
-        );
-      })}
-    </View>
-  );
 }
 
 export function ExplanationActionModal({
@@ -239,10 +149,11 @@ export function ExplanationActionModal({
                   : '细化讲解'
                 : '';
 
-  const resizable = mode === 'note' || mode === 'edit' || mode === 'viewMarker';
+  const resizable = mode === 'note' || mode === 'edit' || mode === 'viewMarker' || mode === 'elaboration';
   const { width, height, resizeResponder } = useResizablePanel(mode);
   const screen = Dimensions.get('window');
-  const useCenterPanel = mode === 'note' || mode === 'edit' || mode === 'viewMarker' || mode === 'regenerate';
+  const useCenterPanel =
+    mode === 'note' || mode === 'edit' || mode === 'viewMarker' || mode === 'regenerate' || mode === 'elaboration';
 
   const panelBody = (
     <View
