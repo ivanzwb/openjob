@@ -32,7 +32,13 @@ import {
   listCodeAnnotations,
   toggleBookmark,
 } from '../annotation';
-import { generateDesignCase, submitDesignAnswer } from '../design';
+import {
+  elaborateDesignAnswer,
+  generateDesignCase,
+  generateRecommendedAnswer,
+  submitDesignAnswer,
+  updateDesignCaseAnswers,
+} from '../design';
 import { generateExplanation, generateFallbackScript, getExplanation, updateExplanation, elaborateExplanationSelection, rewriteExplanationSelection } from '../explain';
 import { startJob } from '../jobs';
 import { cancelStream, startChat, testTier } from '../llm';
@@ -66,6 +72,7 @@ import {
   deleteSpeechSnippet,
   listSpeechSnippets,
   listSpeechSnippetsForSource,
+  saveSpeechFromDesign,
   saveSpeechFromNode,
   saveSpeechFromRepo,
   updateSpeechSnippet,
@@ -204,6 +211,10 @@ const RPC_HANDLERS: Partial<Record<IpcInvokeChannel, RpcHandler>> = {
     const input = p as IpcReq<'speech:saveFromNode'>;
     return saveSpeechFromNode(input.nodeId, input.contentMd, input.tier);
   },
+  'speech:saveFromDesign': (p) => {
+    const input = p as IpcReq<'speech:saveFromDesign'>;
+    return saveSpeechFromDesign(input.campaignId, '', input.contentMd);
+  },
   'speech:list': () => listSpeechSnippets(),
   'speech:listForSource': (p) => {
     const input = p as IpcReq<'speech:listForSource'>;
@@ -232,7 +243,35 @@ const RPC_HANDLERS: Partial<Record<IpcInvokeChannel, RpcHandler>> = {
       input.userAnswer,
       input.interviewType,
       input.interviewLanguage,
+      input.requestedType ?? input.interviewType ?? 'mixed',
     );
+  },
+  'design:updateAnswers': (p) => {
+    const input = p as IpcReq<'design:updateAnswers'>;
+    return updateDesignCaseAnswers(
+      input.campaignId,
+      input.interviewType,
+      input.interviewLanguage ?? 'zh',
+      {
+        userAnswerMd: input.userAnswerMd,
+        recommendedAnswerMd: input.recommendedAnswerMd,
+      },
+    );
+  },
+  'design:generateAnswer': (p) => {
+    const input = p as IpcReq<'design:generateAnswer'>;
+    return generateRecommendedAnswer(
+      input.campaignId,
+      input.caseTitle,
+      input.scenarioMd,
+      input.interviewType,
+      input.interviewLanguage ?? 'zh',
+      input.constraints,
+    );
+  },
+  'design:elaborate': (p) => {
+    const input = p as IpcReq<'design:elaborate'>;
+    return elaborateDesignAnswer(input.selectedText, input.contextMd);
   },
   'annotation:list': (p) => listAnnotations((p as { targetType: string; targetId: string }).targetType as IpcReq<'annotation:list'>['targetType'], (p as { targetType: string; targetId: string }).targetId),
   'annotation:listForCampaign': (p) => listAnnotationsForCampaign((p as { campaignId: string }).campaignId),

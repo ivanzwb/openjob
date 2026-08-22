@@ -1,5 +1,11 @@
 import { and, eq } from 'drizzle-orm';
-import type { DesignCaseResult, DesignSubmitResult } from '@shared/ipc';
+import type {
+  DesignCaseResult,
+  DesignElaborateResult,
+  DesignGenerateAnswerResult,
+  DesignSubmitResult,
+  MockInterviewType,
+} from '@shared/ipc';
 import type { ExamForm } from '@shared/enums';
 import type { InferSelectModel } from 'drizzle-orm';
 import { completeJson } from '../llm/json';
@@ -8,22 +14,17 @@ import { getDb, schema } from '../db';
 import { saveSpeechFromDesign } from '../speech';
 import {
   caseUserHintForType,
+  designCaseCacheId,
+  effectiveInterviewLanguage,
+  type DesignAnswerGenerated,
   type DesignCaseGenerated,
   type DesignScoreGenerated,
   type MockInterviewKind,
   type MockInterviewLanguage,
-  type MockInterviewType,
 } from '@shared/design/prompts';
+import { normalizeDisplayText } from '@shared/lib/markdownDisplay';
 
 type DesignCaseRow = InferSelectModel<typeof schema.designCase>;
-
-function designCaseCacheId(
-  campaignId: string,
-  interviewType: MockInterviewType,
-  interviewLanguage: MockInterviewLanguage,
-): string {
-  return `${campaignId}:${interviewType}:${interviewLanguage}`;
-}
 
 function rowToDesignCaseResult(
   row: DesignCaseRow,
@@ -41,6 +42,8 @@ function rowToDesignCaseResult(
     scenarioMd: row.scenarioMd,
     constraints: row.constraints ?? [],
     evaluationCriteria: row.evaluationCriteria ?? [],
+    userAnswerMd: row.userAnswerMd ?? null,
+    recommendedAnswerMd: row.recommendedAnswerMd ?? null,
   };
 }
 
@@ -132,11 +135,12 @@ export async function generateDesignCase(
 ): Promise<DesignCaseResult> {
   const campaign = getCampaignRow(campaignId);
   const db = getDb();
+  const effectiveLang = effectiveInterviewLanguage(interviewType, interviewLanguage);
   const cacheId = designCaseCacheId(campaignId, interviewType, interviewLanguage);
   const cached = db.select().from(schema.designCase).where(eq(schema.designCase.id, cacheId)).get();
 
   if (cached && !force) {
-    return rowToDesignCaseResult(cached, campaign, interviewLanguage);
+    return rowToDesignCaseResult(cached, campaign, effectiveLang);
   }
 
   const context = buildInterviewContext(campaignId);
@@ -144,9 +148,9 @@ export async function generateDesignCase(
   const generated = await completeJson<DesignCaseGenerated>(
     'quiz',
     'design.case',
-    `${context}\n\n${caseUserHintForType(interviewType, interviewLanguage)}`,
+    `${context}\n\n${caseUserHintForType(interviewType, effectiveLang)}`,
     undefined,
-    { type: interviewType, language: interviewLanguage },
+    { type: interviewType, language: effectiveLang },
   );
 
   const now = Date.now();
@@ -161,6 +165,8 @@ export async function generateDesignCase(
       scenarioMd: generated.scenarioMd,
       constraints: generated.constraints ?? [],
       evaluationCriteria: generated.evaluationCriteria ?? [],
+      userAnswerMd: null,
+      recommendedAnswerMd: null,
       createdAt: cached?.createdAt ?? now,
       updatedAt: now,
     })
@@ -173,6 +179,8 @@ export async function generateDesignCase(
         scenarioMd: generated.scenarioMd,
         constraints: generated.constraints ?? [],
         evaluationCriteria: generated.evaluationCriteria ?? [],
+        userAnswerMd: null,
+        recommendedAnswerMd: null,
         updatedAt: now,
       },
     })
@@ -183,13 +191,90 @@ export async function generateDesignCase(
     company: campaign.company,
     roleTitle: campaign.roleTitle,
     interviewType: generated.interviewType,
-    interviewLanguage,
+    interviewLanguage: effectiveLang,
     relatedNodeName: generated.relatedNodeName ?? null,
     title: generated.title,
     scenarioMd: generated.scenarioMd,
     constraints: generated.constraints ?? [],
     evaluationCriteria: generated.evaluationCriteria ?? [],
+    userAnswerMd: null,
+    recommendedAnswerMd: null,
   };
+}
+
+export function updateDesignCaseAnswers(
+  campaignId: string,
+  interviewType: MockInterviewType,
+  interviewLanguage: MockInterviewLanguage,
+  patch: { userAnswerMd?: string | null; recommendedAnswerMd?: string | null },
+): DesignCaseResult {
+  const campaign = getCampaignRow(campaignId);
+  const db = getDb();
+  const effectiveLang = effectiveInterviewLanguage(interviewType, interviewLanguage);
+  const cacheId = designCaseCacheId(campaignId, interviewType, interviewLanguage);
+  const row = db.select().from(schema.designCase).where(eq(schema.designCase.id, cacheId)).get();
+  if (!row) throw new Error('请先生成题目');
+
+  const userAnswerMd = patch.userAnswerMd !== undefined ? patch.userAnswerMd : row.userAnswerMd;
+  const recommendedAnswerMd =
+    patch.recommendedAnswerMd !== undefined ? patch.recommendedAnswerMd : row.recommendedAnswerMd;
+
+  const now = Date.now();
+  db.update(schema.designCase)
+    .set({ userAnswerMd, recommendedAnswerMd, updatedAt: now })
+    .where(eq(schema.designCase.id, cacheId))
+    .run();
+
+  return rowToDesignCaseResult({ ...row, userAnswerMd, recommendedAnswerMd }, campaign, effectiveLang);
+}
+
+export async function generateRecommendedAnswer(
+  campaignId: string,
+  caseTitle: string,
+  scenarioMd: string,
+  interviewType: MockInterviewKind,
+  interviewLanguage: MockInterviewLanguage,
+  constraints: string[] = [],
+): Promise<DesignGenerateAnswerResult> {
+  const effectiveLang = effectiveInterviewLanguage(interviewType, interviewLanguage);
+  const context = buildInterviewContext(campaignId);
+  const constraintHint =
+    constraints.length > 0 ? `\n考察点：${constraints.join(' · ')}` : '';
+
+  const generated = await completeJson<DesignAnswerGenerated>(
+    'quiz',
+    'design.answer',
+    `${context}
+
+题目类型：${interviewType}
+面试语言：${effectiveLang === 'en' ? '英文' : '中文'}
+题目：${caseTitle}
+题干：${scenarioMd}${constraintHint}`,
+    undefined,
+    { type: interviewType, language: effectiveLang },
+  );
+
+  return { recommendedAnswerMd: normalizeDisplayText(generated.answerMd) };
+}
+
+export async function elaborateDesignAnswer(
+  selectedText: string,
+  contextMd: string,
+): Promise<DesignElaborateResult> {
+  const text = selectedText.trim();
+  if (!text) throw new Error('请先选择要细化的内容');
+
+  const content = await completeJson<{ markdown: string }>(
+    'explain',
+    'explain.elaborate',
+    `## 模拟面试题目与参考答案（节选）
+${contextMd.slice(0, 6000)}
+
+## 用户划选内容
+${text}`,
+  );
+
+  return { elaborationMd: normalizeDisplayText(content.markdown) };
 }
 
 export async function submitDesignAnswer(
@@ -199,7 +284,9 @@ export async function submitDesignAnswer(
   userAnswer: string,
   interviewType: MockInterviewKind = 'design',
   interviewLanguage: MockInterviewLanguage = 'zh',
+  requestedType: MockInterviewType = interviewType,
 ): Promise<DesignSubmitResult> {
+  const effectiveLang = effectiveInterviewLanguage(interviewType, interviewLanguage);
   const context = buildInterviewContext(campaignId);
 
   const scored = await completeJson<DesignScoreGenerated>(
@@ -208,21 +295,27 @@ export async function submitDesignAnswer(
     `${context}
 
 题目类型：${interviewType}
-面试语言：${interviewLanguage === 'en' ? '英文' : '中文'}
+面试语言：${effectiveLang === 'en' ? '英文' : '中文'}
 题目：${caseTitle}
 题干：${scenarioMd}
 候选人回答：${userAnswer}`,
     undefined,
-    { type: interviewType, language: interviewLanguage },
+    { type: interviewType, language: effectiveLang },
   );
 
   const score = Math.min(5, Math.max(1, Math.round(scored.score)));
   const attempt = saveSpeechFromDesign(campaignId, caseTitle, scored.improvedOutlineMd);
+  const db = getDb();
+  const cacheId = designCaseCacheId(campaignId, requestedType, interviewLanguage);
+  db.update(schema.designCase)
+    .set({ userAnswerMd: userAnswer, updatedAt: Date.now() })
+    .where(eq(schema.designCase.id, cacheId))
+    .run();
 
   return {
     score,
-    feedbackMd: scored.feedbackMd,
-    improvedOutlineMd: scored.improvedOutlineMd,
+    feedbackMd: normalizeDisplayText(scored.feedbackMd),
+    improvedOutlineMd: normalizeDisplayText(scored.improvedOutlineMd),
     speechSnippetId: attempt.id,
   };
 }

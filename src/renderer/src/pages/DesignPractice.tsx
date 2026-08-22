@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   CampaignSummary,
   DesignCaseResult,
@@ -11,7 +11,10 @@ import {
   MOCK_INTERVIEW_TYPE_LABELS,
   MOCK_INTERVIEW_TYPE_OPTIONS,
 } from '@shared/ipc';
+import { effectiveInterviewLanguage } from '@shared/design/prompts';
 import type { MockInterviewKind, MockInterviewLanguage } from '@shared/design/prompts';
+import { normalizeDisplayText } from '@shared/lib/markdownDisplay';
+import { MarkdownContent } from '../components/MarkdownContent';
 import { VoiceInputButton } from '../components/VoiceInputButton';
 import { PageShell } from '../components/PageShell';
 import { invoke } from '../ipc';
@@ -48,15 +51,28 @@ export function DesignPractice(): React.JSX.Element {
   const [interviewLanguage, setInterviewLanguage] = useState<MockInterviewLanguage>('zh');
   const [designCase, setDesignCase] = useState<DesignCaseResult | null>(null);
   const [answer, setAnswer] = useState('');
+  const [recommendedAnswer, setRecommendedAnswer] = useState('');
+  const [editingRecommended, setEditingRecommended] = useState(false);
   const [result, setResult] = useState<DesignSubmitResult | null>(null);
+  const [elaborationMd, setElaborationMd] = useState<string | null>(null);
 
-  // 出题与评分按 Campaign + 题型取 key，切页回来还能接上同一次题目
-  const caseKey = `design:case:${campaignId}:${interviewType}:${interviewLanguage}`;
+  const effectiveLang = useMemo(
+    () => effectiveInterviewLanguage(interviewType, interviewLanguage),
+    [interviewType, interviewLanguage],
+  );
+
+  const caseKey = `design:case:${campaignId}:${interviewType}:${effectiveLang}`;
   const submitKey = `design:submit:${campaignId}`;
+  const answerKey = `design:answer:${campaignId}:${interviewType}:${effectiveLang}`;
+  const elaborateKey = `design:elaborate:${campaignId}`;
   const caseTask = useTask(caseKey);
   const submitTask = useTask(submitKey);
-  const loading = caseTask.running || submitTask.running;
-  const error = caseTask.error ?? submitTask.error;
+  const answerTask = useTask(answerKey);
+  const elaborateTask = useTask(elaborateKey);
+  const loading =
+    caseTask.running || submitTask.running || answerTask.running || elaborateTask.running;
+  const error =
+    caseTask.error ?? submitTask.error ?? answerTask.error ?? elaborateTask.error;
 
   const refresh = useCallback(() => {
     void invoke('campaign:list', undefined).then((list) => {
@@ -74,9 +90,37 @@ export function DesignPractice(): React.JSX.Element {
   useTaskResult<DesignCaseResult>(caseKey, (c) => {
     setDesignCase(c);
     setResult(null);
-    setAnswer('');
+    setAnswer(c.userAnswerMd ?? '');
+    setRecommendedAnswer(c.recommendedAnswerMd ?? '');
+    setEditingRecommended(false);
   });
   useTaskResult<DesignSubmitResult>(submitKey, setResult);
+  useTaskResult<{ recommendedAnswerMd: string }>(answerKey, (res) => {
+    setRecommendedAnswer(res.recommendedAnswerMd);
+    setEditingRecommended(false);
+    void invoke('design:updateAnswers', {
+      campaignId,
+      interviewType,
+      interviewLanguage,
+      recommendedAnswerMd: res.recommendedAnswerMd,
+    }).then(setDesignCase);
+  });
+  useTaskResult<{ elaborationMd: string }>(elaborateKey, (res) => {
+    setElaborationMd(res.elaborationMd);
+  });
+
+  useEffect(() => {
+    if (!designCase || !campaignId) return;
+    const timer = setTimeout(() => {
+      void invoke('design:updateAnswers', {
+        campaignId,
+        interviewType,
+        interviewLanguage,
+        userAnswerMd: answer,
+      }).catch(() => undefined);
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [answer, campaignId, designCase, interviewLanguage, interviewType]);
 
   const start = (force = false): void => {
     if (!campaignId) return;
@@ -97,7 +141,63 @@ export function DesignPractice(): React.JSX.Element {
         userAnswer: said,
         interviewType: current.interviewType,
         interviewLanguage: current.interviewLanguage,
+        requestedType: interviewType,
       }),
+    ).catch(() => undefined);
+  };
+
+  const clearAnswer = (): void => {
+    setAnswer('');
+    setResult(null);
+    void invoke('design:updateAnswers', {
+      campaignId,
+      interviewType,
+      interviewLanguage,
+      userAnswerMd: '',
+    }).then(setDesignCase);
+  };
+
+  const generateAnswer = (): void => {
+    if (!designCase) return;
+    void runTask(answerKey, () =>
+      invoke('design:generateAnswer', {
+        campaignId,
+        caseTitle: designCase.title,
+        scenarioMd: designCase.scenarioMd,
+        interviewType: designCase.interviewType,
+        interviewLanguage: designCase.interviewLanguage,
+        constraints: designCase.constraints,
+      }),
+    ).catch(() => undefined);
+  };
+
+  const saveRecommended = (): void => {
+    void invoke('design:updateAnswers', {
+      campaignId,
+      interviewType,
+      interviewLanguage,
+      recommendedAnswerMd: recommendedAnswer,
+    }).then((updated) => {
+      setDesignCase(updated);
+      setEditingRecommended(false);
+    });
+  };
+
+  const saveRecommendedToSpeech = (): void => {
+    const text = recommendedAnswer.trim();
+    if (!text) return;
+    void invoke('speech:saveFromDesign', {
+      campaignId,
+      contentMd: text,
+    });
+  };
+
+  const elaborateRecommended = (): void => {
+    const text = recommendedAnswer.trim();
+    if (!text || !designCase) return;
+    const contextMd = `题目：${designCase.title}\n\n${designCase.scenarioMd}\n\n参考答案：\n${text}`;
+    void runTask(elaborateKey, () =>
+      invoke('design:elaborate', { selectedText: text, contextMd }),
     ).catch(() => undefined);
   };
 
@@ -122,6 +222,8 @@ export function DesignPractice(): React.JSX.Element {
               setCampaignId(e.target.value);
               setDesignCase(null);
               setResult(null);
+              setAnswer('');
+              setRecommendedAnswer('');
             }}
             className="w-full rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm"
           >
@@ -144,6 +246,8 @@ export function DesignPractice(): React.JSX.Element {
               setInterviewType(e.target.value as MockInterviewType);
               setDesignCase(null);
               setResult(null);
+              setAnswer('');
+              setRecommendedAnswer('');
             }}
             className="w-full rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm"
           >
@@ -164,6 +268,8 @@ export function DesignPractice(): React.JSX.Element {
                 setInterviewLanguage(e.target.value as MockInterviewLanguage);
                 setDesignCase(null);
                 setResult(null);
+                setAnswer('');
+                setRecommendedAnswer('');
               }}
               className="w-full rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm"
             >
@@ -187,7 +293,7 @@ export function DesignPractice(): React.JSX.Element {
           {caseTask.running ? '出题中…' : designCase ? '重新出题' : '开始模拟'}
         </button>
         <p className="mt-2 text-xs text-[var(--color-muted)]">
-          已生成的题目会自动保存；再次进入会直接显示保存题，只有点击「重新出题」才会生成新题。
+          已生成的题目会自动保存；再次进入会直接显示保存题，只有点击「重新出题」才会生成新题。你的作答也会自动缓存。
         </p>
       </div>
 
@@ -214,7 +320,7 @@ export function DesignPractice(): React.JSX.Element {
               {designCase.company} · {designCase.roleTitle}
             </p>
           </div>
-          <div className="whitespace-pre-wrap text-sm leading-relaxed">{designCase.scenarioMd}</div>
+          <MarkdownContent text={normalizeDisplayText(designCase.scenarioMd)} />
           {designCase.constraints.length > 0 && (
             <div>
               <h4 className="text-xs font-medium text-[var(--color-muted)]">约束 / 考察点</h4>
@@ -225,41 +331,100 @@ export function DesignPractice(): React.JSX.Element {
               </ul>
             </div>
           )}
-          {designCase.evaluationCriteria.length > 0 && (
-            <div>
-              <h4 className="text-xs font-medium text-[var(--color-muted)]">评分维度</h4>
-              <ul className="mt-1 list-inside list-disc text-sm text-[var(--color-muted)]">
-                {designCase.evaluationCriteria.map((c) => (
-                  <li key={c}>{c}</li>
-                ))}
-              </ul>
-            </div>
-          )}
 
-          {!result && (
-            <>
-              <textarea
-                value={answer}
-                onChange={(e) => setAnswer(e.target.value)}
-                rows={10}
-                placeholder={
-                  ANSWER_PLACEHOLDER[designCase.interviewType][designCase.interviewLanguage]
-                }
-                className="w-full resize-y rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm"
-              />
-              <div className="flex flex-wrap items-center gap-2">
-                <VoiceInputButton currentText={answer} onTextChange={setAnswer} />
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-medium text-[var(--color-muted)]">你的回答</h4>
+              {answer.trim() && (
+                <button type="button" onClick={clearAnswer} className="text-xs text-red-400 hover:underline">
+                  清空重答
+                </button>
+              )}
+            </div>
+            <textarea
+              value={answer}
+              onChange={(e) => setAnswer(e.target.value)}
+              rows={10}
+              placeholder={
+                ANSWER_PLACEHOLDER[designCase.interviewType][designCase.interviewLanguage]
+              }
+              className="w-full resize-y rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm"
+            />
+            <div className="flex flex-wrap items-center gap-2">
+              <VoiceInputButton currentText={answer} onTextChange={setAnswer} />
+              <button
+                type="button"
+                disabled={loading || !answer.trim()}
+                onClick={submit}
+                className="ml-auto rounded bg-emerald-700 px-4 py-2 text-sm text-white disabled:opacity-40"
+              >
+                {submitTask.running ? '评分中…' : '提交回答'}
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-2 border-t border-[var(--color-border)] pt-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h4 className="text-xs font-medium text-[var(--color-muted)]">推荐答案</h4>
+              <div className="flex flex-wrap gap-3 text-xs">
                 <button
                   type="button"
-                  disabled={loading || !answer.trim()}
-                  onClick={submit}
-                  className="ml-auto rounded bg-emerald-700 px-4 py-2 text-sm text-white disabled:opacity-40"
+                  disabled={answerTask.running}
+                  onClick={generateAnswer}
+                  className="text-sky-400 hover:underline disabled:opacity-40"
                 >
-                  {submitTask.running ? '评分中…' : '提交回答'}
+                  {answerTask.running ? '生成中…' : recommendedAnswer ? '重新生成' : '生成推荐答案'}
                 </button>
+                {recommendedAnswer && (
+                  <button
+                    type="button"
+                    onClick={() => setEditingRecommended((v) => !v)}
+                    className="text-sky-400 hover:underline"
+                  >
+                    {editingRecommended ? '预览' : '编辑'}
+                  </button>
+                )}
               </div>
-            </>
-          )}
+            </div>
+            {recommendedAnswer ? (
+              <>
+                {editingRecommended ? (
+                  <textarea
+                    value={recommendedAnswer}
+                    onChange={(e) => setRecommendedAnswer(e.target.value)}
+                    rows={12}
+                    className="w-full resize-y rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 font-mono text-sm"
+                  />
+                ) : (
+                  <div className="rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2">
+                    <MarkdownContent text={normalizeDisplayText(recommendedAnswer)} />
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-3 text-xs">
+                  {editingRecommended && (
+                    <button type="button" onClick={saveRecommended} className="text-sky-400 hover:underline">
+                      保存
+                    </button>
+                  )}
+                  <button type="button" onClick={saveRecommendedToSpeech} className="text-sky-400 hover:underline">
+                    加入话术库
+                  </button>
+                  <button
+                    type="button"
+                    disabled={elaborateTask.running}
+                    onClick={elaborateRecommended}
+                    className="text-sky-400 hover:underline disabled:opacity-40"
+                  >
+                    {elaborateTask.running ? '细化中…' : '细化讲解'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <p className="text-xs text-[var(--color-muted)]">
+                可按需生成参考答案，支持编辑保存、加入话术库与细化讲解。
+              </p>
+            )}
+          </div>
 
           {result && (
             <div className="space-y-3 border-t border-[var(--color-border)] pt-4 text-sm">
@@ -271,27 +436,33 @@ export function DesignPractice(): React.JSX.Element {
               </div>
               <div>
                 <h4 className="text-xs text-[var(--color-muted)]">反馈</h4>
-                <p className="mt-1 whitespace-pre-wrap">{result.feedbackMd}</p>
+                <div className="mt-1">
+                  <MarkdownContent text={normalizeDisplayText(result.feedbackMd)} />
+                </div>
               </div>
               <div>
                 <h4 className="text-xs text-[var(--color-muted)]">改进稿</h4>
-                <p className="mt-1 whitespace-pre-wrap text-emerald-300">
-                  {result.improvedOutlineMd}
-                </p>
+                <div className="mt-1 text-emerald-300">
+                  <MarkdownContent text={normalizeDisplayText(result.improvedOutlineMd)} />
+                </div>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setResult(null);
-                  setAnswer('');
-                }}
-                className="text-xs text-sky-400 hover:underline"
-              >
-                重新作答
-              </button>
             </div>
           )}
         </section>
+      )}
+
+      {elaborationMd !== null && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-4 sm:items-center">
+          <div className="max-h-[80vh] w-full max-w-lg overflow-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="font-medium">细化讲解</h3>
+              <button type="button" onClick={() => setElaborationMd(null)} className="text-sm text-sky-400">
+                关闭
+              </button>
+            </div>
+            <MarkdownContent text={normalizeDisplayText(elaborationMd)} />
+          </div>
+        </div>
       )}
 
       {!designCase && !loading && campaigns.length > 0 && (

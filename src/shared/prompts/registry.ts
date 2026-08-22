@@ -20,6 +20,7 @@ import {
   crossAnalyzeSystem,
 } from '../diagnosis/prompts';
 import {
+  answerSystemForType,
   caseSystemForType,
   scoreSystemForType,
   type MockInterviewKind,
@@ -173,6 +174,20 @@ export const PROMPT_REGISTRY: Record<string, PromptEntry> = {
         id: 'design.score@v1',
         build: (p) =>
           scoreSystemForType(
+            p.type as MockInterviewKind,
+            (p.language as MockInterviewLanguage | undefined) ?? 'zh',
+          ),
+        note: '初始版本',
+      },
+    ],
+  },
+  'design.answer': {
+    id: 'design.answer',
+    versions: [
+      {
+        id: 'design.answer@v1',
+        build: (p) =>
+          answerSystemForType(
             p.type as MockInterviewKind,
             (p.language as MockInterviewLanguage | undefined) ?? 'zh',
           ),

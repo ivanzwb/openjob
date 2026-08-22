@@ -49,7 +49,7 @@ import {
   listCodeAnnotations,
   toggleBookmark,
 } from '../annotation';
-import { generateDesignCase, submitDesignAnswer } from '../design';
+import { generateDesignCase, submitDesignAnswer, updateDesignCaseAnswers, generateRecommendedAnswer, elaborateDesignAnswer } from '../design';
 import { dbHealth } from '../db';
 import { generateExplanation, generateFallbackScript, getExplanation, updateExplanation, elaborateExplanationSelection, rewriteExplanationSelection } from '../explain';
 import { startJob } from '../jobs';
@@ -86,6 +86,7 @@ import {
   exportSpeechSnippets,
   listSpeechSnippets,
   listSpeechSnippetsForSource,
+  saveSpeechFromDesign,
   saveSpeechFromNode,
   saveSpeechFromRepo,
   updateSpeechSnippet,
@@ -324,6 +325,9 @@ export function registerIpcHandlers(): void {
   handle('speech:saveFromNode', (input) =>
     saveSpeechFromNode(input.nodeId, input.contentMd, input.tier),
   );
+  handle('speech:saveFromDesign', (input) =>
+    saveSpeechFromDesign(input.campaignId, '', input.contentMd),
+  );
   handle('speech:list', () => listSpeechSnippets());
   handle('speech:listForSource', ({ sourceType, sourceId }) =>
     listSpeechSnippetsForSource(sourceType, sourceId),
@@ -345,8 +349,31 @@ export function registerIpcHandlers(): void {
       input.userAnswer,
       input.interviewType,
       input.interviewLanguage,
+      input.requestedType ?? input.interviewType ?? 'mixed',
     ),
   );
+  handle('design:updateAnswers', (input) =>
+    updateDesignCaseAnswers(
+      input.campaignId,
+      input.interviewType,
+      input.interviewLanguage ?? 'zh',
+      {
+        userAnswerMd: input.userAnswerMd,
+        recommendedAnswerMd: input.recommendedAnswerMd,
+      },
+    ),
+  );
+  handle('design:generateAnswer', (input) =>
+    generateRecommendedAnswer(
+      input.campaignId,
+      input.caseTitle,
+      input.scenarioMd,
+      input.interviewType,
+      input.interviewLanguage ?? 'zh',
+      input.constraints,
+    ),
+  );
+  handle('design:elaborate', (input) => elaborateDesignAnswer(input.selectedText, input.contextMd));
 
   handle('annotation:list', ({ targetType, targetId }) =>
     listAnnotations(targetType, targetId),

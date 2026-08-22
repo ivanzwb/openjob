@@ -241,6 +241,8 @@ export const designCase = sqliteTable(
     scenarioMd: text('scenario_md').notNull(),
     constraints: text('constraints', { mode: 'json' }).$type<string[]>().notNull().default([]),
     evaluationCriteria: text('evaluation_criteria', { mode: 'json' }).$type<string[]>().notNull().default([]),
+    userAnswerMd: text('user_answer_md'),
+    recommendedAnswerMd: text('recommended_answer_md'),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
   },

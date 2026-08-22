@@ -19,6 +19,27 @@ export interface DesignScoreGenerated {
   improvedOutlineMd: string;
 }
 
+export interface DesignAnswerGenerated {
+  answerMd: string;
+}
+
+/** 仅自我介绍题型使用英文；其它题型固定中文，避免语言设置泄漏 */
+export function effectiveInterviewLanguage(
+  interviewType: MockInterviewType,
+  interviewLanguage: MockInterviewLanguage,
+): MockInterviewLanguage {
+  return interviewType === 'selfIntro' ? interviewLanguage : 'zh';
+}
+
+export function designCaseCacheId(
+  campaignId: string,
+  interviewType: MockInterviewType,
+  interviewLanguage: MockInterviewLanguage,
+): string {
+  const lang = effectiveInterviewLanguage(interviewType, interviewLanguage);
+  return `${campaignId}:${interviewType}:${lang}`;
+}
+
 const CASE_OUTPUT_SCHEMA = `输出 JSON：
 {
   "interviewType": "concept|coding|design|scenario|selfIntro",
@@ -127,5 +148,27 @@ export function scoreSystemForType(
   language: MockInterviewLanguage = 'zh',
 ): string {
   const base = type === 'selfIntro' ? SELF_INTRO_SCORE_SYSTEM : SCORE_SYSTEM_BY_TYPE[type];
+  return `${base}\n${languageInstruction(language)}`;
+}
+
+const ANSWER_BASE = `你是资深面试官兼面试教练。根据题目与候选人背景，给出一份高质量的「参考答案」草稿（markdown），适合口头作答。
+要求：结构清晰、口语化、结合题目约束；不要写评分或点评，只写答案正文。
+输出 JSON：{ "answerMd": "..." }`;
+
+export const SELF_INTRO_ANSWER_SYSTEM = `${ANSWER_BASE}
+侧重：60-90 秒自我介绍结构、岗位匹配、核心项目亮点。`;
+
+export const ANSWER_SYSTEM_BY_TYPE: Record<ExamForm, string> = {
+  concept: `${ANSWER_BASE}\n侧重：结论先行、原理深度、trade-off 与例子。`,
+  coding: `${ANSWER_BASE}\n侧重：思路、核心算法、复杂度与边界。`,
+  design: `${ANSWER_BASE}\n侧重：需求澄清、架构、关键模块与扩展权衡。`,
+  scenario: `${ANSWER_BASE}\n侧重：STAR 结构、个人贡献、决策与复盘。`,
+};
+
+export function answerSystemForType(
+  type: MockInterviewKind,
+  language: MockInterviewLanguage = 'zh',
+): string {
+  const base = type === 'selfIntro' ? SELF_INTRO_ANSWER_SYSTEM : ANSWER_SYSTEM_BY_TYPE[type];
   return `${base}\n${languageInstruction(language)}`;
 }

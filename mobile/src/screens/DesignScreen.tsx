@@ -1,5 +1,5 @@
-import { useCallback, useState } from 'react';
-import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Alert, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import type {
   CampaignSummary,
   DesignCaseResult,
@@ -12,15 +12,25 @@ import {
   MOCK_INTERVIEW_TYPE_LABELS,
   MOCK_INTERVIEW_TYPE_OPTIONS,
 } from '@shared/ipc';
+import { effectiveInterviewLanguage } from '@shared/design/prompts';
 import type { MockInterviewKind, MockInterviewLanguage } from '@shared/design/prompts';
 import { getRawDb } from '../db';
 import { listCampaigns } from '../data/queries';
-import { generateDesignCase, submitDesignAnswer } from '../data/designLocal';
+import {
+  elaborateDesignAnswer,
+  generateDesignCase,
+  generateRecommendedAnswer,
+  submitDesignAnswer,
+  updateDesignCaseAnswers,
+} from '../data/designLocal';
+import { saveSpeechFromDesign } from '../data/mutations';
 import { useApp } from '../context/AppContext';
 import { runTask, useTaskResult, useTaskState } from '../context/RemoteTaskContext';
 import { useLocalDataReload } from '../hooks/useLocalDataReload';
 import { useTheme } from '../theme';
 import { OverflowHintScrollView } from '../components/OverflowHintScrollView';
+import { MarkdownPreview } from '../components/MarkdownPreview';
+import { VoiceInputButton } from '../components/VoiceInputButton';
 
 function campaignLabel(c: CampaignSummary): string {
   return `${c.company} · ${c.roleTitle}`;
@@ -58,7 +68,15 @@ export function DesignScreen(): React.JSX.Element {
   const [interviewLanguage, setInterviewLanguage] = useState<MockInterviewLanguage>('zh');
   const [designCase, setDesignCase] = useState<DesignCaseResult | null>(null);
   const [answer, setAnswer] = useState('');
+  const [recommendedAnswer, setRecommendedAnswer] = useState('');
+  const [editingRecommended, setEditingRecommended] = useState(false);
   const [result, setResult] = useState<DesignSubmitResult | null>(null);
+  const [elaborationMd, setElaborationMd] = useState<string | null>(null);
+
+  const effectiveLang = useMemo(
+    () => effectiveInterviewLanguage(interviewType, interviewLanguage),
+    [interviewType, interviewLanguage],
+  );
 
   const reload = useCallback(() => {
     const list = listCampaigns(getRawDb());
@@ -71,29 +89,55 @@ export function DesignScreen(): React.JSX.Element {
 
   useLocalDataReload(reload);
 
-  // 出题与评分按 Campaign + 题型记：切到别的 Tab 再回来，题目和评分都还在
-  const caseKey = `design:case:${campaignId}:${interviewType}:${interviewLanguage}`;
+  const caseKey = `design:case:${campaignId}:${interviewType}:${effectiveLang}`;
   const submitKey = `design:submit:${campaignId}`;
+  const answerKey = `design:answer:${campaignId}:${interviewType}:${effectiveLang}`;
+  const elaborateKey = `design:elaborate:${campaignId}`;
   const { running: loadingCase, error: caseError } = useTaskState(caseKey);
   const { running: submitting, error: submitError } = useTaskState(submitKey);
+  const { running: generatingAnswer, error: answerError } = useTaskState(answerKey);
+  const { running: elaborating, error: elaborateError } = useTaskState(elaborateKey);
 
   useTaskResult<DesignCaseResult>(caseKey, (res) => {
     setDesignCase(res);
     setResult(null);
-    setAnswer('');
+    setAnswer(res.userAnswerMd ?? '');
+    setRecommendedAnswer(res.recommendedAnswerMd ?? '');
+    setEditingRecommended(false);
   });
   useTaskResult<DesignSubmitResult>(submitKey, setResult);
+  useTaskResult<{ recommendedAnswerMd: string }>(answerKey, (res) => {
+    setRecommendedAnswer(res.recommendedAnswerMd);
+    setEditingRecommended(false);
+    if (designCase) {
+      void updateDesignCaseAnswers(getRawDb(), campaignId, interviewType, interviewLanguage, {
+        recommendedAnswerMd: res.recommendedAnswerMd,
+      }).then(setDesignCase);
+    }
+  });
+  useTaskResult<{ elaborationMd: string }>(elaborateKey, (res) => {
+    setElaborationMd(res.elaborationMd);
+  });
+
+  useEffect(() => {
+    if (!designCase || !campaignId) return;
+    const timer = setTimeout(() => {
+      void updateDesignCaseAnswers(getRawDb(), campaignId, interviewType, interviewLanguage, {
+        userAnswerMd: answer,
+      }).catch(() => undefined);
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [answer, campaignId, designCase, interviewLanguage, interviewType]);
 
   const loadCase = (force = false): void => {
-    const input = { campaignId, interviewType, interviewLanguage };
     void runTask(caseKey, '模拟面试出题', () =>
-      generateDesignCase(getRawDb(), input.campaignId, input.interviewType, input.interviewLanguage, force),
+      generateDesignCase(getRawDb(), campaignId, interviewType, interviewLanguage, force),
     ).catch(() => undefined);
   };
 
   const submit = (): void => {
     if (!designCase) return;
-    const input = { campaignId, designCase, answer };
+    const input = { campaignId, designCase, answer, interviewType };
     void runTask(submitKey, '模拟面试评分', async () => {
       const res = await submitDesignAnswer(
         getRawDb(),
@@ -103,10 +147,62 @@ export function DesignScreen(): React.JSX.Element {
         input.answer,
         input.designCase.interviewType,
         input.designCase.interviewLanguage,
+        input.interviewType,
       );
       notifyDataChanged();
       return res;
     }).catch(() => undefined);
+  };
+
+  const clearAnswer = (): void => {
+    setAnswer('');
+    setResult(null);
+    if (!designCase) return;
+    void updateDesignCaseAnswers(getRawDb(), campaignId, interviewType, interviewLanguage, {
+      userAnswerMd: '',
+    }).then(setDesignCase);
+  };
+
+  const generateAnswer = (): void => {
+    if (!designCase) return;
+    void runTask(answerKey, '生成推荐答案', () =>
+      generateRecommendedAnswer(
+        getRawDb(),
+        campaignId,
+        designCase.title,
+        designCase.scenarioMd,
+        designCase.interviewType,
+        designCase.interviewLanguage,
+        designCase.constraints,
+      ),
+    ).catch(() => undefined);
+  };
+
+  const saveRecommended = (): void => {
+    if (!designCase) return;
+    void updateDesignCaseAnswers(getRawDb(), campaignId, interviewType, interviewLanguage, {
+      recommendedAnswerMd: recommendedAnswer,
+    }).then((updated) => {
+      setDesignCase(updated);
+      setEditingRecommended(false);
+      Alert.alert('已保存', '推荐答案已保存');
+    });
+  };
+
+  const saveRecommendedToSpeech = (): void => {
+    const text = recommendedAnswer.trim();
+    if (!text) return;
+    void saveSpeechFromDesign(getRawDb(), campaignId, text).then((saved) => {
+      notifyDataChanged();
+      Alert.alert('话术库', saved.existing ? '这段已经在话术库里' : '已加入话术库');
+    });
+  };
+
+  const elaborateRecommended = (): void => {
+    const text = recommendedAnswer.trim();
+    if (!text || !designCase) return;
+    const contextMd = `题目：${designCase.title}\n\n${designCase.scenarioMd}\n\n参考答案：\n${text}`;
+    void runTask(elaborateKey, '细化讲解', () => elaborateDesignAnswer(text, contextMd)).catch(() => undefined);
   };
 
   return (
@@ -126,6 +222,8 @@ export function DesignScreen(): React.JSX.Element {
                   setCampaignId(c.id);
                   setDesignCase(null);
                   setResult(null);
+                  setAnswer('');
+                  setRecommendedAnswer('');
                 }}
                 style={{
                   marginRight: 8,
@@ -155,6 +253,8 @@ export function DesignScreen(): React.JSX.Element {
               setInterviewType(o.value);
               setDesignCase(null);
               setResult(null);
+              setAnswer('');
+              setRecommendedAnswer('');
             }}
             style={{
               paddingHorizontal: 10,
@@ -181,6 +281,8 @@ export function DesignScreen(): React.JSX.Element {
                 setInterviewLanguage(o.value);
                 setDesignCase(null);
                 setResult(null);
+                setAnswer('');
+                setRecommendedAnswer('');
               }}
               style={{
                 paddingHorizontal: 10,
@@ -213,7 +315,7 @@ export function DesignScreen(): React.JSX.Element {
         <Text style={{ color: '#fff' }}>{loadingCase ? '出题中…' : designCase ? '重新出题' : '开始模拟'}</Text>
       </Pressable>
       <Text style={{ color: theme.muted, fontSize: 11 }}>
-        已生成的题目会自动保存；再次进入会直接显示保存题，只有点「重新出题」才会生成新题。
+        已生成的题目会自动保存；再次进入会直接显示保存题，只有点「重新出题」才会生成新题。你的作答也会自动缓存。
       </Text>
       {caseError !== null && <Text style={{ color: theme.danger, fontSize: 12 }}>{caseError}</Text>}
 
@@ -230,12 +332,21 @@ export function DesignScreen(): React.JSX.Element {
           {designCase.relatedNodeName && (
             <Text style={{ color: theme.muted, fontSize: 11 }}>关联考点：{designCase.relatedNodeName}</Text>
           )}
-          <Text style={{ color: theme.muted, fontSize: 12 }}>{designCase.scenarioMd}</Text>
+          <MarkdownPreview text={designCase.scenarioMd} />
           {designCase.constraints.length > 0 && (
             <Text style={{ color: theme.muted, fontSize: 11 }}>
               考察点：{designCase.constraints.join(' · ')}
             </Text>
           )}
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Text style={{ color: theme.text, fontWeight: '600', fontSize: 13 }}>你的回答</Text>
+            {answer.trim() && (
+              <Pressable onPress={clearAnswer} hitSlop={8}>
+                <Text style={{ color: theme.danger, fontSize: 11 }}>清空重答</Text>
+              </Pressable>
+            )}
+          </View>
           <TextInput
             multiline
             value={answer}
@@ -252,29 +363,125 @@ export function DesignScreen(): React.JSX.Element {
               textAlignVertical: 'top',
             }}
           />
-          <Pressable
-            onPress={submit}
-            disabled={submitting || !answer.trim()}
-            style={{
-              backgroundColor: theme.accent,
-              padding: 12,
-              borderRadius: 8,
-              alignItems: 'center',
-              opacity: submitting || !answer.trim() ? 0.6 : 1,
-            }}
-          >
-            <Text style={{ color: '#fff' }}>{submitting ? '评分中…' : '提交评分'}</Text>
-          </Pressable>
+          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-end' }}>
+            <VoiceInputButton onTranscript={(text) => setAnswer((prev) => prev + text)} />
+            <Pressable
+              onPress={submit}
+              disabled={submitting || !answer.trim()}
+              style={{
+                flex: 1,
+                backgroundColor: theme.accent,
+                padding: 12,
+                borderRadius: 8,
+                alignItems: 'center',
+                opacity: submitting || !answer.trim() ? 0.6 : 1,
+              }}
+            >
+              <Text style={{ color: '#fff' }}>{submitting ? '评分中…' : '提交评分'}</Text>
+            </Pressable>
+          </View>
           {submitError !== null && <Text style={{ color: theme.danger, fontSize: 12 }}>{submitError}</Text>}
+
+          <View style={{ gap: 8, borderTopWidth: 1, borderColor: theme.border, paddingTop: 10 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text style={{ color: theme.text, fontWeight: '600', fontSize: 13 }}>推荐答案</Text>
+              <View style={{ flexDirection: 'row', gap: 12 }}>
+                <Pressable onPress={generateAnswer} disabled={generatingAnswer} hitSlop={8}>
+                  <Text style={{ color: generatingAnswer ? theme.muted : theme.accent, fontSize: 11 }}>
+                    {generatingAnswer ? '生成中…' : recommendedAnswer ? '重新生成' : '生成推荐答案'}
+                  </Text>
+                </Pressable>
+                {recommendedAnswer ? (
+                  <Pressable onPress={() => setEditingRecommended((v) => !v)} hitSlop={8}>
+                    <Text style={{ color: theme.accent, fontSize: 11 }}>
+                      {editingRecommended ? '预览' : '编辑'}
+                    </Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            </View>
+            {answerError !== null && <Text style={{ color: theme.danger, fontSize: 12 }}>{answerError}</Text>}
+            {recommendedAnswer ? (
+              <>
+                {editingRecommended ? (
+                  <TextInput
+                    multiline
+                    value={recommendedAnswer}
+                    onChangeText={setRecommendedAnswer}
+                    style={{
+                      minHeight: 140,
+                      color: theme.text,
+                      borderWidth: 1,
+                      borderColor: theme.border,
+                      borderRadius: 8,
+                      padding: 10,
+                      textAlignVertical: 'top',
+                      fontFamily: 'monospace',
+                      fontSize: 12,
+                    }}
+                  />
+                ) : (
+                  <MarkdownPreview text={recommendedAnswer} />
+                )}
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+                  {editingRecommended && (
+                    <Pressable onPress={saveRecommended} hitSlop={8}>
+                      <Text style={{ color: theme.accent, fontSize: 11 }}>保存</Text>
+                    </Pressable>
+                  )}
+                  <Pressable onPress={saveRecommendedToSpeech} hitSlop={8}>
+                    <Text style={{ color: theme.accent, fontSize: 11 }}>加入话术库</Text>
+                  </Pressable>
+                  <Pressable onPress={elaborateRecommended} disabled={elaborating} hitSlop={8}>
+                    <Text style={{ color: elaborating ? theme.muted : theme.accent, fontSize: 11 }}>
+                      {elaborating ? '细化中…' : '细化讲解'}
+                    </Text>
+                  </Pressable>
+                </View>
+                {elaborateError !== null && (
+                  <Text style={{ color: theme.danger, fontSize: 12 }}>{elaborateError}</Text>
+                )}
+              </>
+            ) : (
+              <Text style={{ color: theme.muted, fontSize: 12 }}>
+                可按需生成参考答案，支持编辑保存、加入话术库与细化讲解。
+              </Text>
+            )}
+          </View>
         </View>
       )}
 
       {result && (
         <View style={{ gap: 6 }}>
           <Text style={{ color: theme.success }}>得分 {result.score}/5</Text>
-          <Text style={{ color: theme.text, fontSize: 12 }}>{result.feedbackMd}</Text>
+          <MarkdownPreview text={result.feedbackMd} />
         </View>
       )}
+
+      <Modal visible={elaborationMd !== null} animationType="slide" transparent onRequestClose={() => setElaborationMd(null)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}>
+          <View
+            style={{
+              maxHeight: '80%',
+              backgroundColor: theme.surface,
+              borderTopLeftRadius: 16,
+              borderTopRightRadius: 16,
+              padding: 16,
+              gap: 10,
+            }}
+          >
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={{ color: theme.text, fontWeight: '600' }}>细化讲解</Text>
+              <Pressable onPress={() => setElaborationMd(null)} hitSlop={8}>
+                <Text style={{ color: theme.accent }}>关闭</Text>
+              </Pressable>
+            </View>
+            <ScrollView style={{ maxHeight: 400 }}>
+              <MarkdownPreview text={elaborationMd ?? ''} />
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }

@@ -719,6 +719,11 @@ export interface SpeechSaveFromNodeInput {
   tier?: ExplanationTier;
 }
 
+export interface SpeechSaveFromDesignInput {
+  campaignId: string;
+  contentMd: string;
+}
+
 /** 某个来源（考点、仓库…）下已存过的话术，用来判断这段选区是不是已经进过库 */
 export interface SpeechListForSourceInput {
   sourceType: SpeechSnippet['sourceType'];
@@ -796,6 +801,8 @@ export interface DesignCaseResult {
   scenarioMd: string;
   constraints: string[];
   evaluationCriteria: string[];
+  userAnswerMd?: string | null;
+  recommendedAnswerMd?: string | null;
 }
 
 export interface DesignSubmitInput {
@@ -805,6 +812,7 @@ export interface DesignSubmitInput {
   userAnswer: string;
   interviewType?: MockInterviewKind;
   interviewLanguage?: MockInterviewLanguage;
+  requestedType?: MockInterviewType;
 }
 
 export interface DesignSubmitResult {
@@ -812,6 +820,36 @@ export interface DesignSubmitResult {
   feedbackMd: string;
   improvedOutlineMd: string;
   speechSnippetId: string;
+}
+
+export interface DesignUpdateAnswersInput {
+  campaignId: string;
+  interviewType: MockInterviewType;
+  interviewLanguage: MockInterviewLanguage;
+  userAnswerMd?: string | null;
+  recommendedAnswerMd?: string | null;
+}
+
+export interface DesignGenerateAnswerInput {
+  campaignId: string;
+  caseTitle: string;
+  scenarioMd: string;
+  interviewType: MockInterviewKind;
+  interviewLanguage: MockInterviewLanguage;
+  constraints?: string[];
+}
+
+export interface DesignGenerateAnswerResult {
+  recommendedAnswerMd: string;
+}
+
+export interface DesignElaborateInput {
+  selectedText: string;
+  contextMd: string;
+}
+
+export interface DesignElaborateResult {
+  elaborationMd: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -1010,6 +1048,7 @@ export interface IpcInvokeMap {
   'repo:readFile': { req: RepoReadFileInput; res: RepoReadFileResult };
   'speech:save': { req: SpeechSaveInput; res: SpeechSnippet };
   'speech:saveFromNode': { req: SpeechSaveFromNodeInput; res: SpeechSnippet };
+  'speech:saveFromDesign': { req: SpeechSaveFromDesignInput; res: SpeechSnippet };
   'speech:list': { req: void; res: SpeechSnippetView[] };
   'speech:listForSource': { req: SpeechListForSourceInput; res: SpeechSnippet[] };
   'speech:update': { req: SpeechUpdateInput; res: SpeechSnippet };
@@ -1026,6 +1065,9 @@ export interface IpcInvokeMap {
     res: DesignCaseResult;
   };
   'design:submit': { req: DesignSubmitInput; res: DesignSubmitResult };
+  'design:updateAnswers': { req: DesignUpdateAnswersInput; res: DesignCaseResult };
+  'design:generateAnswer': { req: DesignGenerateAnswerInput; res: DesignGenerateAnswerResult };
+  'design:elaborate': { req: DesignElaborateInput; res: DesignElaborateResult };
 
   'annotation:list': { req: { targetType: AnnotationTarget; targetId: string }; res: Annotation[] };
   /** 一场面试下五类目标的全部标记 */
@@ -1192,6 +1234,7 @@ export const IPC_INVOKE_CHANNELS = [
   'repo:readFile',
   'speech:save',
   'speech:saveFromNode',
+  'speech:saveFromDesign',
   'speech:list',
   'speech:listForSource',
   'speech:update',
@@ -1199,6 +1242,9 @@ export const IPC_INVOKE_CHANNELS = [
   'speech:export',
   'design:case',
   'design:submit',
+  'design:updateAnswers',
+  'design:generateAnswer',
+  'design:elaborate',
   'annotation:list',
   'annotation:listForCampaign',
   'annotation:listForRepo',
