@@ -12,6 +12,8 @@ import type {
   SessionMessageView,
 } from '@shared/ipc';
 import type { Repo as RepoEntity } from '@shared/entities';
+import type { EdgeRelation } from '@shared/enums';
+import { sortNodesByStudyOrder } from '@shared/campaign/studyOrder';
 import type { FollowUpMessage } from './mutations';
 import type {
   FollowUpStoredMessage,
@@ -326,45 +328,66 @@ export function getCampaignDetail(db: SQLiteDatabase, id: string): CampaignDetai
       .map((item) => item.node_id),
   );
 
-  const nodes = db
-    .getAllSync<{
-      id: string;
-      campaign_id: string;
-      parent_id: string | null;
-      name: string;
-      kind: string;
-      coverage_type: string;
-      exam_prob: number;
-      difficulty: number;
-      est_minutes: number;
-      exam_forms: string;
-      mastery: number;
-      mastery_source: string;
-      priority_score: number;
-      status: string;
-      is_user_added: number;
-      created_at: number;
-    }>(`SELECT * FROM knowledge_node WHERE campaign_id = ? ORDER BY priority_score DESC`, id)
-    .map((n) => ({
-      id: n.id,
-      campaignId: n.campaign_id,
-      parentId: n.parent_id,
-      name: n.name,
-      kind: n.kind as CampaignDetail['nodes'][number]['kind'],
-      coverageType: n.coverage_type as CampaignDetail['nodes'][number]['coverageType'],
-      examProb: n.exam_prob,
-      difficulty: n.difficulty,
-      estMinutes: n.est_minutes,
-      examForms: JSON.parse(n.exam_forms) as CampaignDetail['nodes'][number]['examForms'],
-      mastery: n.mastery,
-      masterySource: n.mastery_source as CampaignDetail['nodes'][number]['masterySource'],
-      priorityScore: n.priority_score,
-      status: n.status as CampaignDetail['nodes'][number]['status'],
-      isUserAdded: Boolean(n.is_user_added),
-      createdAt: n.created_at,
-      priorityReason: '',
-      hasExplanation: explanationNodeIds.has(n.id),
-    }));
+  const nodeRows = db.getAllSync<{
+    id: string;
+    campaign_id: string;
+    parent_id: string | null;
+    name: string;
+    kind: string;
+    coverage_type: string;
+    exam_prob: number;
+    difficulty: number;
+    est_minutes: number;
+    exam_forms: string;
+    mastery: number;
+    mastery_source: string;
+    priority_score: number;
+    status: string;
+    is_user_added: number;
+    created_at: number;
+  }>(`SELECT * FROM knowledge_node WHERE campaign_id = ?`, id);
+
+  // 考点清单按「备考顺序」展示，和桌面端同一口径（sortNodesByStudyOrder）：
+  // 难度基础→深入、同难度优先级高的靠前，再按 prerequisite 拓扑重排。
+  // 这里原本只是 ORDER BY priority_score DESC，两端看到的顺序对不上。
+  const edges =
+    nodeRows.length > 0
+      ? db
+          .getAllSync<{ from_node_id: string; to_node_id: string; relation: string }>(
+            `SELECT from_node_id, to_node_id, relation FROM node_edge
+             WHERE from_node_id IN (${nodeRows.map(() => '?').join(',')})`,
+            ...nodeRows.map((n) => n.id),
+          )
+          .map((e) => ({
+            fromNodeId: e.from_node_id,
+            toNodeId: e.to_node_id,
+            relation: e.relation as EdgeRelation,
+          }))
+      : [];
+
+  const nodes = sortNodesByStudyOrder(
+    nodeRows.map((n) => ({ ...n, priorityScore: n.priority_score })),
+    edges,
+  ).map((n) => ({
+    id: n.id,
+    campaignId: n.campaign_id,
+    parentId: n.parent_id,
+    name: n.name,
+    kind: n.kind as CampaignDetail['nodes'][number]['kind'],
+    coverageType: n.coverage_type as CampaignDetail['nodes'][number]['coverageType'],
+    examProb: n.exam_prob,
+    difficulty: n.difficulty,
+    estMinutes: n.est_minutes,
+    examForms: JSON.parse(n.exam_forms) as CampaignDetail['nodes'][number]['examForms'],
+    mastery: n.mastery,
+    masterySource: n.mastery_source as CampaignDetail['nodes'][number]['masterySource'],
+    priorityScore: n.priority_score,
+    status: n.status as CampaignDetail['nodes'][number]['status'],
+    isUserAdded: Boolean(n.is_user_added),
+    createdAt: n.created_at,
+    priorityReason: '',
+    hasExplanation: explanationNodeIds.has(n.id),
+  }));
 
   const intel = db.getFirstSync<{
     id: string;

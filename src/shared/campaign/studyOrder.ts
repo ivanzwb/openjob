@@ -44,7 +44,17 @@ export function sortNodesByStudyOrder<
   edges: Array<{ fromNodeId: string; toNodeId: string; relation: EdgeRelation }>,
 ): T[] {
   return topoSortByPrerequisite(
-    [...nodes].sort((a, b) => a.difficulty - b.difficulty || b.priorityScore - a.priorityScore),
+    [...nodes].sort(
+      (a, b) =>
+        a.difficulty - b.difficulty ||
+        b.priorityScore - a.priorityScore ||
+        // 同难度同优先级时用 id 收尾，把顺序定死。少了这一档，排序结果就取决于
+        // 调用方查询返回的行序：那个顺序两端并不一致（各自的插入/同步落库顺序
+        // 不同），VACUUM 过一次（快照、回退都会）还会再变一次。而这种并列很常见
+        // ——同一批生成的兄弟考点往往覆盖类型、考察概率、时长都一样，算出来的
+        // 优先级完全相同。id 是 UUID 且随同步一起过去，两端必然排成同一个样子。
+        (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+    ),
     edges,
   );
 }
