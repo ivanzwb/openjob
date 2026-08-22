@@ -1,4 +1,4 @@
-import { index, integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { index, integer, primaryKey, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 import type {
   AnnotationKind,
   AnnotationTarget,
@@ -533,6 +533,28 @@ export const syncOplog = sqliteTable(
   ],
 );
 
+/**
+ * 每一行最后一次更新的墙钟毫秒，由触发器维护。
+ *
+ * 为什么不复用业务表的 updated_at：同步清单里二十多张表只有八张有这个列，
+ * 而且它表达的是业务语义（用户编辑时间），不是「这一行是哪个版本」。后写
+ * 覆盖要求每一行都有一个可比较的时间，缺一张表就意味着那张表的分歧无从
+ * 判断新旧。
+ *
+ * 也不能只靠 oplog：从对端同步进来的行不写 oplog（否则会回声），全表快照
+ * 时那些行就没有时间可用。这张表由触发器无条件维护，覆盖所有来源。
+ */
+export const syncRowVersion = sqliteTable(
+  'sync_row_version',
+  {
+    tableName: text('table_name').notNull(),
+    rowId: text('row_id').notNull(),
+    /** 应用对端行时写入的是来源设备的时间（已按时钟偏移归一），不是本机当前时间 */
+    updatedMs: integer('updated_ms').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.tableName, t.rowId] })],
+);
+
 /** 已配对的对端设备，以及与它的同步水位线 */
 export const syncPeer = sqliteTable('sync_peer', {
   deviceId: text('device_id').primaryKey(),
@@ -546,6 +568,8 @@ export const syncPeer = sqliteTable('sync_peer', {
   /** 上次成功同步时对端 oplog 的 seq */
   lastRemoteSeq: integer('last_remote_seq').notNull().default(0),
   lastSyncAt: integer('last_sync_at'),
+  /** 上次做过全表对账的时间；隔久了自动再做一次，兜住水位线本身出错的情况 */
+  lastFullSyncAt: integer('last_full_sync_at'),
   pairedAt: integer('paired_at').notNull(),
 });
 
@@ -557,12 +581,13 @@ export const syncRun = sqliteTable(
     peerDeviceId: text('peer_device_id').notNull(),
     direction: text('direction').$type<'auto' | 'manual'>().notNull(),
     status: text('status')
-      .$type<'running' | 'success' | 'conflict' | 'failed' | 'rolledBack'>()
+      .$type<'running' | 'success' | 'failed' | 'rolledBack'>()
       .notNull(),
     /** 同步前快照的文件名，回退时按它还原 */
     backupFile: text('backup_file'),
     appliedCount: integer('applied_count').notNull().default(0),
-    conflictCount: integer('conflict_count').notNull().default(0),
+    /** 本次同步中因两端改了同一列、按时间取新而被覆盖掉的旧值数量 */
+    overwriteCount: integer('overwrite_count').notNull().default(0),
     errorMessage: text('error_message'),
     startedAt: integer('started_at').notNull(),
     finishedAt: integer('finished_at'),
@@ -570,9 +595,14 @@ export const syncRun = sqliteTable(
   (t) => [index('idx_sync_run_started').on(t.startedAt)],
 );
 
-/** 待用户裁决的冲突。用户选完某一边后才落到业务表 */
-export const syncConflict = sqliteTable(
-  'sync_conflict',
+/**
+ * 后写覆盖的留痕：两端改了同一行同一列时，被丢掉的那个值记在这里。
+ *
+ * 不需要用户裁决，但必须留证——自动覆盖是唯一会丢用户输入的环节，出问题时
+ * 这张表加上同步前的整库快照才能说清丢了什么、从哪一份能捞回来。
+ */
+export const syncOverwrite = sqliteTable(
+  'sync_overwrite',
   {
     id: text('id').primaryKey(),
     runId: text('run_id')
@@ -580,17 +610,16 @@ export const syncConflict = sqliteTable(
       .references(() => syncRun.id, { onDelete: 'cascade' }),
     tableName: text('table_name').notNull(),
     rowId: text('row_id').notNull(),
-    /** 两端都改过的列 */
+    /** 两端都改过的列；'delete' 表示一端删除、另一端修改的行级分歧 */
     field: text('field').notNull(),
     localValue: text('local_value', { mode: 'json' }),
     remoteValue: text('remote_value', { mode: 'json' }),
     localWallMs: integer('local_wall_ms').notNull(),
     remoteWallMs: integer('remote_wall_ms').notNull(),
-    resolution: text('resolution').$type<'pending' | 'local' | 'remote'>()
-      .notNull()
-      .default('pending'),
+    /** 时间较晚、最终生效的那一边 */
+    keptSide: text('kept_side').$type<'local' | 'remote'>().notNull(),
   },
-  (t) => [index('idx_sync_conflict_run').on(t.runId, t.resolution)],
+  (t) => [index('idx_sync_overwrite_run').on(t.runId)],
 );
 
 /** 跨端同步的应用配置与密钥（明文 JSON，依赖同步通道加密） */

@@ -1,12 +1,20 @@
 import * as Crypto from 'expo-crypto';
 import { openDatabaseSync, type SQLiteDatabase } from 'expo-sqlite';
-import type { ConflictChoice, FieldConflict, PairingPayload } from '@shared/sync';
-import { planMerge, resolutionsToChanges } from '@shared/syncMerge';
+import type { FieldOverwrite, PairingPayload } from '@shared/sync';
+import { planMerge } from '@shared/syncMerge';
 import { MIGRATIONS } from './migrations/bundle';
-import { installSyncTriggers } from '../sync/triggers';
+import { backfillRowVersions, installSyncTriggers } from '../sync/triggers';
 import { getDeviceIdentity } from '../sync/identity';
 import { collectChangeSet, collectFullChangeSet, currentHeadSeq } from '../sync/collect';
 import { applyAutoChanges } from '../sync/apply';
+import {
+  createBackup,
+  createPresyncBackup,
+  listBackups,
+  overwriteDatabaseWith,
+  pruneBackups,
+  type BackupInfo,
+} from '../sync/backup';
 import {
   buildRepoFileSkipMessage,
   canApplyRepoFileSync,
@@ -28,6 +36,7 @@ interface PeerRow {
   last_local_seq: number;
   last_remote_seq: number;
   last_sync_at: number | null;
+  last_full_sync_at: number | null;
   paired_at: number;
 }
 
@@ -47,6 +56,41 @@ function ensureMigrationLog(sqlite: SQLiteDatabase): void {
 
 function isAlreadyAppliedError(e: unknown): boolean {
   return /already exists|duplicate column name/i.test(String(e));
+}
+
+function userTableCount(sqlite: SQLiteDatabase): number {
+  return (
+    sqlite.getFirstSync<{ n: number }>(
+      `SELECT count(*) AS n FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`,
+    )?.n ?? 0
+  );
+}
+
+/**
+ * 升级到带新迁移的版本时，动 schema 之前先留一份现场。
+ *
+ * 迁移是唯一会不可逆改动既有数据的动作，而 expo-sqlite 的 DDL 没有包在事务里：
+ * 中途失败就是个半迁移的库，没有快照真的回不去。挂在「打开数据库」而不是
+ * 「装 APK」上——不管新版本是应用内更新、侧载还是本地构建装上来的，
+ * schema 真正要变的那一刻都在这里。
+ *
+ * 快照做不出来就不迁移：让用户腾出空间再进来，比在没有退路的情况下改库好。
+ */
+function backupBeforeMigrations(sqlite: SQLiteDatabase): void {
+  if (userTableCount(sqlite) === 0) return; // 新库，没有可丢的东西
+
+  ensureMigrationLog(sqlite);
+  const applied =
+    sqlite.getFirstSync<{ n: number }>(`SELECT count(*) AS n FROM ${MIGRATION_LOG}`)?.n ?? 0;
+  if (applied >= MIGRATIONS.length) return; // schema 没有变化
+
+  if (!createBackup(sqlite, 'premigrate')) {
+    throw new Error(
+      '这个版本要升级数据库结构，升级前需要先留一份整库快照，但手机存储空间不够。' +
+        '请清出一些空间后重新打开应用——数据本身还没有被改动。',
+    );
+  }
+  pruneBackups();
 }
 
 function runMigrations(sqlite: SQLiteDatabase): void {
@@ -118,10 +162,13 @@ export async function openDb(): Promise<SQLiteDatabase> {
 
   raw = openDatabaseSync('openjob.db');
   raw.execSync('PRAGMA foreign_keys = ON;');
+  backupBeforeMigrations(raw);
   runMigrations(raw);
   ensureCriticalSchema(raw);
   const identity = await getDeviceIdentity(raw);
   installSyncTriggers(raw, identity.deviceId);
+  // 存量库补行版本，只在第一次跑到时生效
+  backfillRowVersions(raw);
 
   raw.runSync(
     `INSERT INTO sync_meta (key, value) VALUES ('writeAs', ?)
@@ -130,6 +177,15 @@ export async function openDb(): Promise<SQLiteDatabase> {
   );
   loadPeerCreds(raw);
   await hydrateAppSettingsFromDb(raw);
+
+  // 启动时清一次。清理原本只挂在「新建了快照」之后，但按天保留和总量上限都是
+  // 随时间过期的：同步节流后可能好几天不新建快照，过期文件就一直躺在那儿。
+  try {
+    pruneBackups();
+  } catch {
+    // 清理失败不该拦住启动
+  }
+
   return raw;
 }
 
@@ -231,43 +287,79 @@ export function getRepoFileSyncNotice(): { skipped: boolean; message: string | n
   };
 }
 
-function saveConflicts(sqlite: SQLiteDatabase, runId: string, conflicts: FieldConflict[]): void {
-  for (const c of conflicts) {
+function saveOverwrites(
+  sqlite: SQLiteDatabase,
+  runId: string,
+  overwrites: FieldOverwrite[],
+): void {
+  for (const o of overwrites) {
     sqlite.runSync(
-      `INSERT INTO sync_conflict (
+      `INSERT INTO sync_overwrite (
         id, run_id, table_name, row_id, field,
-        local_value, remote_value, local_wall_ms, remote_wall_ms, resolution
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+        local_value, remote_value, local_wall_ms, remote_wall_ms, kept_side
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       Crypto.randomUUID(),
       runId,
-      c.table,
-      c.rowId,
-      c.field,
-      JSON.stringify(c.localValue),
-      JSON.stringify(c.remoteValue),
-      c.localWallMs,
-      c.remoteWallMs,
+      o.table,
+      o.rowId,
+      o.field,
+      JSON.stringify(o.localValue),
+      JSON.stringify(o.remoteValue),
+      o.localWallMs,
+      o.remoteWallMs,
+      o.keptSide,
     );
   }
 }
 
-export async function syncNow(options?: { full?: boolean }): Promise<{
+/** 隔多久重做一次全表对账，兜住水位线本身出错的情况 */
+const FULL_SYNC_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * 这一轮该不该走全表快照。
+ *
+ * 刻意不做成用户选项：用户没有判断依据，多一个按钮只会让人不知道该按哪个。
+ * 全量只在增量证明不可靠时才需要——
+ * - 水位线为 0：首次配对或换了桌面端。本机那些"从别处同步进来、没进 oplog"
+ *   的行只有全表快照推得出去，光靠增量会永久缺失。
+ * - 上次同步失败：水位线可能停在半途，两端各自以为对方收到了。
+ * - 太久没对过账：任何一次未预料的水位线错乱都能被这一步兜住。
+ */
+function needsFullSync(sqlite: SQLiteDatabase, peer: PeerRow): boolean {
+  if (!peer.last_sync_at || peer.last_local_seq === 0 || peer.last_remote_seq === 0) return true;
+
+  const lastRun = sqlite.getFirstSync<{ status: string }>(
+    `SELECT status FROM sync_run ORDER BY started_at DESC LIMIT 1`,
+  );
+  if (lastRun && lastRun.status !== 'success') return true;
+
+  if (!peer.last_full_sync_at) return true;
+  return Date.now() - peer.last_full_sync_at > FULL_SYNC_INTERVAL_MS;
+}
+
+export interface SyncOutcome {
   applied: number;
-  conflicts: number;
-  status: string;
-  runId: string | null;
+  /** 两端改了同一列、按更新时间取新而被覆盖掉的旧值数量 */
+  overwrites: number;
+  runId: string;
+  /** 同步前的整库快照文件名；本轮无写入时为 null */
+  backupFile: string | null;
+  /** 本轮是否做了全表对账，仅用于说明耗时 */
+  full: boolean;
   repoFileSkipped?: boolean;
   repoFileMessage?: string;
-}> {
+}
+
+export async function syncNow(): Promise<SyncOutcome> {
   const sqlite = await openDb();
   const identity = await getDeviceIdentity(sqlite);
   const peer = getPeer(sqlite);
   if (!peer?.last_address) throw new Error('尚未配对桌面端');
 
-  const full = options?.full ?? false;
   // 水位线语义:last_local_seq = 本端 oplog 已发送给对方的水位;
   // last_remote_seq = 对端最近上报的 headSeq。
-  // 全量同步扫描全表并请求对端也返回全表快照。
+  // 全表对账扫描全表并请求对端也返回全表快照。
+  const full = needsFullSync(sqlite, peer);
   const local = full
     ? collectFullChangeSet(sqlite, identity.deviceId)
     : collectChangeSet(sqlite, identity.deviceId, peer.last_local_seq);
@@ -290,6 +382,14 @@ export async function syncNow(options?: { full?: boolean }): Promise<{
 
   const plan = planMerge(local, response.changes, ctx);
   const { other, repoFile } = partitionRepoFileChanges(plan.auto);
+
+  // 备份放在合并之后、落库之前：绝大多数同步其实无事可做，每 60 秒 VACUUM
+  // 一遍整库（含几十 MB 的源码快照）纯属自残，而没有写入的同步也没什么可退的
+  let backupFile: string | null = null;
+  if (plan.auto.length > 0) {
+    backupFile = createPresyncBackup(sqlite)?.file ?? null;
+  }
+
   let appliedRemote = applyAutoChanges(sqlite, peer.device_id, other);
 
   let repoFileSkipped = false;
@@ -311,42 +411,43 @@ export async function syncNow(options?: { full?: boolean }): Promise<{
   }
 
   const runId = Crypto.randomUUID();
-  if (plan.conflicts.length > 0) {
-    sqlite.runSync(
-      `INSERT INTO sync_run (id, peer_device_id, direction, status, applied_count, conflict_count, started_at, finished_at)
-       VALUES (?, ?, 'auto', 'conflict', ?, ?, ?, ?)`,
-      runId,
-      peer.device_id,
-      appliedRemote,
-      plan.conflicts.length,
-      Date.now(),
-      Date.now(),
-    );
-    saveConflicts(sqlite, runId, plan.conflicts);
-  }
+  const now = Date.now();
+  sqlite.runSync(
+    `INSERT INTO sync_run (
+       id, peer_device_id, direction, status, backup_file,
+       applied_count, overwrite_count, started_at, finished_at
+     ) VALUES (?, ?, 'auto', 'success', ?, ?, ?, ?, ?)`,
+    runId,
+    peer.device_id,
+    backupFile,
+    appliedRemote,
+    plan.overwrites.length,
+    now,
+    now,
+  );
+  if (plan.overwrites.length > 0) saveOverwrites(sqlite, runId, plan.overwrites);
+  if (backupFile) pruneBackups();
 
   sqlite.runSync(
-    `UPDATE sync_peer SET last_local_seq = ?, last_remote_seq = ?, last_sync_at = ?
+    `UPDATE sync_peer SET last_local_seq = ?, last_remote_seq = ?, last_sync_at = ?,
+       last_full_sync_at = ?
      WHERE device_id = ?`,
     currentHeadSeq(sqlite),
     repoFileSkipped ? peer.last_remote_seq : response.changes.headSeq,
-    Date.now(),
+    now,
+    // repo_file 没搬完就不算对完账，下一轮还要再来一次
+    full && !repoFileSkipped ? now : peer.last_full_sync_at,
     peer.device_id,
   );
 
-  const conflictCount = plan.conflicts.length + response.conflictCount;
   return {
     applied: response.appliedCount + appliedRemote,
-    conflicts: conflictCount,
-    status: conflictCount > 0 ? 'conflict' : 'success',
-    runId: plan.conflicts.length > 0 ? runId : null,
+    overwrites: plan.overwrites.length + response.overwriteCount,
+    runId,
+    backupFile,
+    full,
     ...(repoFileSkipped ? { repoFileSkipped, repoFileMessage } : {}),
   };
-}
-
-export interface PendingConflictRow extends FieldConflict {
-  id: string;
-  runId: string;
 }
 
 export function getPeerLabel(): string | null {
@@ -357,14 +458,22 @@ export function getPeerLabel(): string | null {
   return `${peer.display_name} @ ${peer.last_address.replace(/^https?:\/\//, '')}`;
 }
 
-export function listPendingConflicts(): FieldConflict[] {
-  return listPendingConflictRows();
+export interface OverwriteRow extends FieldOverwrite {
+  id: string;
+  runId: string;
+  startedAt: number;
 }
 
-export function listPendingConflictRows(): PendingConflictRow[] {
-  const sqlite = getRawDb();
-  const rows = sqlite.getAllSync<{
+/**
+ * 最近被自动覆盖掉的旧值。
+ *
+ * 不需要用户裁决，但得能看见：自动覆盖是同步链路上唯一会丢用户输入的地方，
+ * 发现丢了东西时靠这份清单加上同步前的快照才能找回来。
+ */
+export function listRecentOverwrites(limit = 50): OverwriteRow[] {
+  const rows = getRawDb().getAllSync<{
     id: string;
+    run_id: string;
     table_name: string;
     row_id: string;
     field: string;
@@ -372,115 +481,55 @@ export function listPendingConflictRows(): PendingConflictRow[] {
     remote_value: string | null;
     local_wall_ms: number;
     remote_wall_ms: number;
-    run_id: string;
+    kept_side: 'local' | 'remote';
+    started_at: number;
   }>(
-    `SELECT c.* FROM sync_conflict c
-     INNER JOIN sync_run r ON r.id = c.run_id
-     WHERE c.resolution = 'pending'
-     ORDER BY c.row_id`,
+    `SELECT o.*, r.started_at FROM sync_overwrite o
+     INNER JOIN sync_run r ON r.id = o.run_id
+     ORDER BY r.started_at DESC, o.row_id
+     LIMIT ?`,
+    limit,
   );
 
-  return rows.map((c) => ({
-    id: c.id,
-    runId: c.run_id,
-    table: c.table_name,
-    rowId: c.row_id,
-    field: c.field,
-    localValue: c.local_value ? JSON.parse(c.local_value) : null,
-    remoteValue: c.remote_value ? JSON.parse(c.remote_value) : null,
-    localWallMs: c.local_wall_ms,
-    remoteWallMs: c.remote_wall_ms,
-    label: `${c.table_name}:${c.row_id}`,
+  return rows.map((o) => ({
+    id: o.id,
+    runId: o.run_id,
+    startedAt: o.started_at,
+    table: o.table_name,
+    rowId: o.row_id,
+    field: o.field,
+    localValue: o.local_value ? JSON.parse(o.local_value) : null,
+    remoteValue: o.remote_value ? JSON.parse(o.remote_value) : null,
+    localWallMs: o.local_wall_ms,
+    remoteWallMs: o.remote_wall_ms,
+    keptSide: o.kept_side,
+    label: `${o.table_name}:${o.row_id}`,
   }));
 }
 
-export async function resolveConflicts(
-  runId: string,
-  choices: { table: string; rowId: string; field: string; choice: ConflictChoice }[],
-): Promise<void> {
+export { listBackups, type BackupInfo };
+
+/** 手动留一份现场，升级或大动作之前用 */
+export function createManualBackup(): BackupInfo {
+  const info = createBackup(getRawDb(), 'manual');
+  if (!info) throw new Error('手机存储空间不够，这份快照没做成');
+  pruneBackups();
+  return info;
+}
+
+/**
+ * 回退到某份快照。
+ *
+ * 还原前先给当前库留一份，否则回退本身就是不可逆操作——用户选错了快照就再
+ * 也回不到现场。之后重新打开会顺带跑一遍迁移与触发器安装。
+ */
+export async function restoreFromBackup(file: string): Promise<void> {
   const sqlite = getRawDb();
-  const peer = getPeer(sqlite);
-  if (!peer) throw new Error('未配对');
+  createBackup(sqlite, 'prerestore');
+  sqlite.closeSync();
+  raw = null;
 
-  const pending = sqlite.getAllSync<{
-    id: string;
-    table_name: string;
-    row_id: string;
-    field: string;
-    local_value: string | null;
-    remote_value: string | null;
-    remote_wall_ms: number;
-  }>(`SELECT * FROM sync_conflict WHERE run_id = ? AND resolution = 'pending'`, runId);
-
-  const choiceMap = new Map<string, ConflictChoice>();
-  for (const c of choices) {
-    choiceMap.set(`${c.table}\u0000${c.rowId}\u0000${c.field}`, c.choice);
-  }
-
-  const fieldConflicts: FieldConflict[] = pending.map((c) => ({
-    table: c.table_name,
-    rowId: c.row_id,
-    field: c.field,
-    localValue: c.local_value ? JSON.parse(c.local_value) : null,
-    remoteValue: c.remote_value ? JSON.parse(c.remote_value) : null,
-    localWallMs: 0,
-    remoteWallMs: c.remote_wall_ms,
-    label: `${c.table_name}:${c.row_id}`,
-  }));
-
-  const remoteRows = new Map<string, { table: string; rowId: string; values: Record<string, unknown>; wallMs: number }>();
-  const remoteTombstones: { table: string; rowId: string; wallMs: number }[] = [];
-
-  for (const c of pending) {
-    const choice = choiceMap.get(`${c.table_name}\u0000${c.row_id}\u0000${c.field}`) ?? 'local';
-    if (choice !== 'remote') continue;
-    const k = `${c.table_name}\u0000${c.row_id}`;
-    if (c.field === 'delete') {
-      const remoteVal = c.remote_value ? JSON.parse(c.remote_value) : null;
-      if (remoteVal && typeof remoteVal === 'object') {
-        remoteRows.set(k, {
-          table: c.table_name,
-          rowId: c.row_id,
-          values: remoteVal as Record<string, unknown>,
-          wallMs: c.remote_wall_ms,
-        });
-      } else {
-        remoteTombstones.push({ table: c.table_name, rowId: c.row_id, wallMs: c.remote_wall_ms });
-      }
-      continue;
-    }
-    const existing = remoteRows.get(k);
-    if (existing) {
-      existing.values[c.field] = c.remote_value ? JSON.parse(c.remote_value) : null;
-    } else {
-      remoteRows.set(k, {
-        table: c.table_name,
-        rowId: c.row_id,
-        values: { [c.field]: c.remote_value ? JSON.parse(c.remote_value) : null },
-        wallMs: c.remote_wall_ms,
-      });
-    }
-  }
-
-  const remote = {
-    deviceId: peer.device_id,
-    headSeq: 0,
-    rows: [...remoteRows.values()].map((r) => ({
-      table: r.table,
-      rowId: r.rowId,
-      values: r.values,
-      changedFields: null,
-      wallMs: r.wallMs,
-    })),
-    tombstones: remoteTombstones,
-  };
-
-  const changes = resolutionsToChanges(fieldConflicts, choiceMap, remote);
-  applyAutoChanges(sqlite, peer.device_id, changes);
-
-  for (const c of pending) {
-    const choice = choiceMap.get(`${c.table_name}\u0000${c.row_id}\u0000${c.field}`) ?? 'local';
-    sqlite.runSync(`UPDATE sync_conflict SET resolution = ? WHERE id = ?`, choice, c.id);
-  }
-  sqlite.runSync(`UPDATE sync_run SET status = 'success', finished_at = ? WHERE id = ?`, Date.now(), runId);
+  overwriteDatabaseWith(file);
+  await openDb();
 }
+

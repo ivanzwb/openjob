@@ -25,6 +25,41 @@ function isLocalWrite(localDeviceId: string): string {
 /** unixepoch('subsec') 返回带小数的秒，乘 1000 得到毫秒 */
 const NOW_MS = `CAST(unixepoch('subsec') * 1000 AS INTEGER)`;
 
+/**
+ * 行版本触发器：维护每一行最后一次更新的时间，后写覆盖靠它判新旧。
+ *
+ * 和 oplog 触发器相反，这三个**不**带 isLocalWrite 判断——应用对端数据时
+ * 也要更新版本，否则从对端同步进来的行永远没有时间可比。落库后
+ * applyAutoChanges 会把版本改写成来源端的时间，覆盖掉这里写的当前时间。
+ */
+function rowVersionTriggerSql(spec: SyncTableSpec): string[] {
+  const upsert = (rowIdExpr: string): string => `
+  INSERT INTO sync_row_version (table_name, row_id, updated_ms)
+  VALUES ('${spec.name}', ${rowIdExpr}, ${NOW_MS})
+  ON CONFLICT(table_name, row_id) DO UPDATE SET updated_ms = excluded.updated_ms;`;
+
+  const tracked = spec.columns.filter((c) => c !== spec.pk);
+  const anyChanged = tracked.map((c) => `OLD.\`${c}\` IS NOT NEW.\`${c}\``).join('\n     OR ');
+
+  return [
+    `
+CREATE TRIGGER IF NOT EXISTS syncrv_${spec.name}_ai AFTER INSERT ON \`${spec.name}\`
+BEGIN${upsert(`NEW.\`${spec.pk}\``)}
+END;`,
+    `
+CREATE TRIGGER IF NOT EXISTS syncrv_${spec.name}_au AFTER UPDATE ON \`${spec.name}\`
+WHEN ${anyChanged}
+BEGIN${upsert(`NEW.\`${spec.pk}\``)}
+END;`,
+    `
+CREATE TRIGGER IF NOT EXISTS syncrv_${spec.name}_ad AFTER DELETE ON \`${spec.name}\`
+BEGIN
+  DELETE FROM sync_row_version
+  WHERE table_name = '${spec.name}' AND row_id = OLD.\`${spec.pk}\`;
+END;`,
+  ];
+}
+
 function insertTrigger(spec: SyncTableSpec, localDeviceId: string): string {
   return `
 CREATE TRIGGER IF NOT EXISTS sync_${spec.name}_ai AFTER INSERT ON \`${spec.name}\`
@@ -78,7 +113,58 @@ END;`;
 }
 
 export function buildTriggerSql(spec: SyncTableSpec, localDeviceId: string): string[] {
-  return [insertTrigger(spec, localDeviceId), updateTrigger(spec, localDeviceId), deleteTrigger(spec, localDeviceId)];
+  return [
+    insertTrigger(spec, localDeviceId),
+    updateTrigger(spec, localDeviceId),
+    deleteTrigger(spec, localDeviceId),
+    ...rowVersionTriggerSql(spec),
+  ];
+}
+
+/**
+ * 给存量数据补上行版本。
+ *
+ * 新装的库靠触发器就够了，但已经在用的库里几万行都没有版本时间。缺时间的
+ * 行在后写覆盖里会被当成"最老"，第一次同步就可能被对端整体压掉，所以必须
+ * 用现有信息尽量还原：oplog 里的最后一次改动时间最准，其次是业务表自己的
+ * updated_at / created_at。
+ *
+ * 只跑一次，之后交给触发器。
+ */
+export function backfillRowVersions(raw: Database): void {
+  const done = raw
+    .prepare(`SELECT value FROM sync_meta WHERE key = 'rowVersionBackfilledAt'`)
+    .get() as { value: string } | undefined;
+  if (done) return;
+
+  raw.transaction(() => {
+    for (const spec of syncTableSpecs()) {
+      const fallbacks = [
+        `(SELECT max(o.wall_ms) FROM sync_oplog o
+           WHERE o.table_name = '${spec.name}' AND o.row_id = t.\`${spec.pk}\`)`,
+      ];
+      if (spec.columns.includes('updated_at')) fallbacks.push('t.`updated_at`');
+      if (spec.columns.includes('created_at')) fallbacks.push('t.`created_at`');
+      fallbacks.push('0');
+
+      // WHERE true 不是多余的：SELECT 后面直接跟 ON CONFLICT 时 SQLite 无法
+      // 判断 ON 属于 join 还是 upsert，必须有 WHERE 断开
+      raw.exec(`
+        INSERT INTO sync_row_version (table_name, row_id, updated_ms)
+        SELECT '${spec.name}', t.\`${spec.pk}\`, coalesce(${fallbacks.join(', ')})
+        FROM \`${spec.name}\` t
+        WHERE true
+        ON CONFLICT(table_name, row_id) DO NOTHING;
+      `);
+    }
+
+    raw
+      .prepare(
+        `INSERT INTO sync_meta (key, value) VALUES ('rowVersionBackfilledAt', ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+      )
+      .run(String(Date.now()));
+  })();
 }
 
 /**
@@ -101,26 +187,30 @@ export function installSyncTriggers(raw: Database, localDeviceId: string): void 
       .prepare(`SELECT name FROM sqlite_master WHERE type = 'trigger'`)
       .all() as { name: string }[];
     for (const { name } of triggers) {
-      const m = /^sync_(.+)_(ai|au|ad)$/.exec(name);
+      const m = /^(?:sync|syncrv)_(.+)_(?:ai|au|ad)$/.exec(name);
       if (m && !known.has(m[1])) {
         raw.exec(`DROP TRIGGER IF EXISTS ${name};`);
       }
     }
 
     for (const spec of specs) {
-      for (const suffix of ['ai', 'au', 'ad']) {
-        raw.exec(`DROP TRIGGER IF EXISTS sync_${spec.name}_${suffix};`);
+      for (const prefix of ['sync', 'syncrv']) {
+        for (const suffix of ['ai', 'au', 'ad']) {
+          raw.exec(`DROP TRIGGER IF EXISTS ${prefix}_${spec.name}_${suffix};`);
+        }
       }
       for (const sql of buildTriggerSql(spec, localDeviceId)) {
         raw.exec(sql);
       }
     }
 
-    // 清掉清单外表的 oplog 残留，collect/apply 不再读到未知表
+    // 清掉清单外表的残留，collect/apply 不再读到未知表
     const placeholders = specs.map(() => '?').join(', ');
+    const names = specs.map((s) => s.name);
+    raw.prepare(`DELETE FROM sync_oplog WHERE table_name NOT IN (${placeholders})`).run(...names);
     raw
-      .prepare(`DELETE FROM sync_oplog WHERE table_name NOT IN (${placeholders})`)
-      .run(...specs.map((s) => s.name));
+      .prepare(`DELETE FROM sync_row_version WHERE table_name NOT IN (${placeholders})`)
+      .run(...names);
   })();
 }
 

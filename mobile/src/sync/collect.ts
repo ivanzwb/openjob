@@ -35,6 +35,22 @@ function readRow(
   return row ?? null;
 }
 
+/**
+ * 这一行最后一次更新的时间。
+ *
+ * 取 sync_row_version 而不是窗口内最后一条 oplog 的时间：从对端同步进来的
+ * 行不写 oplog，只看 oplog 会把这行的时间说早了，全量与增量两条采集路径也
+ * 会对同一行报出不同的时间。
+ */
+function rowVersion(raw: SQLiteDatabase, table: string, rowId: string): number | null {
+  const row = raw.getFirstSync<{ updated_ms: number }>(
+    `SELECT updated_ms FROM sync_row_version WHERE table_name = ? AND row_id = ?`,
+    table,
+    rowId,
+  );
+  return row?.updated_ms ?? null;
+}
+
 export function collectChangeSet(
   raw: SQLiteDatabase,
   deviceId: string,
@@ -90,7 +106,13 @@ export function collectChangeSet(
       changedFields = [...fields];
     }
 
-    snapshots.push({ table, rowId, values, changedFields, wallMs });
+    snapshots.push({
+      table,
+      rowId,
+      values,
+      changedFields,
+      wallMs: rowVersion(raw, table, rowId) ?? wallMs,
+    });
   }
 
   return { deviceId, headSeq: head, rows: snapshots, tombstones };
@@ -103,22 +125,31 @@ export function currentHeadSeq(raw: SQLiteDatabase): number {
   );
 }
 
-/** 全量快照，语义与桌面端 collectFullChangeSet 一致 */
+/**
+ * 全量快照，语义与桌面端 collectFullChangeSet 一致。
+ *
+ * 每行的时间取自 sync_row_version 而不是 Date.now()：全表快照里所有行都盖上
+ * "现在"的话，后写覆盖就变成了"谁先发起同步谁赢"。
+ */
 export function collectFullChangeSet(raw: SQLiteDatabase, deviceId: string): ChangeSet {
   const snapshots: RowSnapshot[] = [];
 
   for (const spec of syncTableSpecs()) {
-    const cols = spec.columns.map((c) => `\`${c}\``).join(', ');
+    const cols = spec.columns.map((c) => `t.\`${c}\``).join(', ');
     const rows = raw.getAllSync<Record<string, unknown>>(
-      `SELECT ${cols} FROM \`${spec.name}\``,
+      `SELECT ${cols}, coalesce(v.updated_ms, 0) AS __updated_ms
+         FROM \`${spec.name}\` t
+         LEFT JOIN sync_row_version v
+           ON v.table_name = '${spec.name}' AND v.row_id = t.\`${spec.pk}\``,
     );
     for (const row of rows) {
+      const { __updated_ms: updatedMs, ...values } = row;
       snapshots.push({
         table: spec.name,
-        rowId: String(row[spec.pk]),
-        values: row,
+        rowId: String(values[spec.pk]),
+        values,
         changedFields: null,
-        wallMs: Date.now(),
+        wallMs: Number(updatedMs),
       });
     }
   }

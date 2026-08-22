@@ -6,6 +6,7 @@ import type {
   SyncPairResponse,
   SyncPingRequest,
   SyncPingResponse,
+  SyncRpcRequest,
   SyncStatus,
 } from '@shared/sync';
 import { getDeviceIdentity } from './identity';
@@ -24,6 +25,7 @@ import {
 } from './pairing';
 import { handleExchange } from './orchestrator';
 import { invokeRpc, isJobChannel, isStreamChannel, waitForStreamEvents } from './rpc';
+import { checkPeerVersion, localAppVersion, VERSION_MISMATCH_STATUS } from './versionGate';
 import { emit } from '../ipc/bridge';
 
 const DEFAULT_PORT = 19721;
@@ -47,6 +49,27 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
     'Content-Length': Buffer.byteLength(payload),
   });
   res.end(payload);
+}
+
+/**
+ * 把版本不一致告诉桌面用户。
+ *
+ * 手机端那边会看到自己的提示，但被拒的这一端往往是桌面（自动更新跑在前面），
+ * 只在手机上提示会让人以为是手机坏了。节流是因为自动同步每 60 秒重试一次，
+ * 不限速的话设置页会被同一条消息刷满。
+ */
+const MISMATCH_NOTICE_INTERVAL_MS = 5 * 60_000;
+let lastMismatchNoticeAt = 0;
+
+function notifyVersionMismatch(peerName: string, peerVersion: string | null): void {
+  const now = Date.now();
+  if (now - lastMismatchNoticeAt < MISMATCH_NOTICE_INTERVAL_MS) return;
+  lastMismatchNoticeAt = now;
+  emit('sync:versionMismatch', {
+    peerName,
+    peerVersion,
+    desktopVersion: localAppVersion(),
+  });
 }
 
 function clientAddress(req: IncomingMessage): string {
@@ -106,6 +129,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         serverMs: Date.now(),
         deviceId: identity.deviceId,
         displayName: identity.displayName,
+        appVersion: localAppVersion(),
       };
       void input.clientMs;
       sendJson(res, 200, response);
@@ -114,6 +138,15 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
 
     if (path === '/sync/pair' && method === 'POST') {
       const input = JSON.parse(body) as SyncPairRequest;
+
+      // 版本不一致时连配对都不建立：配上了却一次也不能同步，只会让用户以为是别的毛病
+      const gate = checkPeerVersion(input.appVersion);
+      if (!gate.ok) {
+        notifyVersionMismatch(input.displayName, gate.peerVersion);
+        sendJson(res, VERSION_MISMATCH_STATUS, gate.body);
+        return;
+      }
+
       const result: SyncPairResponse = completePairing(input, clientAddress(req));
       emit('sync:paired', { deviceId: input.deviceId, displayName: input.displayName });
       sendJson(res, 200, result);
@@ -128,6 +161,17 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       }
 
       const input = JSON.parse(body) as SyncExchangeRequest;
+
+      // 必须挡在 handleExchange 之前：那一步就开始往库里写了。桌面端在这条链路上
+      // 是唯一的服务端，所以闸门只设在这里，手机端不再自行判断，免得两边规则跑偏。
+      const gate = checkPeerVersion(input.appVersion);
+      if (!gate.ok) {
+        const peer = getPeer(auth.deviceId);
+        notifyVersionMismatch(peer?.displayName ?? auth.deviceId, gate.peerVersion);
+        sendJson(res, VERSION_MISMATCH_STATUS, gate.body);
+        return;
+      }
+
       const clockOffsetMs = Date.now() - input.clientMs;
       const identity = getDeviceIdentity(getRawDb());
       const result = handleExchange({
@@ -136,6 +180,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         clockOffsetMs,
         direction: 'auto',
         remoteAddress: clientAddress(req),
+        full: input.full === true,
       });
 
       const outbound = input.full
@@ -145,17 +190,17 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       const response: SyncExchangeResponse = {
         changes: outbound,
         appliedCount: result.appliedCount,
-        conflictCount: result.conflictCount,
+        overwriteCount: result.overwriteCount,
         runId: result.runId,
-        status: result.status,
         serverMs: Date.now(),
+        appVersion: localAppVersion(),
       };
 
       emit('sync:finished', {
         runId: result.runId,
         peerDeviceId: auth.deviceId,
-        status: result.status,
-        conflictCount: result.conflictCount,
+        appliedCount: result.appliedCount,
+        overwriteCount: result.overwriteCount,
       });
 
       sendJson(res, 200, response);
@@ -169,7 +214,18 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         return;
       }
 
-      const input = JSON.parse(body) as { channel: string; payload?: unknown };
+      const input = JSON.parse(body) as SyncRpcRequest;
+
+      // RPC 也要挡：它转发到的 IPC 处理器同样会写桌面端的库，老版本手机端发来
+      // 旧形状的 payload，照样能写出一堆残缺数据。
+      const gate = checkPeerVersion(input.appVersion);
+      if (!gate.ok) {
+        const peer = getPeer(auth.deviceId);
+        notifyVersionMismatch(peer?.displayName ?? auth.deviceId, gate.peerVersion);
+        sendJson(res, VERSION_MISMATCH_STATUS, gate.body);
+        return;
+      }
+
       const channel = input.channel as Parameters<typeof invokeRpc>[0];
       const result = await invokeRpc(channel, (input.payload ?? undefined) as never);
 

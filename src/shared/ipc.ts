@@ -43,7 +43,13 @@ import type {
   Annotation,
   JdParsed,
 } from './entities';
-import type { ConflictChoice, FieldConflict, PairingPayload, SyncRunSummary, SyncStatus } from './sync';
+import type {
+  BackupInfo,
+  FieldOverwrite,
+  PairingPayload,
+  SyncRunSummary,
+  SyncStatus,
+} from './sync';
 import type { MockInterviewKind, MockInterviewLanguage } from './design/prompts';
 
 // ---------------------------------------------------------------------------
@@ -1101,14 +1107,12 @@ export interface IpcInvokeMap {
   'sync:listPeers': { req: void; res: SyncStatus['peers'] };
   'sync:removePeer': { req: { deviceId: string }; res: void };
   'sync:listRuns': { req: { limit?: number } | void; res: SyncRunSummary[] };
-  'sync:listConflicts': { req: { runId: string }; res: FieldConflict[] };
-  'sync:resolveConflicts': {
-    req: {
-      runId: string;
-      choices: Array<{ table: string; rowId: string; field: string; choice: ConflictChoice }>;
-    };
-    res: { applied: number };
-  };
+  /** 某次同步里按更新时间自动覆盖掉的旧值，供核对是否需要从备份还原 */
+  'sync:listOverwrites': { req: { runId: string }; res: FieldOverwrite[] };
+  /** 本机 backups/ 目录下的全部整库快照，不只是能对上某次同步的那几份 */
+  'sync:listBackups': { req: void; res: BackupInfo[] };
+  /** 手动留一份现场，重装或大动作之前用 */
+  'sync:createBackup': { req: void; res: BackupInfo };
   'sync:rollback': { req: { backupFile: string }; res: void };
 
   /** 查询本地语音转写引擎状态（模型是否就绪/加载进度/错误） */
@@ -1130,8 +1134,15 @@ export interface IpcEventMap {
   'sync:finished': {
     runId: string;
     peerDeviceId: string;
-    status: 'success' | 'conflict';
-    conflictCount: number;
+    appliedCount: number;
+    overwriteCount: number;
+  };
+  /** 两端版本不同，已拒绝本轮同步（没有动数据） */
+  'sync:versionMismatch': {
+    peerName: string;
+    /** 对端上报的版本；老版本手机端不带版本号时为 null */
+    peerVersion: string | null;
+    desktopVersion: string;
   };
   /** 语音模型加载/下载进度推送 */
   'stt:status': SttStatus;
@@ -1265,8 +1276,9 @@ export const IPC_INVOKE_CHANNELS = [
   'sync:listPeers',
   'sync:removePeer',
   'sync:listRuns',
-  'sync:listConflicts',
-  'sync:resolveConflicts',
+  'sync:listOverwrites',
+  'sync:listBackups',
+  'sync:createBackup',
   'sync:rollback',
   'stt:status',
   'stt:transcribe',
@@ -1282,6 +1294,7 @@ export const IPC_EVENT_CHANNELS = [
   'update:status',
   'sync:paired',
   'sync:finished',
+  'sync:versionMismatch',
   'stt:status',
 ] as const satisfies readonly IpcEventChannel[];
 

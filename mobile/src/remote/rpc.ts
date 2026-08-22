@@ -1,5 +1,6 @@
 import type { SyncRpcRequest, SyncRpcResponse } from '@shared/sync';
 import { signRequest } from '../sync/client';
+import { getCurrentVersion } from '../lib/appVersion';
 
 interface PeerCreds {
   baseUrl: string;
@@ -23,7 +24,7 @@ export async function invokeRemote<C extends string, P, R>(
 ): Promise<{ result: R; events?: SyncRpcResponse['events'] }> {
   if (!creds) throw new Error('尚未配对桌面端');
 
-  const body: SyncRpcRequest = { channel, payload };
+  const body: SyncRpcRequest = { channel, payload, appVersion: getCurrentVersion() };
   const payloadStr = JSON.stringify(body);
   const timestamp = Date.now();
   const signature = signRequest(

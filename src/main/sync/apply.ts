@@ -92,6 +92,22 @@ function applyDelete(raw: Database, table: string, rowId: string): void {
 }
 
 /**
+ * 把这一行的版本时间改写成数据在来源端的更新时间。
+ *
+ * 触发器刚刚盖上的是本机当前时间，必须纠正：否则本机副本会因为"刚写入"
+ * 而显得比来源更新，下一轮同步又被当作新值推回去，两端在同一个值上反复
+ * 互相覆盖，水位线永远追不上。
+ */
+function stampRowVersion(raw: Database, table: string, rowId: string, wallMs: number): void {
+  raw
+    .prepare(
+      `INSERT INTO sync_row_version (table_name, row_id, updated_ms) VALUES (?, ?, ?)
+       ON CONFLICT(table_name, row_id) DO UPDATE SET updated_ms = excluded.updated_ms`,
+    )
+    .run(table, rowId, wallMs);
+}
+
+/**
  * 把合并计划里的自动变更事务性落库。
  *
  * 写入期间标记 writeAs 为对端设备，触发器不会把这些变更再记成本机
@@ -113,8 +129,10 @@ export function applyAutoChanges(
             ...change.values,
             [syncTableSpec(change.table).pk]: change.rowId,
           });
+          stampRowVersion(raw, change.table, change.rowId, change.wallMs);
         } else if (change.kind === 'patch') {
           applyPatch(raw, change.table, change.rowId, change.values);
+          stampRowVersion(raw, change.table, change.rowId, change.wallMs);
         } else {
           applyDelete(raw, change.table, change.rowId);
         }

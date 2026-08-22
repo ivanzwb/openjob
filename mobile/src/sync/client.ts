@@ -8,6 +8,39 @@ import type {
   SyncPairResponse,
   SyncPingResponse,
 } from '@shared/sync';
+import { SYNC_VERSION_MISMATCH, type SyncErrorBody } from '@shared/version';
+import { getCurrentVersion } from '../lib/appVersion';
+
+/**
+ * 桌面端因版本不一致拒绝了这一轮。
+ *
+ * 单独立一个类型，是为了让界面能换成「去升级」的提示而不是一行红字错误：
+ * 这条不是网络抖动，重试一百次也不会好，得让用户知道去装新版。
+ */
+export class SyncVersionMismatchError extends Error {
+  readonly desktopVersion: string | null;
+  readonly mobileVersion: string;
+
+  constructor(message: string, desktopVersion: string | null, mobileVersion: string) {
+    super(message);
+    this.name = 'SyncVersionMismatchError';
+    this.desktopVersion = desktopVersion;
+    this.mobileVersion = mobileVersion;
+  }
+}
+
+/** 把桌面端的错误体翻成异常；版本不一致那种单独成型 */
+async function throwResponseError(res: Response, fallback: string): Promise<never> {
+  const body = (await res.json().catch(() => null)) as SyncErrorBody | null;
+  if (body?.code === SYNC_VERSION_MISMATCH) {
+    throw new SyncVersionMismatchError(
+      body.error,
+      body.desktopVersion ?? null,
+      getCurrentVersion(),
+    );
+  }
+  throw new Error(body?.error ?? `${fallback} (${res.status})`);
+}
 
 function toBase64Url(bytes: Uint8Array): string {
   const bin = String.fromCharCode(...bytes);
@@ -80,7 +113,7 @@ export async function pingDesktop(baseUrl: string): Promise<SyncPingResponse> {
   const res = await fetchWithTimeout(`${baseUrl}/sync/ping`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ clientMs: Date.now() }),
+    body: JSON.stringify({ clientMs: Date.now(), appVersion: getCurrentVersion() }),
   });
   if (!res.ok) throw new Error(await res.text());
   return (await res.json()) as SyncPingResponse;
@@ -97,16 +130,14 @@ export async function pairWithDesktop(
     deviceId,
     displayName,
     platform: 'mobile',
+    appVersion: getCurrentVersion(),
   };
   const res = await fetchWithTimeout(`${baseUrl}/sync/pair`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  if (!res.ok) {
-    const err = (await res.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(err?.error ?? `配对失败 (${res.status})`);
-  }
+  if (!res.ok) await throwResponseError(res, '配对失败');
   return (await res.json()) as SyncPairResponse;
 }
 
@@ -123,15 +154,13 @@ export async function exchangeWithDesktop(
     changes,
     clientMs: Date.now(),
     full: options?.full,
+    appVersion: getCurrentVersion(),
   };
   const payload = JSON.stringify(body);
   const res = await signedFetch(baseUrl, sharedKey, deviceId, '/sync/exchange', {
     method: 'POST',
     body: payload,
   });
-  if (!res.ok) {
-    const err = (await res.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(err?.error ?? `同步失败 (${res.status})`);
-  }
+  if (!res.ok) await throwResponseError(res, '同步失败');
   return (await res.json()) as SyncExchangeResponse;
 }

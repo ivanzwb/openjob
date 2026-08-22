@@ -1,9 +1,11 @@
 import { useSyncExternalStore } from 'react';
 import { Platform } from 'react-native';
-import * as Application from 'expo-application';
 import * as IntentLauncher from 'expo-intent-launcher';
 import { Directory, File, Paths } from 'expo-file-system';
 import { compareVersions, normalizeVersion } from '../lib/semver';
+import { getCurrentVersion } from '../lib/appVersion';
+
+export { getCurrentVersion };
 
 /**
  * 应用内新版检测与升级。
@@ -89,14 +91,6 @@ export function useAppUpdateState(): AppUpdateState {
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-/**
- * 当前安装版本。用 expo-application 而不是 expo-constants：
- * nativeApplicationVersion 读的是已安装 APK 的 versionName，跟用户手里跑的那个包一致。
- */
-export function getCurrentVersion(): string {
-  return normalizeVersion(Application.nativeApplicationVersion ?? '0.0.0');
 }
 
 async function fetchLatestRelease(): Promise<ReleasePayload> {

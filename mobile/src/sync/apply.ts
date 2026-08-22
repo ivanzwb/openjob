@@ -80,6 +80,27 @@ function applyDelete(raw: SQLiteDatabase, table: string, rowId: string): void {
   raw.runSync(`DELETE FROM \`${table}\` WHERE \`${spec.pk}\` = ?`, rowId);
 }
 
+/**
+ * 把这一行的版本时间改写成数据在来源端的更新时间。
+ *
+ * 触发器刚刚盖上的是本机当前时间，必须纠正：否则本机副本会因为"刚写入"而
+ * 显得比来源更新，下一轮同步又被当作新值推回去，两端反复互相覆盖。
+ */
+function stampRowVersion(
+  raw: SQLiteDatabase,
+  table: string,
+  rowId: string,
+  wallMs: number,
+): void {
+  raw.runSync(
+    `INSERT INTO sync_row_version (table_name, row_id, updated_ms) VALUES (?, ?, ?)
+     ON CONFLICT(table_name, row_id) DO UPDATE SET updated_ms = excluded.updated_ms`,
+    table,
+    rowId,
+    wallMs,
+  );
+}
+
 export function applyAutoChanges(
   raw: SQLiteDatabase,
   peerDeviceId: string,
@@ -97,8 +118,10 @@ export function applyAutoChanges(
             ...change.values,
             [syncTableSpec(change.table).pk]: change.rowId,
           });
+          stampRowVersion(raw, change.table, change.rowId, change.wallMs);
         } else if (change.kind === 'patch') {
           applyPatch(raw, change.table, change.rowId, change.values);
+          stampRowVersion(raw, change.table, change.rowId, change.wallMs);
         } else {
           applyDelete(raw, change.table, change.rowId);
         }

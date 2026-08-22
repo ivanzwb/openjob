@@ -1,7 +1,7 @@
 import { hostname } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import type { Database } from 'better-sqlite3';
-import { installSyncTriggers } from './triggers';
+import { backfillRowVersions, installSyncTriggers } from './triggers';
 
 export interface DeviceIdentity {
   deviceId: string;
@@ -60,5 +60,7 @@ export function initSyncLayer(raw: Database): DeviceIdentity {
   writeMeta(raw, 'writeAs', identity.deviceId);
 
   installSyncTriggers(raw, identity.deviceId);
+  // 存量库补行版本，只在第一次跑到时生效
+  backfillRowVersions(raw);
   return identity;
 }

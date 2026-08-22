@@ -1,7 +1,7 @@
 import type {
   AutoChange,
   ChangeSet,
-  FieldConflict,
+  FieldOverwrite,
   MergePlan,
   RowSnapshot,
   Tombstone,
@@ -10,12 +10,19 @@ import type {
 /**
  * 合并规则的唯一实现，两端共用。
  *
- * 核心判断只有一条：只有当两端在同一水位线之后都改过同一行的同一列、
- * 且改成了不同的值，才算冲突。其余情况全部自动合并。
+ * 两条规则，按顺序适用：
  *
- * 注意这里刻意不做「按时间戳取新的」的自动裁决。手机和电脑的时钟差
- * 完全可能有几秒，靠它决定谁覆盖谁会静默丢数据。时间戳只用来在冲突
- * 界面上告诉用户哪边更晚，决定权留给用户。
+ * 1. 列级合并优先。两端改的是同一行的不同列时，两边的修改都保留——这种
+ *    情况不是分歧，直接取新值合成一行。手机上改备注、电脑上改标题不该有
+ *    一方被丢掉。
+ * 2. 同一列真的改成了不同值，才按更新时间取新的，不打扰用户。
+ *
+ * 关于「取新的」的正确性：这要求两端独立算出同一个赢家，否则每轮同步各自
+ * 覆盖对方，数据永远收敛不了。所以时间必须先按握手测得的时钟偏移归一，
+ * 时间完全相同时还要有一个两端一致的兜底顺序（见 remoteWins）。
+ *
+ * 时间来自 sync_row_version 而不是 oplog：从对端同步进来的行不写 oplog，
+ * 只靠 oplog 的话那些行没有时间可比。
  */
 
 export interface MergeContext {
@@ -25,7 +32,7 @@ export interface MergeContext {
   isDeviceLocal(table: string, column: string): boolean;
   /** 主键列名 */
   primaryKey(table: string): string;
-  /** 冲突界面上展示的行标题 */
+  /** 覆盖记录里展示的行标题 */
   labelFor(table: string, rowId: string, values: Record<string, unknown>): string;
 }
 
@@ -40,6 +47,23 @@ function sameValue(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (a === null || b === null || a === undefined || b === undefined) return false;
   return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/**
+ * 后写覆盖的判定。两端各自调用，必须得出同一个结论。
+ *
+ * 时间相同时按 deviceId 字典序定胜负：两端看到的是同一对 id，只是本机/对端
+ * 的角色相反，取字典序更大的那个 id 能让双方选中同一边。少了这一条，同一
+ * 毫秒内两端各改一次的列会在每轮同步里来回翻，永远不收敛。
+ */
+function remoteWins(
+  localMs: number,
+  remoteMs: number,
+  localDeviceId: string,
+  remoteDeviceId: string,
+): boolean {
+  if (remoteMs !== localMs) return remoteMs > localMs;
+  return remoteDeviceId > localDeviceId;
 }
 
 interface Indexed {
@@ -75,7 +99,13 @@ export function planMerge(local: ChangeSet, remote: ChangeSet, ctx: MergeContext
   const r = indexChangeSet(remote);
 
   const auto: AutoChange[] = [];
-  const conflicts: FieldConflict[] = [];
+  const overwrites: FieldOverwrite[] = [];
+
+  /** 对端时间归一到本机时钟后才能和本机时间比较 */
+  const localized = (wallMs: number): number => wallMs - ctx.clockOffsetMs;
+
+  const winner = (localMs: number, remoteMs: number): 'local' | 'remote' =>
+    remoteWins(localMs, remoteMs, local.deviceId, remote.deviceId) ? 'remote' : 'local';
 
   // 只需要遍历对端的变更：本机自己的改动本来就已经在库里了
   const remoteKeys = new Set<Key>([...r.rows.keys(), ...r.tombstones.keys()]);
@@ -88,24 +118,31 @@ export function planMerge(local: ChangeSet, remote: ChangeSet, ctx: MergeContext
 
     const table = (remoteRow ?? remoteTomb)!.table;
     const rowId = (remoteRow ?? remoteTomb)!.rowId;
-    const localTouched = Boolean(localRow || localTomb);
 
     // 对端删除
     if (remoteTomb) {
       if (localTomb) continue; // 两边都删了，天然一致
+      const remoteMs = localized(remoteTomb.wallMs);
+
       if (!localRow) {
-        auto.push({ table, rowId, kind: 'delete', values: {} });
+        auto.push({ table, rowId, kind: 'delete', values: {}, wallMs: remoteMs });
         continue;
       }
-      // 一端删除、另一端修改：没有能自动做对的选择，交给用户
-      conflicts.push({
+
+      // 一端删除、另一端修改：按时间取新的
+      const keptSide = winner(localRow.wallMs, remoteMs);
+      if (keptSide === 'remote') {
+        auto.push({ table, rowId, kind: 'delete', values: {}, wallMs: remoteMs });
+      }
+      overwrites.push({
         table,
         rowId,
         field: 'delete',
         localValue: '已修改',
         remoteValue: '已删除',
         localWallMs: localRow.wallMs,
-        remoteWallMs: remoteTomb.wallMs - ctx.clockOffsetMs,
+        remoteWallMs: remoteMs,
+        keptSide,
         label: ctx.labelFor(table, rowId, localRow.values),
       });
       continue;
@@ -113,24 +150,43 @@ export function planMerge(local: ChangeSet, remote: ChangeSet, ctx: MergeContext
 
     if (!remoteRow) continue;
 
-    // 本机删了、对端改了，方向相反的同一种冲突
+    const remoteMs = localized(remoteRow.wallMs);
+
+    // 本机删了、对端改了：对端更晚就把行救回来
     if (localTomb) {
-      conflicts.push({
+      const keptSide = winner(localTomb.wallMs, remoteMs);
+      if (keptSide === 'remote') {
+        auto.push({
+          table,
+          rowId,
+          kind: 'insert',
+          values: strip(ctx, table, remoteRow.values),
+          wallMs: remoteMs,
+        });
+      }
+      overwrites.push({
         table,
         rowId,
         field: 'delete',
         localValue: '已删除',
         remoteValue: '已修改',
         localWallMs: localTomb.wallMs,
-        remoteWallMs: remoteRow.wallMs - ctx.clockOffsetMs,
+        remoteWallMs: remoteMs,
+        keptSide,
         label: ctx.labelFor(table, rowId, remoteRow.values),
       });
       continue;
     }
 
     // 本机没动过这一行，对端的值直接采纳
-    if (!localTouched || !localRow) {
-      auto.push({ table, rowId, kind: 'insert', values: strip(ctx, table, remoteRow.values) });
+    if (!localRow) {
+      auto.push({
+        table,
+        rowId,
+        kind: 'insert',
+        values: strip(ctx, table, remoteRow.values),
+        wallMs: remoteMs,
+      });
       continue;
     }
 
@@ -158,72 +214,33 @@ export function planMerge(local: ChangeSet, remote: ChangeSet, ctx: MergeContext
       // 两端都动了，但改成了同一个值，也不算分歧
       if (sameValue(localValue, remoteValue)) continue;
 
-      conflicts.push({
+      const keptSide = winner(localRow.wallMs, remoteMs);
+      if (keptSide === 'remote') patch[field] = remoteValue;
+
+      overwrites.push({
         table,
         rowId,
         field,
         localValue,
         remoteValue,
         localWallMs: localRow.wallMs,
-        remoteWallMs: remoteRow.wallMs - ctx.clockOffsetMs,
+        remoteWallMs: remoteMs,
+        keptSide,
         label: ctx.labelFor(table, rowId, localRow.values),
       });
     }
 
     if (Object.keys(patch).length > 0) {
-      auto.push({ table, rowId, kind: 'patch', values: patch });
+      // 合成行同时含两端的值，版本时间取较晚的一个；两端算出的结果相同
+      auto.push({
+        table,
+        rowId,
+        kind: 'patch',
+        values: patch,
+        wallMs: Math.max(localRow.wallMs, remoteMs),
+      });
     }
   }
 
-  return { auto, conflicts };
-}
-
-/**
- * 把用户的裁决结果转成待落库的变更。
- * 选「本机」的冲突不产生任何写入——本机已经是那个值了。
- */
-export function resolutionsToChanges(
-  conflicts: FieldConflict[],
-  choices: Map<string, 'local' | 'remote'>,
-  remote: ChangeSet,
-): AutoChange[] {
-  const remoteRows = new Map<Key, RowSnapshot>();
-  for (const row of remote.rows) remoteRows.set(key(row.table, row.rowId), row);
-
-  const byRow = new Map<Key, AutoChange>();
-
-  for (const c of conflicts) {
-    if (choices.get(conflictKey(c)) !== 'remote') continue;
-    const k = key(c.table, c.rowId);
-
-    if (c.field === 'delete') {
-      // 采纳对端：对端删了就删，对端改了就整行覆盖
-      const row = remoteRows.get(k);
-      byRow.set(
-        k,
-        row
-          ? { table: c.table, rowId: c.rowId, kind: 'insert', values: row.values }
-          : { table: c.table, rowId: c.rowId, kind: 'delete', values: {} },
-      );
-      continue;
-    }
-
-    const existing = byRow.get(k);
-    if (existing && existing.kind !== 'patch') continue;
-    const patch = existing ?? {
-      table: c.table,
-      rowId: c.rowId,
-      kind: 'patch' as const,
-      values: {},
-    };
-    patch.values[c.field] = c.remoteValue;
-    byRow.set(k, patch);
-  }
-
-  return [...byRow.values()];
-}
-
-/** 冲突的稳定标识，UI 用它记录用户选择 */
-export function conflictKey(c: FieldConflict): string {
-  return `${c.table}\u0000${c.rowId}\u0000${c.field}`;
+  return { auto, overwrites };
 }

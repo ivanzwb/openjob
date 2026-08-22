@@ -108,13 +108,15 @@ import { applyWindowTheme } from '../theme';
 import { importResumeFromFile } from '../campaign/resumeImport';
 import {
   beginPairing,
+  createBackup,
   endPairing,
   getSyncStatus,
+  listBackups,
   listPeers,
-  listPendingConflicts,
+  listRunOverwrites,
   listSyncRuns,
+  pruneBackups,
   removePeer,
-  resolveConflicts,
   restoreBackup,
 } from '../sync';
 
@@ -422,8 +424,13 @@ export function registerIpcHandlers(): void {
     removePeer(deviceId);
   });
   handle('sync:listRuns', (input) => listSyncRuns(input?.limit ?? 20));
-  handle('sync:listConflicts', ({ runId }) => listPendingConflicts(runId));
-  handle('sync:resolveConflicts', (input) => resolveConflicts(input));
+  handle('sync:listOverwrites', ({ runId }) => listRunOverwrites(runId));
+  handle('sync:listBackups', () => listBackups());
+  handle('sync:createBackup', () => {
+    const info = createBackup('manual');
+    pruneBackups();
+    return info;
+  });
   handle('sync:rollback', ({ backupFile }) => {
     restoreBackup(backupFile);
   });

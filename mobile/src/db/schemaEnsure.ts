@@ -114,6 +114,57 @@ export function ensureCriticalSchema(sqlite: SQLiteDatabase): void {
   sqlite.execSync(
     `CREATE INDEX IF NOT EXISTS idx_design_case_campaign_type ON design_case (campaign_id, requested_type);`,
   );
+
+  ensureLastWriteWinsSchema(sqlite);
+}
+
+/**
+ * 从"用户裁决冲突"迁移到"后写覆盖"所需的结构调整。
+ *
+ * 为什么不放在迁移 SQL 里：手机端的迁移是容错重放式的（语句报"已存在"就跳过），
+ * 而 SQLite 没有 ALTER TABLE IF EXISTS。一旦某次迁移跑到一半退出，重放时
+ * RENAME 会报"表不存在"，这个错不在容错白名单里，会把启动直接打挂。放在这里
+ * 靠 sqlite_master 自省判断，重复执行天然安全。
+ */
+function ensureLastWriteWinsSchema(sqlite: SQLiteDatabase): void {
+  sqlite.execSync(`
+    CREATE TABLE IF NOT EXISTS sync_row_version (
+      table_name text NOT NULL,
+      row_id text NOT NULL,
+      updated_ms integer NOT NULL,
+      PRIMARY KEY(table_name, row_id)
+    );
+  `);
+
+  if (hasTable(sqlite, 'sync_conflict') && !hasTable(sqlite, 'sync_overwrite')) {
+    sqlite.execSync(`DROP INDEX IF EXISTS idx_sync_conflict_run`);
+    sqlite.execSync(`ALTER TABLE sync_conflict RENAME TO sync_overwrite`);
+  }
+
+  if (hasTable(sqlite, 'sync_overwrite')) {
+    if (columnExists(sqlite, 'sync_overwrite', 'resolution')) {
+      sqlite.execSync(`ALTER TABLE sync_overwrite RENAME COLUMN resolution TO kept_side`);
+      // 迁移前留下的 'pending' 没有对应语义，当作"保留了本机值"
+      sqlite.execSync(
+        `UPDATE sync_overwrite SET kept_side = 'local' WHERE kept_side NOT IN ('local', 'remote')`,
+      );
+    }
+    sqlite.execSync(
+      `CREATE INDEX IF NOT EXISTS idx_sync_overwrite_run ON sync_overwrite (run_id);`,
+    );
+  }
+
+  if (hasTable(sqlite, 'sync_run')) {
+    if (columnExists(sqlite, 'sync_run', 'conflict_count')) {
+      sqlite.execSync(`ALTER TABLE sync_run RENAME COLUMN conflict_count TO overwrite_count`);
+    }
+    // 'conflict' 状态不再存在：没有待裁决的东西，这些历史记录一律算完成
+    sqlite.execSync(`UPDATE sync_run SET status = 'success' WHERE status = 'conflict'`);
+  }
+
+  if (hasTable(sqlite, 'sync_peer') && !columnExists(sqlite, 'sync_peer', 'last_full_sync_at')) {
+    sqlite.execSync(`ALTER TABLE sync_peer ADD COLUMN last_full_sync_at integer`);
+  }
 }
 
 export function hasTable(sqlite: SQLiteDatabase, table: string): boolean {

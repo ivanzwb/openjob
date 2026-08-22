@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import { getDb, getRawDb, schema } from '../db';
 import { generatePairingCode, generateSharedKey } from './crypto';
 import { getDeviceIdentity } from './identity';
+import { localAppVersion } from './versionGate';
 import type { PairingPayload } from '@shared/sync';
 
 export interface PairingSession {
@@ -106,6 +107,8 @@ export interface PairResult {
   sharedKey: string;
   deviceId: string;
   displayName: string;
+  /** 让对端配对完就知道该跟哪个版本对齐，不必等第一次同步被拒 */
+  appVersion: string;
 }
 
 /** 对端扫码后提交配对码，验证通过后落库并返回共享密钥 */
@@ -151,6 +154,7 @@ export function completePairing(req: PairRequest, remoteAddress: string): PairRe
     sharedKey: session.sharedKey,
     deviceId: identity.deviceId,
     displayName: identity.displayName,
+    appVersion: localAppVersion(),
   };
 }
 
@@ -182,14 +186,17 @@ export function updatePeerWatermarks(
   lastLocalSeq: number,
   lastRemoteSeq: number,
   address?: string,
+  wasFull = false,
 ): void {
   const db = getDb();
+  const now = Date.now();
   const patch: Partial<typeof schema.syncPeer.$inferInsert> = {
     lastLocalSeq,
     lastRemoteSeq,
-    lastSyncAt: Date.now(),
+    lastSyncAt: now,
   };
   if (address) patch.lastAddress = address;
+  if (wasFull) patch.lastFullSyncAt = now;
   db.update(schema.syncPeer).set(patch).where(eq(schema.syncPeer.deviceId, deviceId)).run();
 }
 

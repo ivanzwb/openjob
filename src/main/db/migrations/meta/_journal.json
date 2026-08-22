@@ -127,6 +127,13 @@
       "when": 1787450000000,
       "tag": "0017_design_case_answers",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1787530000000,
+      "tag": "0018_sync_row_version",
+      "breakpoints": true
     }
   ]
 }

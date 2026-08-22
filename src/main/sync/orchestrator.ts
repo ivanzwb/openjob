@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { eq, desc } from 'drizzle-orm';
-import type { ChangeSet, ConflictChoice, FieldConflict, SyncRunSummary } from '@shared/sync';
-import { planMerge, resolutionsToChanges } from '@shared/syncMerge';
+import type { ChangeSet, FieldOverwrite, SyncRunSummary } from '@shared/sync';
+import { planMerge } from '@shared/syncMerge';
 import { getDb, getRawDb, schema } from '../db';
 import { applyAutoChanges } from './apply';
-import { createBackup, pruneBackups } from './backup';
-import { collectChangeSet, currentHeadSeq } from './collect';
+import { createPresyncBackup, pruneBackups } from './backup';
+import { collectChangeSet, collectFullChangeSet, currentHeadSeq } from './collect';
 import { getDeviceIdentity } from './identity';
 import { buildMergeContext } from './labels';
 import { getPeer, newRunId, updatePeerWatermarks } from './pairing';
@@ -16,47 +16,42 @@ export interface ExchangeInput {
   clockOffsetMs?: number;
   direction: 'auto' | 'manual';
   remoteAddress?: string;
+  /**
+   * 对端在做全表对账。本端也必须用全表快照参与合并——只拿 oplog 增量的话，
+   * 本机那些"从别处同步进来、没进 oplog"的行会被当成本机根本没有这一行，
+   * 于是无条件采纳对端的旧值。
+   */
+  full?: boolean;
 }
 
 export interface ExchangeResult {
   local: ChangeSet;
   appliedCount: number;
-  conflictCount: number;
-  conflicts: FieldConflict[];
+  overwriteCount: number;
+  overwrites: FieldOverwrite[];
   runId: string;
   backupFile: string | null;
-  status: 'success' | 'conflict';
 }
 
-export interface ResolveInput {
-  runId: string;
-  choices: Array<{ table: string; rowId: string; field: string; choice: ConflictChoice }>;
-}
-
-function rowToConflict(
+function rowToOverwrite(
   runId: string,
-  c: FieldConflict,
-): typeof schema.syncConflict.$inferInsert {
+  o: FieldOverwrite,
+): typeof schema.syncOverwrite.$inferInsert {
   return {
     id: randomUUID(),
     runId,
-    tableName: c.table,
-    rowId: c.rowId,
-    field: c.field,
-    localValue: c.localValue,
-    remoteValue: c.remoteValue,
-    localWallMs: c.localWallMs,
-    remoteWallMs: c.remoteWallMs,
-    resolution: 'pending' as const,
+    tableName: o.table,
+    rowId: o.rowId,
+    field: o.field,
+    localValue: o.localValue,
+    remoteValue: o.remoteValue,
+    localWallMs: o.localWallMs,
+    remoteWallMs: o.remoteWallMs,
+    keptSide: o.keptSide,
   };
 }
 
-function insertRun(
-  runId: string,
-  peerDeviceId: string,
-  direction: 'auto' | 'manual',
-  backupFile: string | null,
-): void {
+function insertRun(runId: string, peerDeviceId: string, direction: 'auto' | 'manual'): void {
   getDb()
     .insert(schema.syncRun)
     .values({
@@ -64,9 +59,9 @@ function insertRun(
       peerDeviceId,
       direction,
       status: 'running',
-      backupFile,
+      backupFile: null,
       appliedCount: 0,
-      conflictCount: 0,
+      overwriteCount: 0,
       errorMessage: null,
       startedAt: Date.now(),
       finishedAt: null,
@@ -76,9 +71,10 @@ function insertRun(
 
 function finishRun(
   runId: string,
-  status: 'success' | 'conflict' | 'failed',
+  status: 'success' | 'failed',
   appliedCount: number,
-  conflictCount: number,
+  overwriteCount: number,
+  backupFile: string | null,
   errorMessage?: string,
 ): void {
   getDb()
@@ -86,7 +82,8 @@ function finishRun(
     .set({
       status,
       appliedCount,
-      conflictCount,
+      overwriteCount,
+      backupFile,
       errorMessage: errorMessage ?? null,
       finishedAt: Date.now(),
     })
@@ -96,11 +93,14 @@ function finishRun(
 
 /**
  * 一次双向交换的核心流程：
- * 1. 备份
- * 2. 提取本机变更
- * 3. 与对端变更做合并
- * 4. 自动变更落库
- * 5. 冲突写入 sync_conflict 等用户裁决
+ * 1. 提取本机变更（对端要求全表对账时用全表快照）
+ * 2. 与对端变更做合并，同一列的分歧按更新时间取新的
+ * 3. 真的有要写的东西时才做整库快照，然后落库
+ * 4. 被覆盖掉的旧值记入 sync_overwrite 备查
+ *
+ * 备份放在合并之后、落库之前，是因为绝大多数同步其实无事可做：每 60 秒一次
+ * 自动同步，每次都 VACUUM 一遍整库（含几十 MB 的源码快照）纯属自残，而没有
+ * 写入的同步也没有什么需要回退。
  */
 export function handleExchange(input: ExchangeInput): ExchangeResult {
   const raw = getRawDb();
@@ -109,158 +109,67 @@ export function handleExchange(input: ExchangeInput): ExchangeResult {
   if (!peer) throw new Error('设备未配对');
 
   const runId = newRunId();
-  const backup = createBackup('presync');
-  insertRun(runId, input.peerDeviceId, input.direction, backup.file);
+  insertRun(runId, input.peerDeviceId, input.direction);
+  let backupFile: string | null = null;
 
   try {
-    // 本地(桌面端)待合并变更:自已发送给该对端的水位(lastLocalSeq)起。
-    // 用 lastRemoteSeq(对端 head)过滤本端 oplog 会把本端新变更全部跳过。
-    const local = collectChangeSet(raw, identity.deviceId, peer.lastLocalSeq);
+    // 增量时从"已发送给该对端的水位"起。用 lastRemoteSeq（对端 head）过滤本端
+    // oplog 会把本端新变更全部跳过。
+    const local = input.full
+      ? collectFullChangeSet(raw, identity.deviceId)
+      : collectChangeSet(raw, identity.deviceId, peer.lastLocalSeq);
     const ctx = buildMergeContext(input.clockOffsetMs ?? 0);
     const plan = planMerge(local, input.remote, ctx);
 
-    const appliedCount = applyAutoChanges(raw, input.peerDeviceId, plan.auto);
+    let appliedCount = 0;
+    if (plan.auto.length > 0) {
+      backupFile = createPresyncBackup().file;
+      appliedCount = applyAutoChanges(raw, input.peerDeviceId, plan.auto);
+    }
 
-    if (plan.conflicts.length > 0) {
+    if (plan.overwrites.length > 0) {
       const db = getDb();
-      for (const c of plan.conflicts) {
+      for (const o of plan.overwrites) {
         const stored =
-          c.field === 'delete'
+          o.field === 'delete'
             ? {
-                ...c,
+                ...o,
                 localValue:
-                  local.rows.find((r) => r.table === c.table && r.rowId === c.rowId)?.values ??
-                  c.localValue,
+                  local.rows.find((r) => r.table === o.table && r.rowId === o.rowId)?.values ??
+                  o.localValue,
                 remoteValue:
-                  input.remote.rows.find((r) => r.table === c.table && r.rowId === c.rowId)
-                    ?.values ?? c.remoteValue,
+                  input.remote.rows.find((r) => r.table === o.table && r.rowId === o.rowId)
+                    ?.values ?? o.remoteValue,
               }
-            : c;
-        db.insert(schema.syncConflict).values(rowToConflict(runId, stored)).run();
+            : o;
+        db.insert(schema.syncOverwrite).values(rowToOverwrite(runId, stored)).run();
       }
     }
 
-    const headLocal = currentHeadSeq(raw);
     updatePeerWatermarks(
       input.peerDeviceId,
-      headLocal,
+      currentHeadSeq(raw),
       input.remote.headSeq,
       input.remoteAddress,
+      input.full === true,
     );
 
-    const status = plan.conflicts.length > 0 ? 'conflict' : 'success';
-    finishRun(runId, status, appliedCount, plan.conflicts.length);
-    pruneBackups();
+    finishRun(runId, 'success', appliedCount, plan.overwrites.length, backupFile);
+    if (backupFile) pruneBackups();
 
     return {
       local,
       appliedCount,
-      conflictCount: plan.conflicts.length,
-      conflicts: plan.conflicts,
+      overwriteCount: plan.overwrites.length,
+      overwrites: plan.overwrites,
       runId,
-      backupFile: backup.file,
-      status,
+      backupFile,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    finishRun(runId, 'failed', 0, 0, message);
+    finishRun(runId, 'failed', 0, 0, backupFile, message);
     throw err;
   }
-}
-
-/** 用户裁决冲突后，把选定结果落库并关闭本次同步 */
-export function resolveConflicts(input: ResolveInput): { applied: number } {
-  const raw = getRawDb();
-  const run = getDb().select().from(schema.syncRun).where(eq(schema.syncRun.id, input.runId)).get();
-  if (!run) throw new Error('同步记录不存在');
-  if (run.status !== 'conflict') throw new Error('该同步没有待处理冲突');
-
-  const pending = getDb()
-    .select()
-    .from(schema.syncConflict)
-    .where(eq(schema.syncConflict.runId, input.runId))
-    .all()
-    .filter((c) => c.resolution === 'pending');
-
-  const choiceMap = new Map<string, ConflictChoice>();
-  for (const c of input.choices) {
-    choiceMap.set(`${c.table}\u0000${c.rowId}\u0000${c.field}`, c.choice);
-  }
-
-  const fieldConflicts: FieldConflict[] = pending.map((c) => ({
-    table: c.tableName,
-    rowId: c.rowId,
-    field: c.field,
-    localValue: c.localValue,
-    remoteValue: c.remoteValue,
-    localWallMs: c.localWallMs,
-    remoteWallMs: c.remoteWallMs,
-    label: `${c.tableName}:${c.rowId}`,
-  }));
-
-  const remoteRows = new Map<string, ChangeSet['rows'][number]>();
-  const remoteTombstones: ChangeSet['tombstones'] = [];
-
-  for (const c of pending) {
-    const k = `${c.tableName}\u0000${c.rowId}`;
-    const choice =
-      choiceMap.get(`${c.tableName}\u0000${c.rowId}\u0000${c.field}`) ?? 'local';
-    if (choice !== 'remote') continue;
-
-    if (c.field === 'delete') {
-      if (c.remoteValue && typeof c.remoteValue === 'object' && !Array.isArray(c.remoteValue)) {
-        remoteRows.set(k, {
-          table: c.tableName,
-          rowId: c.rowId,
-          values: c.remoteValue as Record<string, unknown>,
-          changedFields: null,
-          wallMs: c.remoteWallMs,
-        });
-      } else {
-        remoteTombstones.push({
-          table: c.tableName,
-          rowId: c.rowId,
-          wallMs: c.remoteWallMs,
-        });
-      }
-      continue;
-    }
-
-    const existing = remoteRows.get(k);
-    if (existing) {
-      existing.values[c.field] = c.remoteValue;
-    } else {
-      remoteRows.set(k, {
-        table: c.tableName,
-        rowId: c.rowId,
-        values: { [c.field]: c.remoteValue },
-        changedFields: null,
-        wallMs: c.remoteWallMs,
-      });
-    }
-  }
-
-  const remote: ChangeSet = {
-    deviceId: run.peerDeviceId,
-    headSeq: 0,
-    rows: [...remoteRows.values()],
-    tombstones: remoteTombstones,
-  };
-
-  const changes = resolutionsToChanges(fieldConflicts, choiceMap, remote);
-  const applied = applyAutoChanges(raw, run.peerDeviceId, changes);
-
-  const db = getDb();
-  for (const c of pending) {
-    const choice = choiceMap.get(`${c.tableName}\u0000${c.rowId}\u0000${c.field}`) ?? 'local';
-    db.update(schema.syncConflict)
-      .set({ resolution: choice })
-      .where(eq(schema.syncConflict.id, c.id))
-      .run();
-  }
-
-  finishRun(input.runId, 'success', run.appliedCount + applied, 0);
-  return { applied };
 }
 
 export function listSyncRuns(limit = 20): SyncRunSummary[] {
@@ -285,7 +194,7 @@ export function listSyncRuns(limit = 20): SyncRunSummary[] {
       direction: run.direction,
       status: run.status,
       appliedCount: run.appliedCount,
-      conflictCount: run.conflictCount,
+      overwriteCount: run.overwriteCount,
       backupFile: run.backupFile,
       errorMessage: run.errorMessage,
       startedAt: run.startedAt,
@@ -294,24 +203,24 @@ export function listSyncRuns(limit = 20): SyncRunSummary[] {
   });
 }
 
-export function listPendingConflicts(runId: string): FieldConflict[] {
-  const rows = getDb()
+/** 某次同步里被自动覆盖掉的旧值，供用户核对要不要从备份里捞回来 */
+export function listRunOverwrites(runId: string): FieldOverwrite[] {
+  return getDb()
     .select()
-    .from(schema.syncConflict)
-    .where(eq(schema.syncConflict.runId, runId))
+    .from(schema.syncOverwrite)
+    .where(eq(schema.syncOverwrite.runId, runId))
     .all()
-    .filter((c) => c.resolution === 'pending');
-
-  return rows.map((c) => ({
-    table: c.tableName,
-    rowId: c.rowId,
-    field: c.field,
-    localValue: c.localValue,
-    remoteValue: c.remoteValue,
-    localWallMs: c.localWallMs,
-    remoteWallMs: c.remoteWallMs,
-    label: `${c.tableName}:${c.rowId}`,
-  }));
+    .map((o) => ({
+      table: o.tableName,
+      rowId: o.rowId,
+      field: o.field,
+      localValue: o.localValue,
+      remoteValue: o.remoteValue,
+      localWallMs: o.localWallMs,
+      remoteWallMs: o.remoteWallMs,
+      keptSide: o.keptSide,
+      label: `${o.tableName}:${o.rowId}`,
+    }));
 }
 
 export function prepareOutbound(peerDeviceId: string): ChangeSet {

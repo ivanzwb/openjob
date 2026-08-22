@@ -10,9 +10,8 @@ export {
 } from './pairing';
 export {
   handleExchange,
-  resolveConflicts,
   listSyncRuns,
-  listPendingConflicts,
+  listRunOverwrites,
   prepareOutbound,
 } from './orchestrator';
 export {

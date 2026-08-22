@@ -40,6 +40,20 @@ function readRow(
   return row ?? null;
 }
 
+/**
+ * 这一行最后一次更新的时间。
+ *
+ * 取 sync_row_version 而不是窗口内最后一条 oplog 的时间：从对端同步进来的
+ * 行不写 oplog，只看 oplog 会把这行的时间说早了，全量与增量两条采集路径也
+ * 会对同一行报出不同的时间，后写覆盖跟着摇摆。
+ */
+function rowVersion(raw: Database, table: string, rowId: string): number | null {
+  const row = raw
+    .prepare(`SELECT updated_ms FROM sync_row_version WHERE table_name = ? AND row_id = ?`)
+    .get(table, rowId) as { updated_ms: number } | undefined;
+  return row?.updated_ms ?? null;
+}
+
 function groupOps(rows: OplogRow[]): Map<string, RowGroup> {
   const groups = new Map<string, RowGroup>();
   for (const op of rows) {
@@ -72,6 +86,7 @@ function buildSnapshot(
     return { table: group.table, rowId: group.rowId, wallMs };
   }
 
+  const version = rowVersion(raw, group.table, group.rowId) ?? wallMs;
   const hadInsert = group.ops.some((o) => o.op === 'insert');
   let changedFields: string[] | null = hadInsert ? null : [];
 
@@ -89,7 +104,7 @@ function buildSnapshot(
     rowId: group.rowId,
     values,
     changedFields,
-    wallMs,
+    wallMs: version,
   };
 }
 
@@ -148,24 +163,35 @@ export function currentHeadSeq(raw: Database): number {
 
 /**
  * 全量快照：扫描所有同步表的当前行，并附带 oplog 中的删除墓碑。
- * 用于首次配对、切换对端、或显式全量同步——仅靠 oplog 会漏掉
+ *
+ * 用于首次配对、切换对端、以及隔一段时间的全表对账——仅靠 oplog 会漏掉
  * 从其他设备同步过来、未记入本机 oplog 的行。
+ *
+ * 每行的时间取自 sync_row_version 而不是 Date.now()：全表快照里所有行都盖
+ * 上"现在"的话，后写覆盖就变成了"谁先发起同步谁赢"，和谁真的改得更晚
+ * 毫无关系。
  */
 export function collectFullChangeSet(raw: Database, deviceId: string): ChangeSet {
   const snapshots: RowSnapshot[] = [];
 
   for (const spec of syncTableSpecs()) {
-    const cols = spec.columns.map((c) => `\`${c}\``).join(', ');
+    const cols = spec.columns.map((c) => `t.\`${c}\``).join(', ');
     const rows = raw
-      .prepare(`SELECT ${cols} FROM \`${spec.name}\``)
+      .prepare(
+        `SELECT ${cols}, coalesce(v.updated_ms, 0) AS __updated_ms
+           FROM \`${spec.name}\` t
+           LEFT JOIN sync_row_version v
+             ON v.table_name = '${spec.name}' AND v.row_id = t.\`${spec.pk}\``,
+      )
       .all() as Record<string, unknown>[];
     for (const row of rows) {
+      const { __updated_ms: updatedMs, ...values } = row;
       snapshots.push({
         table: spec.name,
-        rowId: String(row[spec.pk]),
-        values: row,
+        rowId: String(values[spec.pk]),
+        values,
         changedFields: null,
-        wallMs: Date.now(),
+        wallMs: Number(updatedMs),
       });
     }
   }
