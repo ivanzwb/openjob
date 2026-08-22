@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { LlmRole, SessionKind } from '@shared/enums';
 import type { SessionMessageView, SessionSearchHit, SessionSummary } from '@shared/ipc';
+import { normalizeDisplayText } from '@shared/lib/markdownDisplay';
 import { useStream } from '../ipc/useStream';
 import { invoke } from '../ipc';
 import { useDataRefresh } from '../ipc/dataVersion';
 import { MarkdownContent } from './MarkdownContent';
 import { CitationList, SourceBadge } from './SourceBadge';
 import { ToolTrace } from './ToolTrace';
+import { useToast } from './Toast';
+import { VoiceInputButton } from './VoiceInputButton';
 
 /**
  * 流式对话组件，支持会话历史落库与回看。
@@ -43,6 +46,7 @@ export function StreamChat({
   /** 是否显示跨会话历史侧栏 */
   showSessionHistory?: boolean;
 }): React.JSX.Element {
+  const toast = useToast();
   const [input, setInput] = useState('');
   const [allowWebSearch, setAllowWebSearch] = useState(allowWebSearchDefault);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -204,6 +208,17 @@ export function StreamChat({
     if (showSessionHistory) loadSessions();
   };
 
+  // 追问里的回答常常就是能直接背的话术，允许整条存进话术库
+  const saveMessageToSpeech = (contentMd: string): void => {
+    const text = contentMd.trim();
+    if (!nodeId || !text) return;
+    void invoke('speech:saveFromNode', { nodeId, contentMd: text, tier: 'spoken' })
+      .then(() => toast('已加入话术库', { variant: 'success' }))
+      .catch((e: unknown) =>
+        toast(e instanceof Error ? e.message : '加入话术库失败', { variant: 'error' }),
+      );
+  };
+
   const submit = (): void => {
     const text = input.trim();
     if (!text || state.running) return;
@@ -362,7 +377,16 @@ export function StreamChat({
                   {m.role === 'user' ? (
                     <div className="whitespace-pre-wrap">{m.contentMd}</div>
                   ) : (
-                    <MarkdownContent text={m.contentMd} />
+                    <MarkdownContent text={normalizeDisplayText(m.contentMd)} />
+                  )}
+                  {m.role === 'assistant' && nodeId && m.contentMd.trim() && (
+                    <button
+                      type="button"
+                      onClick={() => saveMessageToSpeech(m.contentMd)}
+                      className="mt-1 text-[10px] text-sky-400 hover:underline"
+                    >
+                      加入话术库
+                    </button>
                   )}
                   <ToolTrace calls={m.toolCalls} usage={m.usage} />
                   {m.citations.length > 0 && <CitationList citations={m.citations} />}
@@ -378,7 +402,7 @@ export function StreamChat({
                     <SourceBadge kind={state.evidenceKind} />
                     <span className="text-xs text-[var(--color-muted)]">生成中…</span>
                   </div>
-                  {state.text ? <MarkdownContent text={state.text} /> : null}
+                  {state.text ? <MarkdownContent text={normalizeDisplayText(state.text)} /> : null}
                   <ToolTrace calls={state.toolCalls} usage={state.usage} />
                   <CitationList citations={state.citations} />
                 </div>
@@ -444,14 +468,17 @@ export function StreamChat({
             rows={compact ? 2 : 3}
             className="flex-1 resize-none rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-sm outline-none focus:border-[var(--color-accent)]"
           />
-          <button
-            type="button"
-            onClick={submit}
-            disabled={state.running || !input.trim()}
-            className="self-end rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
-          >
-            发送
-          </button>
+          <div className="flex flex-col items-end justify-end gap-2">
+            <VoiceInputButton currentText={input} onTextChange={setInput} />
+            <button
+              type="button"
+              onClick={submit}
+              disabled={state.running || !input.trim()}
+              className="rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+            >
+              发送
+            </button>
+          </div>
         </div>
       </div>
     </div>

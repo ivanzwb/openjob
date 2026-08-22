@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
-import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, Text, TextInput, View } from 'react-native';
+import type { ExplanationTier } from '@shared/enums';
 import { buildNodeFollowUpSystemPrompt } from '@shared/prompts/followUp';
 import {
   buildFollowUpSummaryPrompt,
@@ -17,14 +18,70 @@ import {
   appendFollowUpMessage,
   deleteFollowUpHistory,
   migrateLegacyFollowUpHistory,
+  saveSpeechFromNode,
   updateFollowUpSummary,
   type FollowUpMessage,
 } from '../data/mutations';
 import { getNodeFollowUpContext, getNodeFollowUpHistory } from '../data/queries';
 import { useLocalDataReload } from '../hooks/useLocalDataReload';
 import { useTheme } from '../theme';
+import { MarkdownPreview } from './MarkdownPreview';
+import { VoiceInputButton } from './VoiceInputButton';
 
 type Msg = FollowUpMessage;
+
+function FollowUpMessageBubble({
+  message,
+  tier,
+  nodeId,
+  onSavedSpeech,
+}: {
+  message: Msg;
+  tier: ExplanationTier;
+  nodeId: string;
+  onSavedSpeech: () => void;
+}): React.JSX.Element {
+  const theme = useTheme();
+  const isUser = message.role === 'user';
+
+  const saveToSpeech = (): void => {
+    const text = message.text.trim();
+    if (!text) return;
+    void saveSpeechFromNode(getRawDb(), nodeId, text, tier).then((saved) => {
+      onSavedSpeech();
+      Alert.alert('话术库', saved.existing ? '这段已经在话术库里' : '已加入话术库');
+    });
+  };
+
+  return (
+    <Pressable
+      onLongPress={isUser ? undefined : saveToSpeech}
+      style={{
+        alignSelf: isUser ? 'flex-end' : 'flex-start',
+        maxWidth: '92%',
+        backgroundColor: isUser ? theme.accent : theme.bg,
+        padding: 10,
+        borderRadius: 10,
+        borderWidth: isUser ? 0 : 1,
+        borderColor: theme.border,
+        gap: 6,
+      }}
+    >
+      {isUser ? (
+        <Text selectable style={{ color: '#fff', fontSize: 13, lineHeight: 20 }}>
+          {message.text}
+        </Text>
+      ) : (
+        <MarkdownPreview text={message.text} />
+      )}
+      {!isUser && (
+        <Pressable onPress={saveToSpeech} hitSlop={8}>
+          <Text style={{ color: theme.accent, fontSize: 11 }}>加入话术库</Text>
+        </Pressable>
+      )}
+    </Pressable>
+  );
+}
 
 /** 考点学习内的多轮追问 */
 export function NodeFollowUpPanel({
@@ -37,7 +94,6 @@ export function NodeFollowUpPanel({
   nodeName: string;
 }): React.JSX.Element {
   const theme = useTheme();
-  // 按考点记这轮追问：切页、换 Tab 再回来还能看到「回答中…」和已经答完的内容
   const taskKey = `node:followUp:${nodeId}`;
   const { running: busy, error } = useTaskState(taskKey);
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -52,7 +108,6 @@ export function NodeFollowUpPanel({
   }, [campaignId, nodeId, nodeName]);
   useLocalDataReload(reloadHistory);
 
-  // 任务返回整段对话，重新挂载后一次补齐提问与回答
   useTaskResult<Msg[]>(taskKey, (result) => {
     setMessages(result);
   });
@@ -101,7 +156,7 @@ export function NodeFollowUpPanel({
   };
 
   return (
-    <View style={{ gap: 8, minHeight: 240 }}>
+    <View style={{ gap: 8, minHeight: 320 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
         <Text style={{ color: theme.muted, fontSize: 11 }}>当前考点的追问历史</Text>
         {(messages.length > 0 || error !== null) && (
@@ -112,33 +167,38 @@ export function NodeFollowUpPanel({
           </Pressable>
         )}
       </View>
-      <ScrollView style={{ maxHeight: 280 }} contentContainerStyle={{ gap: 10 }}>
+      {/*
+        追问内容直接铺在页面里，不再套一层可滚动容器：嵌套滚动要和外层页面抢手势，
+        表现就是单指划不动、得另一根手指先按住别处。铺开后长回答靠页面本身滚动就行。
+      */}
+      <View
+        style={{
+          gap: 10,
+          padding: 10,
+          borderWidth: 1,
+          borderColor: theme.border,
+          borderRadius: 10,
+        }}
+      >
         {messages.length === 0 ? (
           <Text style={{ color: theme.muted, fontSize: 12 }}>
             对「{nodeName}」有什么想追问的？可以连续多轮对话，我会记住前面聊过的内容。
           </Text>
         ) : (
           messages.map((m, i) => (
-            <View
+            <FollowUpMessageBubble
               key={i}
-              style={{
-                alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
-                maxWidth: '90%',
-                backgroundColor: m.role === 'user' ? theme.accent : theme.bg,
-                padding: 10,
-                borderRadius: 10,
-              }}
-            >
-              <Text style={{ color: m.role === 'user' ? '#fff' : theme.text, fontSize: 13 }}>
-                {m.text}
-              </Text>
-            </View>
+              message={m}
+              nodeId={nodeId}
+              tier="spoken"
+              onSavedSpeech={() => undefined}
+            />
           ))
         )}
         {busy && <Text style={{ color: theme.muted, fontSize: 12 }}>回答中…</Text>}
         {error !== null && <Text style={{ color: theme.danger, fontSize: 12 }}>{error}</Text>}
-      </ScrollView>
-      <View style={{ flexDirection: 'row', gap: 8 }}>
+      </View>
+      <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-end' }}>
         <TextInput
           value={input}
           onChangeText={setInput}
@@ -148,6 +208,7 @@ export function NodeFollowUpPanel({
           style={{
             flex: 1,
             minHeight: 44,
+            maxHeight: 120,
             color: theme.text,
             borderWidth: 1,
             borderColor: theme.border,
@@ -157,12 +218,17 @@ export function NodeFollowUpPanel({
             textAlignVertical: 'top',
           }}
         />
+        <VoiceInputButton
+          disabled={busy || clearing}
+          onTranscript={(text) => setInput((prev) => (prev ? `${prev}${text}` : text))}
+        />
         <Pressable
           onPress={send}
           disabled={busy || clearing || !input.trim()}
           style={{
             backgroundColor: theme.accent,
             paddingHorizontal: 14,
+            paddingVertical: 12,
             justifyContent: 'center',
             borderRadius: 8,
             opacity: busy || clearing || !input.trim() ? 0.6 : 1,
