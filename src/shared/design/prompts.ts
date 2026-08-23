@@ -51,7 +51,9 @@ const CASE_OUTPUT_SCHEMA = `输出 JSON：
 }`;
 
 const CASE_BASE_RULES = `你是资深面试官，根据公司背景、岗位 JD、候选人简历和考点清单，出一道贴近真实面试的题。
-题目必须结合给定上下文，不要出与岗位无关的泛题。`;
+题目必须结合给定上下文，不要出与岗位无关的泛题。
+题目涉及候选人经历时，优先取最近的那几段——上下文里的简历经历已按时间倒序给出，序号越小越近。
+一道题只围绕一段经历，不要把几个项目拼成一道题：拼出来的题候选人没法用真实经历回答。`;
 
 export const MIXED_CASE_SYSTEM = `${CASE_BASE_RULES}
 
@@ -155,14 +157,43 @@ const ANSWER_BASE = `你是资深面试官兼面试教练。根据题目与候�
 要求：结构清晰、口语化、结合题目约束；不要写评分或点评，只写答案正文。
 输出 JSON：{ "answerMd": "..." }`;
 
+/**
+ * 参考答案的取材规则。
+ *
+ * 三条都是「不写模型就不会做」的事：
+ * - 不说优先最近，它会挑简历里描述最丰满的那段来答，而那常常是三四年前的项目。
+ *   面试官问的是你现在什么水平，拿旧项目当主线等于自降职级。
+ * - 不说锚定单一经历，它会把几段经历的亮点拼成一个「综合最优答案」——听起来
+ *   很强，但没有哪一段是真实发生过的，面试官顺着追问两句就穿帮。
+ * - 不说别编，它会为了答案完整自己补上简历里没有的指标和技术栈。
+ */
+const ANSWER_RECENCY_RULE = `- 优先用最近的经历。上下文里的简历经历已按时间倒序给出，序号越小越近，优先取靠前的；更早的经历只在最近经历确实覆盖不到考察点时才用，用的时候说清是哪一年的事。`;
+
+const ANSWER_SINGLE_ANCHOR_RULE = `- 整个答案只锚定一段经历，不要把多个项目的架构、指标、踩坑混进同一条叙述线——那会拼出一个并不存在的项目。确实需要第二段经历佐证时，另起一句并点名（如「另外在 X 项目里也遇到过类似的问题……」），不要和主线交织。`;
+
+const ANSWER_SEQUENTIAL_RULE = `- 会覆盖多段经历，按时间倒序一段一段讲：讲完一段再进入下一段，不要在几段之间来回跳，也不要把这一段的成果安到那一段头上。篇幅向最近一段倾斜，越早的越简略。`;
+
+const ANSWER_NO_FABRICATION_RULE = `- 简历里没有的经历、指标、技术栈一律不要编；简历没写清楚的地方宁可说得笼统一点。`;
+
+function answerSourcingRules(...rules: string[]): string {
+  return `取材规则：\n${rules.join('\n')}`;
+}
+
+const ANCHORED_SOURCING = answerSourcingRules(
+  ANSWER_RECENCY_RULE,
+  ANSWER_SINGLE_ANCHOR_RULE,
+  ANSWER_NO_FABRICATION_RULE,
+);
+
 export const SELF_INTRO_ANSWER_SYSTEM = `${ANSWER_BASE}
-侧重：60-90 秒自我介绍结构、岗位匹配、核心项目亮点。`;
+侧重：60-90 秒自我介绍结构、岗位匹配、核心项目亮点。
+${answerSourcingRules(ANSWER_RECENCY_RULE, ANSWER_SEQUENTIAL_RULE, ANSWER_NO_FABRICATION_RULE)}`;
 
 export const ANSWER_SYSTEM_BY_TYPE: Record<ExamForm, string> = {
-  concept: `${ANSWER_BASE}\n侧重：结论先行、原理深度、trade-off 与例子。`,
-  coding: `${ANSWER_BASE}\n侧重：思路、核心算法、复杂度与边界。`,
-  design: `${ANSWER_BASE}\n侧重：需求澄清、架构、关键模块与扩展权衡。`,
-  scenario: `${ANSWER_BASE}\n侧重：STAR 结构、个人贡献、决策与复盘。`,
+  concept: `${ANSWER_BASE}\n侧重：结论先行、原理深度、trade-off 与例子。\n${ANCHORED_SOURCING}`,
+  coding: `${ANSWER_BASE}\n侧重：思路、核心算法、复杂度与边界。\n${ANCHORED_SOURCING}`,
+  design: `${ANSWER_BASE}\n侧重：需求澄清、架构、关键模块与扩展权衡。\n${ANCHORED_SOURCING}`,
+  scenario: `${ANSWER_BASE}\n侧重：STAR 结构、个人贡献、决策与复盘。\n${ANCHORED_SOURCING}`,
 };
 
 export function answerSystemForType(

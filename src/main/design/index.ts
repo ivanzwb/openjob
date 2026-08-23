@@ -23,6 +23,7 @@ import {
   type MockInterviewLanguage,
 } from '@shared/design/prompts';
 import { normalizeDisplayText } from '@shared/lib/markdownDisplay';
+import { resumeExperienceBlock } from '@shared/resume/experienceTimeline';
 
 type DesignCaseRow = InferSelectModel<typeof schema.designCase>;
 
@@ -104,18 +105,11 @@ function buildInterviewContext(campaignId: string): string {
         .join('、')}`
     : campaign.jdRaw.slice(0, 1500);
 
-  const projectSummary =
-    resume?.parsed?.projects
-      ?.slice(0, 4)
-      .map((p) => `${p.name}：${p.summary}；可深挖：${p.drillableTopics.slice(0, 4).join('、')}`)
-      .join('\n') ?? '（未提供）';
-
   return `公司：${campaign.company}
 岗位：${campaign.roleTitle}
 JD 摘要：${jdSummary}
 简历技能：${resume?.parsed?.skills?.join('、') ?? '（未提供）'}
-简历项目：
-${projectSummary}
+${resumeExperienceBlock(resume?.rawText ?? '', resume?.parsed?.projects)}
 公司技术栈：${intel?.techStackMd?.slice(0, 600) ?? '（未调研，可结合 JD 推断）'}
 面试流程：${intel?.interviewProcessMd?.slice(0, 400) ?? '（未调研）'}
 公司热点：${intel?.hotTopicsMd?.slice(0, 400) ?? '（未调研）'}

@@ -19,6 +19,10 @@ import {
   type MockInterviewLanguage,
 } from '@shared/design/prompts';
 import { normalizeDisplayText } from '@shared/lib/markdownDisplay';
+import {
+  resumeExperienceBlock,
+  type FallbackProject,
+} from '@shared/resume/experienceTimeline';
 import { completeJson } from '../llm/json';
 import { getCampaign } from './campaignLocal';
 import { getDeviceIdentity } from '../sync/identity';
@@ -91,8 +95,26 @@ function buildInterviewContext(db: SQLiteDatabase, campaignId: string): string {
   }>(`SELECT tech_stack_md, interview_process_md, hot_topics_md FROM company_intel WHERE campaign_id = ?`, campaignId);
 
   const resume = campaign.resumeId
-    ? db.getFirstSync<{ parsed: string | null }>(`SELECT parsed FROM resume WHERE id = ?`, campaign.resumeId)
+    ? db.getFirstSync<{ parsed: string | null; raw_text: string | null }>(
+        `SELECT parsed, raw_text FROM resume WHERE id = ?`,
+        campaign.resumeId,
+      )
     : null;
+
+  let resumeSkills = '（未提供）';
+  let fallbackProjects: FallbackProject[] = [];
+  if (resume?.parsed) {
+    try {
+      const parsed = JSON.parse(resume.parsed) as {
+        projects?: FallbackProject[];
+        skills?: string[];
+      };
+      resumeSkills = parsed.skills?.join('、') || '（未提供）';
+      fallbackProjects = parsed.projects ?? [];
+    } catch {
+      // 解析结果坏了不该拦住出题，退回「未提供」
+    }
+  }
 
   const blindSpots = db
     .getAllSync<{ question_text: string }>(
@@ -119,29 +141,11 @@ function buildInterviewContext(db: SQLiteDatabase, campaignId: string): string {
         .join('、')}`
     : campaign.jdRaw.slice(0, 1500);
 
-  let projectSummary = '（未提供）';
-  if (resume?.parsed) {
-    try {
-      const parsed = JSON.parse(resume.parsed) as {
-        projects?: { name: string; summary: string; drillableTopics: string[] }[];
-        skills?: string[];
-      };
-      projectSummary =
-        parsed.projects
-          ?.slice(0, 4)
-          .map((p) => `${p.name}：${p.summary}；可深挖：${p.drillableTopics.slice(0, 4).join('、')}`)
-          .join('\n') ?? '（未提供）';
-    } catch {
-      projectSummary = '（未提供）';
-    }
-  }
-
   return `公司：${campaign.company}
 岗位：${campaign.roleTitle}
 JD 摘要：${jdSummary}
-简历技能：${resume?.parsed ? (JSON.parse(resume.parsed) as { skills?: string[] }).skills?.join('、') ?? '（未提供）' : '（未提供）'}
-简历项目：
-${projectSummary}
+简历技能：${resumeSkills}
+${resumeExperienceBlock(resume?.raw_text ?? '', fallbackProjects)}
 公司技术栈：${intel?.tech_stack_md?.slice(0, 600) ?? '（未调研，可结合 JD 推断）'}
 面试流程：${intel?.interview_process_md?.slice(0, 400) ?? '（未调研）'}
 公司热点：${intel?.hot_topics_md?.slice(0, 400) ?? '（未调研）'}
