@@ -664,6 +664,19 @@ export interface ExplainRewriteResult {
   rewrittenMd: string;
 }
 
+export interface QuizDraftResult {
+  nodeId: string;
+  nodeName: string;
+  questionMd: string | null;
+  recommendedAnswerMd: string | null;
+}
+
+export interface QuizUpdateDraftInput {
+  nodeId: string;
+  questionMd?: string | null;
+  recommendedAnswerMd?: string | null;
+}
+
 export interface QuizQuestionResult {
   nodeId: string;
   nodeName: string;
@@ -1065,6 +1078,8 @@ export interface IpcInvokeMap {
   'explain:elaborate': { req: ExplainElaborateInput; res: ExplainElaborateResult };
   'explain:rewrite': { req: ExplainRewriteInput; res: ExplainRewriteResult };
 
+  'quiz:draft': { req: { nodeId: string }; res: QuizDraftResult };
+  'quiz:updateDraft': { req: QuizUpdateDraftInput; res: QuizDraftResult };
   'quiz:question': { req: { nodeId: string }; res: QuizQuestionResult };
   'quiz:answer': { req: QuizAnswerInput; res: QuizAnswerResult };
   'quiz:submit': { req: QuizSubmitInput; res: QuizSubmitResult };
@@ -1260,6 +1275,8 @@ export const IPC_INVOKE_CHANNELS = [
   'explain:update',
   'explain:elaborate',
   'explain:rewrite',
+  'quiz:draft',
+  'quiz:updateDraft',
   'quiz:question',
   'quiz:answer',
   'quiz:submit',

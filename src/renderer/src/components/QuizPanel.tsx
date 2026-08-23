@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { MarkdownContent } from './MarkdownContent';
 import { VoiceInputButton } from './VoiceInputButton';
 import type { QuizAnswerResult, QuizSubmitResult } from '@shared/ipc';
@@ -8,8 +8,7 @@ import { runTask, useTask, useTaskResult } from '../ipc/taskStore';
 
 /**
  * 考我：出题、参考答案与评分都记在按考点取的任务 key 上。
- * 切到别的学习模式或别的考点会卸载这个面板，回来时按钮仍显示进行中，
- * 期间跑完的题目/评分也会补上。
+ * 题目与推荐答案缓存在 knowledge_node 上，两端同步；切考点再回来仍显示保存的题。
  */
 export function QuizPanel({
   nodeId,
@@ -26,6 +25,7 @@ export function QuizPanel({
   const [recommended, setRecommended] = useState('');
   const [editingRecommended, setEditingRecommended] = useState(false);
   const [savedToScripts, setSavedToScripts] = useState(false);
+  const [draftLoaded, setDraftLoaded] = useState(false);
 
   const questionKey = `quiz:question:${nodeId}`;
   const answerKey = `quiz:answer:${nodeId}`;
@@ -36,9 +36,27 @@ export function QuizPanel({
   const loading = questionTask.running || submitTask.running;
   const error = questionTask.error ?? answerTask.error ?? submitTask.error;
 
+  useEffect(() => {
+    let cancelled = false;
+    void invoke('quiz:draft', { nodeId })
+      .then((draft) => {
+        if (cancelled) return;
+        if (draft.questionMd) setQuestion(draft.questionMd);
+        if (draft.recommendedAnswerMd) setRecommended(draft.recommendedAnswerMd);
+        setDraftLoaded(true);
+      })
+      .catch(() => {
+        if (!cancelled) setDraftLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [nodeId]);
+
   useTaskResult<string>(questionKey, (q) => {
     setQuestion(q);
     setResult(null);
+    setAnswer('');
     setRecommended('');
     setEditingRecommended(false);
     setSavedToScripts(false);
@@ -68,6 +86,12 @@ export function QuizPanel({
     );
   };
 
+  const saveRecommendedDraft = (): void => {
+    void invoke('quiz:updateDraft', { nodeId, recommendedAnswerMd: recommended }).then(() => {
+      setEditingRecommended(false);
+    });
+  };
+
   const saveRecommendedToScripts = (): void => {
     const text = recommended.trim();
     if (!text) return;
@@ -86,23 +110,33 @@ export function QuizPanel({
     ).catch(() => undefined);
   };
 
+  if (!draftLoaded) {
+    return (
+      <div className="space-y-3">
+        <h3 className="text-sm font-medium">考我 · {nodeName}</h3>
+        <p className="text-sm text-[var(--color-muted)]">加载中…</p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-3">
       <h3 className="text-sm font-medium">考我 · {nodeName}</h3>
 
-      {!question && !result && (
-        <button
-          type="button"
-          onClick={start}
-          disabled={loading}
-          className="rounded bg-[var(--color-accent)] px-3 py-1.5 text-sm text-white disabled:opacity-40"
-        >
-          {questionTask.running ? '出题中…' : '开始出题'}
-        </button>
-      )}
+      <button
+        type="button"
+        onClick={start}
+        disabled={loading}
+        className="rounded bg-[var(--color-accent)] px-3 py-1.5 text-sm text-white disabled:opacity-40"
+      >
+        {questionTask.running ? '出题中…' : question ? '重新出题' : '开始出题'}
+      </button>
+      <p className="text-xs text-[var(--color-muted)]">
+        已生成的题目与推荐答案会自动保存；再次进入会直接显示，只有点「重新出题」才会换题。
+      </p>
 
       {question && (
-        <div className="rounded border border-[var(--color-border)] bg-black/20 p-3 text-sm">
+        <div className="rounded border border-[var(--color-border)] bg-black/20 p-3 text-sm select-text">
           {question}
         </div>
       )}
@@ -170,6 +204,11 @@ export function QuizPanel({
                 </div>
               )}
               <div className="flex flex-wrap items-center gap-3 text-xs">
+                {editingRecommended && (
+                  <button type="button" onClick={saveRecommendedDraft} className="text-sky-400 hover:underline">
+                    保存
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={saveRecommendedToScripts}

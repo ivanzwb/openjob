@@ -61,6 +61,8 @@ export function createNode(input: CreateNodeInput): KnowledgeNode {
     priorityScore: 0,
     status: 'todo' as const,
     isUserAdded: true,
+    quizQuestionMd: null,
+    quizRecommendedAnswerMd: null,
     createdAt: now,
   };
   const { score } = computePriority(base);

@@ -2,7 +2,13 @@ import * as Crypto from 'expo-crypto';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import type { QuizAttempt } from '@shared/entities';
 import type { NodeStatus } from '@shared/enums';
-import type { QuizAnswerResult, QuizQuestionResult, QuizSubmitResult } from '@shared/ipc';
+import type {
+  QuizAnswerResult,
+  QuizDraftResult,
+  QuizQuestionResult,
+  QuizSubmitResult,
+  QuizUpdateDraftInput,
+} from '@shared/ipc';
 import { normalizeDisplayText } from '@shared/lib/markdownDisplay';
 import { getMobileConfig } from '../config/settings';
 import { completeJson } from '../llm/json';
@@ -23,6 +29,82 @@ function masteryToStatus(mastery: number): NodeStatus {
   return 'shaky';
 }
 
+function rowToDraft(
+  row: {
+    id: string;
+    name: string;
+    quiz_question_md: string | null;
+    quiz_recommended_answer_md: string | null;
+  },
+): QuizDraftResult {
+  return {
+    nodeId: row.id,
+    nodeName: row.name,
+    questionMd: row.quiz_question_md ?? null,
+    recommendedAnswerMd: row.quiz_recommended_answer_md ?? null,
+  };
+}
+
+export function getQuizDraft(db: SQLiteDatabase, nodeId: string): QuizDraftResult {
+  const row = db.getFirstSync<{
+    id: string;
+    name: string;
+    quiz_question_md: string | null;
+    quiz_recommended_answer_md: string | null;
+  }>(
+    `SELECT id, name, quiz_question_md, quiz_recommended_answer_md FROM knowledge_node WHERE id = ?`,
+    nodeId,
+  );
+  if (!row) throw new Error('考点不存在');
+  return rowToDraft(row);
+}
+
+export async function updateQuizDraft(
+  db: SQLiteDatabase,
+  input: QuizUpdateDraftInput,
+): Promise<QuizDraftResult> {
+  const row = db.getFirstSync<{
+    id: string;
+    name: string;
+    quiz_question_md: string | null;
+    quiz_recommended_answer_md: string | null;
+  }>(
+    `SELECT id, name, quiz_question_md, quiz_recommended_answer_md FROM knowledge_node WHERE id = ?`,
+    input.nodeId,
+  );
+  if (!row) throw new Error('考点不存在');
+
+  const identity = await getDeviceIdentity(db);
+  const questionMd = input.questionMd !== undefined ? input.questionMd : row.quiz_question_md;
+  const recommendedAnswerMd =
+    input.recommendedAnswerMd !== undefined
+      ? input.recommendedAnswerMd
+      : row.quiz_recommended_answer_md;
+
+  if (
+    input.questionMd === undefined &&
+    input.recommendedAnswerMd === undefined
+  ) {
+    return rowToDraft(row);
+  }
+
+  writingAs(db, identity.deviceId, () => {
+    db.runSync(
+      `UPDATE knowledge_node SET quiz_question_md = ?, quiz_recommended_answer_md = ? WHERE id = ?`,
+      questionMd,
+      recommendedAnswerMd,
+      input.nodeId,
+    );
+  });
+
+  return {
+    nodeId: row.id,
+    nodeName: row.name,
+    questionMd,
+    recommendedAnswerMd,
+  };
+}
+
 export async function generateQuizQuestion(
   db: SQLiteDatabase,
   nodeId: string,
@@ -37,7 +119,17 @@ export async function generateQuizQuestion(
 考点：${node.name} 覆盖类型：${node.coverageType}`,
   );
 
-  return { nodeId, nodeName: node.name, question: result.question };
+  const question = result.question.trim();
+  const identity = await getDeviceIdentity(db);
+  writingAs(db, identity.deviceId, () => {
+    db.runSync(
+      `UPDATE knowledge_node SET quiz_question_md = ?, quiz_recommended_answer_md = NULL WHERE id = ?`,
+      question,
+      nodeId,
+    );
+  });
+
+  return { nodeId, nodeName: node.name, question };
 }
 
 /**
@@ -60,7 +152,17 @@ export async function generateQuizAnswer(
 问题：${question}`,
   );
 
-  return { recommendedAnswerMd: normalizeDisplayText(generated.answerMd) };
+  const recommendedAnswerMd = normalizeDisplayText(generated.answerMd);
+  const identity = await getDeviceIdentity(db);
+  writingAs(db, identity.deviceId, () => {
+    db.runSync(
+      `UPDATE knowledge_node SET quiz_recommended_answer_md = ? WHERE id = ?`,
+      recommendedAnswerMd,
+      nodeId,
+    );
+  });
+
+  return { recommendedAnswerMd };
 }
 
 export async function submitQuizAnswer(

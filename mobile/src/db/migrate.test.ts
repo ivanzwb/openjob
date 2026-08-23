@@ -126,7 +126,7 @@ describe('runMigrations', () => {
 
   it('跨版本升级把中间每一条都补上', () => {
     oldDbThroughMigration10();
-    expect(pendingMigrationIndices(sqlite)).toEqual([11, 12, 13, 14, 15, 16, 17]);
+    expect(pendingMigrationIndices(sqlite)).toEqual([11, 12, 13, 14, 15, 16, 17, 18]);
 
     runMigrations(sqlite);
 

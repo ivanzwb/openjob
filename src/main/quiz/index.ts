@@ -2,7 +2,13 @@ import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import type { QuizAttempt } from '@shared/entities';
 import type { NodeStatus } from '@shared/enums';
-import type { QuizAnswerResult, QuizQuestionResult, QuizSubmitResult } from '@shared/ipc';
+import type {
+  QuizAnswerResult,
+  QuizDraftResult,
+  QuizQuestionResult,
+  QuizSubmitResult,
+  QuizUpdateDraftInput,
+} from '@shared/ipc';
 import { normalizeDisplayText } from '@shared/lib/markdownDisplay';
 import { completeJson } from '../llm/json';
 import { getDb, schema } from '../db';
@@ -20,6 +26,52 @@ function masteryToStatus(mastery: number): NodeStatus {
   if (mastery >= 4.5) return 'mastered';
   if (mastery >= 2.5) return 'learning';
   return 'shaky';
+}
+
+function rowToDraft(row: typeof schema.knowledgeNode.$inferSelect): QuizDraftResult {
+  return {
+    nodeId: row.id,
+    nodeName: row.name,
+    questionMd: row.quizQuestionMd ?? null,
+    recommendedAnswerMd: row.quizRecommendedAnswerMd ?? null,
+  };
+}
+
+export function getQuizDraft(nodeId: string): QuizDraftResult {
+  const row = getDb()
+    .select()
+    .from(schema.knowledgeNode)
+    .where(eq(schema.knowledgeNode.id, nodeId))
+    .get();
+  if (!row) throw new Error('考点不存在');
+  return rowToDraft(row);
+}
+
+export function updateQuizDraft(input: QuizUpdateDraftInput): QuizDraftResult {
+  const db = getDb();
+  const row = db
+    .select()
+    .from(schema.knowledgeNode)
+    .where(eq(schema.knowledgeNode.id, input.nodeId))
+    .get();
+  if (!row) throw new Error('考点不存在');
+
+  const patch: {
+    quizQuestionMd?: string | null;
+    quizRecommendedAnswerMd?: string | null;
+  } = {};
+  if (input.questionMd !== undefined) patch.quizQuestionMd = input.questionMd;
+  if (input.recommendedAnswerMd !== undefined) {
+    patch.quizRecommendedAnswerMd = input.recommendedAnswerMd;
+  }
+  if (Object.keys(patch).length === 0) return rowToDraft(row);
+
+  db.update(schema.knowledgeNode)
+    .set(patch)
+    .where(eq(schema.knowledgeNode.id, input.nodeId))
+    .run();
+
+  return rowToDraft({ ...row, ...patch });
 }
 
 export async function generateQuizQuestion(nodeId: string): Promise<QuizQuestionResult> {
@@ -41,7 +93,13 @@ export async function generateQuizQuestion(nodeId: string): Promise<QuizQuestion
 考点：${node.name} 覆盖类型：${node.coverageType}`,
   );
 
-  return { nodeId, nodeName: node.name, question: result.question };
+  const question = result.question.trim();
+  db.update(schema.knowledgeNode)
+    .set({ quizQuestionMd: question, quizRecommendedAnswerMd: null })
+    .where(eq(schema.knowledgeNode.id, nodeId))
+    .run();
+
+  return { nodeId, nodeName: node.name, question };
 }
 
 /**
@@ -71,7 +129,13 @@ export async function generateQuizAnswer(
 问题：${question}`,
   );
 
-  return { recommendedAnswerMd: normalizeDisplayText(generated.answerMd) };
+  const recommendedAnswerMd = normalizeDisplayText(generated.answerMd);
+  db.update(schema.knowledgeNode)
+    .set({ quizRecommendedAnswerMd: recommendedAnswerMd })
+    .where(eq(schema.knowledgeNode.id, nodeId))
+    .run();
+
+  return { recommendedAnswerMd };
 }
 
 export async function submitQuizAnswer(

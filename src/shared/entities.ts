@@ -142,6 +142,10 @@ export interface KnowledgeNode {
   /** 用于细化时的去重合并与真题匹配；不下发给渲染进程 */
   embedding?: number[] | null;
   isUserAdded: boolean;
+  /** 考我缓存的题目 */
+  quizQuestionMd: string | null;
+  /** 考我缓存的推荐答案 */
+  quizRecommendedAnswerMd: string | null;
   createdAt: Timestamp;
 }
 

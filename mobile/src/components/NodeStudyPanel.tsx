@@ -1,8 +1,14 @@
-import type { QuizAnswerResult, QuizSubmitResult } from '@shared/ipc';
+import type { QuizAnswerResult, QuizQuestionResult, QuizSubmitResult } from '@shared/ipc';
 import { ExplanationStudyPanel } from './ExplanationStudyPanel';
 import { MarkdownPreview } from './MarkdownPreview';
 import { getRawDb } from '../db';
-import { generateQuizAnswer, generateQuizQuestion, submitQuizAnswer } from '../data/quizLocal';
+import {
+  generateQuizAnswer,
+  generateQuizQuestion,
+  getQuizDraft,
+  submitQuizAnswer,
+  updateQuizDraft,
+} from '../data/quizLocal';
 import { saveSpeechFromQuizNode } from '../data/mutations';
 import { useApp } from '../context/AppContext';
 import { isTaskRunning, runTask, useTaskResult, useTaskState } from '../context/RemoteTaskContext';
@@ -22,7 +28,6 @@ export function NodeStudyPanel({
 }): React.JSX.Element {
   const theme = useTheme();
   const { notifyDataChanged } = useApp();
-  // 出题、参考答案与评分都按考点记：换考点、切页再回来还是这道题和这份评分
   const questionKey = `quiz:question:${nodeId}`;
   const answerKey = `quiz:answer:${nodeId}`;
   const submitKey = `quiz:submit:${nodeId}`;
@@ -34,37 +39,47 @@ export function NodeStudyPanel({
   const [quizResult, setQuizResult] = useState<QuizSubmitResult | null>(null);
   const [recommended, setRecommended] = useState('');
   const [editingRecommended, setEditingRecommended] = useState(false);
+  const [draftLoaded, setDraftLoaded] = useState(false);
 
-  useTaskResult<{ question: string }>(questionKey, (result) => setQuestion(result.question));
+  useEffect(() => {
+    if (mode !== 'drill') return;
+    try {
+      const draft = getQuizDraft(getRawDb(), nodeId);
+      if (draft.questionMd) setQuestion(draft.questionMd);
+      if (draft.recommendedAnswerMd) setRecommended(draft.recommendedAnswerMd);
+    } finally {
+      setDraftLoaded(true);
+    }
+  }, [mode, nodeId]);
+
+  useTaskResult<QuizQuestionResult>(questionKey, (result) => {
+    setQuestion(result.question);
+    setQuizResult(null);
+    setAnswer('');
+    setRecommended('');
+    setEditingRecommended(false);
+  });
   useTaskResult<QuizAnswerResult>(answerKey, (result) => {
     setRecommended(result.recommendedAnswerMd);
     setEditingRecommended(false);
   });
   useTaskResult<QuizSubmitResult>(submitKey, setQuizResult);
 
-  useEffect(() => {
-    // 已经在出题、或题目还没被领走时不要重复问一遍
-    if (mode !== 'drill' || question !== null || isTaskRunning(questionKey)) return;
-    void runTask(questionKey, '考我出题', () => generateQuizQuestion(getRawDb(), nodeId)).catch(
-      () => undefined,
-    );
-  }, [mode, nodeId, questionKey, question]);
-
   if (mode === 'explain') {
     return <ExplanationStudyPanel nodeId={nodeId} nodeName={nodeName} tier="spoken" />;
   }
 
-  if (loading && question === null) {
-    return <Text style={{ color: theme.muted, fontSize: 13 }}>出题中…</Text>;
+  if (!draftLoaded) {
+    return <Text style={{ color: theme.muted, fontSize: 13 }}>加载中…</Text>;
   }
 
-  if (questionError !== null && question === null) {
-    return (
-      <Text selectable style={{ color: theme.danger, fontSize: 13 }}>
-        {questionError}
-      </Text>
-    );
-  }
+  const startQuiz = (): void => {
+    void runTask(questionKey, '考我出题', async () => {
+      const result = await generateQuizQuestion(getRawDb(), nodeId);
+      notifyDataChanged();
+      return result;
+    }).catch(() => undefined);
+  };
 
   const submitQuiz = (): void => {
     if (!question || !answer.trim()) return;
@@ -79,9 +94,19 @@ export function NodeStudyPanel({
   const generateRecommended = (): void => {
     if (!question) return;
     const asked = question;
-    void runTask(answerKey, '生成推荐答案', () =>
-      generateQuizAnswer(getRawDb(), nodeId, asked),
-    ).catch(() => undefined);
+    void runTask(answerKey, '生成推荐答案', async () => {
+      const result = await generateQuizAnswer(getRawDb(), nodeId, asked);
+      notifyDataChanged();
+      return result;
+    }).catch(() => undefined);
+  };
+
+  const saveRecommendedDraft = (): void => {
+    void updateQuizDraft(getRawDb(), { nodeId, recommendedAnswerMd: recommended }).then(() => {
+      notifyDataChanged();
+      setEditingRecommended(false);
+      Alert.alert('已保存', '推荐答案已保存');
+    });
   };
 
   const saveRecommendedToSpeech = (): void => {
@@ -96,6 +121,30 @@ export function NodeStudyPanel({
 
   return (
     <View style={{ gap: 8 }}>
+      <Pressable
+        onPress={startQuiz}
+        disabled={loading || isTaskRunning(questionKey)}
+        style={{
+          backgroundColor: theme.accent,
+          padding: 10,
+          borderRadius: 8,
+          alignItems: 'center',
+          opacity: loading || isTaskRunning(questionKey) ? 0.6 : 1,
+        }}
+      >
+        <Text style={{ color: '#fff' }}>
+          {loading || isTaskRunning(questionKey) ? '出题中…' : question ? '重新出题' : '开始出题'}
+        </Text>
+      </Pressable>
+      <Text style={{ color: theme.muted, fontSize: 11 }}>
+        已生成的题目与推荐答案会自动保存；再次进入会直接显示，只有点「重新出题」才会换题。
+      </Text>
+      {questionError !== null && (
+        <Text selectable style={{ color: theme.danger, fontSize: 12 }}>
+          {questionError}
+        </Text>
+      )}
+
       {question && (
         <Text selectable style={{ color: theme.text, fontSize: 13, lineHeight: 20 }}>
           {question}
@@ -196,9 +245,16 @@ export function NodeStudyPanel({
               ) : (
                 <MarkdownPreview text={recommended} />
               )}
-              <Pressable onPress={saveRecommendedToSpeech} hitSlop={8}>
-                <Text style={{ color: theme.accent, fontSize: 11 }}>加入话术库</Text>
-              </Pressable>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+                {editingRecommended && (
+                  <Pressable onPress={saveRecommendedDraft} hitSlop={8}>
+                    <Text style={{ color: theme.accent, fontSize: 11 }}>保存</Text>
+                  </Pressable>
+                )}
+                <Pressable onPress={saveRecommendedToSpeech} hitSlop={8}>
+                  <Text style={{ color: theme.accent, fontSize: 11 }}>加入话术库</Text>
+                </Pressable>
+              </View>
             </>
           ) : (
             <Text style={{ color: theme.muted, fontSize: 12 }}>

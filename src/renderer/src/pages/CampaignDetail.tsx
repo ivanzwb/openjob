@@ -904,7 +904,11 @@ export function CampaignDetail({
                           <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-4">
                             {nodeStudyMode === 'drill' ? (
                               <div className="min-h-0 flex-1 overflow-y-auto">
-                                <QuizPanel nodeId={selectedNode.id} nodeName={selectedNode.name} />
+                                <QuizPanel
+                                  key={selectedNode.id}
+                                  nodeId={selectedNode.id}
+                                  nodeName={selectedNode.name}
+                                />
                               </div>
                             ) : nodeStudyMode === 'followUp' ? (
                               <NodeFollowUpChat

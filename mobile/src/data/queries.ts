@@ -345,6 +345,8 @@ export function getCampaignDetail(db: SQLiteDatabase, id: string): CampaignDetai
     priority_score: number;
     status: string;
     is_user_added: number;
+    quiz_question_md: string | null;
+    quiz_recommended_answer_md: string | null;
     created_at: number;
   }>(`SELECT * FROM knowledge_node WHERE campaign_id = ?`, id);
 
@@ -385,6 +387,8 @@ export function getCampaignDetail(db: SQLiteDatabase, id: string): CampaignDetai
     priorityScore: n.priority_score,
     status: n.status as CampaignDetail['nodes'][number]['status'],
     isUserAdded: Boolean(n.is_user_added),
+    quizQuestionMd: n.quiz_question_md ?? null,
+    quizRecommendedAnswerMd: n.quiz_recommended_answer_md ?? null,
     createdAt: n.created_at,
     priorityReason: '',
     hasExplanation: explanationNodeIds.has(n.id),

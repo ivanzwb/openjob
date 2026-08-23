@@ -58,7 +58,7 @@ import {
   reorderTasks,
   updateTaskMinutes,
 } from '../plan/edit';
-import { generateQuizAnswer, generateQuizQuestion, submitQuizAnswer } from '../quiz';
+import { generateQuizAnswer, generateQuizQuestion, getQuizDraft, submitQuizAnswer, updateQuizDraft } from '../quiz';
 import {
   deleteRepo,
   ensureCodeRef,
@@ -189,6 +189,8 @@ const RPC_HANDLERS: Partial<Record<IpcInvokeChannel, RpcHandler>> = {
       input.contextMd,
     );
   },
+  'quiz:draft': (p) => getQuizDraft((p as { nodeId: string }).nodeId),
+  'quiz:updateDraft': (p) => updateQuizDraft(p as IpcReq<'quiz:updateDraft'>),
   'quiz:question': (p) => generateQuizQuestion((p as { nodeId: string }).nodeId),
   'quiz:answer': (p) => {
     const input = p as IpcReq<'quiz:answer'>;

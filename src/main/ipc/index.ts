@@ -70,7 +70,7 @@ import {
   reorderTasks,
   updateTaskMinutes,
 } from '../plan/edit';
-import { generateQuizAnswer, generateQuizQuestion, submitQuizAnswer } from '../quiz';
+import { generateQuizAnswer, generateQuizQuestion, getQuizDraft, submitQuizAnswer, updateQuizDraft } from '../quiz';
 import {
   cloneAndIndex,
   deleteRepo,
@@ -309,6 +309,8 @@ export function registerIpcHandlers(): void {
     rewriteExplanationSelection(nodeId, tier, selectedText, contextMd),
   );
 
+  handle('quiz:draft', ({ nodeId }) => getQuizDraft(nodeId));
+  handle('quiz:updateDraft', (input) => updateQuizDraft(input));
   handle('quiz:question', ({ nodeId }) => generateQuizQuestion(nodeId));
   handle('quiz:answer', ({ nodeId, question }) => generateQuizAnswer(nodeId, question));
   handle('quiz:submit', (input) => submitQuizAnswer(input.nodeId, input.question, input.userAnswer));

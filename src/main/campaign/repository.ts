@@ -70,6 +70,8 @@ function rowToNode(row: typeof schema.knowledgeNode.$inferSelect): KnowledgeNode
     priorityScore: row.priorityScore,
     status: row.status,
     isUserAdded: row.isUserAdded,
+    quizQuestionMd: row.quizQuestionMd ?? null,
+    quizRecommendedAnswerMd: row.quizRecommendedAnswerMd ?? null,
     createdAt: row.createdAt,
   };
 }

@@ -89,13 +89,18 @@ describe('prompt_run 补建', () => {
     const entries = journal();
     // 装了 0019 之前那一版、且当时漏掉了 0013 的库
     const applied = entries
-      .filter((e) => e.tag !== '0019_prompt_run_repair' && e.tag !== '0013_prompt_run')
+      .filter(
+        (e) =>
+          e.tag !== '0019_prompt_run_repair' &&
+          e.tag !== '0013_prompt_run' &&
+          e.tag !== '0020_node_quiz_cache',
+      )
       .map((e) => e.when);
 
     const pending = selectPending(entries, applied).map((e) => e.tag);
 
     // 0013 的 when 已经落在水位下面，永远轮不到它了，补建只能靠 0019
-    expect(pending).toEqual(['0019_prompt_run_repair']);
+    expect(pending).toEqual(['0019_prompt_run_repair', '0020_node_quiz_cache']);
   });
 
   it('0019 在已经有 prompt_run 的库上重跑不会炸', () => {

@@ -19,6 +19,8 @@ type NodeRow = {
   priority_score: number;
   status: string;
   is_user_added: number;
+  quiz_question_md: string | null;
+  quiz_recommended_answer_md: string | null;
   created_at: number;
 };
 
@@ -46,6 +48,8 @@ function rowToNode(row: NodeRow): KnowledgeNode {
     status: row.status as NodeStatus,
     embedding: null,
     isUserAdded: Boolean(row.is_user_added),
+    quizQuestionMd: row.quiz_question_md ?? null,
+    quizRecommendedAnswerMd: row.quiz_recommended_answer_md ?? null,
     createdAt: row.created_at,
   };
 }

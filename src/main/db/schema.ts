@@ -139,6 +139,9 @@ export const knowledgeNode = sqliteTable(
     /** Float32Array 序列化后的字节，用于细化去重与真题匹配 */
     embedding: text('embedding', { mode: 'json' }).$type<number[]>(),
     isUserAdded: integer('is_user_added', { mode: 'boolean' }).notNull().default(false),
+    /** 考我：当前缓存的题目与推荐答案，按考点一份，可同步 */
+    quizQuestionMd: text('quiz_question_md'),
+    quizRecommendedAnswerMd: text('quiz_recommended_answer_md'),
     createdAt: integer('created_at').notNull(),
   },
   (t) => [

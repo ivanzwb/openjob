@@ -32,6 +32,7 @@ export function TaskStudyPanel({
     if (task.kind === 'drill') {
       return (
         <QuizPanel
+          key={task.nodeId}
           nodeId={task.nodeId}
           nodeName={task.nodeName ?? ''}
           onDone={onComplete}
