@@ -70,7 +70,7 @@ import {
   reorderTasks,
   updateTaskMinutes,
 } from '../plan/edit';
-import { generateQuizQuestion, submitQuizAnswer } from '../quiz';
+import { generateQuizAnswer, generateQuizQuestion, submitQuizAnswer } from '../quiz';
 import {
   cloneAndIndex,
   deleteRepo,
@@ -88,6 +88,7 @@ import {
   listSpeechSnippetsForSource,
   saveSpeechFromDesign,
   saveSpeechFromNode,
+  saveSpeechFromQuizNode,
   saveSpeechFromRepo,
   updateSpeechSnippet,
 } from '../speech';
@@ -309,6 +310,7 @@ export function registerIpcHandlers(): void {
   );
 
   handle('quiz:question', ({ nodeId }) => generateQuizQuestion(nodeId));
+  handle('quiz:answer', ({ nodeId, question }) => generateQuizAnswer(nodeId, question));
   handle('quiz:submit', (input) => submitQuizAnswer(input.nodeId, input.question, input.userAnswer));
 
   handle('repo:gitStatus', () => getGitStatus());
@@ -331,6 +333,7 @@ export function registerIpcHandlers(): void {
   handle('speech:saveFromDesign', (input) =>
     saveSpeechFromDesign(input.campaignId, '', input.contentMd),
   );
+  handle('speech:saveFromQuiz', (input) => saveSpeechFromQuizNode(input.nodeId, input.contentMd));
   handle('speech:list', () => listSpeechSnippets());
   handle('speech:listForSource', ({ sourceType, sourceId }) =>
     listSpeechSnippetsForSource(sourceType, sourceId),

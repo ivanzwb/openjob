@@ -35,16 +35,18 @@ function resolveSourceLabel(sourceType: SpeechSnippet['sourceType'], sourceId: s
     return node ? `考点 · ${node.name}` : '考点';
   }
   if (sourceType === 'quiz') {
+    // 评分后自动存的那条挂在这次作答上，手动存的推荐答案挂在考点上
+    // （出题时还没有作答记录），两种 id 都要能认出来。
     const attempt = db
       .select()
       .from(schema.quizAttempt)
       .where(eq(schema.quizAttempt.id, sourceId))
       .get();
-    if (!attempt) return '考我';
+    const nodeId = attempt?.nodeId ?? sourceId;
     const node = db
       .select()
       .from(schema.knowledgeNode)
-      .where(eq(schema.knowledgeNode.id, attempt.nodeId))
+      .where(eq(schema.knowledgeNode.id, nodeId))
       .get();
     return node ? `考我 · ${node.name}` : '考我';
   }
@@ -83,6 +85,16 @@ export function saveSpeechFromQuiz(
   contentMd: string,
 ): SpeechSnippet {
   return saveSpeech('quiz', attemptId, contentMd, 'spoken');
+}
+
+/**
+ * 手动存考我的推荐答案。挂在考点而不是作答上：题目可以在提交之前就存，
+ * 而且同一个考点反复练出的同一段话术会被去重合成一条。
+ */
+export function saveSpeechFromQuizNode(nodeId: string, contentMd: string): SpeechSnippet {
+  const text = contentMd.trim();
+  if (!text) throw new Error('话术内容为空');
+  return saveSpeech('quiz', nodeId, text, 'spoken');
 }
 
 export function saveSpeechFromDesign(

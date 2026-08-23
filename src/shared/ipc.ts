@@ -670,6 +670,15 @@ export interface QuizQuestionResult {
   question: string;
 }
 
+export interface QuizAnswerInput {
+  nodeId: string;
+  question: string;
+}
+
+export interface QuizAnswerResult {
+  recommendedAnswerMd: string;
+}
+
 export interface QuizSubmitInput {
   nodeId: string;
   question: string;
@@ -727,6 +736,11 @@ export interface SpeechSaveFromNodeInput {
 
 export interface SpeechSaveFromDesignInput {
   campaignId: string;
+  contentMd: string;
+}
+
+export interface SpeechSaveFromQuizInput {
+  nodeId: string;
   contentMd: string;
 }
 
@@ -1052,6 +1066,7 @@ export interface IpcInvokeMap {
   'explain:rewrite': { req: ExplainRewriteInput; res: ExplainRewriteResult };
 
   'quiz:question': { req: { nodeId: string }; res: QuizQuestionResult };
+  'quiz:answer': { req: QuizAnswerInput; res: QuizAnswerResult };
   'quiz:submit': { req: QuizSubmitInput; res: QuizSubmitResult };
 
   'repo:gitStatus': { req: void; res: GitStatus };
@@ -1063,6 +1078,7 @@ export interface IpcInvokeMap {
   'speech:save': { req: SpeechSaveInput; res: SpeechSnippet };
   'speech:saveFromNode': { req: SpeechSaveFromNodeInput; res: SpeechSnippet };
   'speech:saveFromDesign': { req: SpeechSaveFromDesignInput; res: SpeechSnippet };
+  'speech:saveFromQuiz': { req: SpeechSaveFromQuizInput; res: SpeechSnippet };
   'speech:list': { req: void; res: SpeechSnippetView[] };
   'speech:listForSource': { req: SpeechListForSourceInput; res: SpeechSnippet[] };
   'speech:update': { req: SpeechUpdateInput; res: SpeechSnippet };
@@ -1245,6 +1261,7 @@ export const IPC_INVOKE_CHANNELS = [
   'explain:elaborate',
   'explain:rewrite',
   'quiz:question',
+  'quiz:answer',
   'quiz:submit',
   'repo:gitStatus',
   'repo:list',
@@ -1255,6 +1272,7 @@ export const IPC_INVOKE_CHANNELS = [
   'speech:save',
   'speech:saveFromNode',
   'speech:saveFromDesign',
+  'speech:saveFromQuiz',
   'speech:list',
   'speech:listForSource',
   'speech:update',

@@ -32,7 +32,7 @@ import {
   RESUME_POLISH_SYSTEM,
   RESUME_STRUCTURE_SYSTEM,
 } from '../resume/prompts';
-import { QUIZ_QUESTION_SYSTEM, QUIZ_SCORE_SYSTEM } from './quiz';
+import { QUIZ_ANSWER_SYSTEM, QUIZ_QUESTION_SYSTEM, QUIZ_SCORE_SYSTEM } from './quiz';
 import {
   EXPLAIN_ELABORATE_SYSTEM,
   EXPLAIN_REWRITE_SYSTEM,
@@ -154,6 +154,10 @@ export const PROMPT_REGISTRY: Record<string, PromptEntry> = {
   'quiz.score': {
     id: 'quiz.score',
     versions: [{ id: 'quiz.score@v1', text: QUIZ_SCORE_SYSTEM, note: '初始版本' }],
+  },
+  'quiz.answer': {
+    id: 'quiz.answer',
+    versions: [{ id: 'quiz.answer@v1', text: QUIZ_ANSWER_SYSTEM, note: '初始版本' }],
   },
 
   // ── 模拟面试（文本来自 shared/design/prompts，按题型运行时选择）──

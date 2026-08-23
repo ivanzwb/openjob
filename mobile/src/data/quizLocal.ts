@@ -2,7 +2,8 @@ import * as Crypto from 'expo-crypto';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import type { QuizAttempt } from '@shared/entities';
 import type { NodeStatus } from '@shared/enums';
-import type { QuizQuestionResult, QuizSubmitResult } from '@shared/ipc';
+import type { QuizAnswerResult, QuizQuestionResult, QuizSubmitResult } from '@shared/ipc';
+import { normalizeDisplayText } from '@shared/lib/markdownDisplay';
 import { getMobileConfig } from '../config/settings';
 import { completeJson } from '../llm/json';
 import { computePriority } from '@shared/priority';
@@ -37,6 +38,29 @@ export async function generateQuizQuestion(
   );
 
   return { nodeId, nodeName: node.name, question: result.question };
+}
+
+/**
+ * 出完题就能要一份参考答案。答不上来的题最需要范本，而评分给的「改进话术」
+ * 只会改写用户已经说出口的内容，正好在这种时候派不上用场。
+ */
+export async function generateQuizAnswer(
+  db: SQLiteDatabase,
+  nodeId: string,
+  question: string,
+): Promise<QuizAnswerResult> {
+  const node = getKnowledgeNode(db, nodeId);
+  const campaign = getCampaign(db, node.campaignId);
+
+  const generated = await completeJson<{ answerMd: string }>(
+    'quiz',
+    'quiz.answer',
+    `公司：${campaign.company} 岗位：${campaign.roleTitle}
+考点：${node.name} 覆盖类型：${node.coverageType}
+问题：${question}`,
+  );
+
+  return { recommendedAnswerMd: normalizeDisplayText(generated.answerMd) };
 }
 
 export async function submitQuizAnswer(

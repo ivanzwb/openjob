@@ -125,14 +125,15 @@ function resolveSpeechSourceLabel(
     return node ? `考点 · ${node.name}` : '考点';
   }
   if (sourceType === 'quiz') {
+    // 评分后自动存的那条挂在这次作答上，手动存的推荐答案挂在考点上
+    // （出题时还没有作答记录），两种 id 都要能认出来。
     const attempt = db.getFirstSync<{ node_id: string }>(
       `SELECT node_id FROM quiz_attempt WHERE id = ?`,
       sourceId,
     );
-    if (!attempt) return '考我';
     const node = db.getFirstSync<{ name: string }>(
       `SELECT name FROM knowledge_node WHERE id = ?`,
-      attempt.node_id,
+      attempt?.node_id ?? sourceId,
     );
     return node ? `考我 · ${node.name}` : '考我';
   }

@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import type { QuizAttempt } from '@shared/entities';
 import type { NodeStatus } from '@shared/enums';
-import type { QuizQuestionResult, QuizSubmitResult } from '@shared/ipc';
+import type { QuizAnswerResult, QuizQuestionResult, QuizSubmitResult } from '@shared/ipc';
+import { normalizeDisplayText } from '@shared/lib/markdownDisplay';
 import { completeJson } from '../llm/json';
 import { getDb, schema } from '../db';
 import { getCampaignRow, rowToNode } from '../campaign/repository';
@@ -41,6 +42,36 @@ export async function generateQuizQuestion(nodeId: string): Promise<QuizQuestion
   );
 
   return { nodeId, nodeName: node.name, question: result.question };
+}
+
+/**
+ * 出完题就能要一份参考答案。答不上来的题最需要范本，而评分给的「改进话术」
+ * 只会改写用户已经说出口的内容，正好在这种时候派不上用场。
+ */
+export async function generateQuizAnswer(
+  nodeId: string,
+  question: string,
+): Promise<QuizAnswerResult> {
+  const db = getDb();
+  const row = db
+    .select()
+    .from(schema.knowledgeNode)
+    .where(eq(schema.knowledgeNode.id, nodeId))
+    .get();
+  if (!row) throw new Error('考点不存在');
+
+  const node = rowToNode(row);
+  const campaign = getCampaignRow(node.campaignId);
+
+  const generated = await completeJson<{ answerMd: string }>(
+    'quiz',
+    'quiz.answer',
+    `公司：${campaign.company} 岗位：${campaign.roleTitle}
+考点：${node.name} 覆盖类型：${node.coverageType}
+问题：${question}`,
+  );
+
+  return { recommendedAnswerMd: normalizeDisplayText(generated.answerMd) };
 }
 
 export async function submitQuizAnswer(

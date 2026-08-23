@@ -1,12 +1,14 @@
-import type { QuizSubmitResult } from '@shared/ipc';
+import type { QuizAnswerResult, QuizSubmitResult } from '@shared/ipc';
 import { ExplanationStudyPanel } from './ExplanationStudyPanel';
+import { MarkdownPreview } from './MarkdownPreview';
 import { getRawDb } from '../db';
-import { generateQuizQuestion, submitQuizAnswer } from '../data/quizLocal';
+import { generateQuizAnswer, generateQuizQuestion, submitQuizAnswer } from '../data/quizLocal';
+import { saveSpeechFromQuizNode } from '../data/mutations';
 import { useApp } from '../context/AppContext';
 import { isTaskRunning, runTask, useTaskResult, useTaskState } from '../context/RemoteTaskContext';
 import { useTheme } from '../theme';
 import { useEffect, useState } from 'react';
-import { Pressable, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, Text, TextInput, View } from 'react-native';
 import { VoiceInputButton } from './VoiceInputButton';
 
 export function NodeStudyPanel({
@@ -20,16 +22,24 @@ export function NodeStudyPanel({
 }): React.JSX.Element {
   const theme = useTheme();
   const { notifyDataChanged } = useApp();
-  // 出题与评分都按考点记：换考点、切页再回来还是这道题和这份评分
+  // 出题、参考答案与评分都按考点记：换考点、切页再回来还是这道题和这份评分
   const questionKey = `quiz:question:${nodeId}`;
+  const answerKey = `quiz:answer:${nodeId}`;
   const submitKey = `quiz:submit:${nodeId}`;
   const { running: loading, error: questionError } = useTaskState(questionKey);
+  const { running: generatingAnswer, error: answerError } = useTaskState(answerKey);
   const { running: submitting, error: submitError } = useTaskState(submitKey);
   const [question, setQuestion] = useState<string | null>(null);
   const [answer, setAnswer] = useState('');
   const [quizResult, setQuizResult] = useState<QuizSubmitResult | null>(null);
+  const [recommended, setRecommended] = useState('');
+  const [editingRecommended, setEditingRecommended] = useState(false);
 
   useTaskResult<{ question: string }>(questionKey, (result) => setQuestion(result.question));
+  useTaskResult<QuizAnswerResult>(answerKey, (result) => {
+    setRecommended(result.recommendedAnswerMd);
+    setEditingRecommended(false);
+  });
   useTaskResult<QuizSubmitResult>(submitKey, setQuizResult);
 
   useEffect(() => {
@@ -60,6 +70,24 @@ export function NodeStudyPanel({
       notifyDataChanged();
       return result;
     }).catch(() => undefined);
+  };
+
+  const generateRecommended = (): void => {
+    if (!question) return;
+    const asked = question;
+    void runTask(answerKey, '生成推荐答案', () =>
+      generateQuizAnswer(getRawDb(), nodeId, asked),
+    ).catch(() => undefined);
+  };
+
+  const saveRecommendedToSpeech = (): void => {
+    const text = recommended.trim();
+    if (!text) return;
+    void saveSpeechFromQuizNode(getRawDb(), nodeId, text).then((saved) => {
+      notifyDataChanged();
+      setEditingRecommended(false);
+      Alert.alert('话术库', saved.existing ? '这段已经在话术库里' : '已加入话术库');
+    });
   };
 
   return (
@@ -105,6 +133,60 @@ export function NodeStudyPanel({
         <View style={{ gap: 6 }}>
           <Text style={{ color: theme.success, fontWeight: '600' }}>得分 {quizResult.attempt.score}/5</Text>
           <Text style={{ color: theme.text, fontSize: 13 }}>{quizResult.attempt.feedbackMd}</Text>
+        </View>
+      )}
+
+      {question && (
+        <View style={{ gap: 8, borderTopWidth: 1, borderColor: theme.border, paddingTop: 10 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Text style={{ color: theme.text, fontWeight: '600', fontSize: 13 }}>推荐答案</Text>
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <Pressable onPress={generateRecommended} disabled={generatingAnswer} hitSlop={8}>
+                <Text style={{ color: generatingAnswer ? theme.muted : theme.accent, fontSize: 11 }}>
+                  {generatingAnswer ? '生成中…' : recommended ? '重新生成' : '生成推荐答案'}
+                </Text>
+              </Pressable>
+              {recommended ? (
+                <Pressable onPress={() => setEditingRecommended((v) => !v)} hitSlop={8}>
+                  <Text style={{ color: theme.accent, fontSize: 11 }}>
+                    {editingRecommended ? '预览' : '编辑'}
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
+          </View>
+          {answerError !== null && <Text style={{ color: theme.danger, fontSize: 12 }}>{answerError}</Text>}
+          {recommended ? (
+            <>
+              {editingRecommended ? (
+                <TextInput
+                  multiline
+                  value={recommended}
+                  onChangeText={setRecommended}
+                  style={{
+                    minHeight: 140,
+                    color: theme.text,
+                    borderWidth: 1,
+                    borderColor: theme.border,
+                    borderRadius: 8,
+                    padding: 10,
+                    textAlignVertical: 'top',
+                    fontFamily: 'monospace',
+                    fontSize: 12,
+                  }}
+                />
+              ) : (
+                <MarkdownPreview text={recommended} />
+              )}
+              <Pressable onPress={saveRecommendedToSpeech} hitSlop={8}>
+                <Text style={{ color: theme.accent, fontSize: 11 }}>加入话术库</Text>
+              </Pressable>
+            </>
+          ) : (
+            <Text style={{ color: theme.muted, fontSize: 12 }}>
+              答不上来可以先要一份参考答案，改成自己的说法后加入话术库。
+            </Text>
+          )}
         </View>
       )}
     </View>
