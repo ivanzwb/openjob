@@ -118,13 +118,6 @@ export function collectChangeSet(
   return { deviceId, headSeq: head, rows: snapshots, tombstones };
 }
 
-export function currentHeadSeq(raw: SQLiteDatabase): number {
-  return (
-    raw.getFirstSync<{ head: number }>(`SELECT coalesce(max(seq), 0) AS head FROM sync_oplog`)
-      ?.head ?? 0
-  );
-}
-
 /**
  * 全量快照，语义与桌面端 collectFullChangeSet 一致。
  *

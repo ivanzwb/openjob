@@ -8,12 +8,7 @@ export {
   removePeer,
   guessLanAddress,
 } from './pairing';
-export {
-  handleExchange,
-  listSyncRuns,
-  listRunOverwrites,
-  prepareOutbound,
-} from './orchestrator';
+export { handleExchange, listSyncRuns, listRunOverwrites } from './orchestrator';
 export {
   startSyncServer,
   stopSyncServer,

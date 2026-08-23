@@ -13,6 +13,16 @@ import { getPeer, newRunId, updatePeerWatermarks } from './pairing';
 export interface ExchangeInput {
   peerDeviceId: string;
   remote: ChangeSet;
+  /**
+   * 对端自己报的水位线：它已经收到的本端 oplog 位置。
+   *
+   * 参与合并的本端变更集必须按这个数取，不能用本端存的 peer.lastLocalSeq。后者是
+   * 在回包发出之前就推到 head 的，一旦那一轮的回包没送达（手机端超时掐断就是），
+   * 它就变成了一句没兑现的承诺：下一轮据此算出的本端变更集会漏掉对端其实没收到的
+   * 那些行，planMerge 只认变更集、不查库，漏掉就等于"本机根本没有这一行"，于是
+   * 对端更旧的值被无条件写入，本端较新的改动被静默覆盖。
+   */
+  sinceSeq: number;
   clockOffsetMs?: number;
   direction: 'auto' | 'manual';
   remoteAddress?: string;
@@ -113,11 +123,10 @@ export function handleExchange(input: ExchangeInput): ExchangeResult {
   let backupFile: string | null = null;
 
   try {
-    // 增量时从"已发送给该对端的水位"起。用 lastRemoteSeq（对端 head）过滤本端
-    // oplog 会把本端新变更全部跳过。
+    // 增量时按对端上报的水位起，不用本端存的 peer.lastLocalSeq（见 sinceSeq 的说明）
     const local = input.full
       ? collectFullChangeSet(raw, identity.deviceId)
-      : collectChangeSet(raw, identity.deviceId, peer.lastLocalSeq);
+      : collectChangeSet(raw, identity.deviceId, input.sinceSeq);
     const ctx = buildMergeContext(input.clockOffsetMs ?? 0);
     const plan = planMerge(local, input.remote, ctx);
 
@@ -223,10 +232,3 @@ export function listRunOverwrites(runId: string): FieldOverwrite[] {
     }));
 }
 
-export function prepareOutbound(peerDeviceId: string): ChangeSet {
-  const raw = getRawDb();
-  const identity = getDeviceIdentity(raw);
-  const peer = getPeer(peerDeviceId);
-  if (!peer) throw new Error('设备未配对');
-  return collectChangeSet(raw, identity.deviceId, peer.lastRemoteSeq);
-}

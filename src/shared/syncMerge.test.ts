@@ -358,3 +358,35 @@ describe('收敛', () => {
     expect(a).toMatchObject({ status: 'done' });
   });
 });
+
+/**
+ * planMerge 只认传进来的两个变更集，不查库。
+ *
+ * 所以「本端变更集要包含对端没确认收到的全部本端改动」不是调用方的风格问题，而是
+ * 正确性前提：漏一行，planMerge 就把它当成本机根本没有这一行，于是对端更旧的值被
+ * 无条件写入，本端较新的改动静默消失，两端还都收敛到了错的那个值。
+ *
+ * 这正是本端变更集必须按对端上报的水位（sinceSeq）来取、而不能按本端自己存的
+ * "已发送水位"来取的原因——后者在回包发出前就推到了 head，回包一丢就是一句没
+ * 兑现的承诺。
+ */
+describe('本端变更集不完整的代价', () => {
+  const localNewer = { table: 'task', rowId: 't1', values: { id: 't1', status: 'done' }, changedFields: ['status'], wallMs: 300 };
+  const remoteOlder = cs('B', [
+    { table: 'task', rowId: 't1', values: { id: 't1', status: 'pending' }, changedFields: ['status'], wallMs: 100 },
+  ]);
+
+  it('本端改动在变更集里 -> 时间新的本端值胜出，对端旧值被挡住', () => {
+    const p = planMerge(cs('A', [localNewer]), remoteOlder, ctx);
+    expect(p.auto).toHaveLength(0);
+    expect(p.overwrites[0]).toMatchObject({ keptSide: 'local' });
+  });
+
+  it('同样的两端状态，本端改动漏掉 -> 对端旧值被无条件采纳，且悄无声息', () => {
+    const p = planMerge(cs('A', []), remoteOlder, ctx);
+    expect(p.auto).toHaveLength(1);
+    expect(p.auto[0]).toMatchObject({ values: { status: 'pending' } });
+    // 连一条覆盖记录都不会留下，事后无从追查
+    expect(p.overwrites).toHaveLength(0);
+  });
+});

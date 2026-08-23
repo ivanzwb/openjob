@@ -177,6 +177,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       const result = handleExchange({
         peerDeviceId: auth.deviceId,
         remote: input.changes,
+        sinceSeq: input.sinceSeq,
         clockOffsetMs,
         direction: 'auto',
         remoteAddress: clientAddress(req),

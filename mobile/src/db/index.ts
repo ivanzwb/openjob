@@ -5,7 +5,7 @@ import { planMerge } from '@shared/syncMerge';
 import { MIGRATIONS } from './migrations/bundle';
 import { backfillRowVersions, installSyncTriggers } from '../sync/triggers';
 import { getDeviceIdentity } from '../sync/identity';
-import { collectChangeSet, collectFullChangeSet, currentHeadSeq } from '../sync/collect';
+import { collectChangeSet, collectFullChangeSet } from '../sync/collect';
 import { applyAutoChanges } from '../sync/apply';
 import {
   createBackup,
@@ -331,7 +331,11 @@ function needsFullSync(sqlite: SQLiteDatabase, peer: PeerRow): boolean {
   const lastRun = sqlite.getFirstSync<{ status: string }>(
     `SELECT status FROM sync_run ORDER BY started_at DESC LIMIT 1`,
   );
-  if (lastRun && lastRun.status !== 'success') return true;
+  // 只有 'failed' 才升级成全量：那是回包已经拿到、落库落了一半，水位线可能停在半途。
+  // 'not-applied' 是交换阶段就失败了，本机一个字节都没动，重发同一段增量就行。
+  // 这里无脑升级反而危险：回包太大本身就是超时的主因，换成全量只会更大，于是每轮都
+  // 超时、每轮都判定要全量，同步再也好不了。
+  if (lastRun?.status === 'failed') return true;
 
   if (!peer.last_full_sync_at) return true;
   return Date.now() - peer.last_full_sync_at > FULL_SYNC_INTERVAL_MS;
@@ -350,7 +354,62 @@ export interface SyncOutcome {
   repoFileMessage?: string;
 }
 
-export async function syncNow(): Promise<SyncOutcome> {
+/**
+ * 记一条失败的同步。
+ *
+ * 以前失败只更新界面上那行字，库里什么都不留，于是「上次失败就转全量」那条判断
+ * 永远读到的是上一次成功——注释里承诺的自愈其实是死代码。顺带也让桌面端一条条
+ * 成功记录、手机端却什么都没有这种对不上号的现象有了解释。
+ *
+ * status 分两种是给恢复策略用的，不是给人看的：
+ * - 'not-applied'：交换阶段就失败了，本机数据没动过，下轮重发增量即可
+ * - 'failed'：回包拿到了，落库过程中出的事，水位线可能停在半途，下轮要全量对账
+ */
+function recordFailedRun(
+  sqlite: SQLiteDatabase,
+  peerDeviceId: string,
+  status: 'not-applied' | 'failed',
+  error: unknown,
+): void {
+  const now = Date.now();
+  sqlite.runSync(
+    `INSERT INTO sync_run (
+       id, peer_device_id, direction, status, backup_file,
+       applied_count, overwrite_count, started_at, finished_at, error_message
+     ) VALUES (?, ?, 'auto', ?, NULL, 0, 0, ?, ?, ?)`,
+    Crypto.randomUUID(),
+    peerDeviceId,
+    status,
+    now,
+    now,
+    error instanceof Error ? error.message : String(error),
+  );
+}
+
+let inFlight: Promise<SyncOutcome> | null = null;
+
+/**
+ * 自动同步每 60 秒来一次，而一轮全表对账可以跑几分钟。没有这道闸，第二轮会在第一轮
+ * 还没落库时就去读水位线，两轮各自以为自己是唯一的写入者。
+ *
+ * 代价是：正在跑的时候进来的调用会拿到当前这一轮的结果，而不是为它自己单独跑一轮。
+ * 界面上很多地方是"写完一条就顺手同步一下"，这种调用会等到下一次轮询才真正推出去，
+ * 最多晚一分钟。只是晚，不会丢——改动躺在本机 oplog 里，哪一轮都会带上。
+ */
+export function syncNow(): Promise<SyncOutcome> {
+  if (inFlight) return inFlight;
+  const run = (async () => {
+    try {
+      return await runSyncOnce();
+    } finally {
+      inFlight = null;
+    }
+  })();
+  inFlight = run;
+  return run;
+}
+
+async function runSyncOnce(): Promise<SyncOutcome> {
   const sqlite = await openDb();
   const identity = await getDeviceIdentity(sqlite);
   const peer = getPeer(sqlite);
@@ -370,84 +429,98 @@ export async function syncNow(): Promise<SyncOutcome> {
     full ? 0 : peer.last_remote_seq,
     local,
     { full },
-  );
+  ).catch((e: unknown) => {
+    // 回包没拿到，本机数据没动过。记一笔，好让下一轮知道上次是断在网络上而不是落库上
+    recordFailedRun(sqlite, peer.device_id, 'not-applied', e);
+    throw e;
+  });
 
-  const ctx = {
-    clockOffsetMs: Date.now() - response.serverMs,
-    isDeviceLocal: (t: string, c: string) => t === 'repo' && c === 'local_path',
-    primaryKey: () => 'id',
-    labelFor: (table: string, rowId: string, values: Record<string, unknown>) =>
-      `${table}:${String(values.name ?? values.title ?? rowId)}`,
-  };
+  // 从这里往下都是本机写入。这一段出事就得记成 'failed'：水位线可能停在半途，
+  // 下一轮必须全表对账才对得回来。
+  try {
+    const ctx = {
+      clockOffsetMs: Date.now() - response.serverMs,
+      isDeviceLocal: (t: string, c: string) => t === 'repo' && c === 'local_path',
+      primaryKey: () => 'id',
+      labelFor: (table: string, rowId: string, values: Record<string, unknown>) =>
+        `${table}:${String(values.name ?? values.title ?? rowId)}`,
+    };
 
-  const plan = planMerge(local, response.changes, ctx);
-  const { other, repoFile } = partitionRepoFileChanges(plan.auto);
+    const plan = planMerge(local, response.changes, ctx);
+    const { other, repoFile } = partitionRepoFileChanges(plan.auto);
 
-  // 备份放在合并之后、落库之前：绝大多数同步其实无事可做，每 60 秒 VACUUM
-  // 一遍整库（含几十 MB 的源码快照）纯属自残，而没有写入的同步也没什么可退的
-  let backupFile: string | null = null;
-  if (plan.auto.length > 0) {
-    backupFile = createPresyncBackup(sqlite)?.file ?? null;
-  }
-
-  let appliedRemote = applyAutoChanges(sqlite, peer.device_id, other);
-
-  let repoFileSkipped = false;
-  let repoFileMessage: string | undefined;
-  if (repoFile.length > 0) {
-    const neededBytes = estimateRepoFileBytes(repoFile, sqlite);
-    const freeBytes = getFreeDiskBytes();
-    if (canApplyRepoFileSync(neededBytes, freeBytes)) {
-      appliedRemote += applyAutoChanges(sqlite, peer.device_id, repoFile);
-      clearRepoFileSyncNotice(sqlite);
-    } else {
-      repoFileSkipped = true;
-      repoFileMessage = persistRepoFileSyncSkipped(sqlite, neededBytes, freeBytes);
+    // 备份放在合并之后、落库之前：绝大多数同步其实无事可做，每 60 秒 VACUUM
+    // 一遍整库（含几十 MB 的源码快照）纯属自残，而没有写入的同步也没什么可退的
+    let backupFile: string | null = null;
+    if (plan.auto.length > 0) {
+      backupFile = createPresyncBackup(sqlite)?.file ?? null;
     }
+
+    let appliedRemote = applyAutoChanges(sqlite, peer.device_id, other);
+
+    let repoFileSkipped = false;
+    let repoFileMessage: string | undefined;
+    if (repoFile.length > 0) {
+      const neededBytes = estimateRepoFileBytes(repoFile, sqlite);
+      const freeBytes = getFreeDiskBytes();
+      if (canApplyRepoFileSync(neededBytes, freeBytes)) {
+        appliedRemote += applyAutoChanges(sqlite, peer.device_id, repoFile);
+        clearRepoFileSyncNotice(sqlite);
+      } else {
+        repoFileSkipped = true;
+        repoFileMessage = persistRepoFileSyncSkipped(sqlite, neededBytes, freeBytes);
+      }
+    }
+
+    if (plan.auto.some((c) => c.table === 'app_setting')) {
+      await hydrateAppSettingsFromDb(sqlite);
+    }
+
+    const runId = Crypto.randomUUID();
+    const now = Date.now();
+    sqlite.runSync(
+      `INSERT INTO sync_run (
+         id, peer_device_id, direction, status, backup_file,
+         applied_count, overwrite_count, started_at, finished_at
+       ) VALUES (?, ?, 'auto', 'success', ?, ?, ?, ?, ?)`,
+      runId,
+      peer.device_id,
+      backupFile,
+      appliedRemote,
+      plan.overwrites.length,
+      now,
+      now,
+    );
+    if (plan.overwrites.length > 0) saveOverwrites(sqlite, runId, plan.overwrites);
+    if (backupFile) pruneBackups();
+
+    sqlite.runSync(
+      `UPDATE sync_peer SET last_local_seq = ?, last_remote_seq = ?, last_sync_at = ?,
+         last_full_sync_at = ?
+       WHERE device_id = ?`,
+      // 只能推到"真的发出去了"的那个位置，也就是采集时的 head，不能用此刻的 head：
+      // 一轮同步要跑好几十秒，用户这期间的编辑也会进 oplog 并拿到更小的 seq，用此刻
+      // 的 head 会把这些从没发出去的改动一并标成已发送，它们要等到下次全表对账才补回来
+      local.headSeq,
+      repoFileSkipped ? peer.last_remote_seq : response.changes.headSeq,
+      now,
+      // repo_file 没搬完就不算对完账，下一轮还要再来一次
+      full && !repoFileSkipped ? now : peer.last_full_sync_at,
+      peer.device_id,
+    );
+
+    return {
+      applied: response.appliedCount + appliedRemote,
+      overwrites: plan.overwrites.length + response.overwriteCount,
+      runId,
+      backupFile,
+      full,
+      ...(repoFileSkipped ? { repoFileSkipped, repoFileMessage } : {}),
+    };
+  } catch (e) {
+    recordFailedRun(sqlite, peer.device_id, 'failed', e);
+    throw e;
   }
-
-  if (plan.auto.some((c) => c.table === 'app_setting')) {
-    await hydrateAppSettingsFromDb(sqlite);
-  }
-
-  const runId = Crypto.randomUUID();
-  const now = Date.now();
-  sqlite.runSync(
-    `INSERT INTO sync_run (
-       id, peer_device_id, direction, status, backup_file,
-       applied_count, overwrite_count, started_at, finished_at
-     ) VALUES (?, ?, 'auto', 'success', ?, ?, ?, ?, ?)`,
-    runId,
-    peer.device_id,
-    backupFile,
-    appliedRemote,
-    plan.overwrites.length,
-    now,
-    now,
-  );
-  if (plan.overwrites.length > 0) saveOverwrites(sqlite, runId, plan.overwrites);
-  if (backupFile) pruneBackups();
-
-  sqlite.runSync(
-    `UPDATE sync_peer SET last_local_seq = ?, last_remote_seq = ?, last_sync_at = ?,
-       last_full_sync_at = ?
-     WHERE device_id = ?`,
-    currentHeadSeq(sqlite),
-    repoFileSkipped ? peer.last_remote_seq : response.changes.headSeq,
-    now,
-    // repo_file 没搬完就不算对完账，下一轮还要再来一次
-    full && !repoFileSkipped ? now : peer.last_full_sync_at,
-    peer.device_id,
-  );
-
-  return {
-    applied: response.appliedCount + appliedRemote,
-    overwrites: plan.overwrites.length + response.overwriteCount,
-    runId,
-    backupFile,
-    full,
-    ...(repoFileSkipped ? { repoFileSkipped, repoFileMessage } : {}),
-  };
 }
 
 export function getPeerLabel(): string | null {

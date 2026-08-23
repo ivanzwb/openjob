@@ -67,19 +67,45 @@ export function signRequest(
   return hmacSha256Base64Url(sharedKey, payload);
 }
 
-const NETWORK_TIMEOUT_MS = 10_000;
+/** 握手超时。ping / pair 只交换几十字节，慢过这个数就是网络本身不通 */
+const HANDSHAKE_TIMEOUT_MS = 10_000;
 
-async function fetchWithTimeout(input: string, init: RequestInit): Promise<Response> {
+/**
+ * 一轮 exchange 的超时。
+ *
+ * 不能和握手共用一个数：exchange 要等桌面端把本轮变更全部应用完、再把回包整个
+ * 序列化出来，全表对账时还带着源码快照，十秒根本不够。
+ *
+ * 更要紧的是这种超时会自我维持，给小了不是偶尔失败而是再也不会成功：手机端一旦
+ * 掐断，水位线就不推进，桌面端下一轮还是从同一个起点重算同一份回包，而它的 oplog
+ * 还在往前走，回包只会一轮比一轮大。0.6.8 就是这么卡死的。
+ */
+const EXCHANGE_TIMEOUT_MS = 180_000;
+
+async function fetchWithTimeout(
+  input: string,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), NETWORK_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(input, { ...init, signal: controller.signal });
   } catch (e) {
     const host = new URL(input).host;
-    if (e instanceof Error && e.name === 'AbortError') {
-      throw new Error(`连接 ${host} 超时，请确认桌面端已启动配对`);
+    // 判断是不是自己掐的要看 signal，不能看 e.name：React Native 的 fetch 被 abort
+    // 打断时经常抛 Network request failed，并不叫 AbortError。光看名字会把自己造成
+    // 的超时说成「对方拒绝连接」，然后照着网络方向白查一整天。
+    if (controller.signal.aborted) {
+      throw new Error(
+        `等桌面端 ${host} 回应超过 ${Math.round(timeoutMs / 1000)} 秒，这一轮先算了。` +
+          `桌面端可能还在处理，等它跑完再同步一次即可`,
+      );
     }
-    throw new Error(`无法连接到桌面端 ${host}（网络被拒绝或重置），请确认桌面端已打开并生成二维码`);
+    // 原始错误必须带出来。这里能失败的原因太多——地址变了、两端不在同一个网、桌面端
+    // 没开、被防火墙拦——压成一句猜出来的结论等于把唯一的线索删掉。
+    const detail = e instanceof Error ? e.message : String(e);
+    throw new Error(`连不上桌面端 ${host}：${detail}。请确认两端在同一网络、桌面端已打开`);
   } finally {
     clearTimeout(timer);
   }
@@ -91,30 +117,39 @@ async function signedFetch(
   deviceId: string,
   path: string,
   init: RequestInit,
+  timeoutMs: number,
 ): Promise<Response> {
   const method = init.method ?? 'GET';
   const body = typeof init.body === 'string' ? init.body : '';
   const timestamp = Date.now();
   const signature = signRequest(sharedKey, deviceId, timestamp, method, path, body);
 
-  return fetchWithTimeout(`${baseUrl}${path}`, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Device-Id': deviceId,
-      'X-Timestamp': String(timestamp),
-      'X-Signature': signature,
-      ...(init.headers as Record<string, string> | undefined),
+  return fetchWithTimeout(
+    `${baseUrl}${path}`,
+    {
+      ...init,
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Device-Id': deviceId,
+        'X-Timestamp': String(timestamp),
+        'X-Signature': signature,
+        ...(init.headers as Record<string, string> | undefined),
+      },
     },
-  });
+    timeoutMs,
+  );
 }
 
 export async function pingDesktop(baseUrl: string): Promise<SyncPingResponse> {
-  const res = await fetchWithTimeout(`${baseUrl}/sync/ping`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ clientMs: Date.now(), appVersion: getCurrentVersion() }),
-  });
+  const res = await fetchWithTimeout(
+    `${baseUrl}/sync/ping`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clientMs: Date.now(), appVersion: getCurrentVersion() }),
+    },
+    HANDSHAKE_TIMEOUT_MS,
+  );
   if (!res.ok) throw new Error(await res.text());
   return (await res.json()) as SyncPingResponse;
 }
@@ -132,11 +167,15 @@ export async function pairWithDesktop(
     platform: 'mobile',
     appVersion: getCurrentVersion(),
   };
-  const res = await fetchWithTimeout(`${baseUrl}/sync/pair`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  const res = await fetchWithTimeout(
+    `${baseUrl}/sync/pair`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+    HANDSHAKE_TIMEOUT_MS,
+  );
   if (!res.ok) await throwResponseError(res, '配对失败');
   return (await res.json()) as SyncPairResponse;
 }
@@ -157,10 +196,14 @@ export async function exchangeWithDesktop(
     appVersion: getCurrentVersion(),
   };
   const payload = JSON.stringify(body);
-  const res = await signedFetch(baseUrl, sharedKey, deviceId, '/sync/exchange', {
-    method: 'POST',
-    body: payload,
-  });
+  const res = await signedFetch(
+    baseUrl,
+    sharedKey,
+    deviceId,
+    '/sync/exchange',
+    { method: 'POST', body: payload },
+    EXCHANGE_TIMEOUT_MS,
+  );
   if (!res.ok) await throwResponseError(res, '同步失败');
   return (await res.json()) as SyncExchangeResponse;
 }
