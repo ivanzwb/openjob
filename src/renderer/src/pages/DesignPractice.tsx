@@ -6,6 +6,7 @@ import type {
   MockInterviewType,
 } from '@shared/ipc';
 import {
+  MOCK_INTERVIEW_CONSTRAINTS_LABEL,
   MOCK_INTERVIEW_LANGUAGE_LABELS,
   MOCK_INTERVIEW_LANGUAGE_OPTIONS,
   MOCK_INTERVIEW_TYPE_LABELS,
@@ -323,7 +324,9 @@ export function DesignPractice(): React.JSX.Element {
           <MarkdownContent text={normalizeDisplayText(designCase.scenarioMd)} />
           {designCase.constraints.length > 0 && (
             <div>
-              <h4 className="text-xs font-medium text-[var(--color-muted)]">约束 / 考察点</h4>
+              <h4 className="text-xs font-medium text-[var(--color-muted)]">
+                {MOCK_INTERVIEW_CONSTRAINTS_LABEL}
+              </h4>
               <ul className="mt-1 list-inside list-disc text-sm">
                 {designCase.constraints.map((c) => (
                   <li key={c}>{c}</li>

@@ -796,6 +796,14 @@ export const MOCK_INTERVIEW_LANGUAGE_LABELS: Record<MockInterviewLanguage, strin
   en: '英文',
 };
 
+/**
+ * 题目里那组约束的小标题。
+ *
+ * 放共享层是因为它已经跑偏过一次：桌面端叫「约束 / 考察点」，手机端叫「考察点」，
+ * 同一道题在两块屏幕上像是两个不同的字段。各写一份的文案迟早会各自漂移。
+ */
+export const MOCK_INTERVIEW_CONSTRAINTS_LABEL = '约束 / 考察点';
+
 export interface DesignCaseResult {
   campaignId: string;
   company: string;

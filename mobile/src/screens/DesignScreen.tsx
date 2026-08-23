@@ -7,6 +7,7 @@ import type {
   MockInterviewType,
 } from '@shared/ipc';
 import {
+  MOCK_INTERVIEW_CONSTRAINTS_LABEL,
   MOCK_INTERVIEW_LANGUAGE_LABELS,
   MOCK_INTERVIEW_LANGUAGE_OPTIONS,
   MOCK_INTERVIEW_TYPE_LABELS,
@@ -334,9 +335,19 @@ export function DesignScreen(): React.JSX.Element {
           )}
           <MarkdownPreview text={designCase.scenarioMd} />
           {designCase.constraints.length > 0 && (
-            <Text style={{ color: theme.muted, fontSize: 11 }}>
-              考察点：{designCase.constraints.join(' · ')}
-            </Text>
+            <View style={{ gap: 2 }}>
+              <Text style={{ color: theme.muted, fontSize: 11 }}>
+                {MOCK_INTERVIEW_CONSTRAINTS_LABEL}
+              </Text>
+              {/* 一条一行，和桌面端的 ul 对齐：挤成一行后每条约束都得从中间的分隔点里认，
+                  而这些正是作答时要逐条兑掉的东西 */}
+              {designCase.constraints.map((c) => (
+                <Text key={c} style={{ color: theme.text, fontSize: 13 }}>
+                  {'• '}
+                  {c}
+                </Text>
+              ))}
+            </View>
           )}
 
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
