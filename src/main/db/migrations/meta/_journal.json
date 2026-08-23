@@ -96,7 +96,7 @@
     {
       "idx": 13,
       "version": "6",
-      "when": 1786894220008,
+      "when": 1787051000000,
       "tag": "0013_prompt_run",
       "breakpoints": true
     },
@@ -133,6 +133,13 @@
       "version": "6",
       "when": 1787530000000,
       "tag": "0018_sync_row_version",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1787540000000,
+      "tag": "0019_prompt_run_repair",
       "breakpoints": true
     }
   ]

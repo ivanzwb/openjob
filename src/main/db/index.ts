@@ -28,14 +28,21 @@ function userTableCount(handle: Database.Database): number {
   return row.n;
 }
 
-/** 还没跑过的迁移条数。读不出来时按 0 处理：宁可少备份一次，也别拦住启动 */
+/**
+ * 还没跑过的迁移条数。读不出来时按 0 处理：宁可少备份一次，也别拦住启动。
+ *
+ * 判据必须和 Drizzle 自己那套一模一样——它按 created_at 取水位，跑所有 when
+ * 更大的迁移，而不是按条数补齐（drizzle-orm/sqlite-core/dialect.cjs 的 migrate）。
+ * 这里原本拿 journal 条数减日志行数，两者只要对不上就永远算出「还有待跑的」，
+ * 于是每次启动都白做一次全库 VACUUM，把真正那份升级前快照挤出保留窗口。
+ */
 function pendingMigrationCount(handle: Database.Database): number {
-  let total: number;
+  let whens: number[];
   try {
     const journal = JSON.parse(
       readFileSync(join(migrationsFolder(), 'meta', '_journal.json'), 'utf8'),
-    ) as { entries?: unknown[] };
-    total = journal.entries?.length ?? 0;
+    ) as { entries?: { when: number }[] };
+    whens = (journal.entries ?? []).map((e) => e.when);
   } catch {
     return 0;
   }
@@ -43,12 +50,14 @@ function pendingMigrationCount(handle: Database.Database): number {
   const hasLog = handle
     .prepare(`SELECT count(*) AS n FROM sqlite_master WHERE type = 'table' AND name = '__drizzle_migrations'`)
     .get() as { n: number };
-  if (hasLog.n === 0) return total;
+  if (hasLog.n === 0) return whens.length;
 
-  const applied = handle.prepare(`SELECT count(*) AS n FROM __drizzle_migrations`).get() as {
-    n: number;
+  const row = handle.prepare(`SELECT max(created_at) AS watermark FROM __drizzle_migrations`).get() as {
+    watermark: number | null;
   };
-  return Math.max(0, total - applied.n);
+  if (row.watermark === null) return whens.length;
+
+  return whens.filter((when) => when > Number(row.watermark)).length;
 }
 
 /**

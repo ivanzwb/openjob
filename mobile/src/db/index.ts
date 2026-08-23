@@ -2,7 +2,7 @@ import * as Crypto from 'expo-crypto';
 import { openDatabaseSync, type SQLiteDatabase } from 'expo-sqlite';
 import type { FieldOverwrite, PairingPayload } from '@shared/sync';
 import { planMerge } from '@shared/syncMerge';
-import { MIGRATIONS } from './migrations/bundle';
+import { pendingMigrationIndices, runMigrations, userTableCount } from './migrate';
 import { backfillRowVersions, installSyncTriggers } from '../sync/triggers';
 import { getDeviceIdentity } from '../sync/identity';
 import { collectChangeSet, collectFullChangeSet } from '../sync/collect';
@@ -26,7 +26,7 @@ import {
 import { exchangeWithDesktop, pairWithDesktop } from '../sync/client';
 import { setPeerCreds } from '../remote/rpc';
 import { hydrateAppSettingsFromDb } from '../config/settings';
-import { columnExists, columnIsNotNull, ensureCriticalSchema, hasTable } from './schemaEnsure';
+import { ensureCriticalSchema } from './schemaEnsure';
 
 interface PeerRow {
   device_id: string;
@@ -43,47 +43,19 @@ interface PeerRow {
 
 let raw: SQLiteDatabase | null = null;
 
-const MIGRATION_LOG = '_migrations';
-
-/**
- * 迁移日志表:记录已应用的迁移序号,避免每次启动都重放建表 SQL。
- * 对迁移已部分应用的旧数据库,语句级容错自动跳过已存在对象。
- */
-function ensureMigrationLog(sqlite: SQLiteDatabase): void {
-  sqlite.execSync(
-    `CREATE TABLE IF NOT EXISTS ${MIGRATION_LOG} (idx INTEGER PRIMARY KEY, tag TEXT NOT NULL, applied_at INTEGER NOT NULL)`,
-  );
-}
-
-function isAlreadyAppliedError(e: unknown): boolean {
-  return /already exists|duplicate column name/i.test(String(e));
-}
-
-function userTableCount(sqlite: SQLiteDatabase): number {
-  return (
-    sqlite.getFirstSync<{ n: number }>(
-      `SELECT count(*) AS n FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`,
-    )?.n ?? 0
-  );
-}
-
 /**
  * 升级到带新迁移的版本时，动 schema 之前先留一份现场。
  *
- * 迁移是唯一会不可逆改动既有数据的动作，而 expo-sqlite 的 DDL 没有包在事务里：
- * 中途失败就是个半迁移的库，没有快照真的回不去。挂在「打开数据库」而不是
- * 「装 APK」上——不管新版本是应用内更新、侧载还是本地构建装上来的，
- * schema 真正要变的那一刻都在这里。
+ * 迁移是唯一会不可逆改动既有数据的动作。单条迁移现在是原子的，但一次跨版本
+ * 升级要跑一串，跑到第三条挂掉时前两条已经生效了，只有快照能整体退回去。
+ * 挂在「打开数据库」而不是「装 APK」上——不管新版本是应用内更新、侧载还是
+ * 本地构建装上来的，schema 真正要变的那一刻都在这里。
  *
  * 快照做不出来就不迁移：让用户腾出空间再进来，比在没有退路的情况下改库好。
  */
 function backupBeforeMigrations(sqlite: SQLiteDatabase): void {
   if (userTableCount(sqlite) === 0) return; // 新库，没有可丢的东西
-
-  ensureMigrationLog(sqlite);
-  const applied =
-    sqlite.getFirstSync<{ n: number }>(`SELECT count(*) AS n FROM ${MIGRATION_LOG}`)?.n ?? 0;
-  if (applied >= MIGRATIONS.length) return; // schema 没有变化
+  if (pendingMigrationIndices(sqlite).length === 0) return; // schema 没有变化
 
   if (!createBackup(sqlite, 'premigrate')) {
     throw new Error(
@@ -92,50 +64,6 @@ function backupBeforeMigrations(sqlite: SQLiteDatabase): void {
     );
   }
   pruneBackups();
-}
-
-function runMigrations(sqlite: SQLiteDatabase): void {
-  ensureMigrationLog(sqlite);
-  const applied = new Set(
-    sqlite.getAllSync<{ idx: number }>(`SELECT idx FROM ${MIGRATION_LOG}`).map((r) => r.idx),
-  );
-  for (let index = 0; index < MIGRATIONS.length; index++) {
-    if (applied.has(index)) {
-      if (index === 6 && !hasTable(sqlite, 'app_setting')) {
-        // fall through
-      } else if (index === 7 && !hasTable(sqlite, 'repo_file')) {
-        // fall through
-      } else if (index === 8 && !hasTable(sqlite, 'job_target')) {
-        // fall through
-      } else if (index === 9 && !columnExists(sqlite, 'resume_variant', 'preview_style')) {
-        // fall through
-      } else if (index === 10 && !columnExists(sqlite, 'resume', 'preview_style')) {
-        // fall through
-      } else if (index === 11 && columnIsNotNull(sqlite, 'resume_variant', 'source_resume_id')) {
-        // 建表 SQL 被容错跳过时,优化版还挂着 NOT NULL + CASCADE,重放这次重建
-      } else {
-        continue;
-      }
-    }
-    for (const stmt of MIGRATIONS[index].split('--> statement-breakpoint')) {
-      const trimmed = stmt.trim();
-      if (!trimmed) continue;
-      try {
-        sqlite.execSync(trimmed);
-      } catch (e) {
-        // 迁移已部分应用的旧库:表和索引已存在时跳过,不中断启动
-        if (isAlreadyAppliedError(e)) continue;
-        throw e;
-      }
-    }
-    sqlite.runSync(
-      `INSERT INTO ${MIGRATION_LOG} (idx, tag, applied_at) VALUES (?, ?, ?)
-       ON CONFLICT(idx) DO UPDATE SET applied_at = excluded.applied_at`,
-      index,
-      `migration_${index}`,
-      Date.now(),
-    );
-  }
 }
 
 function loadPeerCreds(sqlite: SQLiteDatabase): void {
