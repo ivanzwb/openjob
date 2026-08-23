@@ -239,7 +239,9 @@ export function SyncScreen(): React.JSX.Element {
       {pairError && (
         <View style={{ borderWidth: 1, borderColor: theme.danger, borderRadius: 8, padding: 10, backgroundColor: theme.surface, gap: 6 }}>
           <Text style={{ color: theme.danger, fontWeight: '600' }}>配对失败</Text>
-          <Text style={{ color: theme.text, fontSize: 12 }}>{pairError}</Text>
+          <Text selectable style={{ color: theme.text, fontSize: 12 }}>
+            {pairError}
+          </Text>
         </View>
       )}
 

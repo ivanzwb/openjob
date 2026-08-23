@@ -59,7 +59,11 @@ export function NodeStudyPanel({
   }
 
   if (questionError !== null && question === null) {
-    return <Text style={{ color: theme.danger, fontSize: 13 }}>{questionError}</Text>;
+    return (
+      <Text selectable style={{ color: theme.danger, fontSize: 13 }}>
+        {questionError}
+      </Text>
+    );
   }
 
   const submitQuiz = (): void => {
@@ -92,7 +96,11 @@ export function NodeStudyPanel({
 
   return (
     <View style={{ gap: 8 }}>
-      {question && <Text style={{ color: theme.text, fontSize: 13, lineHeight: 20 }}>{question}</Text>}
+      {question && (
+        <Text selectable style={{ color: theme.text, fontSize: 13, lineHeight: 20 }}>
+          {question}
+        </Text>
+      )}
       {!quizResult ? (
         <>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' }}>
@@ -127,12 +135,18 @@ export function NodeStudyPanel({
           >
             <Text style={{ color: '#fff' }}>{submitting ? '评分中…' : '提交评分'}</Text>
           </Pressable>
-          {submitError !== null && <Text style={{ color: theme.danger, fontSize: 12 }}>{submitError}</Text>}
+          {submitError !== null && (
+            <Text selectable style={{ color: theme.danger, fontSize: 12 }}>
+              {submitError}
+            </Text>
+          )}
         </>
       ) : (
         <View style={{ gap: 6 }}>
           <Text style={{ color: theme.success, fontWeight: '600' }}>得分 {quizResult.attempt.score}/5</Text>
-          <Text style={{ color: theme.text, fontSize: 13 }}>{quizResult.attempt.feedbackMd}</Text>
+          <Text selectable style={{ color: theme.text, fontSize: 13 }}>
+            {quizResult.attempt.feedbackMd}
+          </Text>
         </View>
       )}
 
@@ -155,7 +169,11 @@ export function NodeStudyPanel({
               ) : null}
             </View>
           </View>
-          {answerError !== null && <Text style={{ color: theme.danger, fontSize: 12 }}>{answerError}</Text>}
+          {answerError !== null && (
+            <Text selectable style={{ color: theme.danger, fontSize: 12 }}>
+              {answerError}
+            </Text>
+          )}
           {recommended ? (
             <>
               {editingRecommended ? (

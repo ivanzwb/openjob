@@ -269,7 +269,7 @@ export function ScriptsScreen(): React.JSX.Element {
                   }}
                   contentContainerStyle={{ padding: 12 }}
                 >
-                  <Text style={{ color: theme.text, fontSize: 13, lineHeight: 22 }}>
+                  <Text selectable style={{ color: theme.text, fontSize: 13, lineHeight: 22 }}>
                     {markdownToPlainText(selected.contentMd) || '（空）'}
                   </Text>
                 </ScrollView>

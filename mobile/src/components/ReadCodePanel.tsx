@@ -92,12 +92,18 @@ export function ReadCodePanel({
               ) : (
                 <>
                   <SourceBadge kind="model" />
-                  <Text style={{ color: theme.text, fontSize: 13, lineHeight: 20 }}>{displayText}</Text>
+                  <Text selectable style={{ color: theme.text, fontSize: 13, lineHeight: 20 }}>
+                    {displayText}
+                  </Text>
                 </>
               )}
             </ScrollView>
           )}
-          {error !== null && <Text style={{ color: theme.danger, fontSize: 12 }}>{error}</Text>}
+          {error !== null && (
+            <Text selectable style={{ color: theme.danger, fontSize: 12 }}>
+              {error}
+            </Text>
+          )}
           {displayText && onComplete && (
             <Pressable onPress={onComplete} style={{ alignSelf: 'flex-start', padding: 6 }}>
               <Text style={{ color: theme.accent, fontSize: 12 }}>标记完成</Text>

@@ -68,14 +68,20 @@ export function RepoQaPanel({ repo }: { repo: Repo }): React.JSX.Element {
             ) : displayText ? (
               <>
                 <SourceBadge kind="model" />
-                <Text style={{ color: theme.text, fontSize: 13, lineHeight: 20 }}>{displayText}</Text>
+                <Text selectable style={{ color: theme.text, fontSize: 13, lineHeight: 20 }}>
+                  {displayText}
+                </Text>
               </>
             ) : (
               <Text style={{ color: theme.muted, fontSize: 12 }}>
                 问启动流程、核心模块、目录结构… Agent 会读已同步的源码回答。
               </Text>
             )}
-            {error !== null && <Text style={{ color: theme.danger, fontSize: 12 }}>{error}</Text>}
+            {error !== null && (
+              <Text selectable style={{ color: theme.danger, fontSize: 12 }}>
+                {error}
+              </Text>
+            )}
           </ScrollView>
 
           <View style={{ flexDirection: 'row', gap: 8 }}>

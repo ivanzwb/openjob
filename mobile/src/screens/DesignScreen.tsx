@@ -318,12 +318,18 @@ export function DesignScreen(): React.JSX.Element {
       <Text style={{ color: theme.muted, fontSize: 11 }}>
         已生成的题目会自动保存；再次进入会直接显示保存题，只有点「重新出题」才会生成新题。你的作答也会自动缓存。
       </Text>
-      {caseError !== null && <Text style={{ color: theme.danger, fontSize: 12 }}>{caseError}</Text>}
+      {caseError !== null && (
+        <Text selectable style={{ color: theme.danger, fontSize: 12 }}>
+          {caseError}
+        </Text>
+      )}
 
       {designCase && (
         <View style={{ gap: 8 }}>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
-            <Text style={{ color: theme.text, fontWeight: '600' }}>{designCase.title}</Text>
+            <Text selectable style={{ color: theme.text, fontWeight: '600' }}>
+              {designCase.title}
+            </Text>
             <Text style={{ color: theme.accent, fontSize: 11 }}>
               {MOCK_INTERVIEW_TYPE_LABELS[designCase.interviewType]}
               {' · '}
@@ -342,7 +348,7 @@ export function DesignScreen(): React.JSX.Element {
               {/* 一条一行，和桌面端的 ul 对齐：挤成一行后每条约束都得从中间的分隔点里认，
                   而这些正是作答时要逐条兑掉的东西 */}
               {designCase.constraints.map((c) => (
-                <Text key={c} style={{ color: theme.text, fontSize: 13 }}>
+                <Text key={c} selectable style={{ color: theme.text, fontSize: 13 }}>
                   {'• '}
                   {c}
                 </Text>
@@ -391,7 +397,11 @@ export function DesignScreen(): React.JSX.Element {
               <Text style={{ color: '#fff' }}>{submitting ? '评分中…' : '提交评分'}</Text>
             </Pressable>
           </View>
-          {submitError !== null && <Text style={{ color: theme.danger, fontSize: 12 }}>{submitError}</Text>}
+          {submitError !== null && (
+            <Text selectable style={{ color: theme.danger, fontSize: 12 }}>
+              {submitError}
+            </Text>
+          )}
 
           <View style={{ gap: 8, borderTopWidth: 1, borderColor: theme.border, paddingTop: 10 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -411,7 +421,11 @@ export function DesignScreen(): React.JSX.Element {
                 ) : null}
               </View>
             </View>
-            {answerError !== null && <Text style={{ color: theme.danger, fontSize: 12 }}>{answerError}</Text>}
+            {answerError !== null && (
+              <Text selectable style={{ color: theme.danger, fontSize: 12 }}>
+                {answerError}
+              </Text>
+            )}
             {recommendedAnswer ? (
               <>
                 {editingRecommended ? (
@@ -450,7 +464,9 @@ export function DesignScreen(): React.JSX.Element {
                   </Pressable>
                 </View>
                 {elaborateError !== null && (
-                  <Text style={{ color: theme.danger, fontSize: 12 }}>{elaborateError}</Text>
+                  <Text selectable style={{ color: theme.danger, fontSize: 12 }}>
+                    {elaborateError}
+                  </Text>
                 )}
               </>
             ) : (
