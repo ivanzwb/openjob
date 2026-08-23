@@ -1,4 +1,4 @@
-export { createBackup, listBackups, restoreBackup, pruneBackups } from './backup';
+export { createBackup, listBackups, restoreBackup, deleteBackup, pruneBackups } from './backup';
 export { getDeviceIdentity, setDisplayName } from './identity';
 export {
   startPairing,

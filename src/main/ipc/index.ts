@@ -109,6 +109,7 @@ import { importResumeFromFile } from '../campaign/resumeImport';
 import {
   beginPairing,
   createBackup,
+  deleteBackup,
   endPairing,
   getSyncStatus,
   listBackups,
@@ -433,6 +434,9 @@ export function registerIpcHandlers(): void {
   });
   handle('sync:rollback', ({ backupFile }) => {
     restoreBackup(backupFile);
+  });
+  handle('sync:deleteBackup', ({ backupFile }) => {
+    deleteBackup(backupFile);
   });
 
   handle('stt:status', () => getSttStatus());

@@ -70,6 +70,14 @@ export function pruneBackups(): number {
   return removed;
 }
 
+/** 删掉某份快照。只动 backups/ 里的文件，不影响当前正在用的库。 */
+export function deleteBackup(file: string): void {
+  if (!parseName(file)) throw new Error(`非法的备份文件名：${file}`);
+  const f = new File(backupsDir(), file);
+  if (!f.exists) throw new Error(`备份不存在：${file}`);
+  f.delete();
+}
+
 /**
  * 整库快照。
  *

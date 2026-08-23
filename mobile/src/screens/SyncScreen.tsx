@@ -6,6 +6,7 @@ import type { PairingPayload } from '@shared/sync';
 import { backupReasonLabel } from '@shared/sync';
 import {
   createManualBackup,
+  deleteBackupFile,
   listBackups,
   pairDesktop,
   restoreFromBackup,
@@ -34,13 +35,12 @@ export function SyncScreen(): React.JSX.Element {
     repoFileSyncNotice,
     autoSync,
     setAutoSync,
-    overwrites,
     triggerSync,
     refresh,
   } = useApp();
   const [backups, setBackups] = useState<BackupInfo[]>([]);
   const [backupsFor, setBackupsFor] = useState<string | null>(null);
-  const [showHistory, setShowHistory] = useState(false);
+  const [showMoreBackups, setShowMoreBackups] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [pairError, setPairError] = useState<string | null>(null);
   const [pairMismatch, setPairMismatch] = useState<VersionMismatch | null>(null);
@@ -115,6 +115,57 @@ export function SyncScreen(): React.JSX.Element {
               return '已回退到所选快照';
             })
               .then(() => setBackups(listBackups()))
+              .catch(() => undefined);
+          },
+        },
+      ],
+    );
+  };
+
+  const deleteBackup = (backup: BackupInfo): void => {
+    Alert.alert(
+      '删除这份快照？',
+      `${new Date(backup.createdAt).toLocaleString()} 的整库快照。只删备份文件，当前数据不受影响。`,
+      [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '删除',
+          style: 'destructive',
+          onPress: () => {
+            void runTask(`delete:${backup.file}`, '删除快照', async () => {
+              deleteBackupFile(backup.file);
+              return '已删除所选快照';
+            })
+              .then(() => setBackups(listBackups()))
+              .catch(() => undefined);
+          },
+        },
+      ],
+    );
+  };
+
+  const cleanupOlderBackups = (): void => {
+    const older = backups.slice(1);
+    if (older.length === 0) return;
+    Alert.alert(
+      '清理较早的快照？',
+      `将删除 ${older.length} 份较早快照，最新的一份会保留，当前数据不受影响。`,
+      [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '清理',
+          style: 'destructive',
+          onPress: () => {
+            void runTask('backup:cleanup', '清理快照', async () => {
+              for (const b of older) {
+                deleteBackupFile(b.file);
+              }
+              return `已清理 ${older.length} 份较早的快照`;
+            })
+              .then(() => {
+                setShowMoreBackups(false);
+                setBackups(listBackups());
+              })
               .catch(() => undefined);
           },
         },
@@ -249,7 +300,7 @@ export function SyncScreen(): React.JSX.Element {
 
           <Text style={{ color: theme.muted, fontSize: 11, lineHeight: 16 }}>
             两端数据自动对齐，不需要选同步方式。改了同一行的不同字段，两边的修改都保留；
-            改了同一个字段，按更新时间取新的。
+            改了同一个字段，保留较新的一份。
             {'\n'}仍需桌面端：克隆/索引仓库（索引后源码快照会同步到手机）。
             {'\n'}暂不同步：搜索缓存（各端可重建）、仓库本机路径（各端路径不同）。
           </Text>
@@ -274,93 +325,60 @@ export function SyncScreen(): React.JSX.Element {
         </View>
       )}
 
-      {peerLabel && (overwrites.length > 0 || backups.length > 0) && (
+      {peerLabel && (
         <View style={{ gap: 8 }}>
-          <Pressable
-            onPress={() => setShowHistory((v) => !v)}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
-          >
-            <Ionicons
-              name={showHistory ? 'chevron-down' : 'chevron-forward'}
-              size={14}
-              color={theme.muted}
-            />
-            <Text style={{ color: theme.muted, fontSize: 12 }}>
-              同步留痕
-              {overwrites.length > 0 ? ` · ${overwrites.length} 处取新` : ''}
-              {backups.length > 0 ? ` · ${backups.length} 份快照` : ''}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Text style={{ color: theme.text, fontSize: 12, fontWeight: '600', flex: 1 }}>
+              本机整库快照
             </Text>
-          </Pressable>
-
-          {showHistory && overwrites.length > 0 && (
+            <Pressable
+              onPress={backupNow}
+              style={{ borderWidth: 1, borderColor: theme.border, borderRadius: 6, paddingHorizontal: 10, paddingVertical: 6 }}
+            >
+              <Text style={{ color: theme.accent, fontSize: 11 }}>立即备份</Text>
+            </Pressable>
+          </View>
+          <Text style={{ color: theme.muted, fontSize: 10 }}>
+            同步前、升级数据库结构前都会自动留一份。默认只显示最新一份，较早的可在「更多」里查看或一次性清理。
+          </Text>
+          {backups.length === 0 ? (
+            <Text style={{ color: theme.muted, fontSize: 11 }}>还没有快照</Text>
+          ) : (
             <View style={{ gap: 8 }}>
-              <Text style={{ color: theme.text, fontSize: 12, fontWeight: '600' }}>
-                按时间取新的字段
-              </Text>
-              <Text style={{ color: theme.muted, fontSize: 10, lineHeight: 15 }}>
-                两端都改过这些字段，已保留时间较晚的那个值。要拿回旧值，用下面的快照回退。
-              </Text>
-              {overwrites.map((o) => (
-                <View
-                  key={o.id}
-                  style={{ borderWidth: 1, borderColor: theme.border, borderRadius: 8, padding: 10, backgroundColor: theme.surface, gap: 4 }}
-                >
-                  <Text style={{ color: theme.text, fontSize: 12 }}>
-                    {o.table} · {o.field}
-                  </Text>
-                  <Text style={{ color: theme.text, fontSize: 10 }} numberOfLines={2}>
-                    生效（{o.keptSide === 'local' ? '手机' : '电脑'}）：
-                    {JSON.stringify(o.keptSide === 'local' ? o.localValue : o.remoteValue)}
-                  </Text>
-                  <Text
-                    style={{ color: theme.muted, fontSize: 10, textDecorationLine: 'line-through' }}
-                    numberOfLines={2}
+              <BackupCard
+                backup={backups[0]}
+                theme={theme}
+                onRestore={restore}
+                onDelete={deleteBackup}
+              />
+              {backups.length > 1 && (
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <Pressable
+                    onPress={cleanupOlderBackups}
+                    style={{ borderWidth: 1, borderColor: theme.border, borderRadius: 6, paddingHorizontal: 10, paddingVertical: 6 }}
                   >
-                    被覆盖：
-                    {JSON.stringify(o.keptSide === 'local' ? o.remoteValue : o.localValue)}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          )}
-
-          {showHistory && (
-            <View style={{ gap: 8 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={{ color: theme.text, fontSize: 12, fontWeight: '600', flex: 1 }}>
-                  本机整库快照
-                </Text>
-                <Pressable
-                  onPress={backupNow}
-                  style={{ borderWidth: 1, borderColor: theme.border, borderRadius: 6, paddingHorizontal: 10, paddingVertical: 6 }}
-                >
-                  <Text style={{ color: theme.accent, fontSize: 11 }}>立即备份</Text>
-                </Pressable>
-              </View>
-              <Text style={{ color: theme.muted, fontSize: 10 }}>
-                同步前、升级数据库结构前都会自动留一份。快照只在这台手机上，和电脑端各自独立回退。
-              </Text>
-              {backups.length === 0 ? (
-                <Text style={{ color: theme.muted, fontSize: 11 }}>还没有快照</Text>
-              ) : (
-                backups.map((b) => (
-                  <View
-                    key={b.file}
-                    style={{ borderWidth: 1, borderColor: theme.border, borderRadius: 8, padding: 10, backgroundColor: theme.surface, gap: 6 }}
+                    <Text style={{ color: theme.danger, fontSize: 11 }}>清理</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => setShowMoreBackups((v) => !v)}
+                    style={{ borderWidth: 1, borderColor: theme.border, borderRadius: 6, paddingHorizontal: 10, paddingVertical: 6 }}
                   >
-                    <Text style={{ color: theme.text, fontSize: 12 }}>
-                      {new Date(b.createdAt).toLocaleString()} · {backupReasonLabel(b.reason)} ·{' '}
-                      {formatSize(b.sizeBytes)}
+                    <Text style={{ color: theme.muted, fontSize: 11 }}>
+                      {showMoreBackups ? '收起' : `更多（${backups.length - 1}）`}
                     </Text>
-                    <Pressable
-                      onPress={() => restore(b)}
-                      style={{ alignSelf: 'flex-start', borderWidth: 1, borderColor: theme.border, borderRadius: 6, paddingHorizontal: 10, paddingVertical: 6 }}
-                    >
-                      <Text style={{ color: theme.danger, fontSize: 11 }}>回退到这份</Text>
-                    </Pressable>
-                  </View>
-                ))
+                  </Pressable>
+                </View>
               )}
+              {showMoreBackups &&
+                backups.slice(1).map((b) => (
+                  <BackupCard
+                    key={b.file}
+                    backup={b}
+                    theme={theme}
+                    onRestore={restore}
+                    onDelete={deleteBackup}
+                  />
+                ))}
             </View>
           )}
         </View>
@@ -369,5 +387,61 @@ export function SyncScreen(): React.JSX.Element {
       {/* 更新与配对无关，放在最后一张卡：这里是手机端唯一的设置类页面 */}
       <AppUpdateCard />
     </ScrollView>
+  );
+}
+
+function BackupCard({
+  backup,
+  theme,
+  onRestore,
+  onDelete,
+}: {
+  backup: BackupInfo;
+  theme: ReturnType<typeof useTheme>;
+  onRestore: (backup: BackupInfo) => void;
+  onDelete: (backup: BackupInfo) => void;
+}): React.JSX.Element {
+  return (
+    <View
+      style={{
+        borderWidth: 1,
+        borderColor: theme.border,
+        borderRadius: 8,
+        padding: 10,
+        backgroundColor: theme.surface,
+        gap: 6,
+      }}
+    >
+      <Text style={{ color: theme.text, fontSize: 12 }}>
+        {new Date(backup.createdAt).toLocaleString()} · {backupReasonLabel(backup.reason)} ·{' '}
+        {formatSize(backup.sizeBytes)}
+      </Text>
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        <Pressable
+          onPress={() => onRestore(backup)}
+          style={{
+            borderWidth: 1,
+            borderColor: theme.border,
+            borderRadius: 6,
+            paddingHorizontal: 10,
+            paddingVertical: 6,
+          }}
+        >
+          <Text style={{ color: theme.danger, fontSize: 11 }}>回退到这份</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => onDelete(backup)}
+          style={{
+            borderWidth: 1,
+            borderColor: theme.border,
+            borderRadius: 6,
+            paddingHorizontal: 10,
+            paddingVertical: 6,
+          }}
+        >
+          <Text style={{ color: theme.muted, fontSize: 11 }}>删除</Text>
+        </Pressable>
+      </View>
+    </View>
   );
 }

@@ -118,6 +118,14 @@ export function restoreBackup(file: string): void {
   getDb();
 }
 
+/** 删掉某份快照。只动 backups/ 里的文件，不影响当前正在用的库。 */
+export function deleteBackup(file: string): void {
+  if (!parseName(file)) throw new Error(`非法的备份文件名：${file}`);
+  const path = join(backupsDir(), file);
+  if (!existsSync(path)) throw new Error(`备份不存在：${file}`);
+  rmSync(path);
+}
+
 /** 清理旧快照，避免把磁盘吃满。保留策略见 selectStaleBackups */
 export function pruneBackups(): number {
   const dir = backupsDir();

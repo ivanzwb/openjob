@@ -10,6 +10,7 @@ import { applyAutoChanges } from '../sync/apply';
 import {
   createBackup,
   createPresyncBackup,
+  deleteBackup,
   listBackups,
   overwriteDatabaseWith,
   pruneBackups,
@@ -606,3 +607,7 @@ export async function restoreFromBackup(file: string): Promise<void> {
   await openDb();
 }
 
+/** 删掉某份快照，腾出空间。不影响当前正在用的库。 */
+export function deleteBackupFile(file: string): void {
+  deleteBackup(file);
+}

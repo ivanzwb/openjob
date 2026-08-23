@@ -1122,6 +1122,7 @@ export interface IpcInvokeMap {
   /** 手动留一份现场，重装或大动作之前用 */
   'sync:createBackup': { req: void; res: BackupInfo };
   'sync:rollback': { req: { backupFile: string }; res: void };
+  'sync:deleteBackup': { req: { backupFile: string }; res: void };
 
   /** 查询本地语音转写引擎状态（模型是否就绪/加载进度/错误） */
   'stt:status': { req: void; res: SttStatus };
@@ -1288,6 +1289,7 @@ export const IPC_INVOKE_CHANNELS = [
   'sync:listBackups',
   'sync:createBackup',
   'sync:rollback',
+  'sync:deleteBackup',
   'stt:status',
   'stt:transcribe',
 ] as const satisfies readonly IpcInvokeChannel[];
