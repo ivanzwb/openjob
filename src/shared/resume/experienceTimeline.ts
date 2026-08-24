@@ -10,7 +10,7 @@
  * 一套格式约定。
  */
 
-import { parseMarkdownToDocument } from './document';
+import { catalogTitleForKey, parseMarkdownToDocument } from './document';
 import { parseEntriesSection } from './sectionModel';
 
 export interface ResumeExperienceEntry {
@@ -172,4 +172,34 @@ export function resumeExperienceBlock(
     .join('\n');
 
   return `简历项目（简历未填写时间，无法判断新旧）：\n${summary || '（未提供）'}`;
+}
+
+const SELF_INTRO_FACTS_HEADER =
+  '【自我介绍唯一事实来源：仅限以下简历原文。公司情报、JD、面经不得当作候选人做过的事写进答案。】';
+
+/**
+ * 自我介绍参考答案的简历事实块：经历时间线 + 个人优势/技能/教育等，
+ * 比通用面试上下文更完整，减少模型为「写满一段介绍」而瞎编。
+ */
+export function resumeFactsBlockForSelfIntro(
+  resumeMd: string,
+  fallbackProjects?: FallbackProject[] | null,
+): string {
+  const timeline = formatResumeExperienceForPrompt(resumeMd, {
+    maxEntries: 6,
+    maxDescriptionChars: 500,
+  });
+  const doc = parseMarkdownToDocument(resumeMd ?? '');
+  const sections: string[] = [];
+  for (const key of ['summary', 'skills', 'education', 'intention'] as const) {
+    const section = doc.sections.find((s) => s.key === key);
+    if (section?.contentMd.trim()) {
+      sections.push(`${catalogTitleForKey(key)}：\n${truncate(section.contentMd, 1000)}`);
+    }
+  }
+
+  const body = [timeline, ...sections].filter(Boolean).join('\n\n');
+  if (body) return `${SELF_INTRO_FACTS_HEADER}\n\n${body}`;
+
+  return `${SELF_INTRO_FACTS_HEADER}\n\n${resumeExperienceBlock(resumeMd, fallbackProjects)}`;
 }

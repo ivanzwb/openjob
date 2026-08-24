@@ -13,6 +13,7 @@ import { getCampaignRow } from '../campaign/repository';
 import { getDb, schema } from '../db';
 import { saveSpeechFromDesign } from '../speech';
 import {
+  answerUserHintForType,
   caseUserHintForType,
   designCaseCacheId,
   effectiveInterviewLanguage,
@@ -23,7 +24,7 @@ import {
   type MockInterviewLanguage,
 } from '@shared/design/prompts';
 import { normalizeDisplayText } from '@shared/lib/markdownDisplay';
-import { resumeExperienceBlock } from '@shared/resume/experienceTimeline';
+import { resumeExperienceBlock, resumeFactsBlockForSelfIntro } from '@shared/resume/experienceTimeline';
 
 type DesignCaseRow = InferSelectModel<typeof schema.designCase>;
 
@@ -46,6 +47,21 @@ function rowToDesignCaseResult(
     userAnswerMd: row.userAnswerMd ?? null,
     recommendedAnswerMd: row.recommendedAnswerMd ?? null,
   };
+}
+
+function getCampaignResume(campaignId: string): {
+  rawText: string;
+  projects: NonNullable<InferSelectModel<typeof schema.resume>['parsed']>['projects'] | undefined;
+} | null {
+  const campaign = getCampaignRow(campaignId);
+  if (!campaign.resumeId) return null;
+  const resume = getDb()
+    .select()
+    .from(schema.resume)
+    .where(eq(schema.resume.id, campaign.resumeId))
+    .get();
+  if (!resume) return null;
+  return { rawText: resume.rawText ?? '', projects: resume.parsed?.projects };
 }
 
 function buildInterviewContext(campaignId: string): string {
@@ -234,16 +250,28 @@ export async function generateRecommendedAnswer(
   const context = buildInterviewContext(campaignId);
   const constraintHint =
     constraints.length > 0 ? `\n考察点：${constraints.join(' · ')}` : '';
+  const resumeFacts =
+    interviewType === 'selfIntro'
+      ? (() => {
+          const resume = getCampaignResume(campaignId);
+          return `\n\n${resumeFactsBlockForSelfIntro(
+            resume?.rawText ?? '',
+            resume?.projects,
+          )}`;
+        })()
+      : '';
 
   const generated = await completeJson<DesignAnswerGenerated>(
     'quiz',
     'design.answer',
-    `${context}
+    `${context}${resumeFacts}
 
 题目类型：${interviewType}
 面试语言：${effectiveLang === 'en' ? '英文' : '中文'}
 题目：${caseTitle}
-题干：${scenarioMd}${constraintHint}`,
+题干：${scenarioMd}${constraintHint}
+
+${answerUserHintForType(interviewType, effectiveLang)}`,
     undefined,
     { type: interviewType, language: effectiveLang },
   );

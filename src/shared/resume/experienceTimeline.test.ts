@@ -10,6 +10,7 @@ import {
   buildResumeExperienceTimeline,
   formatResumeExperienceForPrompt,
   resumeExperienceBlock,
+  resumeFactsBlockForSelfIntro,
 } from './experienceTimeline';
 
 const RESUME = `## 基本信息
@@ -153,5 +154,24 @@ describe('resumeExperienceBlock', () => {
 
   it('两样都没有时不至于拼出空段落', () => {
     expect(resumeExperienceBlock('', [])).toContain('（未提供）');
+  });
+});
+
+describe('resumeFactsBlockForSelfIntro', () => {
+  it('包含唯一事实来源说明、时间线和个人优势', () => {
+    const block = resumeFactsBlockForSelfIntro(RESUME);
+
+    expect(block).toContain('自我介绍唯一事实来源');
+    expect(block).toContain('按时间倒序');
+    expect(block).toContain('现东家网络');
+  });
+
+  it('没有时间线时退回项目摘要', () => {
+    const block = resumeFactsBlockForSelfIntro('一段纯文本简历', [
+      { name: '某项目', summary: '做了些事', drillableTopics: ['缓存'] },
+    ]);
+
+    expect(block).toContain('自我介绍唯一事实来源');
+    expect(block).toContain('某项目：做了些事');
   });
 });

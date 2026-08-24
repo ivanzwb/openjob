@@ -9,6 +9,7 @@ import type {
 } from '@shared/ipc';
 import type { ExamForm } from '@shared/enums';
 import {
+  answerUserHintForType,
   caseUserHintForType,
   designCaseCacheId,
   effectiveInterviewLanguage,
@@ -21,6 +22,7 @@ import {
 import { normalizeDisplayText } from '@shared/lib/markdownDisplay';
 import {
   resumeExperienceBlock,
+  resumeFactsBlockForSelfIntro,
   type FallbackProject,
 } from '@shared/resume/experienceTimeline';
 import { completeJson } from '../llm/json';
@@ -288,16 +290,40 @@ export async function generateRecommendedAnswer(
   const context = buildInterviewContext(db, campaignId);
   const constraintHint =
     constraints.length > 0 ? `\n考察点：${constraints.join(' · ')}` : '';
+  const resumeFacts =
+    interviewType === 'selfIntro'
+      ? (() => {
+          const campaign = getCampaign(db, campaignId);
+          const resume = campaign.resumeId
+            ? db.getFirstSync<{ parsed: string | null; raw_text: string | null }>(
+                `SELECT parsed, raw_text FROM resume WHERE id = ?`,
+                campaign.resumeId,
+              )
+            : null;
+          let fallbackProjects: FallbackProject[] = [];
+          if (resume?.parsed) {
+            try {
+              const parsed = JSON.parse(resume.parsed) as { projects?: FallbackProject[] };
+              fallbackProjects = parsed.projects ?? [];
+            } catch {
+              // 解析坏了就退回空列表
+            }
+          }
+          return `\n\n${resumeFactsBlockForSelfIntro(resume?.raw_text ?? '', fallbackProjects)}`;
+        })()
+      : '';
 
   const generated = await completeJson<DesignAnswerGenerated>(
     'quiz',
     'design.answer',
-    `${context}
+    `${context}${resumeFacts}
 
 题目类型：${interviewType}
 面试语言：${effectiveLang === 'en' ? '英文' : '中文'}
 题目：${caseTitle}
-题干：${scenarioMd}${constraintHint}`,
+题干：${scenarioMd}${constraintHint}
+
+${answerUserHintForType(interviewType, effectiveLang)}`,
     undefined,
     { type: interviewType, language: effectiveLang },
   );

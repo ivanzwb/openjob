@@ -173,7 +173,13 @@ const ANSWER_SINGLE_ANCHOR_RULE = `- 整个答案只锚定一段经历，不要�
 
 const ANSWER_SEQUENTIAL_RULE = `- 会覆盖多段经历，按时间倒序一段一段讲：讲完一段再进入下一段，不要在几段之间来回跳，也不要把这一段的成果安到那一段头上。篇幅向最近一段倾斜，越早的越简略。`;
 
-const ANSWER_NO_FABRICATION_RULE = `- 简历里没有的经历、指标、技术栈一律不要编；简历没写清楚的地方宁可说得笼统一点。`;
+const ANSWER_NO_FABRICATION_RULE = `- 简历里没有的经历、指标、技术栈一律不要编；简历没写清楚的地方宁可说得笼统一点，也不要用「提升性能」「优化架构」等空话把缺口填成具体故事。`;
+
+const SELF_INTRO_RESUME_ONLY_RULE = `- 自我介绍是复述候选人自己的履历，不是写理想候选人。公司情报、JD、面经里的技术栈只用来写「为什么投这个岗位」，不能当成候选人做过的事。`;
+
+const SELF_INTRO_TRACEABLE_FACT_RULE = `- 凡涉及公司名、项目名、职责、技术栈、业务场景、数据指标，必须能在上文「自我介绍唯一事实来源」里找到对应表述；找不到就删掉或改成不含具体细节的笼统说法，绝不自己填数字或技术名词。`;
+
+const SELF_INTRO_STRUCTURE_RULE = `- 建议结构：开场身份（岗位与年限，来自简历）→ 按时间倒序讲 1-2 段最近经历各 1-2 个亮点（只念简历里写过的）→ 与目标岗位的匹配（用简历事实对照 JD）→ 简短收尾。全流程控制在 60-90 秒口语长度，宁可短而真，也不要长而虚。`;
 
 function answerSourcingRules(...rules: string[]): string {
   return `取材规则：\n${rules.join('\n')}`;
@@ -186,8 +192,15 @@ const ANCHORED_SOURCING = answerSourcingRules(
 );
 
 export const SELF_INTRO_ANSWER_SYSTEM = `${ANSWER_BASE}
-侧重：60-90 秒自我介绍结构、岗位匹配、核心项目亮点。
-${answerSourcingRules(ANSWER_RECENCY_RULE, ANSWER_SEQUENTIAL_RULE, ANSWER_NO_FABRICATION_RULE)}`;
+题型：自我介绍参考答案。
+${answerSourcingRules(
+  SELF_INTRO_RESUME_ONLY_RULE,
+  SELF_INTRO_TRACEABLE_FACT_RULE,
+  ANSWER_RECENCY_RULE,
+  ANSWER_SEQUENTIAL_RULE,
+  ANSWER_NO_FABRICATION_RULE,
+  SELF_INTRO_STRUCTURE_RULE,
+)}`;
 
 export const ANSWER_SYSTEM_BY_TYPE: Record<ExamForm, string> = {
   concept: `${ANSWER_BASE}\n侧重：结论先行、原理深度、trade-off 与例子。\n${ANCHORED_SOURCING}`,
@@ -202,4 +215,18 @@ export function answerSystemForType(
 ): string {
   const base = type === 'selfIntro' ? SELF_INTRO_ANSWER_SYSTEM : ANSWER_SYSTEM_BY_TYPE[type];
   return `${base}\n${languageInstruction(language)}`;
+}
+
+/** 生成参考答案时附在用户消息末尾的取材提醒 */
+export function answerUserHintForType(
+  type: MockInterviewKind,
+  language: MockInterviewLanguage = 'zh',
+): string {
+  const languageHint = languageInstruction(language);
+  if (type === 'selfIntro') {
+    return `${languageHint}
+请根据上文「自我介绍唯一事实来源」中的简历原文，写一段可直接开口说的自我介绍参考答案。
+不要补充简历里没有的公司、项目、指标或技术栈；JD 只用于说明为什么应聘，不得捏造匹配经历。`;
+  }
+  return languageHint;
 }
