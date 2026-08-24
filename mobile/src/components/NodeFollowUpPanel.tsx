@@ -54,8 +54,7 @@ function FollowUpMessageBubble({
   };
 
   return (
-    <Pressable
-      onLongPress={isUser ? undefined : saveToSpeech}
+    <View
       style={{
         alignSelf: isUser ? 'flex-end' : 'flex-start',
         maxWidth: '92%',
@@ -79,7 +78,7 @@ function FollowUpMessageBubble({
           <Text style={{ color: theme.accent, fontSize: 11 }}>加入话术库</Text>
         </Pressable>
       )}
-    </Pressable>
+    </View>
   );
 }
 
