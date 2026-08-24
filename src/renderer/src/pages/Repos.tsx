@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Repo } from '@shared/entities';
 import type { GitStatus } from '@shared/ipc';
+import { normalizeDisplayText } from '@shared/lib/markdownDisplay';
 import { MarkdownContent } from '../components/MarkdownContent';
 import { PageShell } from '../components/PageShell';
 import { RepoWorkspace } from '../components/RepoWorkspace';
@@ -22,7 +23,7 @@ function RepoSummaryPanel({ repo }: { repo: Repo }): React.JSX.Element {
   if (repo.summaryMd) {
     return (
       <div className="prose prose-invert max-w-none text-sm">
-        <MarkdownContent text={repo.summaryMd} />
+        <MarkdownContent text={normalizeDisplayText(repo.summaryMd)} />
       </div>
     );
   }
@@ -31,9 +32,9 @@ function RepoSummaryPanel({ repo }: { repo: Repo }): React.JSX.Element {
     return (
       <div className="space-y-2">
         <p className="text-xs text-[var(--color-muted)]">Repo Map（节选）</p>
-        <pre className="max-h-[70vh] overflow-y-auto whitespace-pre-wrap font-mono text-xs text-[var(--color-muted)]">
-          {repo.repoMapMd.slice(0, 8000)}
-        </pre>
+        <div className="max-h-[70vh] overflow-y-auto text-sm">
+          <MarkdownContent text={normalizeDisplayText(repo.repoMapMd.slice(0, 8000))} />
+        </div>
       </div>
     );
   }

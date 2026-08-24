@@ -2,12 +2,16 @@ import { useCallback, useState } from 'react';
 import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
 import type { Repo } from '@shared/entities';
 import { RepoQaPanel } from '../components/RepoQaPanel';
+import { MarkdownPreview } from '../components/MarkdownPreview';
 import { getRawDb } from '../db';
 import { listRepos } from '../data/repoLocal';
 import { getRepoFileContent, listRepoFilePaths } from '../data/repoFiles';
 import { useLocalDataReload } from '../hooks/useLocalDataReload';
-import { markdownToPlainText } from '../lib/markdownBlocks';
 import { useTheme } from '../theme';
+
+function isMarkdownView(path: string): boolean {
+  return /\.mdx?$/i.test(path) || path.includes('项目摘要') || path.toLowerCase().includes('repo map');
+}
 
 type RepoTab = 'summary' | 'files' | 'qa';
 
@@ -64,7 +68,7 @@ export function ReposScreen(): React.JSX.Element {
     setViewingRepoId(repo.id);
     if (repo.summaryMd) {
       setFilePath(`${repo.url} · 项目摘要`);
-      setContent(markdownToPlainText(repo.summaryMd).slice(0, 8000));
+      setContent(repo.summaryMd.slice(0, 8000));
       setSelectedTab('summary');
       return;
     }
@@ -85,10 +89,17 @@ export function ReposScreen(): React.JSX.Element {
             <Text style={{ color: theme.accent, fontSize: 11 }}>← 返回文件列表</Text>
           </Pressable>
           <Text style={{ color: theme.muted, fontSize: 11 }}>{filePath}</Text>
-          <Text style={{ color: theme.text, fontSize: 11, fontFamily: 'monospace', lineHeight: 18 }}>
-            {content.slice(0, 12000)}
-            {content.length > 12000 ? '\n…（已截断）' : ''}
-          </Text>
+          {isMarkdownView(filePath) ? (
+            <MarkdownPreview text={content} />
+          ) : (
+            <Text
+              selectable
+              style={{ color: theme.text, fontSize: 11, fontFamily: 'monospace', lineHeight: 18 }}
+            >
+              {content.slice(0, 12000)}
+              {content.length > 12000 ? '\n…（已截断）' : ''}
+            </Text>
+          )}
         </View>
       );
     }
@@ -126,28 +137,20 @@ export function ReposScreen(): React.JSX.Element {
       return (
         <View style={{ gap: 6 }}>
           <Text style={{ color: theme.muted, fontSize: 11 }}>{filePath}</Text>
-          <Text style={{ color: theme.text, fontSize: 11, fontFamily: 'monospace', lineHeight: 18 }}>
-            {content}
-          </Text>
+          <MarkdownPreview text={content} />
         </View>
       );
     }
 
     if (repo.summaryMd) {
-      return (
-        <Text style={{ color: theme.text, fontSize: 13, lineHeight: 20 }}>
-          {markdownToPlainText(repo.summaryMd)}
-        </Text>
-      );
+      return <MarkdownPreview text={repo.summaryMd} />;
     }
 
     if (repo.repoMapMd) {
       return (
         <View style={{ gap: 6 }}>
           <Text style={{ color: theme.muted, fontSize: 11 }}>Repo Map（节选）</Text>
-          <Text style={{ color: theme.text, fontSize: 11, fontFamily: 'monospace', lineHeight: 18 }}>
-            {repo.repoMapMd.slice(0, 8000)}
-          </Text>
+          <MarkdownPreview text={repo.repoMapMd.slice(0, 8000)} />
         </View>
       );
     }
