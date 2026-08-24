@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Repo } from '@shared/entities';
 import type { AnnotationView } from '@shared/ipc';
+import { normalizeDisplayText } from '@shared/lib/markdownDisplay';
 import { useStream } from '../ipc/useStream';
 import { invoke } from '../ipc';
 import { runTask, useTask, useTaskResult } from '../ipc/taskStore';
@@ -111,7 +112,10 @@ export function RepoWorkspace({
                 )}
               </div>
               {state.text.trim() ? (
-                <MarkdownContent text={state.text} onCodeClick={setCodeLoc} />
+                <MarkdownContent
+                  text={normalizeDisplayText(state.text)}
+                  onCodeClick={setCodeLoc}
+                />
               ) : state.running ? (
                 <p className="text-xs text-[var(--color-muted)]">正在检索代码并生成回答…</p>
               ) : null}

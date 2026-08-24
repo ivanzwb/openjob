@@ -5,7 +5,7 @@ import { getRawDb } from '../db';
 import { countRepoFiles } from '../data/repoFiles';
 import { completeRepoAgentChat } from '../llm/agentChat';
 import { runTask, useTaskResult, useTaskState } from '../context/RemoteTaskContext';
-import { markdownToPlainText } from '../lib/markdownBlocks';
+import { MarkdownPreview } from './MarkdownPreview';
 import { SourceBadge } from './SourceBadge';
 import { useTheme } from '../theme';
 
@@ -48,7 +48,7 @@ export function ReadCodePanel({
     ).catch(() => undefined);
   };
 
-  const displayText = answer.trim() ? markdownToPlainText(answer) : '';
+  const hasAnswer = answer.trim().length > 0;
 
   return (
     <View style={{ gap: 8 }}>
@@ -73,7 +73,7 @@ export function ReadCodePanel({
           >
             <Text style={{ color: '#fff' }}>{busy ? '分析中…' : '开始读源码'}</Text>
           </Pressable>
-          {(busy || displayText) && (
+          {(busy || hasAnswer) && (
             <ScrollView
               style={{
                 maxHeight: 320,
@@ -84,7 +84,7 @@ export function ReadCodePanel({
               }}
               contentContainerStyle={{ padding: 12, gap: 4 }}
             >
-              {busy && !displayText ? (
+              {busy && !hasAnswer ? (
                 <>
                   <SourceBadge kind="model" />
                   <Text style={{ color: theme.muted, fontSize: 12 }}>正在阅读源码并生成导读…</Text>
@@ -92,9 +92,7 @@ export function ReadCodePanel({
               ) : (
                 <>
                   <SourceBadge kind="model" />
-                  <Text selectable style={{ color: theme.text, fontSize: 13, lineHeight: 20 }}>
-                    {displayText}
-                  </Text>
+                  <MarkdownPreview text={answer} />
                 </>
               )}
             </ScrollView>
@@ -104,7 +102,7 @@ export function ReadCodePanel({
               {error}
             </Text>
           )}
-          {displayText && onComplete && (
+          {hasAnswer && onComplete && (
             <Pressable onPress={onComplete} style={{ alignSelf: 'flex-start', padding: 6 }}>
               <Text style={{ color: theme.accent, fontSize: 12 }}>标记完成</Text>
             </Pressable>
