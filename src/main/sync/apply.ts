@@ -20,7 +20,11 @@ function sortChanges(changes: AutoChange[]): AutoChange[] {
   };
 
   return [...changes].sort((a, b) => {
-    const kindOrder = { delete: 0, patch: 1, insert: 2 };
+    // patch 必须排在 insert 之后：planMerge 逐行独立决策，同一批变更可能
+    // 同时出现「insert 新建父行」和「patch 把子行的外键改挂到它」。foreign_keys
+    // = ON 时 SQLite 逐语句立即检查外键，patch 若先于父行落库执行，
+    // 整批事务会以 FOREIGN KEY constraint failed 回滚。
+    const kindOrder = { delete: 0, insert: 1, patch: 2 };
     const ka = kindOrder[a.kind];
     const kb = kindOrder[b.kind];
     if (ka !== kb) return ka - kb;

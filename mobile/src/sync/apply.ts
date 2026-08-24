@@ -14,7 +14,11 @@ function sortChanges(changes: AutoChange[]): AutoChange[] {
     return idx === -1 ? 999 : idx;
   };
   return [...changes].sort((a, b) => {
-    const kindOrder = { delete: 0, patch: 1, insert: 2 };
+    // 与桌面端 src/main/sync/apply.ts 保持一致：patch 必须排在 insert 之后。
+    // planMerge 逐行独立决策，同一批变更可能同时出现「insert 新建父行」和
+    // 「patch 把子行的外键改挂到它」。foreign_keys = ON 时 SQLite 逐语句
+    // 立即检查外键，顺序错了整批事务会以 FOREIGN KEY constraint failed 回滚。
+    const kindOrder = { delete: 0, insert: 1, patch: 2 };
     if (kindOrder[a.kind] !== kindOrder[b.kind]) return kindOrder[a.kind] - kindOrder[b.kind];
     return order(a.table, a.kind) - order(b.table, b.kind);
   });
