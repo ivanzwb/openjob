@@ -13,8 +13,9 @@ import { emit } from '../ipc/bridge';
  * 设计要点：
  * - 模型懒加载：首次 transcribe 时才下载/加载 whisper-base（q8，约 73MB），
  *   平时不占内存，状态经 `stt:status` 事件推给渲染进程。
- * - 国内下载：gh-proxy 代理 HF 请求；Xet 大文件重定向被代理拦截返回 403，
- *   响应体含真实 CDN URL，提取后直连（已实证可跑通）。
+ * - 国内下载：gh-proxy / hf-mirror 多源回退；Xet 大文件重定向被代理拦截返回 403，
+ *   响应体含真实 CDN URL，提取后仍须走同一套回退（否则 CDN 直连常遇 http3 403）。
+ * - env.fetch 须手动跟重定向：默认 fetch 跟到 cdn-lfs*.hf.co 时不再经过本包装器。
  * - 模型缓存到 userData/stt-models，二次启动离线可用。
  * - 转写串行执行（单一 pipeline 实例，避免并发推理冲突）。
  */
@@ -26,6 +27,7 @@ const PROXY_PREFIX = 'https://gh-proxy.com/';
 const HF_MIRROR_PREFIX = 'https://hf-mirror.com/';
 
 const nativeFetch = globalThis.fetch;
+const MAX_REDIRECT_HOPS = 12;
 
 let pipelinePromise: Promise<AutomaticSpeechRecognitionPipeline> | null = null;
 let currentStatus: SttStatus = { state: 'idle' };
@@ -43,6 +45,97 @@ function setStatus(status: SttStatus): void {
 
 export function getSttStatus(): SttStatus {
   return currentStatus;
+}
+
+function isHfRelatedUrl(urlStr: string): boolean {
+  try {
+    const host = new URL(urlStr).hostname.toLowerCase();
+    return host === 'huggingface.co' || host.endsWith('.huggingface.co') || host.endsWith('.hf.co');
+  } catch {
+    return false;
+  }
+}
+
+/** 把 hub resolve 或 CDN 快照 URL 翻成 hf-mirror 直链 */
+function hfMirrorResolveUrl(urlStr: string): string | null {
+  const hub = urlStr.match(/huggingface\.co\/([^/]+\/[^/]+)\/resolve\/([^/]+)\/(.+?)(?:\?|$)/);
+  if (hub) return `${HF_MIRROR_PREFIX}${hub[1]}/resolve/${hub[2]}/${hub[3]}`;
+
+  const cdn = urlStr.match(/hf\.co\/repos\/[^/]+\/[^/]+\/([^/]+\/[^/]+)\/snapshots\/[^/]+\/(.+?)(?:\?|$)/);
+  if (cdn) return `${HF_MIRROR_PREFIX}${cdn[1]}/resolve/main/${cdn[2]}`;
+
+  return null;
+}
+
+function candidatesFor(urlStr: string): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const push = (u: string): void => {
+    if (!seen.has(u)) {
+      seen.add(u);
+      out.push(u);
+    }
+  };
+
+  if (urlStr.startsWith(HF_PREFIX)) {
+    push(`${PROXY_PREFIX}${urlStr}`);
+    push(`${HF_MIRROR_PREFIX}${urlStr.slice(HF_PREFIX.length)}`);
+    push(urlStr);
+  } else if (isHfRelatedUrl(urlStr)) {
+    const mirror = hfMirrorResolveUrl(urlStr);
+    if (mirror) push(mirror);
+    push(urlStr);
+  } else {
+    push(urlStr);
+  }
+  return out;
+}
+
+function extractFollowUpUrl(body: string): string | null {
+  const xetLine = body.split('\n').find((l) => l.includes('Redirect to a disallowed URL'));
+  if (xetLine) {
+    return xetLine.replace('Redirect to a disallowed URL was blocked: ', '').trim();
+  }
+  const match = body.match(/https:\/\/[^\s"'<>]+/);
+  return match?.[0] ?? null;
+}
+
+async function fetchWithFallbacks(urlStr: string, init?: RequestInit, hop = 0): Promise<Response> {
+  if (hop > MAX_REDIRECT_HOPS) {
+    throw new Error('下载本地语音模型失败：重定向次数过多');
+  }
+
+  const manualInit: RequestInit = { ...init, redirect: 'manual' };
+  const failures: string[] = [];
+
+  for (const candidate of candidatesFor(urlStr)) {
+    try {
+      const res = await nativeFetch(candidate, manualInit);
+
+      if (res.status === 403) {
+        const body = await res.text();
+        const followUp = extractFollowUpUrl(body);
+        if (followUp) {
+          return fetchWithFallbacks(followUp, init, hop + 1);
+        }
+        failures.push(`${candidate}: HTTP 403`);
+        continue;
+      }
+
+      if (res.status >= 300 && res.status < 400) {
+        const location = res.headers.get('location');
+        if (!location) return res;
+        const next = new URL(location, candidate).href;
+        return fetchWithFallbacks(next, init, hop + 1);
+      }
+
+      return res;
+    } catch (err) {
+      failures.push(`${candidate}: ${asErrorMessage(err)}`);
+    }
+  }
+
+  throw new Error(`下载本地语音模型失败，请检查网络或代理。${failures.join('；')}`);
 }
 
 /** 一次性配置 transformers.js 运行环境（wasm 路径 / 缓存 / 国内下载代理） */
@@ -74,44 +167,12 @@ function configureEnv(): void {
   // 关闭 wasm 预缓存探测：Node 下 file:// 的探测会报 undici 不支持，纯噪音
   env.useWasmCache = false;
 
-  // 国内下载：优先走 gh-proxy，失败后回退到 hf-mirror 与 HF 直连。
-  // 403（Xet 重定向被拦截）时提取真实 CDN URL 直连。
   env.fetch = async (input: string | URL, init?: RequestInit): Promise<Response> => {
     const urlStr = typeof input === 'string' ? input : input.toString();
-    if (!urlStr.startsWith(HF_PREFIX)) return nativeFetch(input, init);
-
-    const candidates = [
-      PROXY_PREFIX + urlStr,
-      HF_MIRROR_PREFIX + urlStr.slice(HF_PREFIX.length),
-      urlStr,
-    ];
-    const failures: string[] = [];
-
-    for (const candidate of candidates) {
-      try {
-        const res = await nativeFetch(candidate, init);
-        if (res.status === 403) {
-          const body = await res.text();
-          const line = body.split('\n').find((l) => l.includes('Redirect to a disallowed URL'));
-          if (line) {
-            const xetUrl = line.replace('Redirect to a disallowed URL was blocked: ', '').trim();
-            try {
-              return await nativeFetch(xetUrl, init);
-            } catch (err) {
-              failures.push(`${xetUrl}: ${asErrorMessage(err)}`);
-              continue;
-            }
-          }
-          failures.push(`${candidate}: HTTP 403`);
-          continue;
-        }
-        return res;
-      } catch (err) {
-        failures.push(`${candidate}: ${asErrorMessage(err)}`);
-      }
+    if (!isHfRelatedUrl(urlStr) && !urlStr.startsWith(HF_PREFIX)) {
+      return nativeFetch(input, init);
     }
-
-    throw new Error(`下载本地语音模型失败，请检查网络或代理。${failures.join('；')}`);
+    return fetchWithFallbacks(urlStr, init);
   };
 }
 

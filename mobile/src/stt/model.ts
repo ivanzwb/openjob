@@ -35,22 +35,29 @@ export function isModelReady(): boolean {
   return file.exists && file.size > 0;
 }
 
-/**
- * 确保模型可用：已缓存则直接返回，否则走 gh-proxy 镜像下载。
- * 带进度回调（百分比）。
- */
-export async function ensureModel(
+const HF_PREFIX = 'https://huggingface.co/';
+const HF_MIRROR_PREFIX = 'https://hf-mirror.com/';
+
+function downloadCandidates(): string[] {
+  const hfPath = WHISPER_MODEL.url.slice(HF_PREFIX.length);
+  return [
+    `https://gh-proxy.com/${WHISPER_MODEL.url}`,
+    `${HF_MIRROR_PREFIX}${hfPath}`,
+    WHISPER_MODEL.url,
+  ];
+}
+
+function errorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  return String(err);
+}
+
+async function downloadOnce(
+  url: string,
+  target: File,
   onProgress?: (progress: ModelProgress) => void,
 ): Promise<File> {
-  const file = modelFile();
-  if (file.exists && file.size > 0) return file;
-
-  const dir = modelDir();
-  if (!dir.exists) dir.create({ intermediates: true, idempotent: true });
-
-  // gh-proxy 是国内可访问的 GitHub/HF 镜像；桌面端同款策略
-  const proxyUrl = `https://gh-proxy.com/${WHISPER_MODEL.url}`;
-  const task = File.createDownloadTask(proxyUrl, file, {
+  const task = File.createDownloadTask(url, target, {
     onProgress: ({ bytesWritten, totalBytes }) => {
       if (onProgress && totalBytes > 0) {
         onProgress({
@@ -64,7 +71,34 @@ export async function ensureModel(
 
   const downloaded = await task.downloadAsync();
   if (!downloaded || !downloaded.exists || downloaded.size <= 0) {
-    throw new Error('模型下载失败：文件为空');
+    throw new Error('文件为空');
   }
   return downloaded;
+}
+
+/**
+ * 确保模型可用：已缓存则直接返回，否则按 gh-proxy → hf-mirror → HF 直链依次尝试。
+ * 带进度回调（百分比）。
+ */
+export async function ensureModel(
+  onProgress?: (progress: ModelProgress) => void,
+): Promise<File> {
+  const file = modelFile();
+  if (file.exists && file.size > 0) return file;
+
+  const dir = modelDir();
+  if (!dir.exists) dir.create({ intermediates: true, idempotent: true });
+
+  const failures: string[] = [];
+  for (const url of downloadCandidates()) {
+    try {
+      if (file.exists) file.delete();
+      return await downloadOnce(url, file, onProgress);
+    } catch (err) {
+      failures.push(`${url}: ${errorMessage(err)}`);
+      if (file.exists) file.delete();
+    }
+  }
+
+  throw new Error(`下载语音模型失败，请检查网络或代理。${failures.join('；')}`);
 }
