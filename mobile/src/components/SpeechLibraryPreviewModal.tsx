@@ -82,6 +82,11 @@ function buildSpeechLibraryHtml(items: SpeechSnippetView[]): string {
       h2 { margin: 0; font-size: 15px; line-height: 1.4; }
       .meta { margin: 3px 0 8px; color: #6b7280; font-size: 10px; }
       .content { white-space: normal; }
+      .content .md-blank { height: 4px; }
+      .content h1 { margin: 0; font-size: 14px; font-weight: 700; line-height: 22px; }
+      .content h2 { margin: 0; font-size: 12px; font-weight: 700; line-height: 18px; }
+      .content h3 { margin: 0; font-size: 13px; font-weight: 600; line-height: 20px; }
+      .content p { margin: 0; font-size: 13px; line-height: 20px; }
       .content .table-wrap { overflow-x: auto; margin: 8px 0; }
       .content table {
         width: 100%;

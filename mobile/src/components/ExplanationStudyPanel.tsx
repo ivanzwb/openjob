@@ -179,6 +179,34 @@ function buildSelectionHtml(
       min-height: 120px;
       box-sizing: border-box;
     }
+    #content .md-block {
+      margin: 0;
+    }
+    #content h1, #content h2, #content h3, #content p {
+      margin: 0;
+    }
+    #content h1 {
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 22px;
+    }
+    #content h2 {
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 18px;
+    }
+    #content h3 {
+      font-size: 13px;
+      font-weight: 600;
+      line-height: 20px;
+    }
+    #content p {
+      font-size: 13px;
+      line-height: 20px;
+    }
+    #content .md-blank {
+      height: 4px;
+    }
     .highlight-mark {
       border-radius: 3px;
       padding: 0 2px;

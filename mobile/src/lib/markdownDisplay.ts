@@ -458,7 +458,7 @@ export function markdownToAnnotatedSelectionHtml(
     }
 
     if (!line.trim()) {
-      parts.push(wrapMdBlock('<br/>', '', [], lineStart));
+      parts.push(wrapMdBlock('<div class="md-blank"></div>', '', [], lineStart));
       index += 1;
       continue;
     }
@@ -523,7 +523,7 @@ export function markdownToDisplayHtml(text: string): string {
     }
 
     if (!line.trim()) {
-      parts.push('<br/>');
+      parts.push('<div class="md-blank"></div>');
       index += 1;
       continue;
     }
