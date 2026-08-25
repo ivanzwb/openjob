@@ -34,16 +34,13 @@ import {
   useTaskState,
 } from '../context/RemoteTaskContext';
 import { useTheme, type Palette } from '../theme';
+import { ExplanationActionModal, type ActionModalMode } from './ExplanationActionModal';
 import {
   DEFAULT_HIGHLIGHT_COLOR,
-  ExplanationActionModal,
-  type ActionModalMode,
-} from './ExplanationActionModal';
-import {
   findHighlightMark,
   phraseSelectionStart,
 } from '../lib/annotationMarks';
-import { markdownToDisplayHtml, normalizeDisplayText } from '../lib/markdownDisplay';
+import { markdownToAnnotatedSelectionHtml } from '../lib/markdownDisplay';
 import { useLocalDataReload } from '../hooks/useLocalDataReload';
 
 const TIERS: { id: ExplanationTier; label: string }[] = [
@@ -92,87 +89,25 @@ function annotationStart(contentMd: string, mark: Annotation): number | undefine
   return fallback >= 0 ? fallback : undefined;
 }
 
-function buildMarkedContentHtml(contentMd: string, annotations: Annotation[]): string {
-  type Range = {
-    start: number;
-    end: number;
-    highlightColor?: string;
-    markers: Annotation[];
-  };
-
-  const ranges: Range[] = [];
-  for (const mark of annotations) {
-    if (mark.kind !== 'highlight' && mark.kind !== 'note' && mark.kind !== 'elaboration') continue;
-    const selected = mark.selectedText?.trim();
-    const start = annotationStart(contentMd, mark);
-    if (!selected || start === undefined) continue;
-    const end = start + selected.length;
-    const existing = ranges.find((r) => r.start === start && r.end === end);
-    if (existing) {
-      if (mark.kind === 'highlight') {
-        existing.highlightColor = mark.highlightColor ?? DEFAULT_HIGHLIGHT_COLOR;
-      } else {
-        existing.markers.push(mark);
-      }
-      continue;
-    }
-    const overlaps = ranges.some((r) => !(end <= r.start || start >= r.end));
-    if (overlaps) continue;
-    ranges.push({
-      start,
-      end,
-      ...(mark.kind === 'highlight'
-        ? { highlightColor: mark.highlightColor ?? DEFAULT_HIGHLIGHT_COLOR }
-        : {}),
-      markers: mark.kind === 'note' || mark.kind === 'elaboration' ? [mark] : [],
-    });
-  }
-
-  ranges.sort((a, b) => a.start - b.start);
-  let cursor = 0;
-  let html = '';
-  for (const range of ranges) {
-    if (range.start > cursor) html += escapeHtml(contentMd.slice(cursor, range.start));
-    const text = escapeHtml(contentMd.slice(range.start, range.end));
-    const markerIds = range.markers.map((m) => m.id).join(' ');
-    const markerBadge = range.markers.some((m) => m.kind === 'note') && range.markers.some((m) => m.kind === 'elaboration')
-      ? '笔/细'
-      : range.markers.some((m) => m.kind === 'note')
-        ? '笔'
-        : range.markers.some((m) => m.kind === 'elaboration')
-          ? '细'
-          : '';
-    const classes = [
-      range.highlightColor ? 'highlight-mark' : '',
-      range.markers.length ? 'annotation-mark' : '',
-    ].filter(Boolean).join(' ');
-    const style = range.highlightColor ? ` style="background:${escapeHtml(range.highlightColor)}"` : '';
-    const badge = markerBadge ? ` data-badge="${markerBadge}"` : '';
-    const ids = markerIds ? ` data-annotation-id="${escapeHtml(markerIds)}"` : '';
-    const click = markerIds ? ` onclick="openMarkerMenu(event, '${escapeHtml(markerIds)}')"` : '';
-    html += `<span class="${classes}"${style}${ids}${badge}${click}>${text}</span>`;
-    cursor = range.end;
-  }
-  if (cursor < contentMd.length) html += escapeHtml(contentMd.slice(cursor));
-  return html || escapeHtml(contentMd);
+function resolveSelectionStart(contentMd: string, text: string, start: number): number {
+  const trimmed = text.trim();
+  if (!trimmed) return start;
+  if (contentMd.slice(start, start + trimmed.length) === trimmed) return start;
+  return phraseSelectionStart(contentMd, trimmed) ?? start;
 }
 
-/**
- * 划词模式渲染的是原文（靠 pre-wrap 换行）：标注的 selectionStart 是 contentMd 的下标，
- * 一旦渲染成 markdown，WebView 量出来的选区偏移就对不上原文，高亮会错位、编辑词句会定位不到。
- * 所以 markdown 渲染只用在只读的阅读模式，那里不提供划词动作。
- */
 function buildSelectionHtml(
   contentMd: string,
   annotations: Annotation[],
   savedSpeechTexts: Set<string>,
   theme: Palette,
-  options: { elaborationDisabled: boolean; readable: boolean },
+  options: { elaborationDisabled: boolean },
 ): string {
-  // 划词模式必须用原文：归一化会改变字符数，标注存的 selectionStart 会整体错位
-  const body = options.readable
-    ? markdownToDisplayHtml(normalizeDisplayText(contentMd))
-    : buildMarkedContentHtml(contentMd, annotations);
+  const body = markdownToAnnotatedSelectionHtml(
+    contentMd,
+    annotations,
+    DEFAULT_HIGHLIGHT_COLOR,
+  );
   const markerMeta = Object.fromEntries(
     annotations
       .filter((a) => a.kind === 'note' || a.kind === 'elaboration')
@@ -234,7 +169,7 @@ function buildSelectionHtml(
       white-space: pre-wrap;
     }
     #content {
-      white-space: ${options.readable ? 'normal' : 'pre-wrap'};
+      white-space: normal;
       overflow-wrap: anywhere;
       border: 1px solid ${borderColor};
       border-radius: 10px;
@@ -341,11 +276,56 @@ function buildSelectionHtml(
     function post(payload) {
       window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify(payload));
     }
+    function getTextOffsetBefore(container, targetNode, targetOffset) {
+      const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+      let offset = 0;
+      let current;
+      while ((current = walker.nextNode())) {
+        if (current === targetNode) return offset + targetOffset;
+        offset += current.textContent ? current.textContent.length : 0;
+      }
+      return -1;
+    }
+    function getRangeStartOffset(container, range) {
+      const startContainer = range.startContainer;
+      const startOffset = range.startOffset;
+      if (startContainer.nodeType === Node.TEXT_NODE) {
+        return getTextOffsetBefore(container, startContainer, startOffset);
+      }
+      if (startContainer.nodeType === Node.ELEMENT_NODE) {
+        const child = startContainer.childNodes[startOffset];
+        if (child && child.nodeType === Node.TEXT_NODE) {
+          return getTextOffsetBefore(container, child, 0);
+        }
+        if (child) {
+          const walker = document.createTreeWalker(child, NodeFilter.SHOW_TEXT);
+          const first = walker.nextNode();
+          if (first) return getTextOffsetBefore(container, first, 0);
+        }
+      }
+      return -1;
+    }
     function selectionStartInContent(range) {
-      const pre = range.cloneRange();
-      pre.selectNodeContents(content);
-      pre.setEnd(range.startContainer, range.startOffset);
-      return pre.toString().length;
+      const startNode =
+        range.startContainer.nodeType === Node.ELEMENT_NODE
+          ? range.startContainer
+          : range.startContainer.parentElement;
+      const block = startNode && startNode.closest ? startNode.closest('.md-block') : null;
+      if (!block || !content.contains(block)) {
+        const pre = range.cloneRange();
+        pre.selectNodeContents(content);
+        pre.setEnd(range.startContainer, range.startOffset);
+        return pre.toString().length;
+      }
+      const mdStart = parseInt(block.getAttribute('data-md-start') || '0', 10);
+      const mapRaw = block.getAttribute('data-visible-map');
+      const map = mapRaw ? JSON.parse(mapRaw) : [];
+      const offsetInBlock = getRangeStartOffset(block, range);
+      if (offsetInBlock < 0) return mdStart;
+      if (map.length > 0 && offsetInBlock < map.length && map[offsetInBlock] !== undefined) {
+        return map[offsetInBlock];
+      }
+      return mdStart + offsetInBlock;
     }
     function hideToolbar() {
       toolbar.style.display = 'none';
@@ -392,11 +372,6 @@ function buildSelectionHtml(
       post({ type: 'height', height: Math.ceil(document.body.scrollHeight) });
     }
     function updateSelection() {
-      // 阅读模式渲染过 markdown，选区偏移映射不回原文，所以只允许原生复制，不出划词工具条
-      if (actionLocks.readable === true) {
-        updateHeight();
-        return;
-      }
       const sel = window.getSelection();
       if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
         hideToolbar();
@@ -499,6 +474,8 @@ export function ExplanationStudyPanel({
 }): React.JSX.Element {
   const theme = useTheme();
   const webViewRef = useRef<WebView>(null);
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savingMdRef = useRef<string | null>(null);
   const btnGhost = makeBtnGhost(theme);
   const { notifyDataChanged } = useApp();
   const [tier, setTier] = useState<ExplanationTier>(initialTier);
@@ -514,8 +491,6 @@ export function ExplanationStudyPanel({
   const [viewMarker, setViewMarker] = useState<Annotation | null>(null);
   const [webHeight, setWebHeight] = useState(180);
   const [savedSpeechTexts, setSavedSpeechTexts] = useState<Set<string>>(() => new Set());
-  // 阅读模式把表格等 markdown 渲染出来，代价是不能划词，所以默认还是划词模式
-  const [readable, setReadable] = useState(false);
 
   // 按「考点 + 档位」记讲解任务，按考点记标注类操作：
   // 切页、换档位、关掉弹窗再回来，都能看到还在跑，也不会重复发起同一件事
@@ -585,10 +560,9 @@ export function ExplanationStudyPanel({
       content
         ? buildSelectionHtml(content.contentMd, annotations, savedSpeechTexts, theme, {
             elaborationDisabled: elaborationBlocked,
-            readable,
           })
         : '',
-    [annotations, content, elaborationBlocked, readable, savedSpeechTexts, theme],
+    [annotations, content, elaborationBlocked, savedSpeechTexts, theme],
   );
 
   const loadAnnotations = useCallback((explanationId: string) => {
@@ -613,6 +587,70 @@ export function ExplanationStudyPanel({
     webViewRef.current?.injectJavaScript('window.__clearSelection && window.__clearSelection(); true;');
   }, []);
 
+  const persistDraft = useCallback(
+    (md: string, explanationId: string) => {
+      const trimmed = md.trim();
+      if (!trimmed) return;
+      savingMdRef.current = md;
+      void runTask(fullEditKey, '保存讲解', async () => {
+        const result = await updateExplanation(getRawDb(), explanationId, trimmed);
+        notifyDataChanged();
+        return result;
+      }).catch(() => undefined);
+    },
+    [fullEditKey, notifyDataChanged],
+  );
+
+  const flushSaveIfNeeded = useCallback(() => {
+    if (!content || !editing) return;
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+    }
+    if (draftMd === content.contentMd) return;
+    const trimmed = draftMd.trim();
+    if (!trimmed) return;
+    persistDraft(draftMd, content.id);
+  }, [content, editing, draftMd, persistDraft]);
+
+  const scheduleSave = useCallback(() => {
+    if (!content || !editing) return;
+    if (draftMd === content.contentMd) return;
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(() => {
+      saveTimeoutRef.current = null;
+      flushSaveIfNeeded();
+    }, 600);
+  }, [content, editing, draftMd, flushSaveIfNeeded]);
+
+  const flushSaveRef = useRef(flushSaveIfNeeded);
+  flushSaveRef.current = flushSaveIfNeeded;
+
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    scheduleSave();
+  }, [draftMd, scheduleSave]);
+
+  const toggleEditing = useCallback(() => {
+    if (!content) return;
+    if (editing) {
+      flushSaveIfNeeded();
+      const trimmed = draftMd.trim();
+      if (trimmed) {
+        setContent((prev) => (prev ? { ...prev, contentMd: trimmed } : prev));
+      }
+      setEditing(false);
+      return;
+    }
+    setDraftMd(content.contentMd);
+    setEditing(true);
+  }, [content, editing, draftMd, flushSaveIfNeeded]);
+
   const adopt = useCallback(
     (explanation: Explanation) => {
       setContent(explanation);
@@ -629,6 +667,7 @@ export function ExplanationStudyPanel({
   // 换考点或档位时要一次做三件事：清掉选区与编辑态、用库里的缓存补内容、缓存没有才发起生成。
   // 前两件是同步 setState，但它们和第三件的发起动作绑在同一次切换上，拆开反而容易漏
   useEffect(() => {
+    flushSaveRef.current();
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setPhrase('');
     setSelectionStart(undefined);
@@ -706,7 +745,9 @@ export function ExplanationStudyPanel({
   const setSelectionFromWeb = (text: string, start: number): string => {
     const selected = text.trim();
     setPhrase(selected);
-    setSelectionStart(start);
+    setSelectionStart(
+      content ? resolveSelectionStart(content.contentMd, text, start) : start,
+    );
     return selected;
   };
 
@@ -755,17 +796,17 @@ export function ExplanationStudyPanel({
     openSelectionModal(message.action, message.text, message.start);
   };
 
-  const saveFullEdit = (): void => {
-    if (!content) return;
-    const target = { id: content.id, contentMd: draftMd };
-    void runTask(fullEditKey, '保存讲解', () =>
-      updateExplanation(getRawDb(), target.id, target.contentMd),
-    ).catch(() => undefined);
+  const openRegenerate = (): void => {
+    flushSaveIfNeeded();
+    openModal('regenerate');
   };
 
   useTaskResult<Explanation>(fullEditKey, (result) => {
-    adopt(result);
-    setEditing(false);
+    const saved = savingMdRef.current;
+    savingMdRef.current = null;
+    setContent(result);
+    setDraftMd((draft) => (saved !== null && draft === saved ? result.contentMd : draft));
+    loadAnnotations(result.id);
   });
 
   // 这次的要求只拼进本次提示词，不落库：先取出来再收面板，避免清空 state 后拿到空串
@@ -1013,84 +1054,44 @@ export function ExplanationStudyPanel({
             <Text style={{ color: theme.accent, fontSize: 11 }}>{markCount} 条标记</Text>
           </Pressable>
         )}
-        {!editing && (
-          <>
-            <Pressable onPress={() => setReadable((v) => !v)} style={btnGhost}>
-              <Text style={{ color: readable ? theme.accent : theme.muted, fontSize: 12 }}>
-                {readable ? '阅读模式' : '划词模式'}
-              </Text>
-            </Pressable>
-            <Pressable onPress={() => setEditing(true)} style={btnGhost}>
-              <Text style={{ color: theme.accent, fontSize: 12 }}>编辑讲解</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => openModal('regenerate')}
-              disabled={regenerating || generationBlocked}
-              style={btnGhost}
-            >
-              <Text style={{ color: theme.muted, fontSize: 12, opacity: regenerating || generationBlocked ? 0.5 : 1 }}>
-                {regenerating ? '重新生成中…' : generationBlocked ? '生成忙碌' : '重新生成'}
-              </Text>
-            </Pressable>
-          </>
+        <Pressable onPress={toggleEditing} style={btnGhost}>
+          <Text style={{ color: theme.accent, fontSize: 12 }}>
+            {editing ? '阅读' : '编辑讲解'}
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={openRegenerate}
+          disabled={regenerating || generationBlocked}
+          style={btnGhost}
+        >
+          <Text style={{ color: theme.muted, fontSize: 12, opacity: regenerating || generationBlocked ? 0.5 : 1 }}>
+            {regenerating ? '重新生成中…' : generationBlocked ? '生成忙碌' : '重新生成'}
+          </Text>
+        </Pressable>
+        {editing && savingFullEdit && (
+          <Text style={{ color: theme.muted, fontSize: 11 }}>保存中…</Text>
         )}
       </View>
 
       {editing ? (
-        <>
-          <TextInput
-            multiline
-            value={draftMd}
-            onChangeText={setDraftMd}
-            style={{
-              minHeight: 200,
-              color: theme.text,
-              borderWidth: 1,
-              borderColor: theme.border,
-              borderRadius: 8,
-              padding: 10,
-              textAlignVertical: 'top',
-              fontSize: 13,
-              lineHeight: 20,
-            }}
-          />
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            <Pressable
-              onPress={saveFullEdit}
-              disabled={savingFullEdit}
-              style={{
-                backgroundColor: theme.accent,
-                paddingHorizontal: 12,
-                paddingVertical: 8,
-                borderRadius: 8,
-                opacity: savingFullEdit ? 0.5 : 1,
-              }}
-            >
-              <Text style={{ color: '#fff', fontSize: 12 }}>{savingFullEdit ? '保存中…' : '保存修改'}</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => {
-                setDraftMd(content.contentMd);
-                setEditing(false);
-              }}
-              style={{ paddingHorizontal: 12, paddingVertical: 8 }}
-            >
-              <Text style={{ color: theme.muted, fontSize: 12 }}>取消</Text>
-            </Pressable>
-          </View>
-        </>
+        <TextInput
+          multiline
+          value={draftMd}
+          onChangeText={setDraftMd}
+          style={{
+            minHeight: 200,
+            color: theme.text,
+            borderWidth: 1,
+            borderColor: theme.border,
+            borderRadius: 8,
+            padding: 10,
+            textAlignVertical: 'top',
+            fontSize: 13,
+            lineHeight: 20,
+          }}
+        />
       ) : (
         <>
-          {!readable && (
-            <Text style={{ color: theme.muted, fontSize: 11 }}>
-              划词模式显示原文以便标注；若表格/列表显示为 Markdown 符号，请切到「阅读模式」查看排版。
-            </Text>
-          )}
-          {readable && (
-            <Text style={{ color: theme.muted, fontSize: 11 }}>
-              阅读模式会把表格、列表排版出来，但不能划词标注；要高亮、记笔记或细化请切回划词模式。
-            </Text>
-          )}
           <WebView
             ref={webViewRef}
             originWhitelist={['*']}
