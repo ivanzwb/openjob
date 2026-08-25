@@ -1,23 +1,12 @@
 import { Paths } from 'expo-file-system';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import type { AutoChange } from '@shared/sync';
+import { partitionRepoFileChanges, REPO_FILE_TABLE } from './repoFilePartition';
 
-export const REPO_FILE_TABLE = 'repo_file';
+export { partitionRepoFileChanges, REPO_FILE_TABLE };
+
 /** 为系统与应用预留的可用空间，避免同步后磁盘写满 */
 export const DISK_RESERVE_BYTES = 50 * 1024 * 1024;
-
-export function partitionRepoFileChanges(changes: AutoChange[]): {
-  other: AutoChange[];
-  repoFile: AutoChange[];
-} {
-  const other: AutoChange[] = [];
-  const repoFile: AutoChange[] = [];
-  for (const change of changes) {
-    if (change.table === REPO_FILE_TABLE) repoFile.push(change);
-    else other.push(change);
-  }
-  return { other, repoFile };
-}
 
 function bytesFromContent(content: string): number {
   try {

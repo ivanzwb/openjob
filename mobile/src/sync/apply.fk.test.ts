@@ -11,6 +11,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { MIGRATIONS } from '../db/migrations/bundle';
 import { applyAutoChanges } from './apply';
+import { partitionRepoFileChanges } from './repoFilePartition';
 import { installSyncTriggers } from './triggers';
 
 const LOCAL_DEVICE = 'device-local';
@@ -187,5 +188,31 @@ describe('手机端应用变更的外键安全', () => {
       `SELECT constraints FROM design_case WHERE id = 'dc1'`,
     );
     expect(JSON.parse(row!.constraints)).toEqual(['60-90 秒', '岗位匹配']);
+  });
+
+  it('repo_file 删除须跟 repo 同批排序，partition 不能先把 repo 删了', () => {
+    raw.runSync(
+      `INSERT INTO repo (id, url, local_path, languages, status)
+       VALUES ('r1', 'https://github.com/acme/app', '/tmp/app', '[]', 'indexed')`,
+    );
+    raw.runSync(
+      `INSERT INTO repo_file (id, repo_id, file_path, content, line_count, byte_size, updated_at)
+       VALUES ('rf1', 'r1', 'main.go', 'package main', 1, 12, 1)`,
+    );
+
+    const changes = [
+      { table: 'repo', rowId: 'r1', kind: 'delete' as const, values: {}, wallMs: 3000 },
+      { table: 'repo_file', rowId: 'rf1', kind: 'delete' as const, values: {}, wallMs: 3000 },
+    ];
+    const { other, repoFile } = partitionRepoFileChanges(changes);
+    expect(repoFile.length).toBe(0);
+    expect(other.length).toBe(2);
+
+    expect(() => applyAutoChanges(raw, PEER_DEVICE, other)).not.toThrow();
+
+    const files = raw.getFirstSync<{ n: number }>(`SELECT count(*) AS n FROM repo_file`);
+    const repos = raw.getFirstSync<{ n: number }>(`SELECT count(*) AS n FROM repo`);
+    expect(files?.n).toBe(0);
+    expect(repos?.n).toBe(0);
   });
 });
