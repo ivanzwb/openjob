@@ -19,10 +19,70 @@ type Updater = typeof ElectronAutoUpdater;
 /** 官方发布渠道，和 electron-builder.yml 的 publish 配置指向同一处 */
 const GITHUB_FEED = { provider: 'github', owner: 'ivanzwb', repo: 'openjob' } as const;
 
+/** GitHub 把最新一版的资产挂在这个相对路径下，latest.yml 也在里面 */
+const GITHUB_ASSET_PATH = 'releases/latest/download';
+
+/**
+ * 把用户填的更新源规整成 electron-builder 的产物目录。
+ *
+ * generic provider 只会把 latest.yml 接在这个 URL 后面（newBaseUrl 先补尾斜杠，
+ * 再 new URL('latest.yml', base)），所以填一个 GitHub 仓库地址就会去请求仓库根下的
+ * latest.yml——那不是真实资产路径，GitHub 直接 404，套了 gh-proxy 这类镜像则是挂到
+ * 超时后回 522。资产实际在 releases/latest/download 下，这里替用户补上，
+ * 镜像前缀（https://gh-proxy.org/https://github.com/...）原样保留。
+ *
+ * 只补「光秃秃的 owner/repo」这一种：已经写明具体路径的按用户填的走，不去猜。
+ */
+export function normalizeFeedUrl(raw: string): string {
+  const url = raw.trim();
+  const marker = url.toLowerCase().lastIndexOf('github.com/');
+  if (marker < 0) return url;
+
+  const prefix = url.slice(0, marker + 'github.com/'.length);
+  const path = url
+    .slice(prefix.length)
+    .replace(/\/+$/, '')
+    .replace(/\.git$/, '');
+  const segments = path.split('/');
+  if (segments.length !== 2 || segments.some((s) => s === '')) return url;
+
+  return `${prefix}${path}/${GITHUB_ASSET_PATH}`;
+}
+
 function resolveFeed(): Parameters<Updater['setFeedURL']>[0] {
-  const feedUrl = getConfig().update.feedUrl.trim();
+  const feedUrl = normalizeFeedUrl(getConfig().update.feedUrl);
   if (!feedUrl) return GITHUB_FEED;
   return { provider: 'generic', url: feedUrl };
+}
+
+/**
+ * 更新源出错时别只把 HTTP 状态码丢给用户。
+ *
+ * 代理回的 5xx 和「已是最新」是两回事，用户看到光秃秃一个 522 只会以为版本没问题；
+ * 状态码优先取 HttpError.statusCode，下载阶段抛的是普通 Error，只能从文案里捞。
+ */
+function updateErrorMessage(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  const fromError = (err as { statusCode?: unknown } | null)?.statusCode;
+  const status =
+    typeof fromError === 'number'
+      ? fromError
+      : Number(/(?:^|\bstatus )(\d{3})\b/.exec(raw)?.[1] ?? NaN);
+  const hint = updateErrorHint(status);
+  return hint ? `${hint}\n${raw}` : raw;
+}
+
+function updateErrorHint(status: number): string | null {
+  if (status === 404) {
+    return '更新源里没有 latest.yml：填 GitHub 仓库地址会自动指向 releases/latest/download，自建目录请确认 latest.yml 已上传。';
+  }
+  if (status >= 520 && status <= 527) {
+    return `更新源前面的代理连不上 GitHub（${status}）：换个镜像或直接填 https://github.com/ivanzwb/openjob 再试。`;
+  }
+  if (status >= 500 && status <= 599) {
+    return `更新源暂时不可用（${status}），稍后再试——这不代表当前已经是最新版本。`;
+  }
+  return null;
 }
 
 let status: UpdateStatus = { state: 'idle' };
@@ -56,7 +116,7 @@ function getUpdater(): Promise<Updater | null> {
       autoUpdater.on('update-available', (info) => {
         setStatus({ state: 'available', version: info.version });
         void autoUpdater.downloadUpdate().catch((err: unknown) => {
-          setStatus({ state: 'error', message: err instanceof Error ? err.message : String(err) });
+          setStatus({ state: 'error', message: updateErrorMessage(err) });
         });
       });
       autoUpdater.on('update-not-available', () =>
@@ -68,9 +128,7 @@ function getUpdater(): Promise<Updater | null> {
       autoUpdater.on('update-downloaded', (info) =>
         setStatus({ state: 'downloaded', version: info.version }),
       );
-      autoUpdater.on('error', (err) =>
-        setStatus({ state: 'error', message: err instanceof Error ? err.message : String(err) }),
-      );
+      autoUpdater.on('error', (err) => setStatus({ state: 'error', message: updateErrorMessage(err) }));
 
       return autoUpdater;
     })();
@@ -100,7 +158,7 @@ export async function checkForUpdates(): Promise<UpdateStatus> {
     updater.setFeedURL(resolveFeed());
     await updater.checkForUpdates();
   } catch (err) {
-    setStatus({ state: 'error', message: err instanceof Error ? err.message : String(err) });
+    setStatus({ state: 'error', message: updateErrorMessage(err) });
   }
   return status;
 }

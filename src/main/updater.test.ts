@@ -136,6 +136,96 @@ describe('getUpdater 的 ESM-CJS 互操作', () => {
       url: 'https://example.com/updates/',
     });
   });
+
+  it('填 GitHub 仓库地址会规整到 releases/latest/download 再交给 generic 源', async () => {
+    state.feedUrl = 'https://gh-proxy.org/https://github.com/ivanzwb/openjob';
+    await updater.checkForUpdates();
+
+    expect(mockUpdater.setFeedURL).toHaveBeenCalledWith({
+      provider: 'generic',
+      url: 'https://gh-proxy.org/https://github.com/ivanzwb/openjob/releases/latest/download',
+    });
+  });
+});
+
+/**
+ * 线上 bug：更新源填 https://gh-proxy.org/https://github.com/ivanzwb/openjob，
+ * generic provider 去请求 .../openjob/latest.yml（仓库根下的路径，GitHub 本身就是
+ * 404），镜像挂到超时后回 522。资产只在 releases/latest/download 下。
+ */
+describe('normalizeFeedUrl', () => {
+  it('镜像前缀原样保留，只在仓库地址后补资产路径', () => {
+    expect(updater.normalizeFeedUrl('https://gh-proxy.org/https://github.com/ivanzwb/openjob')).toBe(
+      'https://gh-proxy.org/https://github.com/ivanzwb/openjob/releases/latest/download',
+    );
+  });
+
+  it('裸 GitHub 仓库地址同样补上资产路径', () => {
+    expect(updater.normalizeFeedUrl('https://github.com/ivanzwb/openjob')).toBe(
+      'https://github.com/ivanzwb/openjob/releases/latest/download',
+    );
+  });
+
+  it('尾斜杠和 .git 后缀不影响结果', () => {
+    expect(updater.normalizeFeedUrl('  https://github.com/ivanzwb/openjob/  ')).toBe(
+      'https://github.com/ivanzwb/openjob/releases/latest/download',
+    );
+    expect(updater.normalizeFeedUrl('https://github.com/ivanzwb/openjob.git')).toBe(
+      'https://github.com/ivanzwb/openjob/releases/latest/download',
+    );
+  });
+
+  it('已经指向 releases 路径的原样放过，不重复拼接', () => {
+    const url = 'https://github.com/ivanzwb/openjob/releases/latest/download';
+    expect(updater.normalizeFeedUrl(url)).toBe(url);
+    expect(updater.normalizeFeedUrl(`${url}/`)).toBe(`${url}/`);
+    const tagged = 'https://github.com/ivanzwb/openjob/releases/download/v0.6.13';
+    expect(updater.normalizeFeedUrl(tagged)).toBe(tagged);
+  });
+
+  it('非 GitHub 的自建目录原样透传', () => {
+    expect(updater.normalizeFeedUrl('https://example.com/openjob/')).toBe(
+      'https://example.com/openjob/',
+    );
+    expect(updater.normalizeFeedUrl('')).toBe('');
+  });
+});
+
+describe('错误提示', () => {
+  it('代理回的 522 说清是上游连不上，而不是只丢一个状态码', async () => {
+    await updater.checkForUpdates();
+    const handler = mockUpdater.on.mock.calls.find(([e]) => e === 'error')?.[1] as
+      | ((err: Error) => void)
+      | undefined;
+    handler?.(Object.assign(new Error('522 "method: GET url: ..."'), { statusCode: 522 }));
+
+    const status = updater.getUpdateStatus();
+    expect(status.state).toBe('error');
+    expect(status.message).toContain('522');
+    expect(status.message).toContain('连不上');
+    // 原始报文仍在，排查时不丢信息
+    expect(status.message).toContain('method: GET');
+  });
+
+  it('404 提示更新源里没有 latest.yml', async () => {
+    await updater.checkForUpdates();
+    const handler = mockUpdater.on.mock.calls.find(([e]) => e === 'error')?.[1] as
+      | ((err: Error) => void)
+      | undefined;
+    handler?.(Object.assign(new Error('404 Not Found'), { statusCode: 404 }));
+
+    expect(updater.getUpdateStatus().message).toContain('latest.yml');
+  });
+
+  it('认不出状态码时不编造提示', async () => {
+    await updater.checkForUpdates();
+    const handler = mockUpdater.on.mock.calls.find(([e]) => e === 'error')?.[1] as
+      | ((err: Error) => void)
+      | undefined;
+    handler?.(new Error('net::ERR_INTERNET_DISCONNECTED'));
+
+    expect(updater.getUpdateStatus().message).toBe('net::ERR_INTERNET_DISCONNECTED');
+  });
 });
 
 describe('事件驱动状态流转', () => {

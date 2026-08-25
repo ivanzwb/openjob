@@ -48,6 +48,7 @@ export function UpdatePanel({
         <p className="mt-1 text-xs text-[var(--color-muted)]">
           默认检查官方 GitHub Release，发现新版会自动下载，装不装由你点。自己构建自己分发的，
           填上你托管的目录（里面要有 electron-builder 产出的 latest.yml 和安装包）即可改到那边。
+          填 GitHub 仓库地址（可带 gh-proxy 之类的镜像前缀）也行，会自动指向该仓库最新一版的资产目录。
           不想让它自己联网就取消下面的启动检查，此后只有点「立即检查」才会发请求。
         </p>
       </div>
@@ -112,7 +113,7 @@ export function UpdatePanel({
         </div>
 
         {status.message && (
-          <p className="text-[11px] text-[var(--color-muted)]">{status.message}</p>
+          <p className="whitespace-pre-line text-[11px] text-[var(--color-muted)]">{status.message}</p>
         )}
       </div>
     </section>
