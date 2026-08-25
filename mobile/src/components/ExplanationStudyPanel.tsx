@@ -652,7 +652,11 @@ export function ExplanationStudyPanel({
   }, [content, editing, draftMd, flushSaveIfNeeded]);
 
   const flushSaveRef = useRef(flushSaveIfNeeded);
-  flushSaveRef.current = flushSaveIfNeeded;
+  useEffect(() => {
+    // 渲染期不能写 ref（react-hooks/refs）。effect 按声明顺序执行，
+    // 这条先于下方切换考点的 effect 运行，读到的一定是本轮最新回调。
+    flushSaveRef.current = flushSaveIfNeeded;
+  });
 
   useEffect(() => {
     return () => {
