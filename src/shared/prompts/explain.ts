@@ -7,6 +7,7 @@
 
 import type { ExplanationTier } from '@shared/enums';
 import { userRequestBlock } from '../explain/prompt';
+import { CODE_FENCE_RULE_IN_JSON } from './format';
 
 export const TIER_GUIDE: Record<ExplanationTier, string> = {
   oneliner: '一句话本质，30 秒内能说完，口语化',
@@ -43,6 +44,8 @@ export function buildExplainGenerateSystem(
 档位要求：${TIER_GUIDE[tier]}
 ${EXPLAIN_TEMPLATE}
 ${RESUME_ALIGN_RULES}
+
+${CODE_FENCE_RULE_IN_JSON}
 ${userRequestBlock(instruction)}
 输出 JSON：{ "markdown": "..." }`;
 }
@@ -59,6 +62,8 @@ export const EXPLAIN_ELABORATE_SYSTEM = `你是面试口语教练。候选人正
 - 只解释被选中的词句/概念/名称，结合当前考点与讲解上下文
 - 口语化、1 分钟内能说完；可举小例子
 - 若与简历相关，举例尽量贴合候选人简历
+
+${CODE_FENCE_RULE_IN_JSON}
 输出 JSON：{ "markdown": "..." }`;
 
 export const EXPLAIN_REWRITE_SYSTEM = `你是面试口语教练。候选人划选了讲解中的一段文字，需要你重写这一段。
@@ -67,4 +72,6 @@ export const EXPLAIN_REWRITE_SYSTEM = `你是面试口语教练。候选人划�
 - 保持与前后文语气一致、口语化、适合面试口述
 - 举例与简历对齐；无相关经历时用通用表述并提示可替换
 - 长度与原文相当，不要无故扩写太多
+
+${CODE_FENCE_RULE_IN_JSON}
 输出 JSON：{ "markdown": "..." }`;

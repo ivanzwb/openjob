@@ -1,6 +1,9 @@
+import { findUnfencedCodeRunEnd } from './unfencedCode';
+
 export type MarkdownTextSegment =
   | { type: 'paragraph'; lines: string[] }
-  | { type: 'table'; rows: string[][] };
+  | { type: 'table'; rows: string[][] }
+  | { type: 'code'; lines: string[] };
 
 export function isMarkdownTableRow(line: string): boolean {
   const trimmed = line.trim();
@@ -29,7 +32,7 @@ export function normalizeTableRows(rows: string[][]): string[][] {
   });
 }
 
-/** 把纯文本块拆成段落与表格，支持同一块里混排 */
+/** 把纯文本块拆成段落、表格与漏加围栏的代码，支持同一块里混排 */
 export function parseMarkdownTextSegments(text: string): MarkdownTextSegment[] {
   const lines = text.split('\n');
   const segments: MarkdownTextSegment[] = [];
@@ -56,8 +59,20 @@ export function parseMarkdownTextSegments(text: string): MarkdownTextSegment[] {
       }
     }
 
+    const codeEnd = findUnfencedCodeRunEnd(lines, index);
+    if (codeEnd !== null) {
+      segments.push({ type: 'code', lines: lines.slice(index, codeEnd) });
+      index = codeEnd;
+      continue;
+    }
+
     const paragraph: string[] = [];
-    while (index < lines.length && !isMarkdownTableRow(lines[index]!)) {
+    // 首行已经确认不是代码段开头，再判一次只会白跑；后续行则要随时让位给代码段
+    while (
+      index < lines.length &&
+      !isMarkdownTableRow(lines[index]!) &&
+      (paragraph.length === 0 || findUnfencedCodeRunEnd(lines, index) === null)
+    ) {
       paragraph.push(lines[index]!);
       index += 1;
     }

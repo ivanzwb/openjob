@@ -138,6 +138,29 @@ function MarkdownParagraph({ lines, keyPrefix }: { lines: string[]; keyPrefix: s
   );
 }
 
+function CodeBlockView({ label, code }: { label: string; code: string }): React.JSX.Element {
+  const theme = useTheme();
+  return (
+    <View
+      style={{
+        borderRadius: 8,
+        backgroundColor: theme.bg,
+        borderWidth: 1,
+        borderColor: theme.border,
+        padding: 10,
+      }}
+    >
+      <Text style={{ color: theme.muted, fontSize: 10, marginBottom: 4 }}>{label}</Text>
+      <Text
+        selectable
+        style={{ color: theme.text, fontSize: 12, lineHeight: 18, fontFamily: 'monospace' }}
+      >
+        {code}
+      </Text>
+    </View>
+  );
+}
+
 export function MarkdownPreview({ text }: { text: string }): React.JSX.Element {
   const theme = useTheme();
   const normalized = useMemo(() => normalizeDisplayText(text), [text]);
@@ -152,26 +175,11 @@ export function MarkdownPreview({ text }: { text: string }): React.JSX.Element {
       {blocks.map((block, blockIdx) => {
         if (block.type === 'code' || block.type === 'mermaid') {
           return (
-            <View
+            <CodeBlockView
               key={`${block.type}-${blockIdx}`}
-              style={{
-                borderRadius: 8,
-                backgroundColor: theme.bg,
-                borderWidth: 1,
-                borderColor: theme.border,
-                padding: 10,
-              }}
-            >
-              <Text style={{ color: theme.muted, fontSize: 10, marginBottom: 4 }}>
-                {block.type === 'mermaid' ? 'mermaid' : block.lang ?? 'code'}
-              </Text>
-              <Text
-                selectable
-                style={{ color: theme.text, fontSize: 12, lineHeight: 18, fontFamily: 'monospace' }}
-              >
-                {block.value.trim()}
-              </Text>
-            </View>
+              label={block.type === 'mermaid' ? 'mermaid' : (block.lang ?? 'code')}
+              code={block.value.trim()}
+            />
           );
         }
 
@@ -181,6 +189,15 @@ export function MarkdownPreview({ text }: { text: string }): React.JSX.Element {
             {segments.map((segment, segIdx) => {
               if (segment.type === 'table') {
                 return <MarkdownTable key={`table-${blockIdx}-${segIdx}`} rows={segment.rows} />;
+              }
+              if (segment.type === 'code') {
+                return (
+                  <CodeBlockView
+                    key={`code-${blockIdx}-${segIdx}`}
+                    label="code"
+                    code={segment.lines.join('\n')}
+                  />
+                );
               }
               return (
                 <MarkdownParagraph

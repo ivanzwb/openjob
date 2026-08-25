@@ -6,6 +6,7 @@ import {
   normalizeTableRows,
   splitMarkdownTableCells,
 } from '@shared/lib/markdownSegments';
+import { findUnfencedCodeRunEnd } from '@shared/lib/unfencedCode';
 
 export { normalizeDisplayText };
 
@@ -307,15 +308,13 @@ function renderTableBlockWithMap(
   return wrapMdBlock(assembled, visible, visibleToMd, tableStart);
 }
 
-function renderCodeFenceWithMap(
-  fenceLines: string[],
-  fenceStart: number,
-  lineStarts: number[],
-  startIndex: number,
+function renderCodeBlockWithMap(
+  bodyLines: string[],
+  bodyLineStarts: number[],
+  blockStart: number,
+  lang: string,
   ranges: SourceRange[],
 ): string {
-  const openLine = fenceLines[0] ?? '';
-  const lang = openLine.trim().slice(3).trim();
   let visible = '';
   const visibleToMd: number[] = [];
   let html = `<pre><code${lang ? ` class="lang-${escapeHtml(lang)}"` : ''}>`;
@@ -344,20 +343,35 @@ function renderCodeFenceWithMap(
     html += escapeHtml(ch);
   };
 
-  for (let li = 1; li < fenceLines.length - 1; li++) {
-    const line = fenceLines[li] ?? '';
-    const lineStart = lineStarts[startIndex + li] ?? fenceStart;
+  for (let li = 0; li < bodyLines.length; li++) {
+    const line = bodyLines[li] ?? '';
+    const lineStart = bodyLineStarts[li] ?? blockStart;
     for (let c = 0; c < line.length; c++) {
       pushCodeChar(line[c]!, lineStart + c);
     }
-    if (li < fenceLines.length - 2) {
+    if (li < bodyLines.length - 1) {
       const nlIndex = lineStart + line.length;
       pushCodeChar('\n', nlIndex);
     }
   }
   closeSpan();
   html += '</code></pre>';
-  return wrapMdBlock(html, visible, visibleToMd, fenceStart);
+  return wrapMdBlock(html, visible, visibleToMd, blockStart);
+}
+
+function renderCodeFenceWithMap(
+  fenceLines: string[],
+  fenceStart: number,
+  lineStarts: number[],
+  startIndex: number,
+  ranges: SourceRange[],
+): string {
+  const openLine = fenceLines[0] ?? '';
+  const lang = openLine.trim().slice(3).trim();
+  // 首尾两行是围栏本身，正文只取中间；末行可能因为模型没闭合而不存在
+  const bodyLines = fenceLines.slice(1, -1);
+  const bodyLineStarts = bodyLines.map((_, li) => lineStarts[startIndex + 1 + li] ?? fenceStart);
+  return renderCodeBlockWithMap(bodyLines, bodyLineStarts, fenceStart, lang, ranges);
 }
 
 function renderLineBlock(
@@ -416,6 +430,21 @@ export function markdownToAnnotatedSelectionHtml(
         index += 1;
       }
       parts.push(renderTableBlockWithMap(tableLines, tableStart, ranges));
+      continue;
+    }
+
+    const codeEnd = findUnfencedCodeRunEnd(lines, index);
+    if (codeEnd !== null) {
+      parts.push(
+        renderCodeBlockWithMap(
+          lines.slice(index, codeEnd),
+          lineStarts.slice(index, codeEnd),
+          lineStart,
+          '',
+          ranges,
+        ),
+      );
+      index = codeEnd;
       continue;
     }
 
@@ -503,6 +532,13 @@ export function markdownToDisplayHtml(text: string): string {
       }
       const tableHtml = renderTableHtml(tableLines);
       if (tableHtml) parts.push(tableHtml);
+      continue;
+    }
+
+    const codeEnd = findUnfencedCodeRunEnd(lines, index);
+    if (codeEnd !== null) {
+      parts.push(`<pre><code>${escapeHtml(lines.slice(index, codeEnd).join('\n'))}</code></pre>`);
+      index = codeEnd;
       continue;
     }
 

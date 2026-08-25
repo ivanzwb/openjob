@@ -2,10 +2,14 @@
  * 考我 / 评分 prompt。桌面与手机两端文本完全一致，收拢为唯一事实源。
  */
 
+import { CODE_FENCE_RULE_IN_JSON } from './format';
+
 export const QUIZ_QUESTION_SYSTEM = `你是面试官。根据考点出一道口头面试题，模拟真实追问压力。
+${CODE_FENCE_RULE_IN_JSON}
 输出 JSON：{ "question": "..." }`;
 
 export const QUIZ_SCORE_SYSTEM = `你是面试评委。按 1-5 分评分（5=能扛追问），给出反馈和改进后的口语表述。
+${CODE_FENCE_RULE_IN_JSON}
 输出 JSON：{ "score": 1-5, "feedbackMd": "...", "improvedScriptMd": "口语改进稿" }`;
 
 /**
@@ -22,4 +26,5 @@ export const QUIZ_ANSWER_SYSTEM = `你是资深面试官兼面试教练。针对
 - 按「能扛追问」的标准写：把面试官最可能追的那一两层提前答到。
 - 口语化，控制在 60-90 秒能讲完的篇幅。
 - 只写答案正文，不要写评分、点评或「以下是参考答案」这类开场白。
+${CODE_FENCE_RULE_IN_JSON}
 输出 JSON：{ "answerMd": "..." }`;

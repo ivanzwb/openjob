@@ -1,6 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import type { Citation, Repo } from '@shared/entities';
 import { normalizeChatMessages, type ChatMessage } from '@shared/llm/messages';
+import { CODE_FENCE_RULE } from '@shared/prompts/format';
 import { searchWeb } from '../search';
 import { resolveLlmRole } from './resolve';
 import { CODE_REPO_TOOL_DEFS, runCodeRepoTool } from '../data/repoTools';
@@ -89,7 +90,9 @@ function repoSystemPrompt(repo: Repo, syncedFiles: number): string {
     `## 项目摘要\n${repo.summaryMd ?? '（无）'}\n\n` +
     `## Repo Map（节选）\n${(repo.repoMapMd ?? '').slice(0, 8000)}\n\n` +
     '规则：所有代码结论必须带 `path:line` 引用；流程梳理可用 mermaid 图并标注文件行号；' +
-    '设计意图类问题可联网搜索 why。'
+    '设计意图类问题可联网搜索 why。\n\n' +
+    CODE_FENCE_RULE +
+    '\n- 引用仓库源码同样要放进围栏，语言名取该文件的语言。'
   );
 }
 

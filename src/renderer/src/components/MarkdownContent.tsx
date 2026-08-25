@@ -321,6 +321,16 @@ function MarkdownTextPart({
         if (segment.type === 'table') {
           return <MarkdownTable key={`${keyPrefix}-table-${segIdx}`} rows={segment.rows} />;
         }
+        if (segment.type === 'code') {
+          // 模型漏了围栏，语言也就无从得知，交给 shiki 的纯文本分支
+          return (
+            <CodeBlock
+              key={`${keyPrefix}-code-${segIdx}`}
+              lang={null}
+              code={segment.lines.join('\n')}
+            />
+          );
+        }
         const segmentText = segment.lines.join('\n');
         const localStart = value.indexOf(segmentText);
         const blockStart = mdStart + (localStart >= 0 ? localStart : 0);

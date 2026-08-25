@@ -25,4 +25,22 @@ describe('markdownSegments', () => {
     const segments = parseMarkdownTextSegments('- 对比 A | B 两种方案');
     expect(segments).toEqual([{ type: 'paragraph', lines: ['- 对比 A | B 两种方案'] }]);
   });
+
+  it('漏了围栏的代码切成 code 段，前后正文各自成段', () => {
+    const segments = parseMarkdownTextSegments(
+      '看下面这段：\nconst a = 1;\nconst b = a + 1;\n这样就拿到结果了。',
+    );
+    expect(segments).toEqual([
+      { type: 'paragraph', lines: ['看下面这段：'] },
+      { type: 'code', lines: ['const a = 1;', 'const b = a + 1;'] },
+      { type: 'paragraph', lines: ['这样就拿到结果了。'] },
+    ]);
+  });
+
+  it('中文正文、列表、标题、表格都不会被当成代码', () => {
+    const segments = parseMarkdownTextSegments(
+      '## 一句话本质\n哈希表用空间换时间。\n- 查找 O(1)\n- 冲突要处理\n\n| 指标 | 说明 |\n| --- | --- |\n| MRR | 排序质量 |',
+    );
+    expect(segments.some((seg) => seg.type === 'code')).toBe(false);
+  });
 });

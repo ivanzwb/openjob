@@ -1,4 +1,5 @@
 import type { ExamForm } from '@shared/enums';
+import { CODE_FENCE_RULE_IN_JSON } from '../prompts/format';
 
 export type MockInterviewKind = ExamForm | 'selfIntro';
 export type MockInterviewType = MockInterviewKind | 'mixed';
@@ -40,7 +41,8 @@ export function designCaseCacheId(
   return `${campaignId}:${interviewType}:${lang}`;
 }
 
-const CASE_OUTPUT_SCHEMA = `输出 JSON：
+const CASE_OUTPUT_SCHEMA = `${CODE_FENCE_RULE_IN_JSON}
+输出 JSON：
 {
   "interviewType": "concept|coding|design|scenario|selfIntro",
   "relatedNodeName": "关联考点名或 null",
@@ -128,6 +130,7 @@ export function caseUserHintForType(
 }
 
 const SCORE_BASE = `你是面试评委。按 1-5 分评分（5=能扛追问），给出逐点反馈和改进后的口语答题稿（markdown）。
+${CODE_FENCE_RULE_IN_JSON}
 输出 JSON：
 {
   "score": 1-5,
@@ -155,6 +158,7 @@ export function scoreSystemForType(
 
 const ANSWER_BASE = `你是资深面试官兼面试教练。根据题目与候选人背景，给出一份高质量的「参考答案」草稿（markdown），适合口头作答。
 要求：结构清晰、口语化、结合题目约束；不要写评分或点评，只写答案正文。
+${CODE_FENCE_RULE_IN_JSON}
 输出 JSON：{ "answerMd": "..." }`;
 
 /**
