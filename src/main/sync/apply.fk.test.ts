@@ -12,6 +12,7 @@ import { DatabaseSync } from 'node:sqlite';
 import type { Database } from 'better-sqlite3';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { applyAutoChanges } from './apply';
+import { syncTableSpecs } from './tables';
 import { installSyncTriggers } from './triggers';
 
 const LOCAL_DEVICE = 'device-local';
@@ -31,7 +32,9 @@ function adapt(db: DatabaseSync): Database {
       };
     },
     exec: (sql: string) => db.exec(sql),
-    pragma: (statement: string) => db.exec(`PRAGMA ${statement}`),
+    // better-sqlite3 的 pragma() 是返回行的，fkDiagnostics 靠它读 foreign_key_list，
+    // 适配层不能退化成只执行不返回
+    pragma: (statement: string) => db.prepare(`PRAGMA ${statement}`).all(),
     transaction:
       (fn: (...args: unknown[]) => unknown) =>
       (...args: unknown[]) => {
@@ -254,5 +257,80 @@ describe('应用变更的外键安全', () => {
 
     const n = raw.prepare(`SELECT count(*) AS n FROM knowledge_node`).get() as { n: number };
     expect(n.n).toBe(0);
+  });
+
+  it('defer_foreign_keys 确实生效：事务中途允许子行先于父行落库', () => {
+    // apply 的外键安全现在建立在这个 pragma 上，如果哪天它变成空操作，
+    // 排序里的任何疏漏都会重新变成用户可见的同步失败——所以直接验证语义。
+    expect(() => {
+      raw.exec('BEGIN');
+      raw.exec('PRAGMA defer_foreign_keys = ON');
+      raw.exec(
+        `INSERT INTO knowledge_node (id, campaign_id, name, kind, coverage_type, created_at)
+         VALUES ('nX', 'cX', 'QUIC', 'concept', 'core', 1)`,
+      );
+      raw.exec(
+        `INSERT INTO campaign (id, company, role_title, jd_raw, status, created_at, updated_at)
+         VALUES ('cX', 'NEWCO', 'Backend', 'jd', 'planning', 1, 1)`,
+      );
+      raw.exec('COMMIT');
+    }).not.toThrow();
+
+    const row = raw.prepare(`SELECT campaign_id FROM knowledge_node WHERE id = 'nX'`).get() as {
+      campaign_id: string;
+    };
+    expect(row.campaign_id).toBe('cX');
+  });
+
+  it('孤儿引用要报出是哪张表的哪一行，不能只丢一句 FOREIGN KEY constraint failed', () => {
+    // 对端发来引用了本机不存在、且本批也没带上的父行。这是 defer 之后仍然
+    // 会失败的唯一情形，报错必须能定位到表和行，否则又是一轮靠猜的排查。
+    let message = '';
+    try {
+      applyAutoChanges(raw, PEER_DEVICE, [
+        {
+          table: 'explanation',
+          rowId: 'e1',
+          kind: 'insert',
+          values: {
+            node_id: 'ghost-node',
+            tier: 'spoken',
+            content_md: '内容',
+            model_used: 'test',
+            source_ids: [],
+            created_at: 1,
+          },
+          wallMs: 1,
+        },
+      ]);
+    } catch (e) {
+      message = e instanceof Error ? e.message : String(e);
+    }
+
+    expect(message).toContain('explanation.node_id');
+    expect(message).toContain('knowledge_node');
+    expect(message).toContain('e1→ghost-node');
+  });
+
+  it('INSERT_ORDER 必须是真实外键的拓扑序——新增表放错位置要当场失败', () => {
+    // defer_foreign_keys 之后顺序错了不再报错，问题会藏起来。这条测试直接
+    // 拿 schema 里的外键反查同步清单的顺序，把"顺序对不对"从运行时挪到测试里。
+    const order = syncTableSpecs().map((s) => s.name);
+    const position = new Map(order.map((name, i) => [name, i]));
+    const problems: string[] = [];
+
+    for (const [i, table] of order.entries()) {
+      const fks = raw.pragma(`foreign_key_list('${table}')`) as { table: string }[];
+      for (const fk of fks) {
+        const parent = position.get(fk.table);
+        if (parent === undefined) {
+          problems.push(`${table} 引用了不在同步清单里的 ${fk.table}`);
+        } else if (parent > i) {
+          problems.push(`${table}(${i}) 排在父表 ${fk.table}(${parent}) 之前`);
+        }
+      }
+    }
+
+    expect(problems).toEqual([]);
   });
 });

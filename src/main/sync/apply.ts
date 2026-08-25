@@ -1,6 +1,7 @@
 import type { Database } from 'better-sqlite3';
 import type { AutoChange } from '@shared/sync';
 import { deviceLocalInsertDefaults } from './deviceLocalDefaults';
+import { describeMissingParents, type FkProbe } from './fkDiagnostics';
 import { syncTableSpec, syncTableSpecs } from './tables';
 import { upsertClause } from './upsert';
 import { writingAs } from './triggers';
@@ -21,10 +22,11 @@ function sortChanges(changes: AutoChange[]): AutoChange[] {
   };
 
   return [...changes].sort((a, b) => {
-    // patch 必须排在 insert 之后：planMerge 逐行独立决策，同一批变更可能
-    // 同时出现「insert 新建父行」和「patch 把子行的外键改挂到它」。foreign_keys
-    // = ON 时 SQLite 逐语句立即检查外键，patch 若先于父行落库执行，
-    // 整批事务会以 FOREIGN KEY constraint failed 回滚。
+    // delete 在最前是语义要求：同一行 id 被删掉又重建时，顺序反了就等于没删。
+    //
+    // insert 早于 patch、父表早于子表则是外键顺序，但它已经不是唯一防线——
+    // 落库事务里开了 defer_foreign_keys，外键推迟到提交时统一检查。排序错了
+    // 不再报 FOREIGN KEY constraint failed，这里只是让语句顺序符合直觉。
     const kindOrder = { delete: 0, insert: 1, patch: 2 };
     const ka = kindOrder[a.kind];
     const kb = kindOrder[b.kind];
@@ -112,6 +114,40 @@ function stampRowVersion(raw: Database, table: string, rowId: string, wallMs: nu
     .run(table, rowId, wallMs);
 }
 
+function fkProbe(raw: Database): FkProbe {
+  return {
+    foreignKeys: (table) =>
+      (
+        raw.pragma(`foreign_key_list('${table}')`) as {
+          table: string;
+          from: string;
+          to: string | null;
+        }[]
+      ).map((r) => ({
+        column: r.from,
+        parentTable: r.table,
+        parentColumn: r.to ?? 'id',
+      })),
+    parentExists: (parentTable, parentColumn, value) =>
+      raw
+        .prepare(`SELECT 1 FROM \`${parentTable}\` WHERE \`${parentColumn}\` = ? LIMIT 1`)
+        .get(value as string) !== undefined,
+  };
+}
+
+/** 给外键报错补上"是哪张表的哪一行"，诊断失败时原样抛出原始错误 */
+function annotateForeignKeyError(raw: Database, error: unknown, changes: AutoChange[]): unknown {
+  const message = error instanceof Error ? error.message : String(error);
+  if (!/FOREIGN KEY constraint failed/i.test(message)) return error;
+  try {
+    const detail = describeMissingParents(changes, fkProbe(raw));
+    if (detail) return new Error(`${message}｜${detail}`);
+  } catch {
+    // 诊断本身出错不能盖掉真正的失败原因
+  }
+  return error;
+}
+
 /**
  * 把合并计划里的自动变更事务性落库。
  *
@@ -127,7 +163,13 @@ export function applyAutoChanges(
   let applied = 0;
 
   writingAs(raw, peerDeviceId, () => {
-    raw.transaction(() => {
+    const run = raw.transaction(() => {
+      // 外键检查推迟到提交时整批做一次。planMerge 逐行独立决策，父行和子行
+      // 落库的先后顺序本质上无法保证正确——靠 INSERT_ORDER 人工维护拓扑序，
+      // 每加一张表就多一次踩中 FOREIGN KEY constraint failed 的机会。推迟之后
+      // 中间状态不再被检查，只要整批结束时引用完整就能提交。
+      raw.exec('PRAGMA defer_foreign_keys = ON');
+
       for (const change of sorted) {
         if (change.kind === 'insert') {
           applyInsert(raw, change.table, change.rowId, {
@@ -143,7 +185,13 @@ export function applyAutoChanges(
         }
         applied++;
       }
-    })();
+    });
+
+    try {
+      run();
+    } catch (e) {
+      throw annotateForeignKeyError(raw, e, sorted);
+    }
   });
 
   return applied;

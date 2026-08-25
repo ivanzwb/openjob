@@ -12,6 +12,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { MIGRATIONS } from '../db/migrations/bundle';
 import { applyAutoChanges } from './apply';
 import { partitionRepoFileChanges } from './repoFilePartition';
+import { syncTableSpecs } from './tables';
 import { installSyncTriggers } from './triggers';
 
 const LOCAL_DEVICE = 'device-local';
@@ -251,6 +252,81 @@ describe('手机端应用变更的外键安全', () => {
       `SELECT node_id FROM explanation WHERE id = 'e1'`,
     );
     expect(row?.node_id).toBe('n1');
+  });
+
+  it('defer_foreign_keys 确实生效：事务中途允许子行先于父行落库', () => {
+    // apply 的外键安全现在建立在这个 pragma 上，如果哪天它变成空操作，
+    // 排序里的任何疏漏都会重新变成用户可见的同步失败——所以直接验证语义。
+    expect(() => {
+      raw.execSync('BEGIN');
+      raw.execSync('PRAGMA defer_foreign_keys = ON');
+      raw.runSync(
+        `INSERT INTO knowledge_node (id, campaign_id, name, kind, coverage_type, created_at)
+         VALUES ('nX', 'cX', 'QUIC', 'concept', 'core', 1)`,
+      );
+      raw.runSync(
+        `INSERT INTO campaign (id, company, role_title, jd_raw, status, created_at, updated_at)
+         VALUES ('cX', 'NEWCO', 'Backend', 'jd', 'planning', 1, 1)`,
+      );
+      raw.execSync('COMMIT');
+    }).not.toThrow();
+
+    const row = raw.getFirstSync<{ campaign_id: string }>(
+      `SELECT campaign_id FROM knowledge_node WHERE id = 'nX'`,
+    );
+    expect(row?.campaign_id).toBe('cX');
+  });
+
+  it('孤儿引用要报出是哪张表的哪一行，不能只丢一句 FOREIGN KEY constraint failed', () => {
+    // 对端发来引用了本机不存在、且本批也没带上的父行。这是 defer 之后仍然
+    // 会失败的唯一情形，报错必须能定位到表和行，否则又是一轮靠猜的排查。
+    let message = '';
+    try {
+      applyAutoChanges(raw, PEER_DEVICE, [
+        {
+          table: 'explanation',
+          rowId: 'e1',
+          kind: 'insert',
+          values: {
+            node_id: 'ghost-node',
+            tier: 'spoken',
+            content_md: '内容',
+            model_used: 'test',
+            source_ids: [],
+            created_at: 1,
+          },
+          wallMs: 1,
+        },
+      ]);
+    } catch (e) {
+      message = e instanceof Error ? e.message : String(e);
+    }
+
+    expect(message).toContain('explanation.node_id');
+    expect(message).toContain('knowledge_node');
+    expect(message).toContain('e1→ghost-node');
+  });
+
+  it('INSERT_ORDER 必须是真实外键的拓扑序——新增表放错位置要当场失败', () => {
+    // defer_foreign_keys 之后顺序错了不再报错，问题会藏起来。这条测试直接
+    // 拿 schema 里的外键反查同步清单的顺序，把"顺序对不对"从运行时挪到测试里。
+    const order = syncTableSpecs().map((s) => s.name);
+    const position = new Map(order.map((name, i) => [name, i]));
+    const problems: string[] = [];
+
+    for (const [i, table] of order.entries()) {
+      const fks = raw.getAllSync<{ table: string }>(`PRAGMA foreign_key_list('${table}')`);
+      for (const fk of fks) {
+        const parent = position.get(fk.table);
+        if (parent === undefined) {
+          problems.push(`${table} 引用了不在同步清单里的 ${fk.table}`);
+        } else if (parent > i) {
+          problems.push(`${table}(${i}) 排在父表 ${fk.table}(${parent}) 之前`);
+        }
+      }
+    }
+
+    expect(problems).toEqual([]);
   });
 
   it('repo_file 删除须跟 repo 同批排序，partition 不能先把 repo 删了', () => {
