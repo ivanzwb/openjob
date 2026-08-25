@@ -12,6 +12,34 @@ import { useToast } from './Toast';
 import { VoiceInputButton } from './VoiceInputButton';
 
 /**
+ * 消息气泡。两边都靠左、只靠一个小标签区分角色时，滚动起来根本认不出谁说的哪句，
+ * 所以用户靠右、助手靠左，各自带底色。助手不限宽——它的正文里有代码块、表格和
+ * 流程图，压进窄气泡会横向溢出。
+ */
+function ChatBubble({
+  role,
+  children,
+}: {
+  role: 'user' | 'assistant';
+  children: React.ReactNode;
+}): React.JSX.Element {
+  const isUser = role === 'user';
+  return (
+    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+      <div
+        className={
+          isUser
+            ? 'max-w-[85%] rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-sm text-sky-100'
+            : 'w-full rounded-lg border border-[var(--color-border)] bg-black/20 px-3 py-2 text-sm leading-relaxed'
+        }
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/**
  * 流式对话组件，支持会话历史落库与回看。
  */
 export function StreamChat({
@@ -362,10 +390,7 @@ export function StreamChat({
           {history.length > 0 || state.text || state.running ? (
             <div className="space-y-4">
               {history.map((m) => (
-                <div
-                  key={m.id}
-                  className={`text-sm ${m.role === 'user' ? 'text-sky-200' : 'leading-relaxed'}`}
-                >
+                <ChatBubble key={m.id} role={m.role === 'user' ? 'user' : 'assistant'}>
                   <div className="mb-1 flex items-center gap-2">
                     <span className="text-[10px] uppercase text-[var(--color-muted)]">
                       {m.role === 'user' ? '你' : '助手'}
@@ -390,13 +415,13 @@ export function StreamChat({
                   )}
                   <ToolTrace calls={m.toolCalls} usage={m.usage} />
                   {m.citations.length > 0 && <CitationList citations={m.citations} />}
-                </div>
+                </ChatBubble>
               ))}
               {state.running && !state.text && (
                 <p className="text-sm text-[var(--color-muted)]">生成中…</p>
               )}
               {state.running && (
-                <div className="leading-relaxed">
+                <ChatBubble role="assistant">
                   <div className="mb-2 flex items-center gap-2">
                     <span className="text-[10px] uppercase text-[var(--color-muted)]">助手</span>
                     <SourceBadge kind={state.evidenceKind} />
@@ -405,7 +430,7 @@ export function StreamChat({
                   {state.text ? <MarkdownContent text={normalizeDisplayText(state.text)} /> : null}
                   <ToolTrace calls={state.toolCalls} usage={state.usage} />
                   <CitationList citations={state.citations} />
-                </div>
+                </ChatBubble>
               )}
             </div>
           ) : state.error ? (
