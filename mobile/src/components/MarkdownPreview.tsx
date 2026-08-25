@@ -2,17 +2,51 @@ import { useMemo } from 'react';
 import { ScrollView, Text, View } from 'react-native';
 import { visibleMarkdownBlocks } from '../lib/markdownBlocks';
 import { normalizeDisplayText } from '../lib/markdownDisplay';
-import { parseMarkdownTextSegments } from '@shared/lib/markdownSegments';
+import { parseMarkdownLine, parseMarkdownTextSegments } from '@shared/lib/markdownSegments';
+import { parseInlineMarkdown } from '@shared/lib/markdownInline';
 import { useTheme } from '../theme';
 
 const TABLE_CELL_MIN_WIDTH = 88;
 const TABLE_CELL_MAX_WIDTH = 240;
 
-function normalizeInlineMarkdown(line: string): string {
-  return line
-    .replace(/\*\*([^*]+)\*\*/g, '$1')
-    .replace(/`([^`]+)`/g, '$1')
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+/** 行内标记在 RN 里只能靠嵌套 Text 表达，样式与桌面端保持同一套语义 */
+function InlineText({ source }: { source: string }): React.JSX.Element {
+  const theme = useTheme();
+  return (
+    <>
+      {parseInlineMarkdown(source).map((token, i) => {
+        if (token.kind === 'bold') {
+          return (
+            <Text key={i} style={{ fontWeight: '700' }}>
+              {token.text}
+            </Text>
+          );
+        }
+        if (token.kind === 'italic') {
+          return (
+            <Text key={i} style={{ fontStyle: 'italic' }}>
+              {token.text}
+            </Text>
+          );
+        }
+        if (token.kind === 'code') {
+          return (
+            <Text key={i} style={{ fontFamily: 'monospace', color: theme.accent }}>
+              {token.text}
+            </Text>
+          );
+        }
+        if (token.kind === 'link') {
+          return (
+            <Text key={i} style={{ color: theme.accent, textDecorationLine: 'underline' }}>
+              {token.text}
+            </Text>
+          );
+        }
+        return <Text key={i}>{token.text}</Text>;
+      })}
+    </>
+  );
 }
 
 function MarkdownTable({ rows }: { rows: string[][] }): React.JSX.Element | null {
@@ -53,7 +87,7 @@ function MarkdownTable({ rows }: { rows: string[][] }): React.JSX.Element | null
                 borderRightWidth: cellIdx < colCount - 1 ? 1 : 0,
               }}
             >
-              {normalizeInlineMarkdown(cell)}
+              <InlineText source={cell} />
             </Text>
           ))}
         </View>
@@ -74,7 +108,7 @@ function MarkdownTable({ rows }: { rows: string[][] }): React.JSX.Element | null
                   borderRightWidth: cellIdx < colCount - 1 ? 1 : 0,
                 }}
               >
-                {normalizeInlineMarkdown(cell)}
+                <InlineText source={cell} />
               </Text>
             ))}
           </View>
@@ -93,44 +127,55 @@ function MarkdownParagraph({ lines, keyPrefix }: { lines: string[]; keyPrefix: s
   return (
     <View style={{ gap: 4 }}>
       {trimmed.map((line, lineIdx) => {
-        const heading = /^(#{1,3})\s+(.+)$/.exec(line);
-        if (heading) {
+        const parsed = parseMarkdownLine(line);
+        const key = `${keyPrefix}-${lineIdx}`;
+
+        if (parsed.kind === 'heading') {
           return (
             <Text
-              key={`${keyPrefix}-${lineIdx}`}
+              key={key}
               selectable
               style={{
                 color: theme.text,
-                fontSize: heading[1]!.length === 1 ? 16 : 14,
+                fontSize: parsed.level === 1 ? 16 : 14,
                 lineHeight: 22,
                 fontWeight: '700',
               }}
             >
-              {normalizeInlineMarkdown(heading[2]!)}
+              <InlineText source={parsed.text} />
             </Text>
           );
         }
-        const bullet = /^[-*]\s+(.+)$/.exec(line);
-        const numbered = /^\d+\.\s+(.+)$/.exec(line);
-        if (bullet || numbered) {
+
+        if (parsed.kind === 'quote') {
           return (
             <Text
-              key={`${keyPrefix}-${lineIdx}`}
+              key={key}
               selectable
-              style={{ color: theme.text, fontSize: 13, lineHeight: 20 }}
+              style={{
+                color: theme.muted,
+                fontSize: 13,
+                lineHeight: 20,
+                borderLeftWidth: 2,
+                borderLeftColor: theme.border,
+                paddingLeft: 8,
+              }}
             >
-              {'• '}
-              {normalizeInlineMarkdown((bullet?.[1] ?? numbered?.[1])!)}
+              <InlineText source={parsed.text} />
             </Text>
           );
         }
+
+        const marker =
+          parsed.kind === 'bullet'
+            ? '• '
+            : parsed.kind === 'numbered'
+              ? line.slice(0, parsed.contentStart)
+              : '';
         return (
-          <Text
-            key={`${keyPrefix}-${lineIdx}`}
-            selectable
-            style={{ color: theme.text, fontSize: 13, lineHeight: 20 }}
-          >
-            {normalizeInlineMarkdown(line)}
+          <Text key={key} selectable style={{ color: theme.text, fontSize: 13, lineHeight: 20 }}>
+            {marker}
+            <InlineText source={parsed.text} />
           </Text>
         );
       })}

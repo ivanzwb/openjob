@@ -3,7 +3,8 @@ import { highlightToHtml } from '../lib/highlight';
 import { highlightTextStyle } from '../lib/highlightStyle';
 import { useUiTheme } from '../lib/uiTheme';
 import { visibleMarkdownBlocks } from '../lib/markdownBlocks';
-import { parseMarkdownTextSegments } from '@shared/lib/markdownSegments';
+import { parseMarkdownLine, parseMarkdownTextSegments } from '@shared/lib/markdownSegments';
+import { parseInlineMarkdown } from '@shared/lib/markdownInline';
 import {
   filterInlineAnnotations,
   renderTextWithInlineMarkers,
@@ -42,13 +43,15 @@ function segmentTextWithHighlights(
     const needle = mark.text.trim();
     if (!needle) continue;
     if (mark.start !== undefined) {
+      // 正文按行、按行内标记切成了多段，跨段的高亮只取与本段的交集
       const start = mark.start - blockStart;
-      const end = start + needle.length;
-      if (start < 0 || end > text.length) continue;
-      if (text.slice(start, end) !== needle) continue;
+      const from = Math.max(0, start);
+      const to = Math.min(text.length, start + needle.length);
+      if (to <= from) continue;
+      if (text.slice(from, to) !== needle.slice(from - start, to - start)) continue;
       ranges.push({
-        start,
-        end,
+        start: from,
+        end: to,
         color: mark.color,
         ...(mark.annotationId ? { annotationId: mark.annotationId } : {}),
       });
@@ -294,6 +297,185 @@ function MarkdownTable({ rows }: { rows: string[][] }): React.JSX.Element | null
   );
 }
 
+const HEADING_CLASS: Record<number, string> = {
+  1: 'mt-4 text-base font-semibold first:mt-0',
+  2: 'mt-3 text-[0.95rem] font-semibold first:mt-0',
+  3: 'mt-3 text-sm font-semibold first:mt-0',
+};
+
+interface InlineRenderProps {
+  onCodeClick?: (loc: CodeLocation) => void;
+  highlights?: TextHighlight[];
+  inlineAnnotations?: InlineAnnotation[];
+  onDeleteAnnotation?: (id: string) => void;
+  focusAnnotationId?: string | null;
+}
+
+/**
+ * 行内标记逐个包成独立元素，并各自带上 data-md-start。
+ *
+ * 划词标注是把 DOM 内的字符偏移加到最近的 data-md-start 上还原成 contentMd
+ * 偏移的（见 lib/selectionOffset）。渲染 markdown 会吃掉 ** ` 这些标记字符，
+ * 整段只挂一个起点就会越算越偏；锚点下沉到每个 token，token 内的文本与原文
+ * 逐字相同，偏移才重新对得上。
+ */
+function renderInlineTokens(
+  source: string,
+  sourceStart: number,
+  keyPrefix: string,
+  props: InlineRenderProps,
+): React.ReactNode[] {
+  return parseInlineMarkdown(source, sourceStart).map((token, i) => {
+    const key = `${keyPrefix}-i${i}`;
+    const inner = renderTextBlock(
+      token.text,
+      token.start,
+      key,
+      props.onCodeClick,
+      props.highlights,
+      props.inlineAnnotations,
+      props.onDeleteAnnotation,
+      props.focusAnnotationId,
+    );
+    const anchor = { 'data-md-start': token.start };
+
+    if (token.kind === 'bold') {
+      return (
+        <strong key={key} className="font-semibold" {...anchor}>
+          {inner}
+        </strong>
+      );
+    }
+    if (token.kind === 'italic') {
+      return (
+        <em key={key} className="italic" {...anchor}>
+          {inner}
+        </em>
+      );
+    }
+    if (token.kind === 'code') {
+      return (
+        <code
+          key={key}
+          className="rounded bg-black/20 px-1 py-0.5 font-mono text-[0.9em] text-emerald-300"
+          {...anchor}
+        >
+          {inner}
+        </code>
+      );
+    }
+    if (token.kind === 'link') {
+      return (
+        <a
+          key={key}
+          href={token.href}
+          target="_blank"
+          rel="noreferrer"
+          className="text-sky-400 hover:underline"
+          {...anchor}
+        >
+          {inner}
+        </a>
+      );
+    }
+    return (
+      <span key={key} {...anchor}>
+        {inner}
+      </span>
+    );
+  });
+}
+
+function MarkdownProseLine({
+  line,
+  lineStart,
+  keyPrefix,
+  props,
+}: {
+  line: string;
+  lineStart: number;
+  keyPrefix: string;
+  props: InlineRenderProps;
+}): React.JSX.Element | null {
+  if (!line.trim()) return null;
+
+  const parsed = parseMarkdownLine(line);
+  const content = renderInlineTokens(
+    parsed.text,
+    lineStart + parsed.contentStart,
+    keyPrefix,
+    props,
+  );
+
+  if (parsed.kind === 'heading') {
+    return <div className={HEADING_CLASS[Math.min(parsed.level, 3)]}>{content}</div>;
+  }
+
+  if (parsed.kind === 'quote') {
+    return (
+      <div className="border-l-2 border-[var(--color-border)] pl-2 text-[var(--color-muted)]">
+        {content}
+      </div>
+    );
+  }
+
+  if (parsed.kind === 'bullet' || parsed.kind === 'numbered') {
+    // 项目符号不在正文里，标成 annotation-ui 让划词偏移跳过它
+    const marker = parsed.kind === 'bullet' ? '•' : line.trimStart().split(/\s/)[0];
+    return (
+      <div className="flex gap-1.5">
+        <span data-annotation-ui className="shrink-0 select-none text-[var(--color-muted)]">
+          {marker}
+        </span>
+        <span className="min-w-0 flex-1">{content}</span>
+      </div>
+    );
+  }
+
+  return <div>{content}</div>;
+}
+
+/** 每行在 contentMd 里的起点，换行符算一个字符 */
+function lineOffsets(lines: string[], blockStart: number): number[] {
+  const offsets: number[] = [];
+  let pos = blockStart;
+  for (const line of lines) {
+    offsets.push(pos);
+    pos += line.length + 1;
+  }
+  return offsets;
+}
+
+function MarkdownProse({
+  lines,
+  blockStart,
+  keyPrefix,
+  props,
+}: {
+  lines: string[];
+  blockStart: number;
+  keyPrefix: string;
+  props: InlineRenderProps;
+}): React.JSX.Element {
+  const offsets = lineOffsets(lines, blockStart);
+  const lastIdx = lines.length - 1;
+  const blockEnd = lastIdx >= 0 ? offsets[lastIdx]! + lines[lastIdx]!.length : blockStart;
+
+  return (
+    <div className="space-y-1 break-words" data-md-start={blockStart} data-md-end={blockEnd}>
+      {lines.map((line, lineIdx) => (
+        <MarkdownProseLine
+          key={`${keyPrefix}-l${lineIdx}`}
+          line={line}
+          lineStart={offsets[lineIdx]!}
+          keyPrefix={`${keyPrefix}-l${lineIdx}`}
+          props={props}
+        />
+      ))}
+    </div>
+  );
+}
+
 function MarkdownTextPart({
   value,
   mdStart,
@@ -314,6 +496,13 @@ function MarkdownTextPart({
   focusAnnotationId?: string | null;
 }): React.JSX.Element {
   const segments = parseMarkdownTextSegments(value);
+  const props: InlineRenderProps = {
+    ...(onCodeClick ? { onCodeClick } : {}),
+    ...(highlights ? { highlights } : {}),
+    ...(inlineAnnotations ? { inlineAnnotations } : {}),
+    ...(onDeleteAnnotation ? { onDeleteAnnotation } : {}),
+    ...(focusAnnotationId !== undefined ? { focusAnnotationId } : {}),
+  };
 
   return (
     <>
@@ -333,25 +522,14 @@ function MarkdownTextPart({
         }
         const segmentText = segment.lines.join('\n');
         const localStart = value.indexOf(segmentText);
-        const blockStart = mdStart + (localStart >= 0 ? localStart : 0);
         return (
-          <div
+          <MarkdownProse
             key={`${keyPrefix}-para-${segIdx}`}
-            className="whitespace-pre-wrap"
-            data-md-start={blockStart}
-            data-md-end={blockStart + segmentText.length}
-          >
-            {renderTextBlock(
-              segmentText,
-              blockStart,
-              `${keyPrefix}-${segIdx}`,
-              onCodeClick,
-              highlights,
-              inlineAnnotations,
-              onDeleteAnnotation,
-              focusAnnotationId,
-            )}
-          </div>
+            lines={segment.lines}
+            blockStart={mdStart + (localStart >= 0 ? localStart : 0)}
+            keyPrefix={`${keyPrefix}-${segIdx}`}
+            props={props}
+          />
         );
       })}
     </>

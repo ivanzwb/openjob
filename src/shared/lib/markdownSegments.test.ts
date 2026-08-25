@@ -1,5 +1,54 @@
 import { describe, expect, it } from 'vitest';
-import { parseMarkdownTextSegments, splitMarkdownTableCells } from './markdownSegments';
+import {
+  parseMarkdownLine,
+  parseMarkdownTextSegments,
+  splitMarkdownTableCells,
+} from './markdownSegments';
+
+describe('parseMarkdownLine', () => {
+  it('标题带出层级与正文起点', () => {
+    expect(parseMarkdownLine('## 一句话本质')).toEqual({
+      kind: 'heading',
+      level: 2,
+      text: '一句话本质',
+      contentStart: 3,
+    });
+  });
+
+  it('无序与有序列表', () => {
+    expect(parseMarkdownLine('- 查找 O(1)')).toMatchObject({ kind: 'bullet', contentStart: 2 });
+    expect(parseMarkdownLine('12. 第十二点')).toMatchObject({
+      kind: 'numbered',
+      text: '第十二点',
+      contentStart: 4,
+    });
+  });
+
+  it('引用块', () => {
+    expect(parseMarkdownLine('> 注意线程安全')).toMatchObject({ kind: 'quote', contentStart: 2 });
+  });
+
+  it('普通行只剥缩进', () => {
+    expect(parseMarkdownLine('  正文一句话')).toEqual({
+      kind: 'plain',
+      level: 0,
+      text: '正文一句话',
+      contentStart: 2,
+    });
+  });
+
+  it('contentStart 指回原行里的同一段文字', () => {
+    for (const line of ['### 标题', '  - 项目', '3) 第三点', '> 引用', '正文']) {
+      const parsed = parseMarkdownLine(line);
+      expect(line.slice(parsed.contentStart)).toBe(parsed.text);
+    }
+  });
+
+  it('不把 #tag 或裸减号当成结构行', () => {
+    expect(parseMarkdownLine('#hashtag 不是标题')).toMatchObject({ kind: 'plain' });
+    expect(parseMarkdownLine('-1 是负数')).toMatchObject({ kind: 'plain' });
+  });
+});
 
 describe('markdownSegments', () => {
   it('splitMarkdownTableCells 保留空列', () => {

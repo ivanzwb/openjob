@@ -331,6 +331,10 @@ type TextSegment =
   | { type: 'plain'; text: string }
   | { type: 'marked'; text: string; start: number; end: number; markers: InlineAnnotation[] };
 
+function firstLineOf(text: string): string {
+  return text.split('\n').map((line) => line.trim()).find(Boolean) ?? '';
+}
+
 function splitByInlineAnnotations(
   text: string,
   annotations: InlineAnnotation[],
@@ -342,9 +346,13 @@ function splitByInlineAnnotations(
   for (const ann of annotations) {
     const sel = ann.selectedText?.trim();
     if (!sel) continue;
-    const idx = text.indexOf(sel);
+    // 正文按行渲染后跨行选区落不进任何一行，退而把角标挂到首行上，
+    // 总比整条笔记在正文里没有入口强
+    const needle = text.includes(sel) ? sel : firstLineOf(sel);
+    if (!needle) continue;
+    const idx = text.indexOf(needle);
     if (idx < 0) continue;
-    const end = idx + sel.length;
+    const end = idx + needle.length;
     const existing = matches.find((m) => m.start === idx && m.end === end);
     if (existing) {
       existing.markers.push(ann);

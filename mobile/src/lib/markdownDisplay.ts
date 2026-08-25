@@ -4,8 +4,10 @@ import {
   isMarkdownTableDivider,
   isMarkdownTableRow,
   normalizeTableRows,
+  parseMarkdownLine,
   splitMarkdownTableCells,
 } from '@shared/lib/markdownSegments';
+import { parseInlineMarkdown, type InlineToken } from '@shared/lib/markdownInline';
 import { findUnfencedCodeRunEnd } from '@shared/lib/unfencedCode';
 
 export { normalizeDisplayText };
@@ -22,11 +24,28 @@ function jsonAttr(value: unknown): string {
   return escapeHtml(JSON.stringify(value));
 }
 
+function inlineTagPair(token: InlineToken): [string, string] {
+  switch (token.kind) {
+    case 'bold':
+      return ['<strong>', '</strong>'];
+    case 'italic':
+      return ['<em>', '</em>'];
+    case 'code':
+      return ['<code>', '</code>'];
+    case 'link':
+      return [`<a href="${escapeHtml(token.href ?? '')}">`, '</a>'];
+    default:
+      return ['', ''];
+  }
+}
+
 function renderInlineMarkdown(text: string): string {
-  return escapeHtml(text)
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+  return parseInlineMarkdown(text)
+    .map((token) => {
+      const [open, close] = inlineTagPair(token);
+      return `${open}${escapeHtml(token.text)}${close}`;
+    })
+    .join('');
 }
 
 type SourceRange = {
@@ -172,48 +191,15 @@ function renderInlineMarkdownWithMap(
     html += escapeHtml(ch);
   };
 
-  let i = 0;
-  while (i < text.length) {
-    if (text.startsWith('**', i)) {
-      const close = text.indexOf('**', i + 2);
-      if (close > i + 2) {
-        const inner = text.slice(i + 2, close);
-        html += '<strong>';
-        for (let j = 0; j < inner.length; j++) {
-          pushVisible(inner[j]!, baseOffset + i + 2 + j);
-        }
-        html += '</strong>';
-        i = close + 2;
-        continue;
-      }
+  for (const token of parseInlineMarkdown(text, baseOffset)) {
+    const [open, close] = inlineTagPair(token);
+    html += open;
+    for (let j = 0; j < token.text.length; j++) {
+      pushVisible(token.text[j]!, token.start + j);
     }
-    if (text.startsWith('`', i)) {
-      const close = text.indexOf('`', i + 1);
-      if (close > i + 1) {
-        const inner = text.slice(i + 1, close);
-        html += '<code>';
-        for (let j = 0; j < inner.length; j++) {
-          pushVisible(inner[j]!, baseOffset + i + 1 + j);
-        }
-        html += '</code>';
-        i = close + 1;
-        continue;
-      }
-    }
-    const linkMatch = /^\[([^\]]+)\]\(([^)]+)\)/.exec(text.slice(i));
-    if (linkMatch) {
-      const inner = linkMatch[1]!;
-      const url = linkMatch[2]!;
-      html += `<a href="${escapeHtml(url)}">`;
-      for (let j = 0; j < inner.length; j++) {
-        pushVisible(inner[j]!, baseOffset + i + 1 + j);
-      }
-      html += '</a>';
-      i += linkMatch[0].length;
-      continue;
-    }
-    pushVisible(text[i]!, baseOffset + i);
-    i += 1;
+    // 高亮 span 必须收在行内标签里面，否则 <strong><span>x</strong> 会嵌错
+    if (close) closeSpan();
+    html += close;
   }
   closeSpan();
   return { html, visible, visibleToMd };
@@ -448,13 +434,26 @@ export function markdownToAnnotatedSelectionHtml(
       continue;
     }
 
-    const trimmed = line.trimStart();
-    const trimOffset = line.length - trimmed.length;
-    const heading = /^(#{1,3})\s+(.+)$/.exec(trimmed);
-    if (heading) {
-      const titleStart = lineStart + trimOffset + heading[1]!.length + 1;
-      const inline = renderInlineMarkdownWithMap(heading[2]!, titleStart, ranges);
-      const level = heading[1]!.length;
+    if (!line.trim()) {
+      parts.push(wrapMdBlock('<div class="md-blank"></div>', '', [], lineStart));
+      index += 1;
+      continue;
+    }
+
+    const parsed = parseMarkdownLine(line);
+    if (parsed.kind === 'plain') {
+      parts.push(renderLineBlock(line, lineStart, ranges, (inner) => `<p>${inner}</p>`));
+      index += 1;
+      continue;
+    }
+
+    const inline = renderInlineMarkdownWithMap(
+      parsed.text,
+      lineStart + parsed.contentStart,
+      ranges,
+    );
+    if (parsed.kind === 'heading') {
+      const level = Math.min(parsed.level, 6);
       parts.push(
         wrapMdBlock(
           `<h${level}>${inline.html}</h${level}>`,
@@ -463,36 +462,31 @@ export function markdownToAnnotatedSelectionHtml(
           lineStart,
         ),
       );
-      index += 1;
-      continue;
-    }
-
-    const bullet = /^[-*]\s+(.+)$/.exec(trimmed);
-    const numbered = /^\d+\.\s+(.+)$/.exec(trimmed);
-    if (bullet || numbered) {
-      const prefixLen = bullet ? 2 : numbered![0].length - numbered![1]!.length;
-      const contentStart = lineStart + trimOffset + prefixLen;
-      const content = (bullet?.[1] ?? numbered?.[1])!;
-      const inline = renderInlineMarkdownWithMap(content, contentStart, ranges);
-      const prefix = bullet ? '• ' : '';
-      const visible = prefix + inline.visible;
-      const visibleToMd = bullet
-        ? [lineStart + trimOffset, lineStart + trimOffset + 1, ...inline.visibleToMd]
-        : inline.visibleToMd;
+    } else if (parsed.kind === 'quote') {
       parts.push(
-        wrapMdBlock(`<p>${bullet ? '• ' : ''}${inline.html}</p>`, visible, visibleToMd, lineStart),
+        wrapMdBlock(
+          `<blockquote>${inline.html}</blockquote>`,
+          inline.visible,
+          inline.visibleToMd,
+          lineStart,
+        ),
       );
-      index += 1;
-      continue;
+    } else {
+      // 有序号就照原文显示，无序列表换成 •；两者都借原文标记的字符位置做映射，
+      // 可见文本和 visibleToMd 必须等长，否则划词偏移会整体错位
+      const markerStart = lineStart + line.length - line.trimStart().length;
+      const prefix =
+        parsed.kind === 'bullet' ? '• ' : line.slice(markerStart - lineStart, parsed.contentStart);
+      const prefixMap = Array.from(prefix, (_, i) => markerStart + i);
+      parts.push(
+        wrapMdBlock(
+          `<p>${escapeHtml(prefix)}${inline.html}</p>`,
+          `${prefix}${inline.visible}`,
+          [...prefixMap, ...inline.visibleToMd],
+          lineStart,
+        ),
+      );
     }
-
-    if (!line.trim()) {
-      parts.push(wrapMdBlock('<div class="md-blank"></div>', '', [], lineStart));
-      index += 1;
-      continue;
-    }
-
-    parts.push(renderLineBlock(line, lineStart, ranges, (inner) => `<p>${inner}</p>`));
     index += 1;
   }
 
@@ -542,29 +536,27 @@ export function markdownToDisplayHtml(text: string): string {
       continue;
     }
 
-    const heading = /^(#{1,3})\s+(.+)$/.exec(line.trim());
-    if (heading) {
-      const level = heading[1]!.length;
-      parts.push(`<h${level}>${renderInlineMarkdown(heading[2]!)}</h${level}>`);
+    if (line.trim()) {
+      const parsed = parseMarkdownLine(line);
+      const inner = renderInlineMarkdown(parsed.text);
+      if (parsed.kind === 'heading') {
+        const level = Math.min(parsed.level, 6);
+        parts.push(`<h${level}>${inner}</h${level}>`);
+      } else if (parsed.kind === 'quote') {
+        parts.push(`<blockquote>${inner}</blockquote>`);
+      } else if (parsed.kind === 'bullet') {
+        parts.push(`<p>• ${inner}</p>`);
+      } else if (parsed.kind === 'numbered') {
+        const indent = line.length - line.trimStart().length;
+        parts.push(`<p>${escapeHtml(line.slice(indent, parsed.contentStart))}${inner}</p>`);
+      } else {
+        parts.push(`<p>${inner}</p>`);
+      }
       index += 1;
       continue;
     }
 
-    const bullet = /^[-*]\s+(.+)$/.exec(line.trim());
-    const numbered = /^\d+\.\s+(.+)$/.exec(line.trim());
-    if (bullet || numbered) {
-      parts.push(`<p>${bullet ? '• ' : ''}${renderInlineMarkdown((bullet?.[1] ?? numbered?.[1])!)}</p>`);
-      index += 1;
-      continue;
-    }
-
-    if (!line.trim()) {
-      parts.push('<div class="md-blank"></div>');
-      index += 1;
-      continue;
-    }
-
-    parts.push(`<p>${renderInlineMarkdown(line)}</p>`);
+    parts.push('<div class="md-blank"></div>');
     index += 1;
   }
 

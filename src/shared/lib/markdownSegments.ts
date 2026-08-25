@@ -5,6 +5,57 @@ export type MarkdownTextSegment =
   | { type: 'table'; rows: string[][] }
   | { type: 'code'; lines: string[] };
 
+export type MarkdownLineKind = 'heading' | 'bullet' | 'numbered' | 'quote' | 'plain';
+
+export interface MarkdownLine {
+  kind: MarkdownLineKind;
+  /** heading 的 # 个数，其它行恒为 0 */
+  level: number;
+  /** 去掉行首标记后的正文 */
+  text: string;
+  /** text 在原行里的起始下标，桌面端靠它把 DOM 偏移还原回 contentMd */
+  contentStart: number;
+}
+
+const HEADING = /^(#{1,6}\s+)(.*)$/;
+const BULLET = /^([-*+]\s+)(.*)$/;
+const NUMBERED = /^(\d+[.)]\s+)(.*)$/;
+const QUOTE = /^(>\s?)(.*)$/;
+
+/** 识别一行的块级结构；缩进先剥掉，代码段已经在上游被切走了 */
+export function parseMarkdownLine(line: string): MarkdownLine {
+  const trimmed = line.trimStart();
+  const indent = line.length - trimmed.length;
+
+  const heading = HEADING.exec(trimmed);
+  if (heading) {
+    return {
+      kind: 'heading',
+      level: heading[1]!.trimEnd().length,
+      text: heading[2]!,
+      contentStart: indent + heading[1]!.length,
+    };
+  }
+
+  for (const [kind, re] of [
+    ['bullet', BULLET],
+    ['numbered', NUMBERED],
+    ['quote', QUOTE],
+  ] as const) {
+    const match = re.exec(trimmed);
+    if (match) {
+      return {
+        kind,
+        level: 0,
+        text: match[2]!,
+        contentStart: indent + match[1]!.length,
+      };
+    }
+  }
+
+  return { kind: 'plain', level: 0, text: trimmed, contentStart: indent };
+}
+
 export function isMarkdownTableRow(line: string): boolean {
   const trimmed = line.trim();
   return trimmed.includes('|') && trimmed.startsWith('|');

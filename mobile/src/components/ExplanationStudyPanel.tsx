@@ -125,6 +125,7 @@ function buildSelectionHtml(
   const bgColor = escapeHtml(theme.bg);
   const surfaceColor = escapeHtml(theme.surface);
   const borderColor = escapeHtml(theme.border);
+  const mutedColor = escapeHtml(theme.muted);
   const accentColor = escapeHtml(theme.accent);
   const markerMetaJson = safeJson(markerMeta);
   const selectionMarksJson = safeJson(selectionMarks);
@@ -182,7 +183,8 @@ function buildSelectionHtml(
     #content .md-block {
       margin: 0;
     }
-    #content h1, #content h2, #content h3, #content p {
+    #content h1, #content h2, #content h3, #content h4, #content h5, #content h6,
+    #content p, #content blockquote {
       margin: 0;
     }
     #content h1 {
@@ -195,7 +197,7 @@ function buildSelectionHtml(
       font-weight: 700;
       line-height: 18px;
     }
-    #content h3 {
+    #content h3, #content h4, #content h5, #content h6 {
       font-size: 13px;
       font-weight: 600;
       line-height: 20px;
@@ -203,6 +205,17 @@ function buildSelectionHtml(
     #content p {
       font-size: 13px;
       line-height: 20px;
+    }
+    #content blockquote {
+      border-left: 2px solid ${borderColor};
+      padding-left: 8px;
+      color: ${mutedColor};
+      font-size: 13px;
+      line-height: 20px;
+    }
+    #content code {
+      font-family: monospace;
+      font-size: 12px;
     }
     #content .md-blank {
       height: 4px;
