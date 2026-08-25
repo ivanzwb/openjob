@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { SessionMessageView } from '@shared/ipc';
 import { invoke } from '../ipc';
+import { normalizeDisplayText } from '@shared/lib/markdownDisplay';
 import { MarkdownContent } from './MarkdownContent';
 
 /**
@@ -45,7 +46,7 @@ export function PlanDecisionLog({
         <div className="max-h-80 space-y-3 overflow-y-auto rounded border border-[var(--color-border)] bg-[var(--color-bg)] p-3 text-xs">
           {[...messages].reverse().map((m) => (
             <div key={m.id} className="border-b border-[var(--color-border)] pb-3 last:border-0">
-              <MarkdownContent text={m.contentMd} />
+              <MarkdownContent text={normalizeDisplayText(m.contentMd)} />
             </div>
           ))}
         </div>

@@ -1,6 +1,8 @@
 import { useRef } from 'react';
 import type { CompanyIntel } from '@shared/entities';
+import { normalizeDisplayText } from '@shared/lib/markdownDisplay';
 import { AnnotationTools } from './AnnotationTools';
+import { MarkdownContent } from './MarkdownContent';
 
 export function CompanyIntelCard({
   intel,
@@ -28,7 +30,9 @@ export function CompanyIntelCard({
         {sections.map((s) => (
           <div key={s.title}>
             <h4 className="mb-1 text-xs font-medium text-[var(--color-muted)]">{s.title}</h4>
-            <div className="whitespace-pre-wrap text-sm leading-relaxed">{s.content}</div>
+            <div className="text-sm leading-relaxed">
+              <MarkdownContent text={normalizeDisplayText(s.content)} />
+            </div>
           </div>
         ))}
       </div>

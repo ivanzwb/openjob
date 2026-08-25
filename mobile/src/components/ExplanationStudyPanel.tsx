@@ -1081,6 +1081,11 @@ export function ExplanationStudyPanel({
         </>
       ) : (
         <>
+          {!readable && (
+            <Text style={{ color: theme.muted, fontSize: 11 }}>
+              划词模式显示原文以便标注；若表格/列表显示为 Markdown 符号，请切到「阅读模式」查看排版。
+            </Text>
+          )}
           {readable && (
             <Text style={{ color: theme.muted, fontSize: 11 }}>
               阅读模式会把表格、列表排版出来，但不能划词标注；要高亮、记笔记或细化请切回划词模式。

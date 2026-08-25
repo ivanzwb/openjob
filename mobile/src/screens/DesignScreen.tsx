@@ -479,9 +479,18 @@ export function DesignScreen(): React.JSX.Element {
       )}
 
       {result && (
-        <View style={{ gap: 6 }}>
+        <View style={{ gap: 8 }}>
           <Text style={{ color: theme.success }}>得分 {result.score}/5</Text>
-          <MarkdownPreview text={result.feedbackMd} />
+          <View style={{ gap: 4 }}>
+            <Text style={{ color: theme.muted, fontSize: 11 }}>反馈</Text>
+            <MarkdownPreview text={result.feedbackMd} />
+          </View>
+          {result.improvedOutlineMd.trim() ? (
+            <View style={{ gap: 4 }}>
+              <Text style={{ color: theme.muted, fontSize: 11 }}>改进稿</Text>
+              <MarkdownPreview text={result.improvedOutlineMd} />
+            </View>
+          ) : null}
         </View>
       )}
 

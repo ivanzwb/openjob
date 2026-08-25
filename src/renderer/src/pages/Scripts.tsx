@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { SpeechSnippetView } from '@shared/ipc';
+import { normalizeDisplayText } from '@shared/lib/markdownDisplay';
 import { MarkdownContent } from '../components/MarkdownContent';
 import { invoke } from '../ipc';
 import { useDataRefresh } from '../ipc/dataVersion';
@@ -198,7 +199,7 @@ export function Scripts(): React.JSX.Element {
             </div>
             {panelMode === 'preview' ? (
               <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-                <MarkdownContent text={selected.contentMd} />
+                <MarkdownContent text={normalizeDisplayText(selected.contentMd)} />
               </div>
             ) : (
               <textarea

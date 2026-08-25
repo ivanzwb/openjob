@@ -187,9 +187,15 @@ export function NodeStudyPanel({
           )}
         </>
       ) : (
-        <View style={{ gap: 6 }}>
+        <View style={{ gap: 8 }}>
           <Text style={{ color: theme.success, fontWeight: '600' }}>得分 {quizResult.attempt.score}/5</Text>
           <MarkdownPreview text={quizResult.attempt.feedbackMd} />
+          {quizResult.attempt.improvedScriptMd?.trim() ? (
+            <View style={{ gap: 4 }}>
+              <Text style={{ color: theme.muted, fontSize: 11 }}>改进话术</Text>
+              <MarkdownPreview text={quizResult.attempt.improvedScriptMd!} />
+            </View>
+          ) : null}
         </View>
       )}
 
