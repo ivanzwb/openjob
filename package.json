@@ -1,6 +1,6 @@
 {
   "name": "openjob",
-  "version": "0.6.12",
+  "version": "0.6.13",
   "description": "面试备考 Agent — 以一场具体面试为单位，诊断考点、编排计划、逐日推进",
   "license": "Apache-2.0",
   "author": "OpenJob <ivan.zwb@gmail.com>",
