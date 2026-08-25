@@ -10,6 +10,7 @@ import { TaskButton } from './TaskButton';
 export function SyncPanel(): React.JSX.Element {
   const [status, setStatus] = useState<SyncStatus | null>(null);
   const [pairing, setPairing] = useState<PairingPayload | null>(null);
+  // 最近同步只取最新一次：更早的几次没有信息量，要回退更早的现场走下面的快照列表
   const [runs, setRuns] = useState<SyncRunSummary[]>([]);
   const [backups, setBackups] = useState<BackupInfo[]>([]);
   const [showMoreBackups, setShowMoreBackups] = useState(false);
@@ -23,7 +24,7 @@ export function SyncPanel(): React.JSX.Element {
   const refresh = useCallback(async () => {
     const [s, r, b] = await Promise.all([
       invoke('sync:status', undefined),
-      invoke('sync:listRuns', { limit: 10 }),
+      invoke('sync:listRuns', { limit: 1 }),
       invoke('sync:listBackups', undefined),
     ]);
     setStatus(s);
@@ -33,7 +34,7 @@ export function SyncPanel(): React.JSX.Element {
 
   useEffect(() => {
     void invoke('sync:status', undefined).then(setStatus);
-    void invoke('sync:listRuns', { limit: 10 }).then(setRuns);
+    void invoke('sync:listRuns', { limit: 1 }).then(setRuns);
     void invoke('sync:listBackups', undefined).then(setBackups);
 
     const offPaired = onEvent('sync:paired', () => {
@@ -231,21 +232,16 @@ export function SyncPanel(): React.JSX.Element {
         {pairing && (
           <div className="space-y-2 rounded border border-amber-500/30 bg-amber-500/5 p-3">
             <p className="text-amber-200">
-              在手机端扫描以下信息（或手动输入）。配对码 5 分钟内有效。
+              用手机端「扫描二维码配对」扫下面的码。配对码 5 分钟内有效。
             </p>
-            <div className="flex flex-col items-center gap-1 rounded bg-white p-3">
+            {/* 手机端只有扫码这一条配对入口，配对码数字与 JSON 原文照抄也用不上，
+                摊在界面上只是把连接口令暴露给旁边的人 */}
+            <div className="flex justify-center rounded bg-white p-3">
               <QRCodeSVG value={JSON.stringify(pairing)} size={176} level="M" />
-              <p className="text-[10px] text-[var(--color-muted)]">
-                用手机端「扫描二维码配对」扫码，内容与下方 JSON 一致
-              </p>
             </div>
-            <p className="text-lg font-mono tracking-widest text-[var(--color-fg)]">{pairing.code}</p>
             <p className="font-mono text-[11px] text-[var(--color-muted)]">
               http://{pairing.host}:{pairing.port}
             </p>
-            <pre className="max-h-32 overflow-auto rounded bg-[var(--color-bg)] p-2 text-[10px] leading-relaxed">
-              {JSON.stringify(pairing, null, 2)}
-            </pre>
           </div>
         )}
 
