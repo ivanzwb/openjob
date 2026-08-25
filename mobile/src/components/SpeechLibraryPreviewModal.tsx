@@ -4,7 +4,7 @@ import { WebView } from 'react-native-webview';
 import * as Print from 'expo-print';
 import type { SpeechSnippetView } from '@shared/ipc';
 import { runTask, useTaskState } from '../context/RemoteTaskContext';
-import { markdownToPlainText } from '../lib/markdownBlocks';
+import { markdownToDisplayHtml } from '../lib/markdownDisplay';
 import { useTheme } from '../theme';
 
 const TIER_LABEL: Record<SpeechSnippetView['tier'], string> = {
@@ -25,10 +25,7 @@ function escapeHtml(text: string): string {
 function buildSpeechLibraryHtml(items: SpeechSnippetView[]): string {
   const sections = items
     .map((item, index) => {
-      const content = escapeHtml(markdownToPlainText(item.contentMd) || '（空）').replaceAll(
-        '\n',
-        '<br />',
-      );
+      const content = markdownToDisplayHtml(item.contentMd) || '（空）';
       return `
         <section class="snippet">
           <div class="index">${index + 1}</div>
@@ -85,6 +82,26 @@ function buildSpeechLibraryHtml(items: SpeechSnippetView[]): string {
       h2 { margin: 0; font-size: 15px; line-height: 1.4; }
       .meta { margin: 3px 0 8px; color: #6b7280; font-size: 10px; }
       .content { white-space: normal; }
+      .content .table-wrap { overflow-x: auto; margin: 8px 0; }
+      .content table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+      .content th, .content td {
+        border: 1px solid #e5e7eb;
+        padding: 6px 8px;
+        vertical-align: top;
+      }
+      .content th { background: #f3f4f6; }
+      .content pre {
+        background: #f3f4f6;
+        border-radius: 8px;
+        padding: 8px;
+        overflow-x: auto;
+        white-space: pre-wrap;
+      }
+      .content code { font-family: ui-monospace, monospace; font-size: 11px; }
     </style>
   </head>
   <body>

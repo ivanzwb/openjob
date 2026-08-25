@@ -8,6 +8,7 @@ import { useApp } from '../context/AppContext';
 import { runTask, useTaskResult, useTaskState } from '../context/RemoteTaskContext';
 import { useLocalDataReload } from '../hooks/useLocalDataReload';
 import { markdownToPlainText } from '../lib/markdownBlocks';
+import { MarkdownPreview } from '../components/MarkdownPreview';
 import { SpeechLibraryPreviewModal } from '../components/SpeechLibraryPreviewModal';
 import { useTheme } from '../theme';
 
@@ -269,9 +270,7 @@ export function ScriptsScreen(): React.JSX.Element {
                   }}
                   contentContainerStyle={{ padding: 12 }}
                 >
-                  <Text selectable style={{ color: theme.text, fontSize: 13, lineHeight: 22 }}>
-                    {markdownToPlainText(selected.contentMd) || '（空）'}
-                  </Text>
+                  <MarkdownPreview text={selected.contentMd} />
                 </ScrollView>
               ) : (
                 <TextInput
