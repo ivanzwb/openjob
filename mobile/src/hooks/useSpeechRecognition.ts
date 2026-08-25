@@ -5,6 +5,7 @@ import {
 } from 'expo-audio';
 import { initWhisper, releaseAllWhisper, type WhisperContext } from 'whisper.rn/index';
 import { ensureModel, isModelReady } from '../stt/model';
+import { type PcmChunk, pcmChunksToWhisperBuffer } from '../stt/pcm';
 
 /** 与桌面端同构的状态机：idle → recording → transcribing → done/error */
 export type SpeechState =
@@ -14,10 +15,12 @@ export type SpeechState =
   | { state: 'transcribing' }
   | { state: 'error'; error: string };
 
-/** 录音用 16kHz 单声道 int16 —— whisper 原生输入格式，无需重采样 */
+/** 录音用 16kHz 单声道 int16 —— whisper 原生输入格式 */
 const SAMPLE_RATE = 16000;
 const CHANNELS = 1;
 const ENCODING = 'int16' as const;
+/** 最短有效录音：约 0.2 秒 */
+const MIN_SAMPLES = SAMPLE_RATE / 5;
 
 function errorMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
@@ -38,7 +41,7 @@ export function useSpeechRecognition(onTranscript: (text: string) => void): {
   const onTranscriptRef = useRef(onTranscript);
   const whisperRef = useRef<WhisperContext | null>(null);
   // PCM 分块累积走 ref：录音中每 buffer 一次都 setState 会让 UI 卡顿
-  const pcmChunksRef = useRef<ArrayBuffer[]>([]);
+  const pcmChunksRef = useRef<PcmChunk[]>([]);
   const busyRef = useRef(false);
 
   useEffect(() => {
@@ -58,7 +61,11 @@ export function useSpeechRecognition(onTranscript: (text: string) => void): {
     channels: CHANNELS,
     encoding: ENCODING,
     onBuffer: (buffer) => {
-      pcmChunksRef.current.push(buffer.data);
+      pcmChunksRef.current.push({
+        data: buffer.data,
+        sampleRate: buffer.sampleRate,
+        channels: buffer.channels,
+      });
     },
   });
 
@@ -102,16 +109,17 @@ export function useSpeechRecognition(onTranscript: (text: string) => void): {
       stream.stop();
       setState({ state: 'transcribing' });
 
-      // 合并 PCM 分块为单个 Float32Array（whisper transcribeData 要求）
-      const chunks = pcmChunksRef.current;
-      const sampleCount = chunks.reduce((sum, chunk) => sum + chunk.byteLength / 2, 0);
-      const pcm = new Float32Array(sampleCount);
-      let offset = 0;
-      for (const chunk of chunks) {
-        const int16 = new Int16Array(chunk);
-        for (let i = 0; i < int16.length; i++) {
-          pcm[offset++] = int16[i] / 32768;
-        }
+      // whisper.rn transcribeData(ArrayBuffer) 要求 int16 PCM（mono 16kHz），不能传 float32
+      const audioBuffer = pcmChunksToWhisperBuffer(pcmChunksRef.current, SAMPLE_RATE);
+      if (!audioBuffer) {
+        setState({ state: 'error', error: '未录到声音，请按住麦克风再试' });
+        return;
+      }
+
+      const sampleCount = audioBuffer.byteLength / 2;
+      if (sampleCount < MIN_SAMPLES) {
+        setState({ state: 'error', error: '录音太短，请按住多说一会儿' });
+        return;
       }
 
       if (!whisperRef.current) {
@@ -119,7 +127,7 @@ export function useSpeechRecognition(onTranscript: (text: string) => void): {
         return;
       }
 
-      const { promise } = whisperRef.current.transcribeData(pcm.buffer, {
+      const { promise } = whisperRef.current.transcribeData(audioBuffer, {
         language: 'zh',
       });
       const { result } = await promise;

@@ -156,4 +156,36 @@ describe('手机端应用变更的外键安全', () => {
     const n = raw.getFirstSync<{ n: number }>(`SELECT count(*) AS n FROM knowledge_node`);
     expect(n?.n).toBe(0);
   });
+
+  it('JSON 数组列须先序列化，不能把 JS 数组直接绑给 SQLite', () => {
+    expect(() =>
+      applyAutoChanges(raw, PEER_DEVICE, [
+        {
+          table: 'design_case',
+          rowId: 'dc1',
+          kind: 'insert',
+          values: {
+            campaign_id: 'c1',
+            requested_type: 'selfIntro',
+            interview_type: 'selfIntro',
+            related_node_name: null,
+            title: '自我介绍',
+            scenario_md: '请做自我介绍',
+            constraints: ['60-90 秒', '岗位匹配'],
+            evaluation_criteria: ['表达自然'],
+            user_answer_md: null,
+            recommended_answer_md: null,
+            created_at: 1,
+            updated_at: 1,
+          },
+          wallMs: 1,
+        },
+      ]),
+    ).not.toThrow();
+
+    const row = raw.getFirstSync<{ constraints: string }>(
+      `SELECT constraints FROM design_case WHERE id = 'dc1'`,
+    );
+    expect(JSON.parse(row!.constraints)).toEqual(['60-90 秒', '岗位匹配']);
+  });
 });

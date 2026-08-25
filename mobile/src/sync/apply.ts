@@ -27,7 +27,9 @@ function sortChanges(changes: AutoChange[]): AutoChange[] {
 function bindValue(value: unknown): unknown {
   if (value === undefined) return null;
   if (typeof value === 'boolean') return value ? 1 : 0;
-  if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+  // 与桌面端一致：数组/对象（constraints、exam_forms、citations 等）必须 JSON 化；
+  // 不能把 JS 数组直接绑给 runSync，Hermes 会报 Exception in HostFunction: invalid auto data。
+  if (value !== null && typeof value === 'object') {
     return JSON.stringify(value);
   }
   return value;
