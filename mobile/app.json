@@ -2,7 +2,7 @@
   "expo": {
     "name": "OpenJob",
     "slug": "mobile",
-    "version": "1.0.0",
+    "version": "0.6.12",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -15,6 +15,7 @@
     },
     "android": {
       "package": "com.openjob.mobile",
+      "versionCode": 612,
       "softwareKeyboardLayoutMode": "pan",
       "permissions": [
         "CAMERA",
