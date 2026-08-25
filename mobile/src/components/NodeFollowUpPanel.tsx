@@ -56,8 +56,9 @@ function FollowUpMessageBubble({
   return (
     <View
       style={{
-        alignSelf: isUser ? 'flex-end' : 'flex-start',
-        maxWidth: '92%',
+        alignSelf: isUser ? 'flex-end' : 'stretch',
+        maxWidth: isUser ? '92%' : '100%',
+        width: isUser ? undefined : '100%',
         backgroundColor: isUser ? theme.accent : theme.bg,
         padding: 10,
         borderRadius: 10,

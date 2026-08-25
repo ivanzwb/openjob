@@ -3,6 +3,7 @@ import { highlightToHtml } from '../lib/highlight';
 import { highlightTextStyle } from '../lib/highlightStyle';
 import { useUiTheme } from '../lib/uiTheme';
 import { visibleMarkdownBlocks } from '../lib/markdownBlocks';
+import { parseMarkdownTextSegments } from '@shared/lib/markdownSegments';
 import {
   filterInlineAnnotations,
   renderTextWithInlineMarkers,
@@ -253,6 +254,100 @@ function CodeBlock({ lang, code }: { lang: string | null; code: string }): React
   );
 }
 
+function MarkdownTable({ rows }: { rows: string[][] }): React.JSX.Element | null {
+  if (rows.length === 0) return null;
+  const [header, ...body] = rows;
+  const colCount = header?.length ?? 0;
+  if (colCount === 0) return null;
+
+  return (
+    <div className="my-2 overflow-x-auto">
+      <table className="w-full min-w-[240px] border-collapse text-sm">
+        <thead>
+          <tr>
+            {header!.map((cell, cellIdx) => (
+              <th
+                key={`h-${cellIdx}`}
+                className="border border-[var(--color-border)] bg-black/20 px-2 py-1 text-left font-semibold align-top"
+              >
+                {cell}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {body.map((row, rowIdx) => (
+            <tr key={`r-${rowIdx}`}>
+              {row.map((cell, cellIdx) => (
+                <td
+                  key={`c-${rowIdx}-${cellIdx}`}
+                  className="border border-[var(--color-border)] px-2 py-1 align-top"
+                >
+                  {cell}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function MarkdownTextPart({
+  value,
+  mdStart,
+  keyPrefix,
+  onCodeClick,
+  highlights,
+  inlineAnnotations,
+  onDeleteAnnotation,
+  focusAnnotationId,
+}: {
+  value: string;
+  mdStart: number;
+  keyPrefix: string;
+  onCodeClick?: (loc: CodeLocation) => void;
+  highlights?: TextHighlight[];
+  inlineAnnotations?: InlineAnnotation[];
+  onDeleteAnnotation?: (id: string) => void;
+  focusAnnotationId?: string | null;
+}): React.JSX.Element {
+  const segments = parseMarkdownTextSegments(value);
+
+  return (
+    <>
+      {segments.map((segment, segIdx) => {
+        if (segment.type === 'table') {
+          return <MarkdownTable key={`${keyPrefix}-table-${segIdx}`} rows={segment.rows} />;
+        }
+        const segmentText = segment.lines.join('\n');
+        const localStart = value.indexOf(segmentText);
+        const blockStart = mdStart + (localStart >= 0 ? localStart : 0);
+        return (
+          <div
+            key={`${keyPrefix}-para-${segIdx}`}
+            className="whitespace-pre-wrap"
+            data-md-start={blockStart}
+            data-md-end={blockStart + segmentText.length}
+          >
+            {renderTextBlock(
+              segmentText,
+              blockStart,
+              `${keyPrefix}-${segIdx}`,
+              onCodeClick,
+              highlights,
+              inlineAnnotations,
+              onDeleteAnnotation,
+              focusAnnotationId,
+            )}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
 export function MarkdownContent({
   text,
   onCodeClick,
@@ -285,23 +380,17 @@ export function MarkdownContent({
           return <CodeBlock key={`c-${i}`} lang={part.lang ?? null} code={part.value} />;
         }
         return (
-          <div
+          <MarkdownTextPart
             key={`t-${i}`}
-            className="whitespace-pre-wrap"
-            data-md-start={part.mdStart}
-            data-md-end={part.mdEnd}
-          >
-            {renderTextBlock(
-              part.value,
-              part.mdStart,
-              `t-${i}`,
-              onCodeClick,
-              highlights,
-              inlineAnnotations,
-              onDeleteAnnotation,
-              focusAnnotationId,
-            )}
-          </div>
+            value={part.value}
+            mdStart={part.mdStart}
+            keyPrefix={`t-${i}`}
+            onCodeClick={onCodeClick}
+            highlights={highlights}
+            inlineAnnotations={inlineAnnotations}
+            onDeleteAnnotation={onDeleteAnnotation}
+            focusAnnotationId={focusAnnotationId}
+          />
         );
       })}
     </div>

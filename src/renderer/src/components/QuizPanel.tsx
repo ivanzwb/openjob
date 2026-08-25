@@ -137,7 +137,7 @@ export function QuizPanel({
 
       {question && (
         <div className="rounded border border-[var(--color-border)] bg-black/20 p-3 text-sm select-text">
-          {question}
+          <MarkdownContent text={normalizeDisplayText(question)} />
         </div>
       )}
 
@@ -239,14 +239,16 @@ export function QuizPanel({
           </div>
           <div>
             <h4 className="text-xs text-[var(--color-muted)]">反馈</h4>
-            <p className="mt-1 whitespace-pre-wrap">{result.attempt.feedbackMd}</p>
+            <div className="mt-1">
+              <MarkdownContent text={normalizeDisplayText(result.attempt.feedbackMd)} />
+            </div>
           </div>
           {result.attempt.improvedScriptMd && (
             <div>
               <h4 className="text-xs text-[var(--color-muted)]">改进话术</h4>
-              <p className="mt-1 whitespace-pre-wrap text-emerald-300">
-                {result.attempt.improvedScriptMd}
-              </p>
+              <div className="mt-1 text-emerald-300">
+                <MarkdownContent text={normalizeDisplayText(result.attempt.improvedScriptMd)} />
+              </div>
             </div>
           )}
         </div>

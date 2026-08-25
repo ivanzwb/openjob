@@ -209,10 +209,13 @@ function buildSelectionHtml(
       -webkit-user-select: text;
       user-select: text;
     }
+    #content .table-wrap {
+      overflow-x: auto;
+      margin: 8px 0;
+    }
     #content table {
       width: 100%;
       border-collapse: collapse;
-      margin: 8px 0;
       font-size: 12px;
     }
     #content th, #content td {

@@ -1,8 +1,12 @@
 import { useMemo } from 'react';
-import { Text, View } from 'react-native';
+import { ScrollView, Text, View } from 'react-native';
 import { visibleMarkdownBlocks } from '../lib/markdownBlocks';
 import { normalizeDisplayText } from '../lib/markdownDisplay';
+import { parseMarkdownTextSegments } from '@shared/lib/markdownSegments';
 import { useTheme } from '../theme';
+
+const TABLE_CELL_MIN_WIDTH = 88;
+const TABLE_CELL_MAX_WIDTH = 240;
 
 function normalizeInlineMarkdown(line: string): string {
   return line
@@ -11,22 +15,127 @@ function normalizeInlineMarkdown(line: string): string {
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
 }
 
-function parseTableRows(text: string): string[][] | null {
-  const lines = text
-    .split('\n')
+function MarkdownTable({ rows }: { rows: string[][] }): React.JSX.Element | null {
+  const theme = useTheme();
+  if (rows.length === 0) return null;
+
+  const [header, ...body] = rows;
+  const colCount = header?.length ?? 0;
+  if (colCount === 0) return null;
+
+  const cellStyle = {
+    minWidth: TABLE_CELL_MIN_WIDTH,
+    maxWidth: TABLE_CELL_MAX_WIDTH,
+    padding: 8,
+    borderColor: theme.border,
+  } as const;
+
+  return (
+    <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator>
+      <View
+        style={{
+          borderWidth: 1,
+          borderColor: theme.border,
+          borderRadius: 8,
+          overflow: 'hidden',
+        }}
+      >
+        <View style={{ flexDirection: 'row', backgroundColor: theme.bg }}>
+          {header!.map((cell, cellIdx) => (
+            <Text
+              key={`h-${cellIdx}`}
+              selectable
+              style={{
+                ...cellStyle,
+                color: theme.text,
+                fontSize: 12,
+                fontWeight: '700',
+                borderRightWidth: cellIdx < colCount - 1 ? 1 : 0,
+              }}
+            >
+              {normalizeInlineMarkdown(cell)}
+            </Text>
+          ))}
+        </View>
+        {body.map((row, rowIdx) => (
+          <View
+            key={`r-${rowIdx}`}
+            style={{ flexDirection: 'row', borderTopWidth: 1, borderColor: theme.border }}
+          >
+            {row.map((cell, cellIdx) => (
+              <Text
+                key={`c-${rowIdx}-${cellIdx}`}
+                selectable
+                style={{
+                  ...cellStyle,
+                  color: theme.text,
+                  fontSize: 12,
+                  lineHeight: 18,
+                  borderRightWidth: cellIdx < colCount - 1 ? 1 : 0,
+                }}
+              >
+                {normalizeInlineMarkdown(cell)}
+              </Text>
+            ))}
+          </View>
+        ))}
+      </View>
+    </ScrollView>
+  );
+}
+
+function MarkdownParagraph({ lines, keyPrefix }: { lines: string[]; keyPrefix: string }): React.JSX.Element {
+  const theme = useTheme();
+  const trimmed = lines
     .map((line) => line.trim())
-    .filter((line) => line.includes('|'));
-  if (lines.length < 2) return null;
-  const rows = lines
-    .filter((line) => !/^\|?[\s:-]+\|[\s|:-]*$/.test(line))
-    .map((line) =>
-      line
-        .split('|')
-        .map((cell) => cell.trim())
-        .filter(Boolean),
-    )
-    .filter((row) => row.length > 0);
-  return rows.length > 0 ? rows : null;
+    .filter(Boolean);
+
+  return (
+    <View style={{ gap: 4 }}>
+      {trimmed.map((line, lineIdx) => {
+        const heading = /^(#{1,3})\s+(.+)$/.exec(line);
+        if (heading) {
+          return (
+            <Text
+              key={`${keyPrefix}-${lineIdx}`}
+              selectable
+              style={{
+                color: theme.text,
+                fontSize: heading[1]!.length === 1 ? 16 : 14,
+                lineHeight: 22,
+                fontWeight: '700',
+              }}
+            >
+              {normalizeInlineMarkdown(heading[2]!)}
+            </Text>
+          );
+        }
+        const bullet = /^[-*]\s+(.+)$/.exec(line);
+        const numbered = /^\d+\.\s+(.+)$/.exec(line);
+        if (bullet || numbered) {
+          return (
+            <Text
+              key={`${keyPrefix}-${lineIdx}`}
+              selectable
+              style={{ color: theme.text, fontSize: 13, lineHeight: 20 }}
+            >
+              {'• '}
+              {normalizeInlineMarkdown((bullet?.[1] ?? numbered?.[1])!)}
+            </Text>
+          );
+        }
+        return (
+          <Text
+            key={`${keyPrefix}-${lineIdx}`}
+            selectable
+            style={{ color: theme.text, fontSize: 13, lineHeight: 20 }}
+          >
+            {normalizeInlineMarkdown(line)}
+          </Text>
+        );
+      })}
+    </View>
+  );
 }
 
 export function MarkdownPreview({ text }: { text: string }): React.JSX.Element {
@@ -39,7 +148,7 @@ export function MarkdownPreview({ text }: { text: string }): React.JSX.Element {
   }
 
   return (
-    <View style={{ gap: 8 }}>
+    <View style={{ gap: 8, width: '100%' }}>
       {blocks.map((block, blockIdx) => {
         if (block.type === 'code' || block.type === 'mermaid') {
           return (
@@ -66,104 +175,19 @@ export function MarkdownPreview({ text }: { text: string }): React.JSX.Element {
           );
         }
 
-        const tableRows = parseTableRows(block.value);
-        if (tableRows) {
-          const [header, ...body] = tableRows;
-          return (
-            <View
-              key={`table-${blockIdx}`}
-              style={{ borderWidth: 1, borderColor: theme.border, borderRadius: 8, overflow: 'hidden' }}
-            >
-              <View style={{ flexDirection: 'row', backgroundColor: theme.bg }}>
-                {header!.map((cell, cellIdx) => (
-                  <Text
-                    key={`h-${cellIdx}`}
-                    selectable
-                    style={{
-                      flex: 1,
-                      color: theme.text,
-                      fontSize: 12,
-                      fontWeight: '700',
-                      padding: 8,
-                      borderRightWidth: cellIdx < header!.length - 1 ? 1 : 0,
-                      borderColor: theme.border,
-                    }}
-                  >
-                    {normalizeInlineMarkdown(cell)}
-                  </Text>
-                ))}
-              </View>
-              {body.map((row, rowIdx) => (
-                <View key={`r-${rowIdx}`} style={{ flexDirection: 'row', borderTopWidth: 1, borderColor: theme.border }}>
-                  {row.map((cell, cellIdx) => (
-                    <Text
-                      key={`c-${rowIdx}-${cellIdx}`}
-                      selectable
-                      style={{
-                        flex: 1,
-                        color: theme.text,
-                        fontSize: 12,
-                        lineHeight: 18,
-                        padding: 8,
-                        borderRightWidth: cellIdx < row.length - 1 ? 1 : 0,
-                        borderColor: theme.border,
-                      }}
-                    >
-                      {normalizeInlineMarkdown(cell)}
-                    </Text>
-                  ))}
-                </View>
-              ))}
-            </View>
-          );
-        }
-
-        const lines = block.value
-          .split('\n')
-          .map((line) => line.trim())
-          .filter(Boolean);
+        const segments = parseMarkdownTextSegments(block.value);
         return (
-          <View key={`text-${blockIdx}`} style={{ gap: 4 }}>
-            {lines.map((line, lineIdx) => {
-              const heading = /^(#{1,3})\s+(.+)$/.exec(line);
-              if (heading) {
-                return (
-                  <Text
-                    key={`${blockIdx}-${lineIdx}`}
-                    selectable
-                    style={{
-                      color: theme.text,
-                      fontSize: heading[1]!.length === 1 ? 16 : 14,
-                      lineHeight: 22,
-                      fontWeight: '700',
-                    }}
-                  >
-                    {normalizeInlineMarkdown(heading[2]!)}
-                  </Text>
-                );
-              }
-              const bullet = /^[-*]\s+(.+)$/.exec(line);
-              const numbered = /^\d+\.\s+(.+)$/.exec(line);
-              if (bullet || numbered) {
-                return (
-                  <Text
-                    key={`${blockIdx}-${lineIdx}`}
-                    selectable
-                    style={{ color: theme.text, fontSize: 13, lineHeight: 20 }}
-                  >
-                    {'• '}
-                    {normalizeInlineMarkdown((bullet?.[1] ?? numbered?.[1])!)}
-                  </Text>
-                );
+          <View key={`text-${blockIdx}`} style={{ gap: 8, width: '100%' }}>
+            {segments.map((segment, segIdx) => {
+              if (segment.type === 'table') {
+                return <MarkdownTable key={`table-${blockIdx}-${segIdx}`} rows={segment.rows} />;
               }
               return (
-                <Text
-                  key={`${blockIdx}-${lineIdx}`}
-                  selectable
-                  style={{ color: theme.text, fontSize: 13, lineHeight: 20 }}
-                >
-                  {normalizeInlineMarkdown(line)}
-                </Text>
+                <MarkdownParagraph
+                  key={`para-${blockIdx}-${segIdx}`}
+                  lines={segment.lines}
+                  keyPrefix={`${blockIdx}-${segIdx}`}
+                />
               );
             })}
           </View>

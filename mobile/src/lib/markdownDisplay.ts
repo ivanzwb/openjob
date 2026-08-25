@@ -1,4 +1,10 @@
 import { normalizeDisplayText } from '@shared/lib/markdownDisplay';
+import {
+  isMarkdownTableDivider,
+  isMarkdownTableRow,
+  normalizeTableRows,
+  splitMarkdownTableCells,
+} from '@shared/lib/markdownSegments';
 
 export { normalizeDisplayText };
 
@@ -17,12 +23,30 @@ function renderInlineMarkdown(text: string): string {
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
 }
 
-function isTableRow(line: string): boolean {
-  return line.includes('|') && line.trim().startsWith('|');
-}
+function renderTableHtml(tableLines: string[]): string {
+  const rows = normalizeTableRows(
+    tableLines
+      .filter((row) => !isMarkdownTableDivider(row))
+      .map(splitMarkdownTableCells)
+      .filter((row) => row.some((cell) => cell.length > 0)),
+  );
+  if (rows.length === 0) return '';
 
-function isTableDivider(line: string): boolean {
-  return /^\|?[\s:-]+\|[\s|:-]*$/.test(line.trim());
+  const [head, ...body] = rows;
+  const parts: string[] = ['<div class="table-wrap"><table><thead><tr>'];
+  for (const cell of head!) {
+    parts.push(`<th>${renderInlineMarkdown(cell)}</th>`);
+  }
+  parts.push('</tr></thead><tbody>');
+  for (const row of body) {
+    parts.push('<tr>');
+    for (const cell of row) {
+      parts.push(`<td>${renderInlineMarkdown(cell)}</td>`);
+    }
+    parts.push('</tr>');
+  }
+  parts.push('</tbody></table></div>');
+  return parts.join('');
 }
 
 /** 轻量 markdown → HTML，覆盖标题、列表、表格与代码块，供 WebView 阅读模式使用 */
@@ -50,37 +74,14 @@ export function markdownToDisplayHtml(text: string): string {
       continue;
     }
 
-    if (isTableRow(line)) {
+    if (isMarkdownTableRow(line)) {
       const tableLines: string[] = [];
-      while (index < lines.length && isTableRow(lines[index]!)) {
+      while (index < lines.length && isMarkdownTableRow(lines[index]!)) {
         tableLines.push(lines[index]!);
         index += 1;
       }
-      const rows = tableLines.filter((row) => !isTableDivider(row));
-      if (rows.length > 0) {
-        const [head, ...body] = rows;
-        const headerCells = head!
-          .split('|')
-          .map((cell) => cell.trim())
-          .filter(Boolean);
-        parts.push('<table><thead><tr>');
-        for (const cell of headerCells) {
-          parts.push(`<th>${renderInlineMarkdown(cell)}</th>`);
-        }
-        parts.push('</tr></thead><tbody>');
-        for (const row of body) {
-          const cells = row
-            .split('|')
-            .map((cell) => cell.trim())
-            .filter(Boolean);
-          parts.push('<tr>');
-          for (const cell of cells) {
-            parts.push(`<td>${renderInlineMarkdown(cell)}</td>`);
-          }
-          parts.push('</tr>');
-        }
-        parts.push('</tbody></table>');
-      }
+      const tableHtml = renderTableHtml(tableLines);
+      if (tableHtml) parts.push(tableHtml);
       continue;
     }
 

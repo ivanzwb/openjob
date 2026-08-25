@@ -145,11 +145,7 @@ export function NodeStudyPanel({
         </Text>
       )}
 
-      {question && (
-        <Text selectable style={{ color: theme.text, fontSize: 13, lineHeight: 20 }}>
-          {question}
-        </Text>
-      )}
+      {question && <MarkdownPreview text={question} />}
       {!quizResult ? (
         <>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' }}>
@@ -193,9 +189,7 @@ export function NodeStudyPanel({
       ) : (
         <View style={{ gap: 6 }}>
           <Text style={{ color: theme.success, fontWeight: '600' }}>得分 {quizResult.attempt.score}/5</Text>
-          <Text selectable style={{ color: theme.text, fontSize: 13 }}>
-            {quizResult.attempt.feedbackMd}
-          </Text>
+          <MarkdownPreview text={quizResult.attempt.feedbackMd} />
         </View>
       )}
 
