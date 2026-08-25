@@ -2,6 +2,7 @@ import type { Database } from 'better-sqlite3';
 import type { AutoChange } from '@shared/sync';
 import { deviceLocalInsertDefaults } from './deviceLocalDefaults';
 import { syncTableSpec, syncTableSpecs } from './tables';
+import { upsertClause } from './upsert';
 import { writingAs } from './triggers';
 
 /**
@@ -69,7 +70,7 @@ function applyInsert(
   const colNames = cols.map((c) => `\`${c}\``).join(', ');
   raw
     .prepare(
-      `INSERT OR REPLACE INTO \`${table}\` (${colNames}) VALUES (${placeholders})`,
+      `INSERT INTO \`${table}\` (${colNames}) VALUES (${placeholders}) ${upsertClause(spec.pk, cols)}`,
     )
     .run(...cols.map((c) => bindValue(merged[c])));
 }

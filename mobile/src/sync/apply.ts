@@ -1,6 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import type { AutoChange } from '@shared/sync';
 import { deviceLocalInsertDefaults } from '../../../src/main/sync/deviceLocalDefaults';
+import { upsertClause } from '../../../src/main/sync/upsert';
 import { syncTableSpec, syncTableSpecs } from './tables';
 import { writingAs } from './triggers';
 
@@ -59,7 +60,7 @@ function applyInsert(
   const placeholders = cols.map(() => '?').join(', ');
   const colNames = cols.map((c) => `\`${c}\``).join(', ');
   raw.runSync(
-    `INSERT OR REPLACE INTO \`${table}\` (${colNames}) VALUES (${placeholders})`,
+    `INSERT INTO \`${table}\` (${colNames}) VALUES (${placeholders}) ${upsertClause(spec.pk, cols)}`,
     ...(cols.map((c) => bindValue(merged[c])) as (string | number | null)[]),
   );
 }

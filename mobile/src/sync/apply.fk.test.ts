@@ -190,6 +190,69 @@ describe('手机端应用变更的外键安全', () => {
     expect(JSON.parse(row!.constraints)).toEqual(['60-90 秒', '岗位匹配']);
   });
 
+  const campaignInsert = {
+    table: 'campaign',
+    rowId: 'c1',
+    kind: 'insert' as const,
+    values: {
+      company: 'ACME',
+      role_title: 'SRE',
+      jd_raw: 'jd',
+      jd_parsed: null,
+      resume_id: null,
+      interview_date: null,
+      daily_minutes: null,
+      status: 'interviewing',
+      created_at: 1,
+      updated_at: 2,
+    },
+    wallMs: 2000,
+  };
+
+  it('对已存在的父行下发 insert，不能连带删掉它的子行', () => {
+    insertNode(raw, 'n1', 'TCP');
+
+    // planMerge 不查库：对端改过、本机没动过的行一律发成 insert，
+    // 哪怕本机早就有这一行。落库时必须是就地更新，不能删了再插。
+    applyAutoChanges(raw, PEER_DEVICE, [campaignInsert]);
+
+    const nodes = raw.getFirstSync<{ n: number }>(`SELECT count(*) AS n FROM knowledge_node`);
+    expect(nodes?.n).toBe(1);
+    const campaign = raw.getFirstSync<{ status: string }>(
+      `SELECT status FROM campaign WHERE id = 'c1'`,
+    );
+    expect(campaign?.status).toBe('interviewing');
+  });
+
+  it('同批里父行 insert + 引用旧子行的孙行 insert——旧子行不能被冲掉', () => {
+    insertNode(raw, 'n1', 'TCP');
+
+    expect(() =>
+      applyAutoChanges(raw, PEER_DEVICE, [
+        campaignInsert,
+        {
+          table: 'explanation',
+          rowId: 'e1',
+          kind: 'insert',
+          values: {
+            node_id: 'n1',
+            tier: 'spoken',
+            content_md: '三次握手',
+            model_used: 'test',
+            source_ids: [],
+            created_at: 1,
+          },
+          wallMs: 2000,
+        },
+      ]),
+    ).not.toThrow();
+
+    const row = raw.getFirstSync<{ node_id: string }>(
+      `SELECT node_id FROM explanation WHERE id = 'e1'`,
+    );
+    expect(row?.node_id).toBe('n1');
+  });
+
   it('repo_file 删除须跟 repo 同批排序，partition 不能先把 repo 删了', () => {
     raw.runSync(
       `INSERT INTO repo (id, url, local_path, languages, status)

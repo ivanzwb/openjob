@@ -177,6 +177,70 @@ describe('应用变更的外键安全', () => {
     expect(n.n).toBe(1);
   });
 
+  const campaignInsert = {
+    table: 'campaign',
+    rowId: 'c1',
+    kind: 'insert' as const,
+    values: {
+      company: 'ACME',
+      role_title: 'SRE',
+      jd_raw: 'jd',
+      jd_parsed: null,
+      resume_id: null,
+      interview_date: null,
+      daily_minutes: null,
+      status: 'interviewing',
+      created_at: 1,
+      updated_at: 2,
+    },
+    wallMs: 2000,
+  };
+
+  it('对已存在的父行下发 insert，不能连带删掉它的子行', () => {
+    insertNode(raw, 'n1', 'TCP');
+
+    // planMerge 不查库：对端改过、本机没动过的行一律发成 insert（见 syncMerge.ts
+    // 的 `if (!localRow)`），哪怕本机早就有这一行。落库必须就地更新，
+    // 用 INSERT OR REPLACE 会先删冲突行，把子行一起级联带走。
+    applyAutoChanges(raw, PEER_DEVICE, [campaignInsert]);
+
+    const nodes = raw.prepare(`SELECT count(*) AS n FROM knowledge_node`).get() as { n: number };
+    expect(nodes.n).toBe(1);
+    const campaign = raw.prepare(`SELECT status FROM campaign WHERE id = 'c1'`).get() as {
+      status: string;
+    };
+    expect(campaign.status).toBe('interviewing');
+  });
+
+  it('同批里父行 insert + 引用旧子行的孙行 insert——旧子行不能被冲掉', () => {
+    insertNode(raw, 'n1', 'TCP');
+
+    expect(() =>
+      applyAutoChanges(raw, PEER_DEVICE, [
+        campaignInsert,
+        {
+          table: 'explanation',
+          rowId: 'e1',
+          kind: 'insert',
+          values: {
+            node_id: 'n1',
+            tier: 'spoken',
+            content_md: '三次握手',
+            model_used: 'test',
+            source_ids: [],
+            created_at: 1,
+          },
+          wallMs: 2000,
+        },
+      ]),
+    ).not.toThrow();
+
+    const row = raw.prepare(`SELECT node_id FROM explanation WHERE id = 'e1'`).get() as {
+      node_id: string;
+    };
+    expect(row.node_id).toBe('n1');
+  });
+
   it('delete 仍然子表在前——删父行前先清掉引用它的子行', () => {
     insertNode(raw, 'n1', 'TCP');
     installSyncTriggers(raw, LOCAL_DEVICE);
