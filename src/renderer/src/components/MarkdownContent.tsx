@@ -520,13 +520,11 @@ function MarkdownTextPart({
             />
           );
         }
-        const segmentText = segment.lines.join('\n');
-        const localStart = value.indexOf(segmentText);
         return (
           <MarkdownProse
             key={`${keyPrefix}-para-${segIdx}`}
             lines={segment.lines}
-            blockStart={mdStart + (localStart >= 0 ? localStart : 0)}
+            blockStart={mdStart + segment.start}
             keyPrefix={`${keyPrefix}-${segIdx}`}
             props={props}
           />

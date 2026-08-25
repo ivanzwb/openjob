@@ -1,9 +1,17 @@
 import { findUnfencedCodeRunEnd } from './unfencedCode';
 
+/**
+ * start 是这一段在被切分文本里的起始下标。
+ *
+ * 桌面端要拿它把 DOM 偏移还原成 contentMd 偏移。曾经是渲染时用 indexOf 反查
+ * 段落位置的，但 indexOf 只找第一处：同一块里出现重复文本、或后面的段落正好
+ * 是前面某段的子串（表格后面跟一句「分析」，而前文有「时间复杂度分析」）时，
+ * 偏移会指到前一处，高亮和笔记静默锚到别的字上。切分时顺手记下来才不会错。
+ */
 export type MarkdownTextSegment =
-  | { type: 'paragraph'; lines: string[] }
-  | { type: 'table'; rows: string[][] }
-  | { type: 'code'; lines: string[] };
+  | { type: 'paragraph'; lines: string[]; start: number }
+  | { type: 'table'; rows: string[][]; start: number }
+  | { type: 'code'; lines: string[]; start: number };
 
 export type MarkdownLineKind = 'heading' | 'bullet' | 'numbered' | 'quote' | 'plain';
 
@@ -86,10 +94,19 @@ export function normalizeTableRows(rows: string[][]): string[][] {
 /** 把纯文本块拆成段落、表格与漏加围栏的代码，支持同一块里混排 */
 export function parseMarkdownTextSegments(text: string): MarkdownTextSegment[] {
   const lines = text.split('\n');
+
+  const lineStart: number[] = [];
+  let pos = 0;
+  for (const line of lines) {
+    lineStart.push(pos);
+    pos += line.length + 1;
+  }
+
   const segments: MarkdownTextSegment[] = [];
   let index = 0;
 
   while (index < lines.length) {
+    const start = lineStart[index]!;
     const line = lines[index] ?? '';
 
     if (isMarkdownTableRow(line)) {
@@ -104,15 +121,20 @@ export function parseMarkdownTextSegments(text: string): MarkdownTextSegment[] {
           .map(splitMarkdownTableCells)
           .filter((row) => row.some((cell) => cell.length > 0)),
       );
-      if (rows.length > 0) {
-        segments.push({ type: 'table', rows });
-        continue;
-      }
+      // 只有分隔线、或整行都是空单元格时凑不出表格。这些行已经被吃进
+      // tableLines 了，不当正文接回去就会凭空消失——模型输出半截表格时
+      // 用户看到的是内容缺了一行，还不报错。
+      segments.push(
+        rows.length > 0
+          ? { type: 'table', rows, start }
+          : { type: 'paragraph', lines: tableLines, start },
+      );
+      continue;
     }
 
     const codeEnd = findUnfencedCodeRunEnd(lines, index);
     if (codeEnd !== null) {
-      segments.push({ type: 'code', lines: lines.slice(index, codeEnd) });
+      segments.push({ type: 'code', lines: lines.slice(index, codeEnd), start });
       index = codeEnd;
       continue;
     }
@@ -128,7 +150,7 @@ export function parseMarkdownTextSegments(text: string): MarkdownTextSegment[] {
       index += 1;
     }
     if (paragraph.some((l) => l.trim().length > 0)) {
-      segments.push({ type: 'paragraph', lines: paragraph });
+      segments.push({ type: 'paragraph', lines: paragraph, start });
     }
   }
 
