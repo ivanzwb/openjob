@@ -29,7 +29,7 @@ function ChatBubble({
       <div
         className={
           isUser
-            ? 'max-w-[85%] rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-sm text-sky-100'
+            ? 'max-w-[85%] rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-sm text-[var(--color-fg)]'
             : 'w-full rounded-lg border border-[var(--color-border)] bg-black/20 px-3 py-2 text-sm leading-relaxed'
         }
       >
