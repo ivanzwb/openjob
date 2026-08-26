@@ -58,7 +58,10 @@ export function VoiceInputButton({
     <Pressable
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
-      disabled={disabled || downloading || state.state === 'transcribing'}
+      // 只认外部的 disabled：按住期间状态会变成 downloading/transcribing，
+      // 中途把自己禁用掉，RN 就不再派发 onPressOut，这一次松手会直接丢掉。
+      // 重复按下由 useSpeechRecognition 内部串行化挡着，这里不必再拦
+      disabled={disabled}
       hitSlop={6}
       accessibilityRole="button"
       accessibilityLabel="语音口述"
