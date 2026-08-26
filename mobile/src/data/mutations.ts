@@ -5,6 +5,7 @@ import type { ExplanationTier } from '@shared/enums';
 import type { FollowUpSummaryUpdate } from '@shared/llm/followUpContext';
 import { getDeviceIdentity } from '../sync/identity';
 import { writingAs } from '../sync/triggers';
+import { nextMessageTimestamp, repoQaSessionId, type RepoQaMessage } from './repoQaThread';
 
 export type FollowUpMessage = { role: 'user' | 'assistant'; text: string };
 
@@ -119,6 +120,62 @@ export async function deleteFollowUpHistory(
       nodeId,
     );
     db.runSync(`DELETE FROM sync_meta WHERE key = ?`, legacyFollowUpKey(nodeId));
+  });
+}
+
+async function ensureRepoQaSession(
+  db: SQLiteDatabase,
+  repoId: string,
+  repoUrl: string,
+): Promise<string> {
+  const id = repoQaSessionId(repoId);
+  const existing = db.getFirstSync<{ id: string }>(`SELECT id FROM session WHERE id = ?`, id);
+  if (existing) return existing.id;
+
+  const identity = await getDeviceIdentity(db);
+  writingAs(db, identity.deviceId, () => {
+    db.runSync(
+      `INSERT INTO session (id, campaign_id, node_id, kind, title, created_at)
+       VALUES (?, NULL, NULL, 'repoQa', ?, ?)`,
+      id,
+      repoUrl,
+      Date.now(),
+    );
+  });
+  return id;
+}
+
+export async function appendRepoQaMessage(
+  db: SQLiteDatabase,
+  repoId: string,
+  repoUrl: string,
+  message: RepoQaMessage,
+): Promise<void> {
+  const sessionId = await ensureRepoQaSession(db, repoId, repoUrl);
+  const identity = await getDeviceIdentity(db);
+  const last = db.getFirstSync<{ created_at: number }>(
+    `SELECT created_at FROM message WHERE session_id = ? ORDER BY created_at DESC LIMIT 1`,
+    sessionId,
+  );
+  const createdAt = nextMessageTimestamp(last?.created_at ?? null, Date.now());
+  writingAs(db, identity.deviceId, () => {
+    db.runSync(
+      `INSERT INTO message (id, session_id, role, content_md, citations, created_at)
+       VALUES (?, ?, ?, ?, '[]', ?)`,
+      Crypto.randomUUID(),
+      sessionId,
+      message.role,
+      message.text,
+      createdAt,
+    );
+  });
+}
+
+export async function deleteRepoQaHistory(db: SQLiteDatabase, repoId: string): Promise<void> {
+  const identity = await getDeviceIdentity(db);
+  writingAs(db, identity.deviceId, () => {
+    // message.session_id 是 ON DELETE cascade，删会话即清空整串问答
+    db.runSync(`DELETE FROM session WHERE id = ?`, repoQaSessionId(repoId));
   });
 }
 

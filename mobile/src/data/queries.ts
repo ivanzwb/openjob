@@ -15,6 +15,7 @@ import type { Repo as RepoEntity } from '@shared/entities';
 import type { EdgeRelation } from '@shared/enums';
 import { sortNodesByStudyOrder } from '@shared/campaign/studyOrder';
 import type { FollowUpMessage } from './mutations';
+import { repoQaSessionId, type RepoQaMessage } from './repoQaThread';
 import type {
   FollowUpStoredMessage,
   FollowUpSummaryState,
@@ -646,6 +647,20 @@ export function getNodeFollowUpContext(
     },
     messages,
   };
+}
+
+export function getRepoQaHistory(db: SQLiteDatabase, repoId: string): RepoQaMessage[] {
+  return db
+    .getAllSync<{ role: string; content_md: string }>(
+      `SELECT role, content_md FROM message
+       WHERE session_id = ? AND role IN ('user', 'assistant')
+       ORDER BY created_at ASC, id ASC`,
+      repoQaSessionId(repoId),
+    )
+    .map((message) => ({
+      role: message.role as RepoQaMessage['role'],
+      text: message.content_md,
+    }));
 }
 
 export function getSessionMessages(db: SQLiteDatabase, sessionId: string): SessionMessageView[] {
