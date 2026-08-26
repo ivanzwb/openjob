@@ -721,6 +721,19 @@ export interface RepoAddInput {
   url: string;
 }
 
+/**
+ * 删除仓库的结果。
+ *
+ * 本地 clone 删不掉时条目照样移除——目录删不掉就不让删条目的话，同一个仓库
+ * 每次点删除都撞同一个错，永远清不掉。残留目录连同原因交给用户手删。
+ */
+export interface RepoDeleteResult {
+  /** 没能删掉的本地目录完整路径；全部删干净时为 null */
+  leftoverPath: string | null;
+  /** 删不掉的原因，界面原样展示 */
+  reason: string | null;
+}
+
 export interface RepoReadFileInput {
   repoId: string;
   filePath: string;
@@ -1088,7 +1101,7 @@ export interface IpcInvokeMap {
   'repo:list': { req: void; res: Repo[] };
   'repo:get': { req: { id: string }; res: Repo };
   'repo:add': { req: RepoAddInput; res: DiagnosisJobStarted };
-  'repo:delete': { req: { id: string }; res: void };
+  'repo:delete': { req: { id: string }; res: RepoDeleteResult };
   'repo:readFile': { req: RepoReadFileInput; res: RepoReadFileResult };
   'speech:save': { req: SpeechSaveInput; res: SpeechSnippet };
   'speech:saveFromNode': { req: SpeechSaveFromNodeInput; res: SpeechSnippet };

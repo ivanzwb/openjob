@@ -321,9 +321,8 @@ export function registerIpcHandlers(): void {
   handle('repo:add', (input) => ({
     jobId: startJob('克隆并索引仓库', (jobId) => cloneAndIndex(input.url, jobId)),
   }));
-  handle('repo:delete', ({ id }) => {
-    deleteRepo(id);
-  });
+  // 返回值带着删不掉的本地目录，界面要据此提示用户手删，不能丢
+  handle('repo:delete', ({ id }) => deleteRepo(id));
   handle('repo:readFile', ({ repoId, filePath, startLine, endLine }) =>
     readRepoFile(repoId, filePath, startLine, endLine),
   );

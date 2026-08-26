@@ -1,13 +1,15 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import simpleGit from 'simple-git';
 import type { Repo } from '@shared/entities';
+import type { RepoDeleteResult } from '@shared/ipc';
 import { getDb, schema } from '../db';
 import { getAppPaths } from '../paths';
 import { completeJson } from '../llm/json';
 import { detectLanguages, readFileRange } from './files';
+import { removeDirTree } from './removeDir';
 import { buildRepoMapAsync } from './symbols';
 import { snapshotRepoFiles } from './snapshot';
 import { assertGitAvailable, resolveGitBinary } from './git';
@@ -213,15 +215,34 @@ export async function cloneAndIndex(url: string, jobId: string): Promise<void> {
   }
 }
 
-export function deleteRepo(id: string): void {
+/**
+ * 删仓库条目，顺带删本地 clone。
+ *
+ * 目录删不掉时不能连条目一起留下：抛在 db.delete 之前的话，这个仓库每次点删除
+ * 都撞同一个错，用户再也没有办法把它从列表里清掉。所以宁可留个孤儿目录，
+ * 把完整路径交回给调用方让用户手删。
+ */
+export function deleteRepo(id: string): RepoDeleteResult {
   const db = getDb();
   const row = db.select().from(schema.repo).where(eq(schema.repo.id, id)).get();
-  if (!row) return;
+  if (!row) return { leftoverPath: null, reason: null };
 
+  let leftover: RepoDeleteResult = { leftoverPath: null, reason: null };
   if (existsSync(row.localPath)) {
-    rmSync(row.localPath, { recursive: true, force: true });
+    try {
+      removeDirTree(row.localPath);
+    } catch (err) {
+      // IPC 只搬 message，cause 上挂的 errno / syscall 只有主进程日志留得住
+      console.error(`[repo:delete] 删除本地 clone 失败：${row.localPath}`, err);
+      leftover = {
+        leftoverPath: row.localPath,
+        reason: err instanceof Error ? err.message : String(err),
+      };
+    }
   }
+
   db.delete(schema.repo).where(eq(schema.repo.id, id)).run();
+  return leftover;
 }
 
 export { rowToRepo };

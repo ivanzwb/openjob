@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Repo } from '@shared/entities';
-import type { GitStatus } from '@shared/ipc';
+import type { GitStatus, RepoDeleteResult } from '@shared/ipc';
 import { normalizeDisplayText } from '@shared/lib/markdownDisplay';
 import { MarkdownContent } from '../components/MarkdownContent';
 import { PageShell } from '../components/PageShell';
@@ -54,6 +54,7 @@ export function Repos(): React.JSX.Element {
   const [selectedTab, setSelectedTab] = useState<RepoTab>('summary');
   const [prevSelectedId, setPrevSelectedId] = useState<string | null>(selectedId);
   const [url, setUrl] = useState('');
+  const [leftover, setLeftover] = useState<RepoDeleteResult | null>(null);
   const [git, setGit] = useState<GitStatus | null>(null);
   const { active } = useJobProgress();
   const cloneJob = useJobFeedback('克隆并索引仓库');
@@ -109,8 +110,10 @@ export function Repos(): React.JSX.Element {
   const remove = (id: string): void => {
     if (!confirm('确定删除该仓库及本地 clone？')) return;
     void runTask(`repo:delete:${id}`, () => invoke('repo:delete', { id }))
-      .then(() => {
+      .then((result) => {
         if (selectedId === id) setSelectedId(null);
+        // 条目已经删了，残留目录只能靠用户自己去删，路径得一直留在界面上
+        setLeftover(result.leftoverPath ? result : null);
         refresh();
       })
       .catch(() => undefined);
@@ -171,6 +174,27 @@ export function Repos(): React.JSX.Element {
           <div className="rounded border border-red-900/70 bg-red-950/30 p-3 text-xs text-red-300">
             <div className="font-medium">克隆并索引仓库失败</div>
             <div className="mt-1 whitespace-pre-wrap">{cloneJob.error}</div>
+          </div>
+        )}
+
+        {leftover?.leftoverPath && (
+          <div className="rounded border border-amber-900 bg-amber-950/40 p-3 text-xs text-amber-300">
+            <div className="font-medium">仓库条目已删除，但本地目录没删掉</div>
+            <div className="mt-1">请手动删除这个目录：</div>
+            <div className="mt-1 rounded bg-black/30 px-2 py-1 font-mono break-all select-all text-amber-200">
+              {leftover.leftoverPath}
+            </div>
+            <div className="mt-2">
+              删不掉通常是有程序占着这个目录（资源管理器开着它、编辑器、终端、杀毒扫描），关掉后手删即可。
+            </div>
+            {leftover.reason && <div className="mt-2 whitespace-pre-wrap">{leftover.reason}</div>}
+            <button
+              type="button"
+              onClick={() => setLeftover(null)}
+              className="mt-2 underline hover:text-amber-100"
+            >
+              知道了
+            </button>
           </div>
         )}
 
