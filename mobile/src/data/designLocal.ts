@@ -20,13 +20,18 @@ import {
   type MockInterviewLanguage,
 } from '@shared/design/prompts';
 import { normalizeDisplayText } from '@shared/lib/markdownDisplay';
+import { buildCandidateContext } from '@shared/prompts/candidateContext';
 import {
   resumeExperienceBlock,
   resumeFactsBlockForSelfIntro,
-  type FallbackProject,
 } from '@shared/resume/experienceTimeline';
 import { completeJson } from '../llm/json';
 import { getCampaign } from './campaignLocal';
+import {
+  jdSummaryForPrompt,
+  loadCandidateContextInput,
+  loadResumeForPrompt,
+} from './candidateContextLocal';
 import { getDeviceIdentity } from '../sync/identity';
 import { writingAs } from '../sync/triggers';
 
@@ -96,27 +101,8 @@ function buildInterviewContext(db: SQLiteDatabase, campaignId: string): string {
     hot_topics_md: string;
   }>(`SELECT tech_stack_md, interview_process_md, hot_topics_md FROM company_intel WHERE campaign_id = ?`, campaignId);
 
-  const resume = campaign.resumeId
-    ? db.getFirstSync<{ parsed: string | null; raw_text: string | null }>(
-        `SELECT parsed, raw_text FROM resume WHERE id = ?`,
-        campaign.resumeId,
-      )
-    : null;
-
-  let resumeSkills = '（未提供）';
-  let fallbackProjects: FallbackProject[] = [];
-  if (resume?.parsed) {
-    try {
-      const parsed = JSON.parse(resume.parsed) as {
-        projects?: FallbackProject[];
-        skills?: string[];
-      };
-      resumeSkills = parsed.skills?.join('、') || '（未提供）';
-      fallbackProjects = parsed.projects ?? [];
-    } catch {
-      // 解析结果坏了不该拦住出题，退回「未提供」
-    }
-  }
+  const resume = loadResumeForPrompt(db, campaign.resumeId);
+  const resumeSkills = resume.skills.join('、') || '（未提供）';
 
   const blindSpots = db
     .getAllSync<{ question_text: string }>(
@@ -136,18 +122,11 @@ function buildInterviewContext(db: SQLiteDatabase, campaignId: string): string {
     )
     .map((q) => q.question_text);
 
-  const jdSummary = campaign.jdParsed
-    ? `职级：${campaign.jdParsed.seniority ?? '未知'}；要求：${campaign.jdParsed.requirements
-        ?.slice(0, 10)
-        .map((r) => `${r.skill}(${(r.weight * 100).toFixed(0)}%)`)
-        .join('、')}`
-    : campaign.jdRaw.slice(0, 1500);
-
   return `公司：${campaign.company}
 岗位：${campaign.roleTitle}
-JD 摘要：${jdSummary}
+JD 摘要：${jdSummaryForPrompt(campaign)}
 简历技能：${resumeSkills}
-${resumeExperienceBlock(resume?.raw_text ?? '', fallbackProjects)}
+${resumeExperienceBlock(resume.rawText, resume.projects)}
 公司技术栈：${intel?.tech_stack_md?.slice(0, 600) ?? '（未调研，可结合 JD 推断）'}
 面试流程：${intel?.interview_process_md?.slice(0, 400) ?? '（未调研）'}
 公司热点：${intel?.hot_topics_md?.slice(0, 400) ?? '（未调研）'}
@@ -293,23 +272,8 @@ export async function generateRecommendedAnswer(
   const resumeFacts =
     interviewType === 'selfIntro'
       ? (() => {
-          const campaign = getCampaign(db, campaignId);
-          const resume = campaign.resumeId
-            ? db.getFirstSync<{ parsed: string | null; raw_text: string | null }>(
-                `SELECT parsed, raw_text FROM resume WHERE id = ?`,
-                campaign.resumeId,
-              )
-            : null;
-          let fallbackProjects: FallbackProject[] = [];
-          if (resume?.parsed) {
-            try {
-              const parsed = JSON.parse(resume.parsed) as { projects?: FallbackProject[] };
-              fallbackProjects = parsed.projects ?? [];
-            } catch {
-              // 解析坏了就退回空列表
-            }
-          }
-          return `\n\n${resumeFactsBlockForSelfIntro(resume?.raw_text ?? '', fallbackProjects)}`;
+          const resume = loadResumeForPrompt(db, getCampaign(db, campaignId).resumeId);
+          return `\n\n${resumeFactsBlockForSelfIntro(resume.rawText, resume.projects)}`;
         })()
       : '';
 
@@ -332,16 +296,23 @@ ${answerUserHintForType(interviewType, effectiveLang)}`,
 }
 
 export async function elaborateDesignAnswer(
+  db: SQLiteDatabase,
+  campaignId: string,
   selectedText: string,
   contextMd: string,
 ): Promise<DesignElaborateResult> {
   const text = selectedText.trim();
   if (!text) throw new Error('请先选择要细化的内容');
 
+  // 细化一段划选只需要「候选人是谁、做过什么」。buildInterviewContext 里的公司情报、
+  // 考点清单、面经对这件事没用，还会和下面 6000 字的题干抢篇幅。
   const content = await completeJson<{ markdown: string }>(
     'explain',
     'explain.elaborate',
-    `## 模拟面试题目与参考答案（节选）
+    `## 候选人背景
+${buildCandidateContext(loadCandidateContextInput(db, campaignId))}
+
+## 模拟面试题目与参考答案（节选）
 ${contextMd.slice(0, 6000)}
 
 ## 用户划选内容

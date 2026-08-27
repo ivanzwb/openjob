@@ -12,7 +12,8 @@ import type {
 import { normalizeDisplayText } from '@shared/lib/markdownDisplay';
 import { completeJson } from '../llm/json';
 import { getDb, schema } from '../db';
-import { getCampaignRow, rowToNode } from '../campaign/repository';
+import { rowToNode } from '../campaign/repository';
+import { buildCampaignCandidateContext } from '../campaign/candidateContext';
 import { computePriority } from '../diagnosis/priority';
 import { saveSpeechFromQuiz } from '../speech';
 
@@ -84,13 +85,11 @@ export async function generateQuizQuestion(nodeId: string): Promise<QuizQuestion
   if (!row) throw new Error('考点不存在');
 
   const node = rowToNode(row);
-  const campaign = getCampaignRow(node.campaignId);
 
   const result = await completeJson<{ question: string }>(
     'quiz',
     'quiz.question',
-    `公司：${campaign.company} 岗位：${campaign.roleTitle}
-考点：${node.name} 覆盖类型：${node.coverageType}`,
+    buildCampaignCandidateContext(node.campaignId, node),
   );
 
   const question = result.question.trim();
@@ -119,13 +118,11 @@ export async function generateQuizAnswer(
   if (!row) throw new Error('考点不存在');
 
   const node = rowToNode(row);
-  const campaign = getCampaignRow(node.campaignId);
 
   const generated = await completeJson<{ answerMd: string }>(
     'quiz',
     'quiz.answer',
-    `公司：${campaign.company} 岗位：${campaign.roleTitle}
-考点：${node.name} 覆盖类型：${node.coverageType}
+    `${buildCampaignCandidateContext(node.campaignId, node)}
 问题：${question}`,
   );
 
@@ -152,13 +149,11 @@ export async function submitQuizAnswer(
   if (!row) throw new Error('考点不存在');
 
   const node = rowToNode(row);
-  const campaign = getCampaignRow(node.campaignId);
 
   const scored = await completeJson<QuizScoreResult>(
     'quiz',
     'quiz.score',
-    `公司：${campaign.company} 岗位：${campaign.roleTitle}
-考点：${node.name}
+    `${buildCampaignCandidateContext(node.campaignId, node)}
 问题：${question}
 候选人回答：${userAnswer}`,
   );

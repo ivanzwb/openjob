@@ -13,7 +13,12 @@ import { normalizeDisplayText } from '@shared/lib/markdownDisplay';
 import { getMobileConfig } from '../config/settings';
 import { completeJson } from '../llm/json';
 import { computePriority } from '@shared/priority';
-import { getCampaign, getKnowledgeNode } from './campaignLocal';
+import {
+  loadQuizPromptContext,
+  quizAnswerUserMessage,
+  quizQuestionUserMessage,
+  quizScoreUserMessage,
+} from './candidateContextLocal';
 import { getDeviceIdentity } from '../sync/identity';
 import { writingAs } from '../sync/triggers';
 
@@ -109,14 +114,12 @@ export async function generateQuizQuestion(
   db: SQLiteDatabase,
   nodeId: string,
 ): Promise<QuizQuestionResult> {
-  const node = getKnowledgeNode(db, nodeId);
-  const campaign = getCampaign(db, node.campaignId);
+  const context = loadQuizPromptContext(db, nodeId);
 
   const result = await completeJson<{ question: string }>(
     'quiz',
     'quiz.question',
-    `公司：${campaign.company} 岗位：${campaign.roleTitle}
-考点：${node.name} 覆盖类型：${node.coverageType}`,
+    quizQuestionUserMessage(context),
   );
 
   const question = result.question.trim();
@@ -129,7 +132,7 @@ export async function generateQuizQuestion(
     );
   });
 
-  return { nodeId, nodeName: node.name, question };
+  return { nodeId, nodeName: context.node.name, question };
 }
 
 /**
@@ -141,15 +144,12 @@ export async function generateQuizAnswer(
   nodeId: string,
   question: string,
 ): Promise<QuizAnswerResult> {
-  const node = getKnowledgeNode(db, nodeId);
-  const campaign = getCampaign(db, node.campaignId);
+  const context = loadQuizPromptContext(db, nodeId);
 
   const generated = await completeJson<{ answerMd: string }>(
     'quiz',
     'quiz.answer',
-    `公司：${campaign.company} 岗位：${campaign.roleTitle}
-考点：${node.name} 覆盖类型：${node.coverageType}
-问题：${question}`,
+    quizAnswerUserMessage(context, question),
   );
 
   const recommendedAnswerMd = normalizeDisplayText(generated.answerMd);
@@ -171,16 +171,13 @@ export async function submitQuizAnswer(
   question: string,
   userAnswer: string,
 ): Promise<QuizSubmitResult> {
-  const node = getKnowledgeNode(db, nodeId);
-  const campaign = getCampaign(db, node.campaignId);
+  const context = loadQuizPromptContext(db, nodeId);
+  const node = context.node;
 
   const scored = await completeJson<QuizScoreResult>(
     'quiz',
     'quiz.score',
-    `公司：${campaign.company} 岗位：${campaign.roleTitle}
-考点：${node.name}
-问题：${question}
-候选人回答：${userAnswer}`,
+    quizScoreUserMessage(context, question, userAnswer),
   );
 
   const score = Math.min(5, Math.max(1, Math.round(scored.score)));

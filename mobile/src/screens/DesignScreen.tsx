@@ -203,7 +203,9 @@ export function DesignScreen(): React.JSX.Element {
     const text = recommendedAnswer.trim();
     if (!text || !designCase) return;
     const contextMd = `题目：${designCase.title}\n\n${designCase.scenarioMd}\n\n参考答案：\n${text}`;
-    void runTask(elaborateKey, '细化讲解', () => elaborateDesignAnswer(text, contextMd)).catch(() => undefined);
+    void runTask(elaborateKey, '细化讲解', () =>
+      elaborateDesignAnswer(getRawDb(), campaignId, text, contextMd),
+    ).catch(() => undefined);
   };
 
   return (

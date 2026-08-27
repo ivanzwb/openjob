@@ -1,5 +1,6 @@
 import type { ExamForm } from '@shared/enums';
 import { CODE_FENCE_RULE_IN_JSON } from '../prompts/format';
+import { QUESTION_GROUNDING_RULE, SCORE_GROUNDING_RULE } from '../prompts/grounding';
 
 export type MockInterviewKind = ExamForm | 'selfIntro';
 export type MockInterviewType = MockInterviewKind | 'mixed';
@@ -55,7 +56,9 @@ const CASE_OUTPUT_SCHEMA = `${CODE_FENCE_RULE_IN_JSON}
 const CASE_BASE_RULES = `你是资深面试官，根据公司背景、岗位 JD、候选人简历和考点清单，出一道贴近真实面试的题。
 题目必须结合给定上下文，不要出与岗位无关的泛题。
 题目涉及候选人经历时，优先取最近的那几段——上下文里的简历经历已按时间倒序给出，序号越小越近。
-一道题只围绕一段经历，不要把几个项目拼成一道题：拼出来的题候选人没法用真实经历回答。`;
+一道题只围绕一段经历，不要把几个项目拼成一道题：拼出来的题候选人没法用真实经历回答。
+
+${QUESTION_GROUNDING_RULE}`;
 
 export const MIXED_CASE_SYSTEM = `${CASE_BASE_RULES}
 
@@ -81,7 +84,9 @@ ${CASE_OUTPUT_SCHEMA}`;
 
 export const SCENARIO_CASE_SYSTEM = `${CASE_BASE_RULES}
 
-题型：项目深挖 / 行为场景。围绕简历项目或 JD 职责，追问决策、权衡、踩坑与复盘。
+题型：项目深挖 / 行为场景。围绕简历里真实写过的项目经历，追问决策、权衡、踩坑与复盘。
+JD 职责只用来决定深挖哪一段简历经历，不能当成候选人做过的项目来出题。
+简历里没有可深挖的经历时，出成假设性场景题（如「如果让你负责……你会怎么做」），不要虚构一段他的项目。
 ${CASE_OUTPUT_SCHEMA}`;
 
 export const SELF_INTRO_CASE_SYSTEM = `${CASE_BASE_RULES}
@@ -118,7 +123,8 @@ export function caseUserHintForType(
   language: MockInterviewLanguage = 'zh',
 ): string {
   const languageHint = languageInstruction(language);
-  if (type === 'mixed') return `${languageHint}\n请根据候选人背景自动选择最合适的题型并出题。`;
+  if (type === 'mixed')
+    return `${languageHint}\n请结合候选人简历经历与目标岗位要求，自动选择最合适的题型并出题。`;
   const labels: Record<MockInterviewKind, string> = {
     concept: '概念 / 八股',
     coding: '编码 / 算法',
@@ -130,6 +136,9 @@ export function caseUserHintForType(
 }
 
 const SCORE_BASE = `你是面试评委。按 1-5 分评分（5=能扛追问），给出逐点反馈和改进后的口语答题稿（markdown）。
+
+${SCORE_GROUNDING_RULE}
+
 ${CODE_FENCE_RULE_IN_JSON}
 输出 JSON：
 {
@@ -156,7 +165,7 @@ export function scoreSystemForType(
   return `${base}\n${languageInstruction(language)}`;
 }
 
-const ANSWER_BASE = `你是资深面试官兼面试教练。根据题目与候选人背景，给出一份高质量的「参考答案」草稿（markdown），适合口头作答。
+const ANSWER_BASE = `你是资深面试官兼面试教练。根据题目、候选人简历里的真实经历，以及目标岗位的要求，给出一份高质量的「参考答案」草稿（markdown），适合口头作答。
 要求：结构清晰、口语化、结合题目约束；不要写评分或点评，只写答案正文。
 ${CODE_FENCE_RULE_IN_JSON}
 输出 JSON：{ "answerMd": "..." }`;
@@ -179,6 +188,15 @@ const ANSWER_SEQUENTIAL_RULE = `- 会覆盖多段经历，按时间倒序一段�
 
 const ANSWER_NO_FABRICATION_RULE = `- 简历里没有的经历、指标、技术栈一律不要编；简历没写清楚的地方宁可说得笼统一点，也不要用「提升性能」「优化架构」等空话把缺口填成具体故事。`;
 
+/**
+ * 非自我介绍题型的经历隔离。
+ *
+ * 不能照搬自我介绍那条「只准用简历」——概念题的技术内容本来就该用通用知识
+ * 答，「什么是 MVCC」不来自任何人的简历。真正要卡的是口吻：一旦以「我做过」
+ * 出现，来源就只能是简历。
+ */
+const ANSWER_EXPERIENCE_SOURCE_RULE = `- 技术内容本身可以用通用知识作答；但凡是以「我做过」「我们项目里」这种口吻出现的内容，只能来自简历。JD、公司技术栈、面经里的技术栈是目标岗位的要求，不是候选人的经历，不能拿来当个人例子。`;
+
 const SELF_INTRO_RESUME_ONLY_RULE = `- 自我介绍是复述候选人自己的履历，不是写理想候选人。公司情报、JD、面经里的技术栈只用来写「为什么投这个岗位」，不能当成候选人做过的事。`;
 
 const SELF_INTRO_TRACEABLE_FACT_RULE = `- 凡涉及公司名、项目名、职责、技术栈、业务场景、数据指标，必须能在上文「自我介绍唯一事实来源」里找到对应表述；找不到就删掉或改成不含具体细节的笼统说法，绝不自己填数字或技术名词。`;
@@ -190,6 +208,7 @@ function answerSourcingRules(...rules: string[]): string {
 }
 
 const ANCHORED_SOURCING = answerSourcingRules(
+  ANSWER_EXPERIENCE_SOURCE_RULE,
   ANSWER_RECENCY_RULE,
   ANSWER_SINGLE_ANCHOR_RULE,
   ANSWER_NO_FABRICATION_RULE,

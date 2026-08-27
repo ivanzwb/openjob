@@ -900,6 +900,11 @@ export interface DesignGenerateAnswerResult {
 export interface DesignElaborateInput {
   selectedText: string;
   contextMd: string;
+  /**
+   * 主进程据此回查简历，细化时才不会拿 JD 当候选人做过的项目。
+   * 可选是因为手机端远程调用这条链路时不一定带得上，缺了就退化成不带简历上下文。
+   */
+  campaignId?: string;
 }
 
 export interface DesignElaborateResult {

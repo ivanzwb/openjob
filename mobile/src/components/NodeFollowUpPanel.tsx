@@ -1,7 +1,6 @@
 import { useCallback, useState } from 'react';
 import { Alert, Pressable, Text, TextInput, View } from 'react-native';
 import type { ExplanationTier } from '@shared/enums';
-import { buildNodeFollowUpSystemPrompt } from '@shared/prompts/followUp';
 import {
   buildFollowUpSummaryPrompt,
   compactFollowUpContext,
@@ -14,6 +13,7 @@ import {
   useTaskState,
 } from '../context/RemoteTaskContext';
 import { getRawDb } from '../db';
+import { buildNodeFollowUpSystem } from '../data/candidateContextLocal';
 import {
   appendFollowUpMessage,
   deleteFollowUpHistory,
@@ -118,7 +118,6 @@ export function NodeFollowUpPanel({
     setInput('');
     const nextMessages = [...messages, { role: 'user' as const, text }];
     setMessages(nextMessages);
-    const systemPrompt = buildNodeFollowUpSystemPrompt(nodeName, nodeId);
     void runTask(
       taskKey,
       '追问',
@@ -128,6 +127,8 @@ export function NodeFollowUpPanel({
           text,
         });
         const db = getRawDb();
+        // 简历/JD 要查库才有，所以 system 在这里拼而不是渲染时拼
+        const systemPrompt = buildNodeFollowUpSystem(db, nodeId, nodeName);
         const context = getNodeFollowUpContext(db, nodeId);
         const compacted = await compactFollowUpContext({
           systemPrompt,

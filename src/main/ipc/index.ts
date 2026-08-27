@@ -380,7 +380,9 @@ export function registerIpcHandlers(): void {
       input.constraints,
     ),
   );
-  handle('design:elaborate', (input) => elaborateDesignAnswer(input.selectedText, input.contextMd));
+  handle('design:elaborate', (input) =>
+    elaborateDesignAnswer(input.selectedText, input.contextMd, input.campaignId),
+  );
 
   handle('annotation:list', ({ targetType, targetId }) =>
     listAnnotations(targetType, targetId),

@@ -198,7 +198,7 @@ export function DesignPractice(): React.JSX.Element {
     if (!text || !designCase) return;
     const contextMd = `题目：${designCase.title}\n\n${designCase.scenarioMd}\n\n参考答案：\n${text}`;
     void runTask(elaborateKey, () =>
-      invoke('design:elaborate', { selectedText: text, contextMd }),
+      invoke('design:elaborate', { selectedText: text, contextMd, campaignId }),
     ).catch(() => undefined);
   };
 

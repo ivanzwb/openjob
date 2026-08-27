@@ -39,6 +39,7 @@ import {
   buildExplainFallbackSystem,
   buildExplainGenerateSystem,
 } from './explain';
+import { buildNodeFollowUpSystemPrompt } from './followUp';
 import { COMPRESS_SYSTEM } from './compress';
 import { MATCH_SYSTEM } from './ingest';
 import { REPO_SUMMARY_SYSTEM, buildRepoAnalyzeSystem } from './repo';
@@ -146,18 +147,37 @@ export const PROMPT_REGISTRY: Record<string, PromptEntry> = {
     ],
   },
 
+  // ── 追问（原先直接被 NodeFollowUpChat 调用，是唯一游离在注册表外的 system）──
+  'followUp.node': {
+    id: 'followUp.node',
+    versions: [
+      {
+        id: 'followUp.node@v1',
+        build: (p) =>
+          buildNodeFollowUpSystemPrompt(p.nodeName ?? '', p.nodeId ?? '', p.candidateContext),
+        note: '结构化骨架 + 简历为事实源',
+      },
+    ],
+  },
+
   // ── 考我（两端同文本，收拢为 shared）──
   'quiz.question': {
     id: 'quiz.question',
-    versions: [{ id: 'quiz.question@v1', text: QUIZ_QUESTION_SYSTEM, note: '初始版本' }],
+    versions: [
+      { id: 'quiz.question@v1', text: QUIZ_QUESTION_SYSTEM, note: '结构化骨架 + 出题不得预设经历' },
+    ],
   },
   'quiz.score': {
     id: 'quiz.score',
-    versions: [{ id: 'quiz.score@v1', text: QUIZ_SCORE_SYSTEM, note: '初始版本' }],
+    versions: [
+      { id: 'quiz.score@v1', text: QUIZ_SCORE_SYSTEM, note: '结构化骨架 + 改进稿不得拿 JD 补经历' },
+    ],
   },
   'quiz.answer': {
     id: 'quiz.answer',
-    versions: [{ id: 'quiz.answer@v1', text: QUIZ_ANSWER_SYSTEM, note: '初始版本' }],
+    versions: [
+      { id: 'quiz.answer@v1', text: QUIZ_ANSWER_SYSTEM, note: '结构化骨架 + 简历为事实源' },
+    ],
   },
 
   // ── 模拟面试（文本来自 shared/design/prompts，按题型运行时选择）──

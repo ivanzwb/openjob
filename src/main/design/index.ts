@@ -10,6 +10,10 @@ import type { ExamForm } from '@shared/enums';
 import type { InferSelectModel } from 'drizzle-orm';
 import { completeJson } from '../llm/json';
 import { getCampaignRow } from '../campaign/repository';
+import {
+  buildCampaignCandidateContext,
+  jdSummaryForCampaign,
+} from '../campaign/candidateContext';
 import { getDb, schema } from '../db';
 import { saveSpeechFromDesign } from '../speech';
 import {
@@ -114,12 +118,7 @@ function buildInterviewContext(campaignId: string): string {
     .all()
     .slice(0, 5);
 
-  const jdSummary = campaign.jdParsed
-    ? `职级：${campaign.jdParsed.seniority ?? '未知'}；要求：${campaign.jdParsed.requirements
-        ?.slice(0, 10)
-        .map((r) => `${r.skill}(${(r.weight * 100).toFixed(0)}%)`)
-        .join('、')}`
-    : campaign.jdRaw.slice(0, 1500);
+  const jdSummary = jdSummaryForCampaign(campaign);
 
   return `公司：${campaign.company}
 岗位：${campaign.roleTitle}
@@ -282,14 +281,21 @@ ${answerUserHintForType(interviewType, effectiveLang)}`,
 export async function elaborateDesignAnswer(
   selectedText: string,
   contextMd: string,
+  campaignId?: string,
 ): Promise<DesignElaborateResult> {
   const text = selectedText.trim();
   if (!text) throw new Error('请先选择要细化的内容');
 
+  // 细化一段划选只需要「候选人是谁、做过什么」。buildInterviewContext 里的公司情报、
+  // 考点清单、面经对这件事没用，还会和下面 6000 字的题干抢篇幅。
+  const candidate = campaignId
+    ? `## 候选人背景\n${buildCampaignCandidateContext(campaignId)}\n\n`
+    : '';
+
   const content = await completeJson<{ markdown: string }>(
     'explain',
     'explain.elaborate',
-    `## 模拟面试题目与参考答案（节选）
+    `${candidate}## 模拟面试题目与参考答案（节选）
 ${contextMd.slice(0, 6000)}
 
 ## 用户划选内容

@@ -21,6 +21,7 @@ import { agentTools, AGENT_TOOLS, GRAPH_TOOLS, runTool, type ToolContext } from 
 import { getRepo, getRepoLocalPath } from '../repo/repository';
 import { mergedCodeAgentTools, runCodeRepoTool } from '../repo/tools';
 import { getCampaignRow } from '../campaign/repository';
+import { buildNodeFollowUpSystem } from '../campaign/candidateContext';
 import { decideSearchTrigger, triggerInstruction } from '../search/trigger';
 import { normalizeChatMessages } from './messages';
 import { buildRepoAnalyzeSystem } from '@shared/prompts/repo';
@@ -125,8 +126,10 @@ async function runChat(
 
     let requestMessages = req.messages;
     if (req.sessionKind === 'nodeFollowUp' && sessionId) {
-      const systemPrompt =
-        req.messages.find((message) => message.role === 'system')?.content ?? '';
+      const systemPrompt = buildNodeFollowUpSystem(
+        req.nodeId,
+        req.messages.find((message) => message.role === 'system')?.content ?? '',
+      );
       const context = getFollowUpContext(sessionId);
       const compacted = await compactFollowUpContext({
         systemPrompt,

@@ -282,7 +282,7 @@ const RPC_HANDLERS: Partial<Record<IpcInvokeChannel, RpcHandler>> = {
   },
   'design:elaborate': (p) => {
     const input = p as IpcReq<'design:elaborate'>;
-    return elaborateDesignAnswer(input.selectedText, input.contextMd);
+    return elaborateDesignAnswer(input.selectedText, input.contextMd, input.campaignId);
   },
   'annotation:list': (p) => listAnnotations((p as { targetType: string; targetId: string }).targetType as IpcReq<'annotation:list'>['targetType'], (p as { targetType: string; targetId: string }).targetId),
   'annotation:listForCampaign': (p) => listAnnotationsForCampaign((p as { campaignId: string }).campaignId),
