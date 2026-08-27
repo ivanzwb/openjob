@@ -19,7 +19,10 @@ export async function generateExplanation(
   const node = getKnowledgeNode(db, nodeId);
   const campaign = getCampaign(db, node.campaignId);
   const { model } = await resolveLlmRole('explain');
-  const resumeContext = buildResumeContext(db, node.campaignId);
+  const resumeContext = buildResumeContext(db, node.campaignId, {
+    nodeName: node.name,
+    userText: instruction,
+  });
 
   const content = await completeJson<{ markdown: string }>(
     'explain',
@@ -85,7 +88,10 @@ export async function generateFallbackScript(
   const node = getKnowledgeNode(db, nodeId);
   const campaign = getCampaign(db, node.campaignId);
   const { model } = await resolveLlmRole('explain');
-  const resumeContext = buildResumeContext(db, node.campaignId);
+  const resumeContext = buildResumeContext(db, node.campaignId, {
+    nodeName: node.name,
+    userText: instruction,
+  });
 
   const content = await completeJson<{ markdown: string }>(
     'explain',
@@ -135,7 +141,10 @@ export async function elaborateExplanationSelection(
 
   const node = getKnowledgeNode(db, nodeId);
   const campaign = getCampaign(db, node.campaignId);
-  const resumeContext = buildResumeContext(db, node.campaignId);
+  const resumeContext = buildResumeContext(db, node.campaignId, {
+    nodeName: node.name,
+    userText: text,
+  });
 
   const content = await completeJson<{ markdown: string }>(
     'explain',

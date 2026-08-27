@@ -122,7 +122,7 @@ export async function generateQuizAnswer(
   const generated = await completeJson<{ answerMd: string }>(
     'quiz',
     'quiz.answer',
-    `${buildCampaignCandidateContext(node.campaignId, node)}
+    `${buildCampaignCandidateContext(node.campaignId, node, question)}
 问题：${question}`,
   );
 
@@ -153,7 +153,7 @@ export async function submitQuizAnswer(
   const scored = await completeJson<QuizScoreResult>(
     'quiz',
     'quiz.score',
-    `${buildCampaignCandidateContext(node.campaignId, node)}
+    `${buildCampaignCandidateContext(node.campaignId, node, `${question}\n${userAnswer}`)}
 问题：${question}
 候选人回答：${userAnswer}`,
   );

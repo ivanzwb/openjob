@@ -70,7 +70,11 @@ const resumeRow: ResumeRow = {
 
 ### 涌泉科技 | 后端工程师 | 2021-04 ~ 至今
 
-- 重构对账中心，日终跑批从 40 分钟压到 6 分钟
+- 重构对账中心，用 Kafka 做异步削峰并处理消费端幂等，日终跑批从 40 分钟压到 6 分钟
+
+### 早年公司 | 前端工程师 | 2018-01 ~ 2021-03
+
+- 用 React 写管理后台
 `,
   parsed: { skills: ['Go', 'Kafka'], projects: [], yearsOfExperience: 5 },
   previewStyle: null,
@@ -103,8 +107,10 @@ describe('buildNodeFollowUpSystem', () => {
 
     expect(prompt).toContain('消息队列幂等消费');
     expect(prompt).toContain('公司：星舰科技');
-    expect(prompt).toContain('简历经历（按时间倒序');
-    expect(prompt).toContain('涌泉科技');
+    expect(prompt).toContain('简历经历（按与本题的关键词重叠度粗排');
+    // 打在考点上的那段排前面，其余的仍然给，由模型自己判断相关性
+    expect(prompt.indexOf('涌泉科技')).toBeGreaterThan(-1);
+    expect(prompt.indexOf('早年公司')).toBeGreaterThan(prompt.indexOf('涌泉科技'));
   });
 
   it('考点查不到时退回渲染层传来的 prompt', () => {

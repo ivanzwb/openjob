@@ -2,29 +2,31 @@ import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import type { Explanation } from '@shared/entities';
 import type { ExplanationTier } from '@shared/enums';
-import { RESUME_ALIGN_RULES } from '@shared/prompts/explain';
+import { buildExplainResumeContext } from '@shared/prompts/candidateContext';
+import type { ResumeRelevanceQuery } from '@shared/resume/relevance';
 import { normalizeDisplayText } from '@shared/lib/markdownDisplay';
 import { completeJson } from '../llm/json';
 import { resolveLlmRole } from '../config';
 import { getDb, schema } from '../db';
 import { getCampaignRow, getResumeRow, rowToNode } from '../campaign/repository';
 
-function buildResumeContext(campaignId: string): string {
+/**
+ * 措辞和筛选都在共享层（手机端调同一个函数），这里只负责取数。
+ * query 决定从简历里挑哪几段，所以每个调用点都要把考点名和用户这轮的输入传进来。
+ */
+function buildResumeContext(campaignId: string, query: ResumeRelevanceQuery): string {
   const campaign = getCampaignRow(campaignId);
-  if (!campaign.resumeId) {
-    return (
-      '（尚未关联简历：举例用通用场景，并在实例段落提醒候选人结合自身项目替换；' +
-      '不要编造具体公司名/项目名当作候选人经历）'
-    );
-  }
+  if (!campaign.resumeId) return buildExplainResumeContext(null, query);
 
   const resume = getResumeRow(campaign.resumeId);
-  const parts = [`## 候选人简历原文\n${resume.rawText.slice(0, 8000)}`];
-  if (resume.parsed) {
-    parts.push(`## 简历结构化摘要\n${JSON.stringify(resume.parsed, null, 2).slice(0, 4000)}`);
-  }
-  parts.push(RESUME_ALIGN_RULES);
-  return parts.join('\n\n');
+  return buildExplainResumeContext(
+    {
+      resumeRawText: resume.rawText,
+      resumeSkills: resume.parsed?.skills ?? null,
+      resumeProjects: resume.parsed?.projects ?? null,
+    },
+    query,
+  );
 }
 
 function rowToExplanation(row: typeof schema.explanation.$inferSelect): Explanation {
@@ -66,7 +68,10 @@ export async function generateExplanation(
   const node = rowToNode(nodeRow);
   const campaign = getCampaignRow(node.campaignId);
   const { model } = resolveLlmRole('explain');
-  const resumeContext = buildResumeContext(node.campaignId);
+  const resumeContext = buildResumeContext(node.campaignId, {
+    nodeName: node.name,
+    userText: instruction,
+  });
 
   const content = await completeJson<{ markdown: string }>(
     'explain',
@@ -133,7 +138,10 @@ export async function generateFallbackScript(
   const node = rowToNode(nodeRow);
   const campaign = getCampaignRow(node.campaignId);
   const { model } = resolveLlmRole('explain');
-  const resumeContext = buildResumeContext(node.campaignId);
+  const resumeContext = buildResumeContext(node.campaignId, {
+    nodeName: node.name,
+    userText: instruction,
+  });
 
   const content = await completeJson<{ markdown: string }>(
     'explain',
@@ -208,7 +216,10 @@ export async function elaborateExplanationSelection(
 
   const node = rowToNode(nodeRow);
   const campaign = getCampaignRow(node.campaignId);
-  const resumeContext = buildResumeContext(node.campaignId);
+  const resumeContext = buildResumeContext(node.campaignId, {
+    nodeName: node.name,
+    userText: text,
+  });
 
   const content = await completeJson<{ markdown: string }>(
     'explain',
@@ -250,9 +261,12 @@ export async function rewriteExplanationSelection(
 
   const node = rowToNode(nodeRow);
   const campaign = getCampaignRow(node.campaignId);
-  const resumeContext = buildResumeContext(node.campaignId);
+  const resumeContext = buildResumeContext(node.campaignId, {
+    nodeName: node.name,
+    userText: text,
+  });
 
-const content = await completeJson<{ markdown: string }>(
+  const content = await completeJson<{ markdown: string }>(
     'explain',
     'explain.rewrite',
     `公司：${campaign.company}

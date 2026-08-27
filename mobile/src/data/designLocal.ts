@@ -32,6 +32,10 @@ import {
   loadCandidateContextInput,
   loadResumeForPrompt,
 } from './candidateContextLocal';
+import {
+  relevantResumeExperienceBlock,
+  type ResumeRelevanceQuery,
+} from '@shared/resume/relevance';
 import { getDeviceIdentity } from '../sync/identity';
 import { writingAs } from '../sync/triggers';
 
@@ -78,7 +82,16 @@ function rowToDesignCaseResult(
   };
 }
 
-function buildInterviewContext(db: SQLiteDatabase, campaignId: string): string {
+/**
+ * query 为空时经历块退回时间倒序：出题阶段还不知道要考什么（考点由模型在
+ * relatedNodeName 里自己定），这时候没有可用的查询词，按时间给是对的。
+ * 出完题之后（生成参考答案、打分）题目本身就是查询词。
+ */
+function buildInterviewContext(
+  db: SQLiteDatabase,
+  campaignId: string,
+  query?: ResumeRelevanceQuery,
+): string {
   const campaign = getCampaign(db, campaignId);
   const nodes = db.getAllSync<{
     name: string;
@@ -126,7 +139,13 @@ function buildInterviewContext(db: SQLiteDatabase, campaignId: string): string {
 岗位：${campaign.roleTitle}
 JD 摘要：${jdSummaryForPrompt(campaign)}
 简历技能：${resumeSkills}
-${resumeExperienceBlock(resume.rawText, resume.projects)}
+${
+  query
+    ? relevantResumeExperienceBlock(resume.rawText, query, {
+        fallbackProjects: resume.projects,
+      })
+    : resumeExperienceBlock(resume.rawText, resume.projects)
+}
 公司技术栈：${intel?.tech_stack_md?.slice(0, 600) ?? '（未调研，可结合 JD 推断）'}
 面试流程：${intel?.interview_process_md?.slice(0, 400) ?? '（未调研）'}
 公司热点：${intel?.hot_topics_md?.slice(0, 400) ?? '（未调研）'}
@@ -266,7 +285,15 @@ export async function generateRecommendedAnswer(
   constraints: string[] = [],
 ): Promise<DesignGenerateAnswerResult> {
   const effectiveLang = effectiveInterviewLanguage(interviewType, interviewLanguage);
-  const context = buildInterviewContext(db, campaignId);
+  // 自我介绍不按相关度筛：它要的是完整履历，下面 resumeFactsBlockForSelfIntro 已经
+  // 给了全量事实，这里再筛一遍只会出现「没有相关经历」和全量事实自相矛盾。
+  const context = buildInterviewContext(
+    db,
+    campaignId,
+    interviewType === 'selfIntro'
+      ? undefined
+      : { nodeName: caseTitle, userText: `${scenarioMd}\n${constraints.join('\n')}` },
+  );
   const constraintHint =
     constraints.length > 0 ? `\n考察点：${constraints.join(' · ')}` : '';
   const resumeFacts =
@@ -306,11 +333,12 @@ export async function elaborateDesignAnswer(
 
   // 细化一段划选只需要「候选人是谁、做过什么」。buildInterviewContext 里的公司情报、
   // 考点清单、面经对这件事没用，还会和下面 6000 字的题干抢篇幅。
+  // 划选的原文就是查询词：用户划的是哪句，就该挑简历里和那句相关的经历。
   const content = await completeJson<{ markdown: string }>(
     'explain',
     'explain.elaborate',
     `## 候选人背景
-${buildCandidateContext(loadCandidateContextInput(db, campaignId))}
+${buildCandidateContext(loadCandidateContextInput(db, campaignId), undefined, { userText: text })}
 
 ## 模拟面试题目与参考答案（节选）
 ${contextMd.slice(0, 6000)}
@@ -333,7 +361,13 @@ export async function submitDesignAnswer(
   requestedType: MockInterviewType = interviewType,
 ): Promise<DesignSubmitResult> {
   const effectiveLang = effectiveInterviewLanguage(interviewType, interviewLanguage);
-  const context = buildInterviewContext(db, campaignId);
+  const context = buildInterviewContext(
+    db,
+    campaignId,
+    interviewType === 'selfIntro'
+      ? undefined
+      : { nodeName: caseTitle, userText: `${scenarioMd}\n${userAnswer}` },
+  );
 
   const scored = await completeJson<DesignScoreGenerated>(
     'quiz',

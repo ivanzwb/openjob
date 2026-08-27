@@ -106,7 +106,9 @@ export function quizQuestionUserMessage(context: QuizPromptContext): string {
 }
 
 export function quizAnswerUserMessage(context: QuizPromptContext, question: string): string {
-  return `${buildCandidateContext(context.candidate, context.nodeContext)}
+  return `${buildCandidateContext(context.candidate, context.nodeContext, {
+    userText: question,
+  })}
 问题：${question}`;
 }
 
@@ -115,7 +117,9 @@ export function quizScoreUserMessage(
   question: string,
   userAnswer: string,
 ): string {
-  return `${buildCandidateContext(context.candidate, context.nodeContext)}
+  return `${buildCandidateContext(context.candidate, context.nodeContext, {
+    userText: `${question}\n${userAnswer}`,
+  })}
 问题：${question}
 候选人回答：${userAnswer}`;
 }

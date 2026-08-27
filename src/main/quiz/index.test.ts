@@ -49,13 +49,13 @@ const RESUME_MD = `## 专业技能
 
 ### 涌泉科技 | 后端工程师 | 2021-04 ~ 至今
 
-- 重构对账中心，日终跑批从 40 分钟压到 6 分钟
+- 重构对账中心，用 Kafka 做异步削峰并处理消费端幂等，日终跑批从 40 分钟压到 6 分钟
 
 ## 项目经历
 
 ### 实时风控看板 | 主力开发 | 2019-06 ~ 2021-03
 
-- 用 Flink 做实时指标聚合
+- 用 Flink 做实时指标聚合，前端用 React 画大盘
 `;
 
 const nodeRow: NodeRow = {
@@ -133,8 +133,8 @@ function userMessage(promptId: string): string {
   return call.user;
 }
 
-/** 简历经历块的固定抬头，来自 shared 的 resumeExperienceBlock */
-const EXPERIENCE_HEADER = '简历经历（按时间倒序';
+/** 经历块的固定抬头，来自 shared 的 relevantResumeExperienceBlock */
+const EXPERIENCE_HEADER = '简历经历（按与本题的关键词重叠度粗排';
 
 beforeEach(() => {
   llm.calls = [];
@@ -151,8 +151,33 @@ describe('考我三件套注入简历上下文', () => {
     expect(user).toContain('职级：高级');
     expect(user).toContain('考点：消息队列幂等消费');
     expect(user).toContain(EXPERIENCE_HEADER);
-    expect(user).toContain('涌泉科技');
-    expect(user).toContain('实时风控看板');
+    // 打在考点上的那段排前面，无关的那段仍然给，但排后面
+    expect(user.indexOf('涌泉科技')).toBeGreaterThan(-1);
+    expect(user.indexOf('实时风控看板')).toBeGreaterThan(user.indexOf('涌泉科技'));
+  });
+
+  it('简历一段都打不到考点时不下「没有相关经历」的结论，交给模型判断', async () => {
+    // 词法跨不过同义词，「打不中」不等于「没做过」。这里给的是明确的用法说明，
+    // 而不是替模型把经历都扣掉。
+    fakeDb({
+      campaign: campaignRow,
+      resume: {
+        ...resumeRow,
+        rawText: `## 工作经历
+
+### 某前端公司 | 前端工程师 | 2021-04 ~ 至今
+
+- 用 React 重写管理后台，做了组件库和权限路由
+`,
+      },
+    });
+
+    await generateQuizQuestion('n1');
+
+    const user = userMessage('quiz.question');
+    expect(user).toContain('某前端公司');
+    expect(user).toContain('先判断上面哪几段与本题真的相关');
+    expect(user).toContain('若都不相关');
   });
 
   it('参考答案：带简历经历，且保留原来的问题行', async () => {

@@ -15,7 +15,12 @@ import { getCampaignRow, rowToNode } from './repository';
 
 type NodeContext = Pick<KnowledgeNode, 'name' | 'coverageType' | 'examForms'>;
 
-export function buildCampaignCandidateContext(campaignId: string, node?: NodeContext): string {
+export function buildCampaignCandidateContext(
+  campaignId: string,
+  node?: NodeContext,
+  /** 用户这一轮的输入：题目、答题内容、划选原文。与考点名一起决定挑哪几段简历经历 */
+  userText?: string | null,
+): string {
   const campaign = getCampaignRow(campaignId);
   const resume = campaign.resumeId
     ? getDb().select().from(schema.resume).where(eq(schema.resume.id, campaign.resumeId)).get()
@@ -33,6 +38,7 @@ export function buildCampaignCandidateContext(campaignId: string, node?: NodeCon
     node
       ? { name: node.name, coverageType: node.coverageType, examForms: node.examForms }
       : undefined,
+    { userText },
   );
 }
 

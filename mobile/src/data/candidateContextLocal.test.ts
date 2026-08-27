@@ -38,7 +38,7 @@ const NODE_ROW = {
   id: 'n1',
   campaign_id: 'c1',
   parent_id: null,
-  name: 'MVCC',
+  name: '前端首屏性能优化',
   kind: 'concept',
   coverage_type: 'gap',
   exam_prob: 0.6,
@@ -56,7 +56,10 @@ const NODE_ROW = {
 };
 
 /** 只实现被测路径用到的 getFirstSync，其余查询撞上就直接报错，免得静默返回 null */
-function fakeDb(resume: { parsed: string | null; raw_text: string | null } | null): SQLiteDatabase {
+function fakeDb(
+  resume: { parsed: string | null; raw_text: string | null } | null,
+  nodeName = NODE_ROW.name,
+): SQLiteDatabase {
   const campaignRow = {
     id: 'c1',
     company: '某公司',
@@ -74,7 +77,7 @@ function fakeDb(resume: { parsed: string | null; raw_text: string | null } | nul
 
   return {
     getFirstSync: (sql: string) => {
-      if (sql.includes('knowledge_node')) return NODE_ROW;
+      if (sql.includes('knowledge_node')) return { ...NODE_ROW, name: nodeName };
       if (sql.includes('FROM campaign')) return campaignRow;
       if (sql.includes('FROM resume')) return resume;
       throw new Error(`未预期的查询：${sql}`);
@@ -85,39 +88,52 @@ function fakeDb(resume: { parsed: string | null; raw_text: string | null } | nul
 const withResume = (): SQLiteDatabase => fakeDb({ parsed: RESUME_PARSED, raw_text: RESUME_MD });
 
 describe('考我三件套的 user message', () => {
-  it('出题带上简历经历块和考点', () => {
+  it('出题带上与考点相关的那段简历经历', () => {
     const message = quizQuestionUserMessage(loadQuizPromptContext(withResume(), 'n1'));
 
-    expect(message).toContain('简历经历');
+    expect(message).toContain('简历经历（按与本题的关键词重叠度粗排');
     expect(message).toContain('现东家网络');
     expect(message).toContain('前端架构');
+    // 脚手架那段和首屏性能关系弱，排后面，但仍然给——相关性由模型判断
+    expect(message.indexOf('内部脚手架')).toBeGreaterThan(message.indexOf('前端架构'));
     expect(message).toContain('简历技能：React、TypeScript');
-    expect(message).toContain('考点：MVCC');
+    expect(message).toContain('考点：前端首屏性能优化');
     expect(message).toContain('公司：某公司');
   });
 
-  it('推荐答案带上简历经历块，并保留原来的「问题：」', () => {
+  it('推荐答案带上相关经历，并保留原来的「问题：」', () => {
     const message = quizAnswerUserMessage(
       loadQuizPromptContext(withResume(), 'n1'),
-      'MVCC 是怎么实现快照读的？',
+      '首屏是怎么压到 1.2s 的？',
     );
 
-    expect(message).toContain('简历经历');
     expect(message).toContain('前端架构');
-    expect(message).toContain('问题：MVCC 是怎么实现快照读的？');
+    expect(message).toContain('问题：首屏是怎么压到 1.2s 的？');
   });
 
-  it('评分带上简历经历块，并保留原来的「问题：」「候选人回答：」', () => {
+  it('评分带上相关经历，并保留原来的「问题：」「候选人回答：」', () => {
     const message = quizScoreUserMessage(
       loadQuizPromptContext(withResume(), 'n1'),
-      'MVCC 是怎么实现快照读的？',
-      '靠 undo log 加 read view',
+      '首屏是怎么压到 1.2s 的？',
+      '按路由拆包加预加载',
     );
 
-    expect(message).toContain('简历经历');
     expect(message).toContain('前端架构');
-    expect(message).toContain('问题：MVCC 是怎么实现快照读的？');
-    expect(message).toContain('候选人回答：靠 undo log 加 read view');
+    expect(message).toContain('问题：首屏是怎么压到 1.2s 的？');
+    expect(message).toContain('候选人回答：按路由拆包加预加载');
+  });
+
+  it('简历一段都打不到考点时不下结论，给用法说明让模型自己判断', () => {
+    // 一份纯前端简历遇到 MVCC。词法零命中不等于没做过（考点写英文缩写、简历写
+    // 中文全称就会这样），所以不替模型把经历扣掉，而是明确写清楚该怎么处理。
+    const db = fakeDb({ parsed: RESUME_PARSED, raw_text: RESUME_MD }, 'MVCC');
+    const message = quizQuestionUserMessage(loadQuizPromptContext(db, 'n1'));
+
+    expect(message).toContain('现东家网络');
+    expect(message).toContain('先判断上面哪几段与本题真的相关');
+    expect(message).toContain('若都不相关');
+    // 和「没关联简历」是两件事，不能混
+    expect(message).not.toContain('尚未关联简历');
   });
 
   it('没关联简历时明说，不能只留一句「未提供」让模型拿 JD 填经历', () => {
@@ -129,11 +145,11 @@ describe('考我三件套的 user message', () => {
 });
 
 describe('追问 system prompt', () => {
-  it('走 registry，并带上简历与考点', () => {
-    const text = buildNodeFollowUpSystem(withResume(), 'n1', 'MVCC');
+  it('走 registry，并带上相关简历经历与考点', () => {
+    const text = buildNodeFollowUpSystem(withResume(), 'n1', '前端首屏性能优化');
 
     expect(text).toContain('nodeId: n1');
-    expect(text).toContain('考点：MVCC');
+    expect(text).toContain('考点：前端首屏性能优化');
     expect(text).toContain('前端架构');
   });
 

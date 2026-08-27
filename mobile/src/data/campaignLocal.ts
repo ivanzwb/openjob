@@ -1,7 +1,8 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import type { Campaign, KnowledgeNode, Resume } from '@shared/entities';
 import type { CoverageType, ExamForm, MasterySource, NodeKind, NodeStatus } from '@shared/enums';
-import { RESUME_ALIGN_RULES } from '@shared/prompts/explain';
+import { buildExplainResumeContext } from '@shared/prompts/candidateContext';
+import type { ResumeRelevanceQuery } from '@shared/resume/relevance';
 
 type NodeRow = {
   id: string;
@@ -116,20 +117,25 @@ export function getResume(db: SQLiteDatabase, resumeId: string): Resume {
   };
 }
 
-export function buildResumeContext(db: SQLiteDatabase, campaignId: string): string {
+/**
+ * 措辞和筛选都在共享层（桌面端调同一个函数），这里只负责取数。
+ * query 决定从简历里挑哪几段，所以每个调用点都要把考点名和用户这轮的输入传进来。
+ */
+export function buildResumeContext(
+  db: SQLiteDatabase,
+  campaignId: string,
+  query: ResumeRelevanceQuery,
+): string {
   const campaign = getCampaign(db, campaignId);
-  if (!campaign.resumeId) {
-    return (
-      '（尚未关联简历：举例用通用场景，并在实例段落提醒候选人结合自身项目替换；' +
-      '不要编造具体公司名/项目名当作候选人经历）'
-    );
-  }
+  if (!campaign.resumeId) return buildExplainResumeContext(null, query);
 
   const resume = getResume(db, campaign.resumeId);
-  const parts = [`## 候选人简历原文\n${resume.rawText.slice(0, 8000)}`];
-  if (resume.parsed) {
-    parts.push(`## 简历结构化摘要\n${JSON.stringify(resume.parsed, null, 2).slice(0, 4000)}`);
-  }
-  parts.push(RESUME_ALIGN_RULES);
-  return parts.join('\n\n');
+  return buildExplainResumeContext(
+    {
+      resumeRawText: resume.rawText,
+      resumeSkills: resume.parsed?.skills ?? null,
+      resumeProjects: resume.parsed?.projects ?? null,
+    },
+    query,
+  );
 }

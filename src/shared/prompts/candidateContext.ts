@@ -15,6 +15,11 @@ import {
   resumeExperienceBlock,
   type FallbackProject,
 } from '../resume/experienceTimeline';
+import {
+  relevantResumeExperienceBlock,
+  type ResumeRelevanceQuery,
+} from '../resume/relevance';
+import { RESUME_ALIGN_RULES } from './explain';
 
 /** JD 摘要在考我/追问里只用来定重点，给全文既挤占篇幅又容易被当经历取材 */
 const JD_SUMMARY_LIMIT = 800;
@@ -85,15 +90,70 @@ const NO_RESUME_NOTICE = `简历：（尚未关联简历）
  * rawText 非空而经历块是空的，走「有简历」分支只会输出一串「（未提供）」标签，
  * 一句指引都没有——那正是这条 notice 要防的局面，等于白防。
  */
-function hasUsableResume(input: CandidateContextInput, skills: string[]): boolean {
+function hasUsableResume(input: ExplainResumeInput, skills: string[]): boolean {
   if (skills.length > 0) return true;
   if ((input.resumeProjects ?? []).length > 0) return true;
   return formatResumeExperienceForPrompt(input.resumeRawText ?? '') !== '';
 }
 
+/**
+ * 讲解链路没关联简历时的说明。措辞和 NO_RESUME_NOTICE 不同是有意的：
+ * 讲解的输出结构里有「代码 / 实例」段，提示要落在那一段上。
+ */
+const EXPLAIN_NO_RESUME_NOTICE =
+  '（尚未关联简历：举例用通用场景，并在实例段落提醒候选人结合自身项目替换；' +
+  '不要编造具体公司名/项目名当作候选人经历）';
+
+export interface ExplainResumeInput {
+  resumeRawText?: string | null;
+  resumeSkills?: string[] | null;
+  resumeProjects?: FallbackProject[] | null;
+}
+
+/**
+ * 讲解链路的简历上下文。
+ *
+ * 原来这里是把简历原文截 8000 字、再加一份 `JSON.stringify(parsed, null, 2)` 截
+ * 4000 字整本倒给模型。一万两千字的上下文里，模型要么抓错一段，要么干脆照着
+ * 岗位名编一段——而它抓错的时候没人看得出来。
+ *
+ * 改成按考点和用户这轮的问题把经历排序、裁到几条再注入，相关与否由模型自己判断
+ * （见 relevance.ts 顶部）。结构化 JSON 整个去掉：它的内容（技能、项目名、可深挖
+ * 点）已经在技能行和经历块里，重复一遍只是把预算花在花括号和缩进上。
+ */
+export function buildExplainResumeContext(
+  input: ExplainResumeInput | null,
+  query: ResumeRelevanceQuery,
+): string {
+  if (!input) return EXPLAIN_NO_RESUME_NOTICE;
+
+  const skills = (input.resumeSkills ?? []).filter((s) => s.trim().length > 0);
+  if (!hasUsableResume(input, skills)) return EXPLAIN_NO_RESUME_NOTICE;
+
+  const parts = ['## 候选人简历'];
+  if (skills.length > 0) parts.push(`简历技能：${skills.join('、')}`);
+  parts.push(
+    relevantResumeExperienceBlock(input.resumeRawText ?? '', query, {
+      fallbackProjects: input.resumeProjects,
+    }),
+  );
+  parts.push(RESUME_ALIGN_RULES);
+
+  return parts.join('\n\n');
+}
+
+export interface CandidateContextOptions {
+  /**
+   * 用户这一轮实际输入：追问的问题、划选要细化的原文、答题内容。
+   * 和考点名一起决定从简历里挑哪几段经历。
+   */
+  userText?: string | null;
+}
+
 export function buildCandidateContext(
   input: CandidateContextInput,
   node?: NodeContextInput,
+  options: CandidateContextOptions = {},
 ): string {
   const lines: string[] = [`公司：${input.company}`, `岗位：${input.roleTitle}`];
 
@@ -109,12 +169,27 @@ export function buildCandidateContext(
   }
 
   const skills = (input.resumeSkills ?? []).filter((s) => s.trim().length > 0);
-  if (hasUsableResume(input, skills)) {
-    lines.push(`简历技能：${skills.length > 0 ? skills.join('、') : '（未提供）'}`);
-    lines.push(resumeExperienceBlock(input.resumeRawText ?? '', input.resumeProjects));
-  } else {
+  if (!hasUsableResume(input, skills)) {
     lines.push(NO_RESUME_NOTICE);
+    return lines.join('\n');
   }
+
+  lines.push(`简历技能：${skills.length > 0 ? skills.join('、') : '（未提供）'}`);
+
+  // 有查询词就按相关度粗排，没有（比如整场模拟面试、还没定考点）才退回时间倒序。
+  // 两者都会把简历里的经历给全（封顶几条），区别只在顺序和表头措辞——没有考点时
+  // 说「按相关度排」是假的，模型会当真。
+  const query: ResumeRelevanceQuery = { nodeName: node?.name, userText: options.userText };
+  const hasQuery =
+    (query.nodeName ?? '').trim() !== '' || (query.userText ?? '').trim() !== '';
+
+  lines.push(
+    hasQuery
+      ? relevantResumeExperienceBlock(input.resumeRawText ?? '', query, {
+          fallbackProjects: input.resumeProjects,
+        })
+      : resumeExperienceBlock(input.resumeRawText ?? '', input.resumeProjects),
+  );
 
   return lines.join('\n');
 }
