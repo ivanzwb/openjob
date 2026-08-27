@@ -7,23 +7,13 @@
  */
 
 import { eq } from 'drizzle-orm';
-import type { Campaign, KnowledgeNode } from '@shared/entities';
-import { buildCandidateContext } from '@shared/prompts/candidateContext';
+import type { KnowledgeNode } from '@shared/entities';
+import { buildCandidateContext, jdSummaryForPrompt } from '@shared/prompts/candidateContext';
 import { resolvePrompt } from '@shared/prompts/registry';
 import { getDb, schema } from '../db';
 import { getCampaignRow, rowToNode } from './repository';
 
 type NodeContext = Pick<KnowledgeNode, 'name' | 'coverageType' | 'examForms'>;
-
-/** 解析过 JD 就给职级+要求权重，没解析过只能截原文 */
-export function jdSummaryForCampaign(campaign: Campaign): string {
-  return campaign.jdParsed
-    ? `职级：${campaign.jdParsed.seniority ?? '未知'}；要求：${campaign.jdParsed.requirements
-        ?.slice(0, 10)
-        .map((r) => `${r.skill}(${(r.weight * 100).toFixed(0)}%)`)
-        .join('、')}`
-    : campaign.jdRaw.slice(0, 1500);
-}
 
 export function buildCampaignCandidateContext(campaignId: string, node?: NodeContext): string {
   const campaign = getCampaignRow(campaignId);
@@ -35,7 +25,7 @@ export function buildCampaignCandidateContext(campaignId: string, node?: NodeCon
     {
       company: campaign.company,
       roleTitle: campaign.roleTitle,
-      jdSummary: jdSummaryForCampaign(campaign),
+      jdSummary: jdSummaryForPrompt(campaign),
       resumeSkills: resume?.parsed?.skills ?? null,
       resumeRawText: resume?.rawText ?? null,
       resumeProjects: resume?.parsed?.projects ?? null,

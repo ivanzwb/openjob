@@ -6,6 +6,7 @@
  * 上考场，被追问两句就穿帮。谁把某条规则从 prompt 里删掉，这里要红。
  */
 import { describe, expect, it } from 'vitest';
+import type { JdParsed } from '../entities';
 import {
   ANSWER_SYSTEM_BY_TYPE,
   SCENARIO_CASE_SYSTEM,
@@ -14,7 +15,7 @@ import {
   caseSystemForType,
   scoreSystemForType,
 } from '../design/prompts';
-import { buildCandidateContext } from './candidateContext';
+import { buildCandidateContext, jdSummaryForPrompt } from './candidateContext';
 import { buildNodeFollowUpSystemPrompt } from './followUp';
 import { QUESTION_GROUNDING_RULE, RESUME_GROUNDING_RULE, SCORE_GROUNDING_RULE } from './grounding';
 import { QUIZ_ANSWER_SYSTEM, QUIZ_QUESTION_SYSTEM, QUIZ_SCORE_SYSTEM } from './quiz';
@@ -108,6 +109,10 @@ describe('buildCandidateContext', () => {
     expect(text).not.toContain('A'.repeat(1000));
   });
 
+  it('JD 摘要缺失时说「未提供」，不留空标签', () => {
+    expect(buildCandidateContext(base)).toContain('JD 摘要：（未提供）');
+  });
+
   it('考点信息可选，缺了不会拼出空标签', () => {
     const withNode = buildCandidateContext(base, { name: 'MVCC', coverageType: 'gap' });
     expect(withNode).toContain('考点：MVCC');
@@ -116,6 +121,58 @@ describe('buildCandidateContext', () => {
     const withoutNode = buildCandidateContext(base);
     expect(withoutNode).not.toContain('考点：');
     expect(withoutNode).not.toContain('覆盖类型：');
+  });
+});
+
+type JdReq = JdParsed['requirements'][number];
+
+describe('jdSummaryForPrompt', () => {
+  const parsed: JdParsed = { roleTitle: '后端工程师', seniority: 'P6', requirements: [] };
+
+  it('有结构化解析时给职级加要求权重', () => {
+    expect(
+      jdSummaryForPrompt({
+        jdRaw: '原文',
+        jdParsed: { ...parsed, requirements: [{ skill: 'Go', weight: 0.8 }] },
+      }),
+    ).toBe('职级：P6；要求：Go(80%)');
+  });
+
+  it('没解析过 JD 时退回原文', () => {
+    expect(jdSummaryForPrompt({ jdRaw: 'JD 原文', jdParsed: null })).toBe('JD 原文');
+  });
+
+  it('requirements 整个缺失时不把 undefined 写进 prompt', () => {
+    // jdParsed 是模型输出存进 SQLite 的 JSON，运行时可以不满足类型声明。
+    // 原来那条可选链会整体短路，于是模型读到的是「要求：undefined」。
+    const summary = jdSummaryForPrompt({
+      jdRaw: 'JD 原文在此',
+      jdParsed: { ...parsed, requirements: undefined as unknown as JdReq[] },
+    });
+
+    expect(summary).not.toContain('undefined');
+    expect(summary).toContain('职级：P6');
+    expect(summary).toContain('JD 原文在此');
+  });
+
+  it('requirements 为空数组时退回原文，而不是留一个光秃秃的「要求：」', () => {
+    const summary = jdSummaryForPrompt({ jdRaw: 'JD 原文在此', jdParsed: parsed });
+
+    expect(summary).not.toMatch(/要求：\s*$/);
+    expect(summary).toContain('JD 原文在此');
+  });
+
+  it('权重不是数字时只列技能名，不写出 NaN%', () => {
+    const summary = jdSummaryForPrompt({
+      jdRaw: '原文',
+      jdParsed: {
+        ...parsed,
+        requirements: [{ skill: 'Kafka', weight: undefined as unknown as number }],
+      },
+    });
+
+    expect(summary).toContain('Kafka');
+    expect(summary).not.toContain('NaN');
   });
 });
 

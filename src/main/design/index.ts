@@ -10,10 +10,7 @@ import type { ExamForm } from '@shared/enums';
 import type { InferSelectModel } from 'drizzle-orm';
 import { completeJson } from '../llm/json';
 import { getCampaignRow } from '../campaign/repository';
-import {
-  buildCampaignCandidateContext,
-  jdSummaryForCampaign,
-} from '../campaign/candidateContext';
+import { buildCampaignCandidateContext } from '../campaign/candidateContext';
 import { getDb, schema } from '../db';
 import { saveSpeechFromDesign } from '../speech';
 import {
@@ -27,6 +24,7 @@ import {
   type MockInterviewKind,
   type MockInterviewLanguage,
 } from '@shared/design/prompts';
+import { jdSummaryForPrompt } from '@shared/prompts/candidateContext';
 import { normalizeDisplayText } from '@shared/lib/markdownDisplay';
 import { resumeExperienceBlock, resumeFactsBlockForSelfIntro } from '@shared/resume/experienceTimeline';
 
@@ -118,7 +116,7 @@ function buildInterviewContext(campaignId: string): string {
     .all()
     .slice(0, 5);
 
-  const jdSummary = jdSummaryForCampaign(campaign);
+  const jdSummary = jdSummaryForPrompt(campaign);
 
   return `公司：${campaign.company}
 岗位：${campaign.roleTitle}

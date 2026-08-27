@@ -12,9 +12,10 @@
  */
 
 import type { SQLiteDatabase } from 'expo-sqlite';
-import type { Campaign, KnowledgeNode } from '@shared/entities';
+import type { KnowledgeNode } from '@shared/entities';
 import {
   buildCandidateContext,
+  jdSummaryForPrompt,
   type CandidateContextInput,
   type NodeContextInput,
 } from '@shared/prompts/candidateContext';
@@ -33,14 +34,8 @@ export interface ResumePromptFields {
   rawText: string;
 }
 
-/** JD 摘要：结构化解析在就用它定重点，否则退回原文截断 */
-export function jdSummaryForPrompt(campaign: Pick<Campaign, 'jdParsed' | 'jdRaw'>): string {
-  if (!campaign.jdParsed) return campaign.jdRaw.slice(0, 1500);
-  return `职级：${campaign.jdParsed.seniority ?? '未知'}；要求：${campaign.jdParsed.requirements
-    ?.slice(0, 10)
-    .map((r) => `${r.skill}(${(r.weight * 100).toFixed(0)}%)`)
-    .join('、')}`;
-}
+// JD 摘要曾在这里和桌面端各存一份逐字相同的实现，现已收进共享层
+export { jdSummaryForPrompt };
 
 /** parsed 是 TEXT 列，存进去的 JSON 坏了不该拦住出题，退回空值即可 */
 export function parseResumeForPrompt(row: ResumePromptRow | null | undefined): ResumePromptFields {

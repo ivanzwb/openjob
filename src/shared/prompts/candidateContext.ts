@@ -9,6 +9,7 @@
  * 「简历经历（…）」），让模型在不同功能里看到的是同一种方言。
  */
 
+import type { Campaign } from '../entities';
 import {
   formatResumeExperienceForPrompt,
   resumeExperienceBlock,
@@ -17,6 +18,40 @@ import {
 
 /** JD 摘要在考我/追问里只用来定重点，给全文既挤占篇幅又容易被当经历取材 */
 const JD_SUMMARY_LIMIT = 800;
+
+/** 没解析过 JD 时只能截原文，模拟面试一直用的就是这个上限 */
+const JD_RAW_LIMIT = 1500;
+
+/**
+ * JD 摘要，双端共用。
+ *
+ * 原先桌面和手机各存一份逐字相同的实现，共享层没有提供——这种复制迟早会
+ * 单边漂移，而 prompt 漂移是最难发现的那种。
+ *
+ * `jdParsed` 是模型输出的 JSON 存进 SQLite 再读出来的，运行时不保证满足类型
+ * 声明：`requirements` 缺失时原来那条可选链会整体短路成 undefined，于是 prompt
+ * 里出现「要求：undefined」；`requirements` 为空数组（诊断流程里就有这个值）
+ * 则留下一个光秃秃的「要求：」。两种都是白喂给模型的噪声。
+ */
+export function jdSummaryForPrompt(campaign: Pick<Campaign, 'jdParsed' | 'jdRaw'>): string {
+  const parsed = campaign.jdParsed;
+  if (!parsed) return campaign.jdRaw.slice(0, JD_RAW_LIMIT);
+
+  const requirements = (parsed.requirements ?? [])
+    .filter((r) => typeof r?.skill === 'string' && r.skill.trim() !== '')
+    .slice(0, 10)
+    .map((r) =>
+      Number.isFinite(r.weight) ? `${r.skill}(${(r.weight * 100).toFixed(0)}%)` : r.skill,
+    )
+    .join('、');
+
+  const seniority = `职级：${parsed.seniority ?? '未知'}`;
+  if (!requirements) {
+    // 只留一个空的「要求：」等于什么都没说，退回原文至少还有真东西
+    return `${seniority}；JD 原文摘录：${campaign.jdRaw.slice(0, JD_RAW_LIMIT)}`;
+  }
+  return `${seniority}；要求：${requirements}`;
+}
 
 export interface CandidateContextInput {
   company: string;
