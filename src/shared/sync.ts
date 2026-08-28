@@ -320,6 +320,8 @@ export interface SyncExchangeResponse {
   appliedCount: number;
   /** 对端侧发生的自动覆盖数量 */
   overwriteCount: number;
+  /** 对端侧因引用不存在的父行而被跳过的变更数（父行已删除或从未存在） */
+  skippedCount?: number;
   runId: string;
   serverMs: number;
   appVersion: string;

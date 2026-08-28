@@ -1,7 +1,11 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import type { AutoChange } from '@shared/sync';
 import { deviceLocalInsertDefaults } from '../../../src/main/sync/deviceLocalDefaults';
-import { describeMissingParents, type FkProbe } from '../../../src/main/sync/fkDiagnostics';
+import {
+  describeMissingParents,
+  findMissingParentChanges,
+  type FkProbe,
+} from '../../../src/main/sync/fkDiagnostics';
 import { upsertClause } from '../../../src/main/sync/upsert';
 import { syncTableSpec, syncTableSpecs } from './tables';
 import { writingAs } from './triggers';
@@ -147,43 +151,83 @@ function annotateForeignKeyError(
   return error;
 }
 
+export interface ApplyAutoChangesResult {
+  /** 实际落库的变更数（含 delete） */
+  applied: number;
+  /**
+   * 因引用不存在的父行而被跳过的变更。父行本机没有、本批也不来，这些变更
+   * 无论如何都落不了库——最常见的是本机删掉了父行、对端把它的子行按 insert
+   * 复活（planMerge 逐行 LWW 的产物）。父行已删，子行不该被复活回来，
+   * 跳过它们让同步收敛，而不是整批回滚、水位不动、每轮重试卡死在原地。
+   */
+  skipped: AutoChange[];
+}
+
+/**
+ * 把合并计划里的自动变更事务性落库。
+ *
+ * 与桌面端 src/main/sync/apply.ts 保持同一套语义：提交碰到外键失败时不再
+ * 整批报错，先用反查找出引用了不存在父行的变更，丢掉它们重试剩下的
+ * （链式场景下一轮反查继续揪出下游变更），直到整批落库或无可落库。
+ * 非外键错误和诊断失败仍然按原样抛出。
+ */
 export function applyAutoChanges(
   raw: SQLiteDatabase,
   peerDeviceId: string,
   changes: AutoChange[],
-): number {
+): ApplyAutoChangesResult {
   const sorted = sortChanges(changes);
-  let applied = 0;
+  const skipped: AutoChange[] = [];
+  let pending = sorted;
 
   writingAs(raw, peerDeviceId, () => {
-    raw.execSync('BEGIN');
-    // 外键检查推迟到提交时整批做一次。planMerge 逐行独立决策，父行和子行落库
-    // 的先后顺序本质上无法保证正确——靠 INSERT_ORDER 人工维护拓扑序，每加一张
-    // 表就多一次踩中 FOREIGN KEY constraint failed 的机会。推迟之后中间状态
-    // 不再被检查，只要整批结束时引用完整就能提交。
-    raw.execSync('PRAGMA defer_foreign_keys = ON');
-    try {
-      for (const change of sorted) {
-        if (change.kind === 'insert') {
-          applyInsert(raw, change.table, change.rowId, {
-            ...change.values,
-            [syncTableSpec(change.table).pk]: change.rowId,
-          });
-          stampRowVersion(raw, change.table, change.rowId, change.wallMs);
-        } else if (change.kind === 'patch') {
-          applyPatch(raw, change.table, change.rowId, change.values);
-          stampRowVersion(raw, change.table, change.rowId, change.wallMs);
-        } else {
-          applyDelete(raw, change.table, change.rowId);
+    while (pending.length > 0) {
+      try {
+        raw.execSync('BEGIN');
+        // 外键检查推迟到提交时整批做一次。planMerge 逐行独立决策，父行和子行
+        // 落库的先后顺序本质上无法保证正确——靠 INSERT_ORDER 人工维护拓扑序，
+        // 每加一张表就多一次踩中 FOREIGN KEY constraint failed 的机会。推迟之后
+        // 中间状态不再被检查，只要整批结束时引用完整就能提交。
+        raw.execSync('PRAGMA defer_foreign_keys = ON');
+        try {
+          for (const change of pending) {
+            if (change.kind === 'insert') {
+              applyInsert(raw, change.table, change.rowId, {
+                ...change.values,
+                [syncTableSpec(change.table).pk]: change.rowId,
+              });
+              stampRowVersion(raw, change.table, change.rowId, change.wallMs);
+            } else if (change.kind === 'patch') {
+              applyPatch(raw, change.table, change.rowId, change.values);
+              stampRowVersion(raw, change.table, change.rowId, change.wallMs);
+            } else {
+              applyDelete(raw, change.table, change.rowId);
+            }
+          }
+          raw.execSync('COMMIT');
+        } catch (e) {
+          raw.execSync('ROLLBACK');
+          throw e;
         }
-        applied++;
+        break;
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        if (!/FOREIGN KEY constraint failed/i.test(message)) throw e;
+
+        let orphans: AutoChange[] = [];
+        try {
+          orphans = findMissingParentChanges(pending, fkProbe(raw));
+        } catch {
+          // 诊断本身出错不能盖掉真正的失败原因
+        }
+        if (orphans.length === 0) throw annotateForeignKeyError(raw, e, pending);
+
+        skipped.push(...orphans);
+        const orphanKeys = new Set(orphans.map((c) => `${c.table}:${c.rowId}:${c.kind}`));
+        pending = pending.filter((c) => !orphanKeys.has(`${c.table}:${c.rowId}:${c.kind}`));
       }
-      raw.execSync('COMMIT');
-    } catch (e) {
-      raw.execSync('ROLLBACK');
-      throw annotateForeignKeyError(raw, e, sorted);
     }
   });
 
-  return applied;
+  return { applied: changes.length - skipped.length, skipped };
 }

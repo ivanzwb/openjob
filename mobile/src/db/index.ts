@@ -274,6 +274,8 @@ export interface SyncOutcome {
   applied: number;
   /** 两端改了同一列、按更新时间取新而被覆盖掉的旧值数量 */
   overwrites: number;
+  /** 本端因引用不存在的父行（父行已删除或从未存在）而跳过的变更数 */
+  skipped: number;
   runId: string;
   /** 同步前的整库快照文件名；本轮无写入时为 null */
   backupFile: string | null;
@@ -385,7 +387,15 @@ async function runSyncOnce(): Promise<SyncOutcome> {
       backupFile = createPresyncBackup(sqlite)?.file ?? null;
     }
 
-    let appliedRemote = applyAutoChanges(sqlite, peer.device_id, other);
+    let appliedRemote = 0;
+    let skippedLocal = 0;
+    {
+      const out = applyAutoChanges(sqlite, peer.device_id, other);
+      appliedRemote += out.applied;
+      // 会话已删、对端把它的子行按 insert 复活这一类变更落不了库，被跳过——
+      // 同步照常收敛，计数交给 SyncOutcome 展示（父行已删除或从未存在）
+      skippedLocal += out.skipped.length;
+    }
 
     let repoFileSkipped = false;
     let repoFileMessage: string | undefined;
@@ -393,7 +403,9 @@ async function runSyncOnce(): Promise<SyncOutcome> {
       const neededBytes = estimateRepoFileBytes(repoFile, sqlite);
       const freeBytes = getFreeDiskBytes();
       if (canApplyRepoFileSync(neededBytes, freeBytes)) {
-        appliedRemote += applyAutoChanges(sqlite, peer.device_id, repoFile);
+        const out = applyAutoChanges(sqlite, peer.device_id, repoFile);
+        appliedRemote += out.applied;
+        skippedLocal += out.skipped.length;
         clearRepoFileSyncNotice(sqlite);
       } else {
         repoFileSkipped = true;
@@ -440,6 +452,7 @@ async function runSyncOnce(): Promise<SyncOutcome> {
 
     return {
       applied: response.appliedCount + appliedRemote,
+      skipped: skippedLocal + (response.skippedCount ?? 0),
       overwrites: plan.overwrites.length + response.overwriteCount,
       runId,
       backupFile,

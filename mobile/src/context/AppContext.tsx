@@ -76,7 +76,10 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
       let message =
         (result.full ? '全表对账完成' : '同步完成') +
         `：应用 ${result.applied} 条` +
-        (result.overwrites > 0 ? '，两端有一处内容先后改过，已自动对齐' : '');
+        (result.overwrites > 0 ? '，两端有一处内容先后改过，已自动对齐' : '') +
+        (result.skipped > 0
+          ? `，跳过 ${result.skipped} 条引用已删除父行的变更（父行未同步到本端，无法落库）`
+          : '');
       if (result.repoFileSkipped && result.repoFileMessage) {
         message += `\n${result.repoFileMessage}`;
       }

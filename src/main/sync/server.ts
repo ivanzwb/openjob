@@ -192,6 +192,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         changes: outbound,
         appliedCount: result.appliedCount,
         overwriteCount: result.overwriteCount,
+        skippedCount: result.skippedCount,
         runId: result.runId,
         serverMs: Date.now(),
         appVersion: localAppVersion(),
@@ -202,6 +203,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         peerDeviceId: auth.deviceId,
         appliedCount: result.appliedCount,
         overwriteCount: result.overwriteCount,
+        skippedCount: result.skippedCount,
       });
 
       sendJson(res, 200, response);

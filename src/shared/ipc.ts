@@ -1194,6 +1194,8 @@ export interface IpcEventMap {
     peerDeviceId: string;
     appliedCount: number;
     overwriteCount: number;
+    /** 本端因引用不存在的父行（父行已删除或从未存在）而跳过的变更数 */
+    skippedCount: number;
   };
   /** 两端版本不同，已拒绝本轮同步（没有动数据） */
   'sync:versionMismatch': {

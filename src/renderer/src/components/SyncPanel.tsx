@@ -46,11 +46,13 @@ export function SyncPanel(): React.JSX.Element {
       void refresh();
       bumpDataVersion();
       setVersionMismatch(null);
-      if (p.overwriteCount > 0) {
-        setMessage('同步完成，两端有一处内容先后改过，已自动对齐');
-      } else {
-        setMessage(p.appliedCount > 0 ? `同步完成，应用 ${p.appliedCount} 条` : '同步完成，无变化');
+      const parts: string[] = [];
+      if (p.appliedCount > 0) parts.push(`应用 ${p.appliedCount} 条`);
+      if (p.overwriteCount > 0) parts.push('两端有一处内容先后改过，已自动对齐');
+      if (p.skippedCount > 0) {
+        parts.push(`跳过 ${p.skippedCount} 条引用已删除父行的变更（父行未同步到本端，无法落库）`);
       }
+      setMessage(parts.length > 0 ? `同步完成，${parts.join('；')}` : '同步完成，无变化');
     });
     const offMismatch = onEvent('sync:versionMismatch', setVersionMismatch);
     return () => {

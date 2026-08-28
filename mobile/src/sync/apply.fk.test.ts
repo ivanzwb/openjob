@@ -277,34 +277,112 @@ describe('手机端应用变更的外键安全', () => {
     expect(row?.campaign_id).toBe('cX');
   });
 
-  it('孤儿引用要报出是哪张表的哪一行，不能只丢一句 FOREIGN KEY constraint failed', () => {
-    // 对端发来引用了本机不存在、且本批也没带上的父行。这是 defer 之后仍然
-    // 会失败的唯一情形，报错必须能定位到表和行，否则又是一轮靠猜的排查。
-    let message = '';
-    try {
-      applyAutoChanges(raw, PEER_DEVICE, [
-        {
-          table: 'explanation',
-          rowId: 'e1',
-          kind: 'insert',
-          values: {
-            node_id: 'ghost-node',
-            tier: 'spoken',
-            content_md: '内容',
-            model_used: 'test',
-            source_ids: [],
-            created_at: 1,
-          },
-          wallMs: 1,
+  it('孤儿引用不再整批失败——跳过该条并汇报，其余照常落库', () => {
+    // 对端发来引用了本机不存在、且本批也没带上的父行。这是 defer_foreign_keys
+    // 之后提交时仍会失败的唯一情形。父行既然本机没有、本批也不来，这条变更就
+    // 无法落地：跳过它并回报给上层，而不是让整批同步卡死在这一条上——v0.6.17
+    // 用户报的 message.session_id -> session(6 行) 就是这种形态。
+    const out = applyAutoChanges(raw, PEER_DEVICE, [
+      {
+        table: 'explanation',
+        rowId: 'e1',
+        kind: 'insert',
+        values: {
+          node_id: 'ghost-node',
+          tier: 'spoken',
+          content_md: '内容',
+          model_used: 'test',
+          source_ids: [],
+          created_at: 1,
         },
-      ]);
-    } catch (e) {
-      message = e instanceof Error ? e.message : String(e);
-    }
+        wallMs: 1,
+      },
+    ]);
 
-    expect(message).toContain('explanation.node_id');
-    expect(message).toContain('knowledge_node');
-    expect(message).toContain('e1→ghost-node');
+    expect(out.applied).toBe(0);
+    expect(out.skipped).toHaveLength(1);
+    expect(out.skipped[0]).toMatchObject({ table: 'explanation', rowId: 'e1' });
+    const n = raw.getFirstSync<{ n: number }>(`SELECT count(*) AS n FROM explanation`);
+    expect(n?.n).toBe(0);
+  });
+
+  it('会话已删除、对端把它的消息按 insert 复活——消息被跳过，会话保持删除', () => {
+    // 演练用户报的「FOREIGN KEY constraint failed | message.session_id -> session」。
+    // 本机删除过会话 s1（planMerge 判会话删、本批没有它的 insert），对端却有
+    // 更晚更新的 6 条消息，按逐行 LWW 被复活成 insert。父行本机不存在、本批也
+    // 没有：修复前整批回滚、水位不动、每轮重试都卡死在这 6 条上。修复后这 6 条
+    // 被跳过，同步继续收敛——会话已删，它的消息不该被复活回来。
+    raw.runSync(
+      `INSERT INTO session (id, campaign_id, kind, title, created_at)
+       VALUES ('s1', 'c1', 'chat', '已删会话', 1000)`,
+    );
+    // 本机删掉会话（级联清消息），与 planMerge 的删除决策一致
+    raw.runSync(`DELETE FROM session WHERE id = 's1'`);
+
+    const resurrected = Array.from({ length: 6 }, (_, i) => ({
+      table: 'message',
+      rowId: `m${i + 1}`,
+      kind: 'insert' as const,
+      values: {
+        session_id: 's1',
+        role: 'user',
+        content_md: `复活的消息 ${i + 1}`,
+        citations: '[]',
+        created_at: 1000 + i,
+      },
+      wallMs: 3000 + i,
+    }));
+
+    const out = applyAutoChanges(raw, PEER_DEVICE, resurrected);
+
+    expect(out.applied).toBe(0);
+    expect(out.skipped).toHaveLength(6);
+    const count = raw.getFirstSync<{ n: number }>(`SELECT count(*) AS n FROM message`);
+    expect(count?.n).toBe(0);
+  });
+
+  it('孤儿与可落库变更混批——坏的被跳过，好的照常应用', () => {
+    insertNode(raw, 'n5', 'TCP');
+
+    const out = applyAutoChanges(raw, PEER_DEVICE, [
+      {
+        table: 'knowledge_node',
+        rowId: 'n9',
+        kind: 'insert',
+        values: {
+          campaign_id: 'c1',
+          name: 'QUIC',
+          kind: 'concept',
+          coverage_type: 'core',
+          created_at: 1000,
+        },
+        wallMs: 2000,
+      },
+      {
+        table: 'explanation',
+        rowId: 'e1',
+        kind: 'insert',
+        values: {
+          node_id: 'ghost-node',
+          tier: 'spoken',
+          content_md: '内容',
+          model_used: 'test',
+          source_ids: [],
+          created_at: 1,
+        },
+        wallMs: 1,
+      },
+    ]);
+
+    expect(out.applied).toBe(1);
+    expect(out.skipped).toHaveLength(1);
+    expect(out.skipped[0]).toMatchObject({ table: 'explanation', rowId: 'e1' });
+    const n9 = raw.getFirstSync<{ n: number }>(
+      `SELECT count(*) AS n FROM knowledge_node WHERE id = 'n9'`,
+    );
+    expect(n9?.n).toBe(1);
+    const e1 = raw.getFirstSync<{ n: number }>(`SELECT count(*) AS n FROM explanation`);
+    expect(e1?.n).toBe(0);
   });
 
   it('INSERT_ORDER 必须是真实外键的拓扑序——新增表放错位置要当场失败', () => {

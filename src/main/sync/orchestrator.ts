@@ -39,6 +39,8 @@ export interface ExchangeResult {
   appliedCount: number;
   overwriteCount: number;
   overwrites: FieldOverwrite[];
+  /** 因引用不存在的父行（父行已删除或从未存在）而被跳过的变更数 */
+  skippedCount: number;
   runId: string;
   backupFile: string | null;
 }
@@ -131,9 +133,14 @@ export function handleExchange(input: ExchangeInput): ExchangeResult {
     const plan = planMerge(local, input.remote, ctx);
 
     let appliedCount = 0;
+    let skippedCount = 0;
     if (plan.auto.length > 0) {
       backupFile = createPresyncBackup().file;
-      appliedCount = applyAutoChanges(raw, input.peerDeviceId, plan.auto);
+      const out = applyAutoChanges(raw, input.peerDeviceId, plan.auto);
+      appliedCount = out.applied;
+      // 会话已删、对端把它的子行按 insert 复活这一类变更落不了库，被跳过——
+      // 同步照常收敛，计数交给上层（事件/回包）展示，不写进失败记录
+      skippedCount = out.skipped.length;
     }
 
     if (plan.overwrites.length > 0) {
@@ -171,6 +178,7 @@ export function handleExchange(input: ExchangeInput): ExchangeResult {
       appliedCount,
       overwriteCount: plan.overwrites.length,
       overwrites: plan.overwrites,
+      skippedCount,
       runId,
       backupFile,
     };
