@@ -1,7 +1,12 @@
 import type { Database } from 'better-sqlite3';
 import type { AutoChange } from '@shared/sync';
 import { deviceLocalInsertDefaults } from './deviceLocalDefaults';
-import { describeMissingParents, findMissingParentChanges, type FkProbe } from './fkDiagnostics';
+import {
+  describeMissingParents,
+  findMissingParentChanges,
+  findMissingParents,
+  type FkProbe,
+} from './fkDiagnostics';
 import { syncTableSpec, syncTableSpecs } from './tables';
 import { upsertClause } from './upsert';
 import { writingAs } from './triggers';
@@ -148,6 +153,35 @@ function annotateForeignKeyError(raw: Database, error: unknown, changes: AutoCha
   return error;
 }
 
+/**
+ * 记录这一批到底缺了哪些父行，以及本机对它们的记忆。
+ *
+ * 只报"跳过了 N 条"说不清成因，而缺失父行在本机 oplog 里的最后一条记录恰好
+ * 把成因分成两类，要查的方向完全不同：
+ * - 最后一条是 delete：本机删过这个父行，而对端还留着它的子行。要查的是这次
+ *   删除为什么没能传播到对端。
+ * - 一条都没有：本机从来没有过这个父行。要查的是它为什么没被同步过来。
+ */
+function logMissingParents(raw: Database, dropped: AutoChange[], probe: FkProbe): void {
+  console.warn(
+    `[sync] 跳过 ${dropped.length} 条引用已删除父行的变更：${describeMissingParents(dropped, probe)}`,
+  );
+
+  for (const parent of findMissingParents(dropped, probe)) {
+    const entry = raw
+      .prepare(
+        `SELECT op, wall_ms FROM sync_oplog
+         WHERE table_name = ? AND row_id = ? ORDER BY seq DESC LIMIT 1`,
+      )
+      .get(parent.table, parent.rowId) as { op: string; wall_ms: number } | undefined;
+    const memory =
+      entry === undefined
+        ? '本机 oplog 里没有它的任何记录 —— 它很可能从未同步过来'
+        : `本机 oplog 最后一条是 ${entry.op}，时间 ${new Date(entry.wall_ms).toISOString()}`;
+    console.warn(`[sync]   缺失父行 ${parent.table}:${parent.rowId} —— ${memory}`);
+  }
+}
+
 export interface ApplyAutoChangesResult {
   /** 实际落库的变更数（含 delete） */
   applied: number;
@@ -160,16 +194,88 @@ export interface ApplyAutoChangesResult {
   skipped: AutoChange[];
 }
 
+function applyOne(raw: Database, change: AutoChange): void {
+  if (change.kind === 'insert') {
+    applyInsert(raw, change.table, change.rowId, {
+      ...change.values,
+      [syncTableSpec(change.table).pk]: change.rowId,
+    });
+    stampRowVersion(raw, change.table, change.rowId, change.wallMs);
+  } else if (change.kind === 'patch') {
+    applyPatch(raw, change.table, change.rowId, change.values);
+    stampRowVersion(raw, change.table, change.rowId, change.wallMs);
+  } else {
+    applyDelete(raw, change.table, change.rowId);
+  }
+}
+
+const changeKey = (c: AutoChange): string => `${c.table}:${c.rowId}:${c.kind}`;
+
+/**
+ * 外键失败后的补救：删除先落库，再就地反查孤儿、丢掉，然后落其余的。
+ *
+ * 反查放在删除之后是必须的，不是顺手：本批的 delete 可能通过外键级联带走
+ * 另一条 insert 的父行。回滚之后再反查，看到的是删除前的库，那个父行还在，
+ * 于是这条 insert 不会被判成孤儿，重试还是同样失败。删除落库之后再问，
+ * parentExists 看到的才是级联之后的真实状态。
+ *
+ * 反查在内存里迭代到不动点，不靠"回滚—重试—再回滚"推进链式场景：被丢掉的
+ * 变更恰好是另一条变更的父行时，下一轮迭代把下游一并揪出来。整批带着
+ * repo_file 源码快照时，少一次重跑就是少几十 MB 的重复写入。
+ */
+function salvageOrphans(
+  raw: Database,
+  sorted: AutoChange[],
+  cause: unknown,
+): ApplyAutoChangesResult {
+  const deletes = sorted.filter((c) => c.kind === 'delete');
+  const writes = sorted.filter((c) => c.kind !== 'delete');
+  let skipped: AutoChange[] = [];
+  let applied = 0;
+
+  const run = raw.transaction(() => {
+    raw.exec('PRAGMA defer_foreign_keys = ON');
+    for (const change of deletes) applyOne(raw, change);
+
+    const probe = fkProbe(raw);
+    let pending = writes;
+    const dropped: AutoChange[] = [];
+    for (;;) {
+      const orphans = findMissingParentChanges(pending, probe);
+      if (orphans.length === 0) break;
+      dropped.push(...orphans);
+      const keys = new Set(orphans.map(changeKey));
+      pending = pending.filter((c) => !keys.has(changeKey(c)));
+    }
+
+    // 反查说不出哪一条坏，就不该假装修好了：把原始失败抛回去，让上层带诊断报出来
+    if (dropped.length === 0) throw cause;
+
+    logMissingParents(raw, dropped, probe);
+    for (const change of pending) applyOne(raw, change);
+
+    skipped = dropped;
+    applied = deletes.length + pending.length;
+  });
+
+  try {
+    run();
+  } catch (e) {
+    throw annotateForeignKeyError(raw, e, sorted);
+  }
+
+  return { applied, skipped };
+}
+
 /**
  * 把合并计划里的自动变更事务性落库。
  *
  * 写入期间标记 writeAs 为对端设备，触发器不会把这些变更再记成本机
  * 待推送的修改。
  *
- * 提交碰到外键失败时不再整批报错：先用反查找出引用了不存在父行的变更，
- * 丢掉它们重试剩下的（链式场景——被丢的变更恰好是另一条变更的父行——
- * 下一轮反查会继续把下游变更揪出来），直到整批落库或无可落库。非外键
- * 错误和诊断失败仍然按原样抛出。
+ * 先乐观地整批落一次，不做任何额外查询——绝大多数轮次里没有孤儿，这条路径
+ * 不该为极少数的坏批次买单。只有真的撞了外键才转入补救，丢掉引用不存在父行
+ * 的那几条、落下其余的。非外键错误仍然按原样抛出。
  */
 export function applyAutoChanges(
   raw: Database,
@@ -177,55 +283,25 @@ export function applyAutoChanges(
   changes: AutoChange[],
 ): ApplyAutoChangesResult {
   const sorted = sortChanges(changes);
-  const skipped: AutoChange[] = [];
-  let pending = sorted;
+  let result: ApplyAutoChangesResult = { applied: 0, skipped: [] };
 
   writingAs(raw, peerDeviceId, () => {
-    while (pending.length > 0) {
-      try {
-        raw.transaction(() => {
-          // 外键检查推迟到提交时整批做一次。planMerge 逐行独立决策，父行和子行
-          // 落库的先后顺序本质上无法保证正确——靠 INSERT_ORDER 人工维护拓扑序，
-          // 每加一张表就多一次踩中 FOREIGN KEY constraint failed 的机会。推迟之后
-          // 中间状态不再被检查，只要整批结束时引用完整就能提交。
-          raw.exec('PRAGMA defer_foreign_keys = ON');
-
-          for (const change of pending) {
-            if (change.kind === 'insert') {
-              applyInsert(raw, change.table, change.rowId, {
-                ...change.values,
-                [syncTableSpec(change.table).pk]: change.rowId,
-              });
-              stampRowVersion(raw, change.table, change.rowId, change.wallMs);
-            } else if (change.kind === 'patch') {
-              applyPatch(raw, change.table, change.rowId, change.values);
-              stampRowVersion(raw, change.table, change.rowId, change.wallMs);
-            } else {
-              applyDelete(raw, change.table, change.rowId);
-            }
-          }
-        })();
-        break;
-      } catch (e) {
-        const message = e instanceof Error ? e.message : String(e);
-        if (!/FOREIGN KEY constraint failed/i.test(message)) throw e;
-
-        let orphans: AutoChange[] = [];
-        try {
-          orphans = findMissingParentChanges(pending, fkProbe(raw));
-        } catch {
-          // 诊断本身出错不能盖掉真正的失败原因
-        }
-        if (orphans.length === 0) throw annotateForeignKeyError(raw, e, pending);
-
-        skipped.push(...orphans);
-        const orphanKeys = new Set(
-          orphans.map((c) => `${c.table}:${c.rowId}:${c.kind}`),
-        );
-        pending = pending.filter((c) => !orphanKeys.has(`${c.table}:${c.rowId}:${c.kind}`));
-      }
+    try {
+      raw.transaction(() => {
+        // 外键检查推迟到提交时整批做一次。planMerge 逐行独立决策，父行和子行
+        // 落库的先后顺序本质上无法保证正确——靠 INSERT_ORDER 人工维护拓扑序，
+        // 每加一张表就多一次踩中 FOREIGN KEY constraint failed 的机会。推迟之后
+        // 中间状态不再被检查，只要整批结束时引用完整就能提交。
+        raw.exec('PRAGMA defer_foreign_keys = ON');
+        for (const change of sorted) applyOne(raw, change);
+      })();
+      result = { applied: sorted.length, skipped: [] };
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      if (!/FOREIGN KEY constraint failed/i.test(message)) throw e;
+      result = salvageOrphans(raw, sorted, e);
     }
   });
 
-  return { applied: changes.length - skipped.length, skipped };
+  return result;
 }

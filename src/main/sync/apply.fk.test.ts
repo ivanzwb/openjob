@@ -10,7 +10,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { Database } from 'better-sqlite3';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { applyAutoChanges } from './apply';
 import { syncTableSpecs } from './tables';
 import { installSyncTriggers } from './triggers';
@@ -102,6 +102,12 @@ describe('应用变更的外键安全', () => {
 
   beforeEach(() => {
     raw = readyDb();
+    // 跳过孤儿时会打诊断日志，测试输出里不需要
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it('patch 改挂到同批 insert 的新父行——patch 必须等父行落库后再执行', () => {
@@ -346,6 +352,54 @@ describe('应用变更的外键安全', () => {
     expect(out.skipped).toHaveLength(6);
     const count = raw.prepare(`SELECT count(*) AS n FROM message`).get() as { n: number };
     expect(count.n).toBe(0);
+  });
+
+  it('本批的 delete 级联带走了同批 insert 的父行——反查必须看删除之后的状态', () => {
+    // 批里同时有「删掉 campaign c9」和「插入挂在 c9 名下某个会话上的消息」。
+    // 若反查在回滚之后进行，会话还在库里，这条 insert 不会被判成孤儿，重试
+    // 依旧是同样的失败——同步继续卡死。只有让删除先落库、再反查，才能看出
+    // 会话已经被级联带走。
+    raw
+      .prepare(
+        `INSERT INTO campaign (id, company, role_title, jd_raw, status, created_at, updated_at)
+         VALUES ('c9', 'GONE', 'SRE', 'jd', 'planning', 1, 1)`,
+      )
+      .run();
+    raw
+      .prepare(
+        `INSERT INTO session (id, campaign_id, kind, title, created_at)
+         VALUES ('s9', 'c9', 'chat', '会话', 1)`,
+      )
+      .run();
+
+    const out = applyAutoChanges(raw, PEER_DEVICE, [
+      { table: 'campaign', rowId: 'c9', kind: 'delete', values: {}, wallMs: 5000 },
+      {
+        table: 'message',
+        rowId: 'm9',
+        kind: 'insert',
+        values: {
+          session_id: 's9',
+          role: 'user',
+          content_md: '复活的消息',
+          citations: '[]',
+          created_at: 1,
+        },
+        wallMs: 6000,
+      },
+    ]);
+
+    // 删除照常生效，只有那条消息被跳过
+    expect(out.applied).toBe(1);
+    expect(out.skipped).toHaveLength(1);
+    expect(out.skipped[0]).toMatchObject({ table: 'message', rowId: 'm9' });
+
+    const campaigns = raw.prepare(`SELECT count(*) AS n FROM campaign WHERE id = 'c9'`).get() as {
+      n: number;
+    };
+    const messages = raw.prepare(`SELECT count(*) AS n FROM message`).get() as { n: number };
+    expect(campaigns.n).toBe(0);
+    expect(messages.n).toBe(0);
   });
 
   it('孤儿与可落库变更混批——坏的被跳过，好的照常应用', () => {

@@ -257,14 +257,21 @@ const FULL_SYNC_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 function needsFullSync(sqlite: SQLiteDatabase, peer: PeerRow): boolean {
   if (!peer.last_sync_at || peer.last_local_seq === 0 || peer.last_remote_seq === 0) return true;
 
-  const lastRun = sqlite.getFirstSync<{ status: string }>(
-    `SELECT status FROM sync_run ORDER BY started_at DESC LIMIT 1`,
+  const lastRun = sqlite.getFirstSync<{ status: string; error_message: string | null }>(
+    `SELECT status, error_message FROM sync_run ORDER BY started_at DESC LIMIT 1`,
   );
-  // 只有 'failed' 才升级成全量：那是回包已经拿到、落库落了一半，水位线可能停在半途。
-  // 'not-applied' 是交换阶段就失败了，本机一个字节都没动，重发同一段增量就行。
+  // 'failed' 是回包已经拿到、落库落了一半，水位线可能停在半途。
+  // 'not-applied' 是交换阶段就失败了，本机一个字节都没动，一般重发同一段增量就行；
   // 这里无脑升级反而危险：回包太大本身就是超时的主因，换成全量只会更大，于是每轮都
   // 超时、每轮都判定要全量，同步再也好不了。
   if (lastRun?.status === 'failed') return true;
+
+  // 但「对端因为数据形状拒收」是例外。约束不满足和网络无关，重发一模一样的增量
+  // 一百次也是同样的结果，同步会永久停在这里；只有全表对账能把对端缺的行带过去。
+  // 外键这一类已经由 applyAutoChanges 就地跳过、不再抛错，剩下的（UNIQUE、
+  // NOT NULL 等）仍然只能靠这一条兜住。必须按错误内容判定而不是按 status——
+  // 否则超时也会被卷进来，那正是上面要避免的。
+  if (/constraint failed/i.test(lastRun?.error_message ?? '')) return true;
 
   if (!peer.last_full_sync_at) return true;
   return Date.now() - peer.last_full_sync_at > FULL_SYNC_INTERVAL_MS;

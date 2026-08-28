@@ -8,7 +8,7 @@
  */
 import { DatabaseSync } from 'node:sqlite';
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MIGRATIONS } from '../db/migrations/bundle';
 import { applyAutoChanges } from './apply';
 import { partitionRepoFileChanges } from './repoFilePartition';
@@ -71,6 +71,52 @@ describe('手机端应用变更的外键安全', () => {
     raw = freshDb();
     installSyncTriggers(raw, LOCAL_DEVICE);
     seedCampaign(raw);
+    // 跳过孤儿时会打诊断日志，测试输出里不需要
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('本批的 delete 级联带走了同批 insert 的父行——反查必须看删除之后的状态', () => {
+    // 与桌面端同一条：反查若在回滚之后进行，会话还在库里，这条 insert 不会被
+    // 判成孤儿，重试依旧同样失败。只有让删除先落库再反查才看得出会话已没了。
+    raw.runSync(
+      `INSERT INTO campaign (id, company, role_title, jd_raw, status, created_at, updated_at)
+       VALUES ('c9', 'GONE', 'SRE', 'jd', 'planning', 1, 1)`,
+    );
+    raw.runSync(
+      `INSERT INTO session (id, campaign_id, kind, title, created_at)
+       VALUES ('s9', 'c9', 'chat', '会话', 1)`,
+    );
+
+    const out = applyAutoChanges(raw, PEER_DEVICE, [
+      { table: 'campaign', rowId: 'c9', kind: 'delete', values: {}, wallMs: 5000 },
+      {
+        table: 'message',
+        rowId: 'm9',
+        kind: 'insert',
+        values: {
+          session_id: 's9',
+          role: 'user',
+          content_md: '复活的消息',
+          citations: '[]',
+          created_at: 1,
+        },
+        wallMs: 6000,
+      },
+    ]);
+
+    expect(out.applied).toBe(1);
+    expect(out.skipped).toHaveLength(1);
+    expect(out.skipped[0]).toMatchObject({ table: 'message', rowId: 'm9' });
+    const campaigns = raw.getFirstSync<{ n: number }>(
+      `SELECT count(*) AS n FROM campaign WHERE id = 'c9'`,
+    );
+    const messages = raw.getFirstSync<{ n: number }>(`SELECT count(*) AS n FROM message`);
+    expect(campaigns?.n).toBe(0);
+    expect(messages?.n).toBe(0);
   });
 
   it('patch 改挂到同批 insert 的新父行——patch 必须等父行落库后再执行', () => {
