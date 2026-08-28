@@ -1,6 +1,6 @@
 {
   "name": "mobile",
-  "version": "0.6.17",
+  "version": "0.6.18",
   "main": "index.ts",
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
