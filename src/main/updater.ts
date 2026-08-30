@@ -1,8 +1,12 @@
 import { app } from 'electron';
 import type { autoUpdater as ElectronAutoUpdater } from 'electron-updater';
 import type { UpdateStatus } from '@shared/ipc';
+import { normalizeFeedUrl } from '@shared/updateFeed';
 import { getConfig } from './config';
 import { emit } from './ipc/bridge';
+
+// 共享层的更新源规整规则，桌面端与手机端必须用同一份判断
+export { normalizeFeedUrl };
 
 /**
  * 自动更新。
@@ -18,36 +22,6 @@ type Updater = typeof ElectronAutoUpdater;
 
 /** 官方发布渠道，和 electron-builder.yml 的 publish 配置指向同一处 */
 const GITHUB_FEED = { provider: 'github', owner: 'ivanzwb', repo: 'openjob' } as const;
-
-/** GitHub 把最新一版的资产挂在这个相对路径下，latest.yml 也在里面 */
-const GITHUB_ASSET_PATH = 'releases/latest/download';
-
-/**
- * 把用户填的更新源规整成 electron-builder 的产物目录。
- *
- * generic provider 只会把 latest.yml 接在这个 URL 后面（newBaseUrl 先补尾斜杠，
- * 再 new URL('latest.yml', base)），所以填一个 GitHub 仓库地址就会去请求仓库根下的
- * latest.yml——那不是真实资产路径，GitHub 直接 404，套了 gh-proxy 这类镜像则是挂到
- * 超时后回 522。资产实际在 releases/latest/download 下，这里替用户补上，
- * 镜像前缀（https://gh-proxy.org/https://github.com/...）原样保留。
- *
- * 只补「光秃秃的 owner/repo」这一种：已经写明具体路径的按用户填的走，不去猜。
- */
-export function normalizeFeedUrl(raw: string): string {
-  const url = raw.trim();
-  const marker = url.toLowerCase().lastIndexOf('github.com/');
-  if (marker < 0) return url;
-
-  const prefix = url.slice(0, marker + 'github.com/'.length);
-  const path = url
-    .slice(prefix.length)
-    .replace(/\/+$/, '')
-    .replace(/\.git$/, '');
-  const segments = path.split('/');
-  if (segments.length !== 2 || segments.some((s) => s === '')) return url;
-
-  return `${prefix}${path}/${GITHUB_ASSET_PATH}`;
-}
 
 function resolveFeed(): Parameters<Updater['setFeedURL']>[0] {
   const feedUrl = normalizeFeedUrl(getConfig().update.feedUrl);
