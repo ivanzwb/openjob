@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from 'react';
 import { AppState } from 'react-native';
-import { openDb, syncNow, isPaired, getPeerLabel, getAutoSync, setAutoSync as persistAutoSync, getRepoFileSyncNotice } from '../db';
+import { openDb, syncNow, isPaired, getPeerLabel, getAutoSync, setAutoSync as persistAutoSync, getRepoFileSyncNotice, getUseSyncedFeed, setUseSyncedFeed as persistUseSyncedFeed } from '../db';
 import { SyncVersionMismatchError } from '../sync/client';
 import { getMobileConfig } from '../config/settings';
 import { setThemeScheme } from '../theme';
@@ -32,6 +32,8 @@ interface AppContextValue {
   repoFileSyncNotice: { skipped: boolean; message: string | null };
   autoSync: boolean;
   setAutoSync: (on: boolean) => void;
+  useSyncedFeed: boolean;
+  setUseSyncedFeed: (on: boolean) => void;
   dataVersion: number;
   refresh: () => Promise<void>;
   notifyDataChanged: () => void;
@@ -53,6 +55,7 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
     message: null,
   });
   const [autoSyncOn, setAutoSyncOn] = useState(true);
+  const [useSyncedFeedOn, setUseSyncedFeedOn] = useState(true);
   const [dataVersion, setDataVersion] = useState(0);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -65,6 +68,7 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
     setPaired(isPaired());
     setPeerLabel(getPeerLabel());
     setAutoSyncOn(getAutoSync());
+    setUseSyncedFeedOn(getUseSyncedFeed());
     setRepoFileSyncNotice(getRepoFileSyncNotice());
   }, []);
 
@@ -110,6 +114,12 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
     persistAutoSync(on);
   }, []);
 
+  // 手机端「使用桌面同步的更新源」开关：本机偏好，不入同步范围，切了立刻持久化
+  const setUseSyncedFeed = useCallback((on: boolean) => {
+    setUseSyncedFeedOn(on);
+    persistUseSyncedFeed(on);
+  }, []);
+
   useEffect(() => {
     void openDb()
       .then(() => refresh())
@@ -152,12 +162,14 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
       repoFileSyncNotice,
       autoSync: autoSyncOn,
       setAutoSync,
+      useSyncedFeed: useSyncedFeedOn,
+      setUseSyncedFeed,
       dataVersion,
       refresh,
       notifyDataChanged: bumpData,
       triggerSync,
     }),
-    [ready, paired, peerLabel, syncing, syncStatus, lastSyncMessage, hasSyncError, versionMismatch, repoFileSyncNotice, autoSyncOn, setAutoSync, dataVersion, refresh, bumpData, triggerSync],
+    [ready, paired, peerLabel, syncing, syncStatus, lastSyncMessage, hasSyncError, versionMismatch, repoFileSyncNotice, autoSyncOn, setAutoSync, useSyncedFeedOn, setUseSyncedFeed, dataVersion, refresh, bumpData, triggerSync],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

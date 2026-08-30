@@ -4,6 +4,10 @@ import * as IntentLauncher from 'expo-intent-launcher';
 import { Directory, File, Paths } from 'expo-file-system';
 import { compareVersions, normalizeVersion } from '../lib/semver';
 import { getCurrentVersion } from '../lib/appVersion';
+import { getMobileConfig } from '../config/settings';
+import { getUseSyncedFeed } from '../db';
+import { genericPageUrl, resolveFeedBase } from './feedSource';
+import { parseLatestYml } from './latestYml';
 
 export { getCurrentVersion };
 
@@ -11,8 +15,11 @@ export { getCurrentVersion };
  * 应用内新版检测与升级。
  *
  * 发布渠道：CI 在推 `v*` tag 时构建 `OpenJob-<version>.apk` 并挂到同名 GitHub Release，
- * 所以「最新版本」直接问 Releases API 就够了，不需要另建更新服务器。匿名调用有每小时
- * 60 次的限流，因此检测只在用户点按时发起，不做轮询。
+ * 所以官方渠道「最新版本」直接问 Releases API 就够了，不需要另建更新服务器。
+ * 桌面端「设置 → 自动更新」填的自定义 feedUrl 会随 app_setting 同步过来：此时改用
+ * generic 目录协议——读目录里的 latest.yml 取版本，APK 按 CI 命名约定
+ * OpenJob-<version>.apk 从同一目录下载。匿名调用有每小时 60 次的限流，
+ * 因此检测只在用户点按时发起，不做轮询。
  */
 
 const REPO = 'ivanzwb/openjob';
@@ -138,27 +145,87 @@ function pickApkAsset(assets: unknown): ReleaseAssetPayload | null {
   return null;
 }
 
-/** 检测最新版本，结果写进模块仓库供界面复用 */
-export async function checkForUpdate(): Promise<UpdateCheck> {
+/** 官方 GitHub Release 渠道：问 Releases API 拿最新发布 */
+async function fetchGitHubLatest(): Promise<LatestRelease> {
   const payload = await fetchLatestRelease();
   const tagName = typeof payload.tag_name === 'string' ? payload.tag_name.trim() : '';
   if (!tagName) throw new Error('GitHub 最新发布里没有版本号，请稍后再试');
 
   const apk = pickApkAsset(payload.assets);
   const apkUrl = typeof apk?.browser_download_url === 'string' ? apk.browser_download_url : null;
-  const version = normalizeVersion(tagName);
+  return {
+    version: normalizeVersion(tagName),
+    tagName,
+    publishedAt: typeof payload.published_at === 'string' ? payload.published_at : null,
+    pageUrl: typeof payload.html_url === 'string' ? payload.html_url : RELEASES_PAGE_URL,
+    apkUrl,
+    apkSize: typeof apk?.size === 'number' ? apk.size : null,
+  };
+}
+
+/**
+ * 自定义更新源（桌面端同步过来的 feedUrl 指向的 generic 目录）：
+ * 目录下要有 electron-builder 生成的 latest.yml（version/releaseDate），
+ * APK 按 CI 命名约定 OpenJob-<version>.apk 放在同一目录。
+ * 404 提示与桌面 UpdatePanel 的文案保持一致。
+ */
+async function fetchGenericLatest(base: string): Promise<LatestRelease> {
+  const dir = base.endsWith('/') ? base : `${base}/`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CHECK_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch(`${dir}latest.yml`, { signal: controller.signal });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('连接更新源超时，请检查网络后重试');
+    }
+    throw new Error('无法连接更新源，请检查网络后重试');
+  } finally {
+    clearTimeout(timer);
+  }
+
+  if (response.status === 403 || response.status === 429) {
+    throw new Error('更新源拒绝了请求（限流），请稍后再试');
+  }
+  if (response.status === 404) {
+    throw new Error(
+      '更新源里没有 latest.yml：填 GitHub 仓库地址会自动指向 releases/latest/download，自建目录请确认 latest.yml 已上传。',
+    );
+  }
+  if (!response.ok) {
+    throw new Error(`更新源返回 ${response.status}，请稍后再试`);
+  }
+
+  const yml = parseLatestYml(await response.text());
+  if (!yml.version) {
+    throw new Error('更新源里的 latest.yml 缺少版本号，请确认文件完整');
+  }
+
+  const version = normalizeVersion(yml.version);
+  return {
+    version,
+    tagName: `v${version}`,
+    publishedAt: yml.releaseDate,
+    pageUrl: genericPageUrl(base),
+    // latest.yml 的 files 列表只含桌面安装包，APK 大小拿不到，先不显示
+    apkUrl: `${dir}OpenJob-${version}.apk`,
+    apkSize: null,
+  };
+}
+
+/** 检测最新版本，结果写进模块仓库供界面复用 */
+export async function checkForUpdate(): Promise<UpdateCheck> {
+  // 手机端「使用桌面同步的更新源」开关默认开：桌面端配置了自定义更新源
+  // （同步过来的）就走 generic 目录协议；关掉或没配置就回官方 GitHub Release
+  const useSyncedFeed = getUseSyncedFeed();
+  const feedBase = useSyncedFeed ? resolveFeedBase(getMobileConfig().update.feedUrl) : null;
+  const latest = feedBase ? await fetchGenericLatest(feedBase) : await fetchGitHubLatest();
   const currentVersion = getCurrentVersion();
   const result: UpdateCheck = {
     currentVersion,
-    hasUpdate: compareVersions(version, currentVersion) > 0,
-    latest: {
-      version,
-      tagName,
-      publishedAt: typeof payload.published_at === 'string' ? payload.published_at : null,
-      pageUrl: typeof payload.html_url === 'string' ? payload.html_url : RELEASES_PAGE_URL,
-      apkUrl,
-      apkSize: typeof apk?.size === 'number' ? apk.size : null,
-    },
+    hasUpdate: compareVersions(latest.version, currentVersion) > 0,
+    latest,
   };
   setState({ check: result });
   return result;

@@ -139,6 +139,28 @@ export function setAutoSync(on: boolean): void {
   );
 }
 
+/**
+ * 手机端「使用桌面同步的更新源」开关（默认开）：本机偏好，不入同步范围。
+ * 开：桌面端 config.update.feedUrl 同步过来后，手机检查更新走那个源；
+ * 关：即使桌面配了自定义源，手机也只用官方 GitHub Release。
+ */
+export function getUseSyncedFeed(): boolean {
+  if (!raw) return true;
+  const row = raw.getFirstSync<{ value: string }>(
+    `SELECT value FROM sync_meta WHERE key = 'useSyncedFeed'`,
+  );
+  return row ? row.value === '1' : true;
+}
+
+export function setUseSyncedFeed(on: boolean): void {
+  const sqlite = getRawDb();
+  sqlite.runSync(
+    `INSERT INTO sync_meta (key, value) VALUES ('useSyncedFeed', ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    on ? '1' : '0',
+  );
+}
+
 function getPeer(sqlite: SQLiteDatabase): PeerRow | null {
   return sqlite.getFirstSync<PeerRow>(`SELECT * FROM sync_peer LIMIT 1`) ?? null;
 }

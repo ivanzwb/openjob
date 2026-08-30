@@ -1,6 +1,7 @@
-import { Linking, Platform, Pressable, Text, View } from 'react-native';
+import { Linking, Platform, Pressable, Switch, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { runTask, useTaskState } from '../context/RemoteTaskContext';
+import { useApp } from '../context/AppContext';
 import {
   APP_UPDATE_CHECK_TASK,
   APP_UPDATE_INSTALL_TASK,
@@ -10,6 +11,8 @@ import {
   getCurrentVersion,
   useAppUpdateState,
 } from '../update/appUpdate';
+import { resolveFeedBase } from '../update/feedSource';
+import { getMobileConfig } from '../config/settings';
 import { useTheme } from '../theme';
 
 function formatSize(bytes: number | null): string | null {
@@ -30,8 +33,12 @@ export function AppUpdateCard(): React.JSX.Element {
   const { check, percent } = useAppUpdateState();
   const checkTask = useTaskState(APP_UPDATE_CHECK_TASK);
   const installTask = useTaskState(APP_UPDATE_INSTALL_TASK);
+  const { useSyncedFeed, setUseSyncedFeed } = useApp();
 
   const currentVersion = getCurrentVersion();
+  const hasSyncedFeed = getMobileConfig().update.feedUrl.trim() !== '';
+  // 开关关掉时即使桌面配了自定义源也只用官方 GitHub，文案与检测逻辑保持一致
+  const feedBase = useSyncedFeed ? resolveFeedBase(getMobileConfig().update.feedUrl) : null;
   const latest = check?.latest ?? null;
   const hasUpdate = check?.hasUpdate ?? false;
   // iOS 装不了 APK，有新版也只能引导去发布页面，不能走到安装分支
@@ -75,6 +82,50 @@ export function AppUpdateCard(): React.JSX.Element {
         <Text style={{ flex: 1, color: theme.text, fontSize: 13, fontWeight: '600' }}>应用更新</Text>
         <Text style={{ color: theme.muted, fontSize: 11 }}>当前 v{currentVersion}</Text>
       </View>
+
+      {feedBase ? (
+        <Text
+          style={{ color: theme.muted, fontSize: 10, lineHeight: 14 }}
+          numberOfLines={1}
+          ellipsizeMode="middle"
+        >
+          更新源（同步自桌面）：{feedBase}
+        </Text>
+      ) : (
+        <Text style={{ color: theme.muted, fontSize: 10, lineHeight: 14 }}>
+          更新源：官方 GitHub Release
+        </Text>
+      )}
+
+      {hasSyncedFeed && (
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 10,
+            borderWidth: 1,
+            borderColor: theme.border,
+            borderRadius: 8,
+            padding: 10,
+            backgroundColor: theme.bg,
+          }}
+        >
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={{ color: theme.text, fontSize: 12, fontWeight: '600' }}>
+              使用桌面同步的更新源
+            </Text>
+            <Text style={{ color: theme.muted, fontSize: 10, lineHeight: 14 }}>
+              关闭后回官方 GitHub Release 检查更新
+            </Text>
+          </View>
+          <Switch
+            value={useSyncedFeed}
+            onValueChange={setUseSyncedFeed}
+            trackColor={{ false: theme.border, true: theme.accent }}
+            thumbColor="#fff"
+          />
+        </View>
+      )}
 
       {check && !hasUpdate && (
         <Text style={{ color: theme.muted, fontSize: 11, lineHeight: 16 }}>
