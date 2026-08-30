@@ -29,6 +29,7 @@ const MIN_SAMPLES = SAMPLE_RATE / 5;
 export function useSpeechRecognition(onTranscript: (text: string) => void): {
   supported: boolean;
   state: SpeechState;
+  isRecording: () => boolean;
   start: () => Promise<void>;
   stop: () => Promise<void>;
 } {
@@ -44,7 +45,7 @@ export function useSpeechRecognition(onTranscript: (text: string) => void): {
   }, [onTranscript]);
 
   // useAudioStream 内部已订阅 onBuffer 与 isStreaming，这里只提供回调。
-  // isStreaming 这个 React state 故意不用：它比松手晚一帧，正是 stop 被吞掉的根因
+  // isStreaming 这个 React state 故意不用：它比点停止晚一帧，正是 stop 被吞掉的根因
   const { stream } = useAudioStream({
     sampleRate: SAMPLE_RATE,
     channels: CHANNELS,
@@ -119,7 +120,10 @@ export function useSpeechRecognition(onTranscript: (text: string) => void): {
     await controllerRef.current?.stop();
   }, []);
 
-  return { supported: true, state, start, stop };
+  // 点按切换需要同步判据：React state 慢一帧，连点第二下读 state 会拿到旧值
+  const isRecording = useCallback(() => controllerRef.current?.isRecording() ?? false, []);
+
+  return { supported: true, state, isRecording, start, stop };
 }
 
 export type { SpeechState };

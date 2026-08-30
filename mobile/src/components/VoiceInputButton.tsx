@@ -1,11 +1,11 @@
 import { Pressable, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { useSpeechRecognition, type SpeechState } from '../hooks/useSpeechRecognition';
 import { useTheme } from '../theme';
 import { useToast } from './Toast';
 
-/** 语音口述按钮：按下录音，松开转写；放在 TextInput 旁。 */
+/** 语音口述按钮：点一下开始录音，再点一下停止并转写；放在 TextInput 旁。 */
 export function VoiceInputButton({
   onTranscript,
   disabled,
@@ -15,8 +15,7 @@ export function VoiceInputButton({
 }): React.JSX.Element {
   const theme = useTheme();
   const toast = useToast();
-  const { state, start, stop } = useSpeechRecognition(onTranscript);
-  const pressedRef = useRef(false);
+  const { state, isRecording, start, stop } = useSpeechRecognition(onTranscript);
 
   const busy = state.state === 'recording' || state.state === 'transcribing';
   const downloading = state.state === 'downloading';
@@ -28,15 +27,15 @@ export function VoiceInputButton({
     }
   }, [state, toast]);
 
-  const handlePressIn = (): void => {
-    pressedRef.current = true;
-    void start();
-  };
-
-  const handlePressOut = (): void => {
-    if (!pressedRef.current) return;
-    pressedRef.current = false;
-    void stop();
+  // 点按切换：正在录音 → 停止；空闲/出错 → 开始。转写与下载中忽略点击，
+  // 下载进度靠状态渲染，点了会跳走；isRecording 是同步判据，React state 慢一帧，
+  // 连点第二下必须靠它判断该停还是该开，重复启动由 controller 内部串行化挡着
+  const handlePress = (): void => {
+    if (isRecording()) {
+      void stop();
+    } else if (state.state === 'idle' || state.state === 'error') {
+      void start();
+    }
   };
 
   const icon: React.ComponentProps<typeof Ionicons>['name'] =
@@ -56,11 +55,7 @@ export function VoiceInputButton({
 
   return (
     <Pressable
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      // 只认外部的 disabled：按住期间状态会变成 downloading/transcribing，
-      // 中途把自己禁用掉，RN 就不再派发 onPressOut，这一次松手会直接丢掉。
-      // 重复按下由 useSpeechRecognition 内部串行化挡着，这里不必再拦
+      onPress={handlePress}
       disabled={disabled}
       hitSlop={6}
       accessibilityRole="button"

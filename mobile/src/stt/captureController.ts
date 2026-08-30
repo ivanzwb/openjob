@@ -6,7 +6,7 @@ export type SpeechState =
   | { state: 'transcribing' }
   | { state: 'error'; error: string };
 
-/** 松手时取走的这一段录音 */
+/** 点停止时取走的这一段录音 */
 export interface CapturedAudio {
   /** whisper.rn 要求的 int16 单声道字节流 */
   audio: ArrayBuffer;
@@ -36,8 +36,8 @@ function errorMessage(err: unknown): string {
 /**
  * 语音口述的启停时序。
  *
- * 从 React 里拆出来，是因为出问题的正是「按下」与「松开」这对异步调用的交错：
- * 松手时启动链往往还没跑完，拿 React state 当守卫会读到上一帧的旧值，于是 stop
+ * 从 React 里拆出来，是因为出问题的正是「开始」与「停止」这对异步调用的交错：
+ * 点停时启动链往往还没跑完，拿 React state 当守卫会读到上一帧的旧值，于是 stop
  * 被整个丢掉——流停不下来、状态永远卡在 recording。这里一律用同步字段判断，
  * 顺便也能脱开原生模块单测。
  */
@@ -46,7 +46,7 @@ export class SpeechCaptureController {
   private startPromise: Promise<void> | null = null;
   private contextPromise: Promise<void> | null = null;
   private contextReady = false;
-  /** stream.start() 已落定：松手必须真的去停流 */
+  /** stream.start() 已落定：点停止必须真的去停流 */
   private capturing = false;
   private downloading = false;
   private stopRequested = false;
@@ -72,7 +72,7 @@ export class SpeechCaptureController {
     });
     this.contextPromise = pending;
     void pending.catch(() => undefined).then(() => {
-      // 失败就把坑清掉，下次按住还能重来一遍
+      // 失败就把坑清掉，下次点开始还能重来一遍
       if (this.contextPromise === pending) this.contextPromise = null;
     });
     return pending;
@@ -100,6 +100,11 @@ export class SpeechCaptureController {
     });
     this.startPromise = pending;
     return pending;
+  }
+
+  /** 同步判据：当前是否正在录音。React state 慢一帧，点按切换的第二下用它判断 */
+  isRecording(): boolean {
+    return this.capturing;
   }
 
   private async runStart(): Promise<void> {
@@ -141,7 +146,7 @@ export class SpeechCaptureController {
       }
 
       // 上下文没预热时加载要花一两秒，挡在开录前面等于把用户前半句话吞掉；
-      // 放到开录之后并行做，松手转写前再等它就行
+      // 放到开录之后并行做，点停止转写前再等它就行
       void this.loadContext().catch(() => undefined);
     } catch (err) {
       this.fail(errorMessage(err));
@@ -158,24 +163,21 @@ export class SpeechCaptureController {
     this.stopRequested = true;
     const pending = this.startPromise;
 
-    // 下载 56.9MB 途中松手：等它下完再收尾会把人晾在那儿几十秒。这时还没开录、
-    // 没有流要释放，直接静默收场；下载留着跑完，下次按住就不用再等一遍
+    // 下载 56.9MB 途中点停止：等它下完再收尾会把人晾在那儿几十秒。这时还没开录、
+    // 没有流要释放，直接静默收场；下载留着跑完，下次点开始就不用再等一遍
     if (pending && this.downloading) {
       this.emit({ state: 'idle' });
       return;
     }
-    // 松手时启动链常常还没落定，必须等它，否则这一次 stop 就凭空消失了
+    // 点停止时启动链常常还没落定，必须等它，否则这一次 stop 就凭空消失了
     if (pending) await pending;
 
     if (!this.capturing) {
       // 权限/加载失败已经报过更具体的原因，别拿「准备中」盖掉
       if (this.startFailed) return;
-      // 压根没录到过音，就不能反过来怪用户按得不够久
-      this.emit(
-        pending
-          ? { state: 'error', error: '语音识别还在准备，请稍后再按住说话' }
-          : { state: 'idle' },
-      );
+      // 压根没录到过音：点按模式下这是「点了开始又点了停止」的取消动作，
+      // 静默回到 idle，不让用户觉得多按一下就做错了什么
+      this.emit({ state: 'idle' });
       return;
     }
 
@@ -187,11 +189,11 @@ export class SpeechCaptureController {
 
       const captured = this.deps.takeAudio();
       if (!captured) {
-        this.emit({ state: 'error', error: '未录到声音，请按住麦克风再试' });
+        this.emit({ state: 'error', error: '未录到声音，请再试一次' });
         return;
       }
       if (captured.sampleCount < this.deps.minSamples) {
-        this.emit({ state: 'error', error: '录音太短，请按住多说一会儿' });
+        this.emit({ state: 'error', error: '录音太短，请多说一会儿' });
         return;
       }
 

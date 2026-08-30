@@ -5,7 +5,7 @@ import {
   type SpeechState,
 } from './captureController';
 
-/** 手动落定的 promise，用来把「松手时启动链还没跑完」这个时序摆出来 */
+/** 手动落定的 promise，用来把「点停止时启动链还没跑完」这个时序摆出来 */
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((r) => {
@@ -44,7 +44,7 @@ function setup(overrides: Partial<SpeechCaptureDeps> = {}): {
 }
 
 describe('SpeechCaptureController', () => {
-  it('正常按住再松开会转写并回到 idle', async () => {
+  it('点按开始录制，再点按停止会转写并回到 idle', async () => {
     const { controller, deps, states, transcripts } = setup();
 
     await controller.start();
@@ -56,7 +56,7 @@ describe('SpeechCaptureController', () => {
     expect(states.at(-1)).toEqual({ state: 'idle' });
   });
 
-  it('stream.start() 还没落定就松手：流仍会被停掉，不会卡在 recording', async () => {
+  it('stream.start() 还没落定就点停止：流仍会被停掉，不会卡在 recording', async () => {
     const gate = deferred<void>();
     const started = deferred<void>();
     const { controller, deps, states, transcripts } = setup({
@@ -67,7 +67,7 @@ describe('SpeechCaptureController', () => {
     });
 
     const starting = controller.start();
-    // 麦克风已经在开了，这时候松手是最容易把 stop 丢掉的时序
+    // 麦克风已经在开了，这时候点停止是最容易把 stop 丢掉的时序
     await started.promise;
     const stopping = controller.stop();
     gate.resolve();
@@ -78,7 +78,7 @@ describe('SpeechCaptureController', () => {
     expect(states.at(-1)).toEqual({ state: 'idle' });
   });
 
-  it('权限还没批下来就松手：不开录，也不怪用户按太短', async () => {
+  it('权限还没批下来就点停止：不开录，静默回到 idle（取消动作不报错）', async () => {
     const gate = deferred<boolean>();
     const { controller, deps, states } = setup({
       requestPermission: vi.fn(() => gate.promise),
@@ -90,10 +90,7 @@ describe('SpeechCaptureController', () => {
     await Promise.all([starting, stopping]);
 
     expect(deps.startStream).not.toHaveBeenCalled();
-    expect(states.at(-1)).toEqual({
-      state: 'error',
-      error: '语音识别还在准备，请稍后再按住说话',
-    });
+    expect(states.at(-1)).toEqual({ state: 'idle' });
   });
 
   it('真的录到音但太短才说「录音太短」', async () => {
@@ -104,7 +101,7 @@ describe('SpeechCaptureController', () => {
     await controller.start();
     await controller.stop();
 
-    expect(states.at(-1)).toEqual({ state: 'error', error: '录音太短，请按住多说一会儿' });
+    expect(states.at(-1)).toEqual({ state: 'error', error: '录音太短，请多说一会儿' });
   });
 
   it('一次录音都没有时不提示太短', async () => {
@@ -113,10 +110,23 @@ describe('SpeechCaptureController', () => {
     await controller.start();
     await controller.stop();
 
-    expect(states.at(-1)).toEqual({ state: 'error', error: '未录到声音，请按住麦克风再试' });
+    expect(states.at(-1)).toEqual({ state: 'error', error: '未录到声音，请再试一次' });
   });
 
-  it('权限被拒后松手不会盖掉更具体的报错', async () => {
+  it('isRecording() 是同步判据：开录即 true，stop 一到即 false（连点第二下可靠）', async () => {
+    const { controller, deps } = setup();
+
+    expect(controller.isRecording()).toBe(false);
+    await controller.start();
+    expect(controller.isRecording()).toBe(true);
+    // 不等 stop 的 promise 落定，同步就该翻回 false —— 这就是点按切换的守卫
+    const stopping = controller.stop();
+    expect(controller.isRecording()).toBe(false);
+    await stopping;
+    expect(deps.stopStream).toHaveBeenCalledTimes(1);
+  });
+
+  it('权限被拒后点停止不会盖掉更具体的报错', async () => {
     const { controller, deps, states } = setup({
       requestPermission: vi.fn(async () => false),
     });
@@ -185,7 +195,7 @@ describe('SpeechCaptureController', () => {
     expect(deps.stopStream).toHaveBeenCalledTimes(1);
   });
 
-  it('下载中途松手不必等下载完，且不会去开录', async () => {
+  it('下载中途点停止不必等下载完，且不会去开录', async () => {
     const gate = deferred<void>();
     const { controller, deps, states } = setup({
       isModelReady: vi.fn(() => false),

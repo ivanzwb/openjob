@@ -29,7 +29,7 @@
     "react-native-safe-area-context": "^5.8.1",
     "react-native-screens": "^4.27.0",
     "react-native-webview": "13.16.1",
-    "whisper.rn": "^0.7.2"
+    "whisper.rn": "^0.7.4"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
