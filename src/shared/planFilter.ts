@@ -18,7 +18,9 @@ export function nodeIdsForPlanFilter(
 
   const addAncestors = (nodeId: string): void => {
     let id: string | null = nodeId;
-    while (id) {
+    // 只收真实存在的行：parent_id 没有外键也没有级联，删过中间层的老数据会留下
+    // 指不到任何行的 parent_id，把它也放进可见集合只会得到一个匹配不上任何节点的幽灵 id
+    while (id && byId.has(id)) {
       ids.add(id);
       id = byId.get(id)?.parentId ?? null;
     }
@@ -68,7 +70,8 @@ export function nodeIdsForTreeFilter(
 
   const addAncestors = (nodeId: string): void => {
     let id: string | null = nodeId;
-    while (id) {
+    // 同 nodeIdsForPlanFilter：断链的 parent_id 不算可见节点
+    while (id && byId.has(id)) {
       ids.add(id);
       id = byId.get(id)?.parentId ?? null;
     }

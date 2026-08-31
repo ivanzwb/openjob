@@ -129,7 +129,10 @@ const RPC_HANDLERS: Partial<Record<IpcInvokeChannel, RpcHandler>> = {
   'diagnosis:ingestWeb': (p) => ingestWebReports((p as { campaignId: string }).campaignId),
   'diagnosis:listReports': (p) => listReports((p as { campaignId: string }).campaignId),
   'node:update': (p) => updateNode(p as IpcReq<'node:update'>),
-  'node:delete': (p) => deleteNode((p as { id: string }).id),
+  // deleteNode 返回删掉的行数，但契约里 res 是 void，别把它漏到线上
+  'node:delete': (p) => {
+    deleteNode((p as { id: string }).id);
+  },
   'node:create': (p) => createNode(p as IpcReq<'node:create'>),
   'edge:list': (p) => listEdges((p as { campaignId: string }).campaignId),
   'edge:create': (p) => createEdge(p as IpcReq<'edge:create'>),

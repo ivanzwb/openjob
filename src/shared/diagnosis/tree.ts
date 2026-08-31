@@ -2,6 +2,29 @@ import type { CoverageType, EdgeRelation, ExamForm, MasterySource, NodeKind, Nod
 import { computePriority } from '@shared/priority';
 import type { GeneratedNode } from './prompts';
 
+/**
+ * 能否继续细化这个考点。
+ *
+ * 考点树只有三层：domain（领域）→ topic（主题）→ point（考点）。建树一次生成
+ * 前两层，细化产出的一律是 point（见 flattenChildren 里写死的 kind），所以 point
+ * 已经是最细一层，再往下拆不出新的层级含义——只会得到一堆同样叫 point、深度
+ * 只存在于 parentId 链里而没人读的节点。
+ *
+ * 这条线必须由后端把关，不能只靠 UI 隐藏按钮：细化有三个入口——桌面 UI、手机
+ * UI、以及 sync/rpc 暴露给对端的 expandNode——UI 门槛挡不住后两个。
+ *
+ * 不封顶的代价不只是清单变长。排程把所有非 domain 节点都当可排期单元
+ * （见 plan/schedule.ts 的 kind !== 'domain'），所以细化不是把父节点拆开，而是
+ * 在它自己那条任务之外再加 3-6 条；每多一层乘 3-6，对着默认 90 分钟/天的预算，
+ * 多两层就排不下了。加上去重是全战役范围的，深层候选大概率撞上已有名字被跳过，
+ * 那一次模型调用换不回任何新考点。
+ */
+export function canExpandNode(kind: NodeKind): boolean {
+  return kind === 'domain' || kind === 'topic';
+}
+
+export const EXPAND_DEPTH_LIMIT_MESSAGE = '这已经是最细一层考点，不能再细化';
+
 export interface KnowledgeNodeInsert {
   id: string;
   campaignId: string;

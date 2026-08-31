@@ -23,6 +23,7 @@ import {
 } from '@shared/diagnosis/prompts';
 import { insertEdgesByName } from '../campaign/edges';
 import { findDuplicateByName, flattenChildren, flattenGeneratedTree } from './tree';
+import { EXPAND_DEPTH_LIMIT_MESSAGE, canExpandNode } from '@shared/diagnosis/tree';
 import { filterDuplicatesByEmbedding } from './embedding';
 import { applyHistoricalPrior } from './prior';
 import { computePriority } from './priority';
@@ -138,7 +139,7 @@ export async function diagnoseAttachResume(
   }
 }
 
-/** 懒加载细化某个 topic/point */
+/** 懒加载细化某个 domain/topic */
 export async function diagnoseExpandNode(nodeId: string, jobId: string): Promise<void> {
   const label = '细化考点';
   try {
@@ -149,6 +150,8 @@ export async function diagnoseExpandNode(nodeId: string, jobId: string): Promise
       .where(eq(schema.knowledgeNode.id, nodeId))
       .get();
     if (!parent) throw new Error('节点不存在');
+    // 在花模型调用之前就拦住：point 已经是最细一层
+    if (!canExpandNode(parent.kind)) throw new Error(EXPAND_DEPTH_LIMIT_MESSAGE);
 
     const campaign = getCampaignRow(parent.campaignId);
     report(jobId, label, `正在细化「${parent.name}」…`, 0.2);

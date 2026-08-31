@@ -15,6 +15,7 @@ import { AnnotationTools } from '../components/AnnotationTools';
 import { CompanyIntelCard } from '../components/CompanyIntelCard';
 import { EdgeEditor } from '../components/EdgeEditor';
 import { StudyPlanCalendarPopover } from '../components/StudyPlanCalendarPopover';
+import { collectSubtreeIds } from '@shared/knowledgeTree';
 import { nodeIdsForPlanFilter, nodeIdsForTreeFilter } from '@shared/planFilter';
 import { KnowledgeGraph } from '../components/KnowledgeGraph';
 import { KnowledgeTree, type NodePatch } from '../components/KnowledgeTree';
@@ -286,7 +287,17 @@ export function CampaignDetail({
       .catch(() => undefined);
   };
 
+  // 删的是整棵子树（parent_id 没有级联，只删一行会把后代变成断链数据），
+  // 所以得先把要连带删掉多少个说清楚
   const deleteNode = async (nodeId: string): Promise<void> => {
+    const all = detail?.nodes ?? [];
+    const node = all.find((n) => n.id === nodeId);
+    if (!node) return;
+    const descendants = collectSubtreeIds(all, nodeId).length - 1;
+    const extra =
+      descendants > 0 ? `它下面的 ${descendants} 个子考点会一起删除，` : '';
+    if (!confirm(`确定删除「${node.name}」吗？${extra}相关讲解、笔记和排期也会跟着删除。`)) return;
+
     await invoke('node:delete', { id: nodeId });
     refresh();
   };

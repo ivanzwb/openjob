@@ -1,9 +1,13 @@
 import * as Crypto from 'expo-crypto';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import type { JdParsed } from '@shared/entities';
-import type { CoverageType, EdgeRelation, NodeStatus } from '@shared/enums';
+import type { CoverageType, EdgeRelation, NodeKind, NodeStatus } from '@shared/enums';
 import type { KnowledgeNodeInsert } from '@shared/diagnosis/tree';
-import { flattenGeneratedTree } from '@shared/diagnosis/tree';
+import {
+  EXPAND_DEPTH_LIMIT_MESSAGE,
+  canExpandNode,
+  flattenGeneratedTree,
+} from '@shared/diagnosis/tree';
 import type { GeneratedNode } from '@shared/diagnosis/prompts';
 import { computePriority } from '@shared/priority';
 import { getDeviceIdentity } from '../sync/identity';
@@ -165,16 +169,20 @@ export async function createKnowledgeChild(
   const parent = db.getFirstSync<{
     id: string;
     campaign_id: string;
+    kind: string;
     coverage_type: string;
-  }>(`SELECT id, campaign_id, coverage_type FROM knowledge_node WHERE id = ?`, parentId);
+  }>(`SELECT id, campaign_id, kind, coverage_type FROM knowledge_node WHERE id = ?`, parentId);
   if (!parent) throw new Error('父考点不存在');
+  // point 已经是最细一层，它下面挂不了东西——与细化同一条线，同样由后端把关
+  if (!canExpandNode(parent.kind as NodeKind)) throw new Error(EXPAND_DEPTH_LIMIT_MESSAGE);
 
   const row: KnowledgeNodeInsert = {
     id: Crypto.randomUUID(),
     campaignId: parent.campaign_id,
     parentId: parent.id,
     name: name.trim(),
-    kind: 'point',
+    // 与桌面端同口径：领域下面是主题，主题下面才是考点
+    kind: parent.kind === 'domain' ? 'topic' : 'point',
     coverageType: parent.coverage_type as CoverageType,
     examProb: 0.3,
     difficulty: 3,
@@ -196,11 +204,49 @@ export async function createKnowledgeChild(
   });
 }
 
-export async function deleteKnowledgeNode(db: SQLiteDatabase, nodeId: string): Promise<void> {
+/**
+ * 收集这个考点和它底下的所有后代。
+ *
+ * knowledge_node.parent_id 没有外键也没有级联，所以删父行时数据库不会带走子行。
+ * 只删一行的话，后代会留着指不到任何行的 parent_id 变成断链数据（树会把它们提到
+ * 根上显示，见 groupNodesByParent），用户以为删掉了、结果考点跑到了最外层。
+ * 层数不定（历史数据有四五层），所以逐层往下收。
+ */
+export function collectNodeSubtreeIds(db: SQLiteDatabase, nodeId: string): string[] {
+  const ids = [nodeId];
+  let frontier = [nodeId];
+
+  while (frontier.length > 0) {
+    const placeholders = frontier.map(() => '?').join(', ');
+    const children = db
+      .getAllSync<{ id: string }>(
+        `SELECT id FROM knowledge_node WHERE parent_id IN (${placeholders})`,
+        ...frontier,
+      )
+      .map((row) => row.id)
+      // 数据坏了成环时（父子互指）不能转圈转死
+      .filter((id) => !ids.includes(id));
+
+    ids.push(...children);
+    frontier = children;
+  }
+
+  return ids;
+}
+
+/** 删掉这个考点连同它的整棵子树，返回实际删掉的行数 */
+export async function deleteKnowledgeNode(db: SQLiteDatabase, nodeId: string): Promise<number> {
+  const ids = collectNodeSubtreeIds(db, nodeId);
   const identity = await getDeviceIdentity(db);
+
   writingAs(db, identity.deviceId, () => {
-    db.runSync(`DELETE FROM knowledge_node WHERE id = ?`, nodeId);
+    // 一条语句删完：SQLite 的触发器是逐行触发的，每行照样会在 oplog 里留下自己的
+    // 墓碑（对端能跟着删的前提），同时不会出现半棵子树删一半的断链数据
+    const placeholders = ids.map(() => '?').join(', ');
+    db.runSync(`DELETE FROM knowledge_node WHERE id IN (${placeholders})`, ...ids);
   });
+
+  return ids.length;
 }
 
 export async function insertEdgesByName(

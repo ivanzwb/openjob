@@ -3,6 +3,7 @@ import { Alert, Modal, Pressable, ScrollView, Text, TextInput, View } from 'reac
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import type { CampaignSummary, KnowledgeNodeView, TaskView } from '@shared/ipc';
 import type { NodeStatus } from '@shared/enums';
+import { collectSubtreeIds } from '@shared/knowledgeTree';
 import { nodeIdsForPlanFilter, nodeIdsForTreeFilter } from '@shared/planFilter';
 import { CompanyIntelCard } from '../components/CompanyIntelCard';
 import { KeepAlivePanel } from '../components/KeepAlivePanel';
@@ -14,7 +15,7 @@ import { getRawDb } from '../db';
 import { getCampaignDetail, getNodeAnnotationSummary, getTodayPlan, listCampaigns } from '../data/queries';
 import { createCampaign, deleteCampaign } from '../data/mutations';
 import { diagnoseExpandNode, diagnoseFetchIntel, diagnoseFromJd } from '../data/diagnosisLocal';
-import { createKnowledgeChild, updateKnowledgeNode } from '../data/nodesLocal';
+import { createKnowledgeChild, deleteKnowledgeNode, updateKnowledgeNode } from '../data/nodesLocal';
 import { generatePlan } from '../data/planLocal';
 import { useApp } from '../context/AppContext';
 import { runTask, useTaskResult, useTaskState } from '../context/RemoteTaskContext';
@@ -386,6 +387,38 @@ function CampaignDetailView({
     }).catch(() => undefined);
   };
 
+  // 删掉的是整棵子树（parent_id 没有级联，只删一行会把后代变成断链数据），
+  // 所以确认框里得先把要连带删掉多少个说清楚
+  const deleteNode = (nodeId: string): void => {
+    const node = detail.nodes.find((n) => n.id === nodeId);
+    if (!node) return;
+    const subtreeIds = collectSubtreeIds(detail.nodes, nodeId);
+    const descendants = subtreeIds.length - 1;
+    Alert.alert(
+      '删除考点',
+      descendants > 0
+        ? `确定删除「${node.name}」吗？它下面的 ${descendants} 个子考点会一起删除，相关讲解、笔记和排期也会跟着删除。`
+        : `确定删除「${node.name}」吗？相关讲解、笔记和排期也会跟着删除。`,
+      [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '删除',
+          style: 'destructive',
+          onPress: () => {
+            void runTask(`node:${nodeId}:delete`, '删除考点', async () => {
+              const removed = await deleteKnowledgeNode(getRawDb(), nodeId);
+              await afterWrite();
+              // 选中的行可能正在被删（自己或祖先），详情面板不能再挂着一个已经没了的考点
+              setSelectedNode((prev) => (prev && subtreeIds.includes(prev.id) ? null : prev));
+              reload();
+              return removed > 1 ? `已删除 ${removed} 个考点` : '考点已删除';
+            }).catch(() => undefined);
+          },
+        },
+      ],
+    );
+  };
+
   const createChildNode = (parentId: string, name: string): void => {
     const taskKey = `node:${parentId}:createChild`;
     void runTask(taskKey, '添加子考点', async () => {
@@ -670,6 +703,7 @@ function CampaignDetailView({
         onExpand={expandNode}
         onUpdate={updateNode}
         onCreateChild={createChildNode}
+        onDelete={deleteNode}
       />
     </ScrollView>
     <StudyPlanCalendarPopover

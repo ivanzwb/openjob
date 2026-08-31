@@ -1,8 +1,12 @@
 import * as Crypto from 'expo-crypto';
 import type { SQLiteDatabase } from 'expo-sqlite';
-import type { CoverageType } from '@shared/enums';
+import type { CoverageType, NodeKind } from '@shared/enums';
 import type { ExpandNodeResult, JdDiagnosisResult } from '@shared/diagnosis/prompts';
-import { flattenGeneratedTree } from '@shared/diagnosis/tree';
+import {
+  EXPAND_DEPTH_LIMIT_MESSAGE,
+  canExpandNode,
+  flattenGeneratedTree,
+} from '@shared/diagnosis/tree';
 import { completeJson } from '../llm/json';
 import { getCampaign } from './campaignLocal';
 import {
@@ -125,9 +129,12 @@ export async function diagnoseExpandNode(db: SQLiteDatabase, nodeId: string): Pr
     id: string;
     campaign_id: string;
     name: string;
+    kind: string;
     coverage_type: string;
-  }>(`SELECT id, campaign_id, name, coverage_type FROM knowledge_node WHERE id = ?`, nodeId);
+  }>(`SELECT id, campaign_id, name, kind, coverage_type FROM knowledge_node WHERE id = ?`, nodeId);
   if (!parent) throw new Error('节点不存在');
+  // 在花模型调用之前就拦住：point 已经是最细一层
+  if (!canExpandNode(parent.kind as NodeKind)) throw new Error(EXPAND_DEPTH_LIMIT_MESSAGE);
 
   const campaign = getCampaign(db, parent.campaign_id);
   const result = await completeJson<ExpandNodeResult>(

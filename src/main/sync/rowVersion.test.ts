@@ -152,6 +152,28 @@ describe('sync_row_version 触发器', () => {
     expect(version(raw, 'knowledge_node', 'n1')).toBeNull();
   });
 
+  /**
+   * 删考点子树用的是一条 DELETE ... WHERE id IN (...)（见 campaign/nodes.ts 的
+   * deleteNode、手机端 nodesLocal 的 deleteKnowledgeNode）。这依赖 SQLite 的
+   * 触发器逐行触发：少一条墓碑，对端就会留着一个删不掉的考点。
+   */
+  it('一条语句删多行时，每行都留下自己的墓碑', () => {
+    insertNode(raw, 'n1', 'TCP');
+    insertNode(raw, 'n2', 'TLS');
+    insertNode(raw, 'n3', 'HTTP');
+
+    raw.prepare(`DELETE FROM knowledge_node WHERE id IN ('n1', 'n2', 'n3')`).run();
+
+    const tombstones = raw
+      .prepare(
+        `SELECT row_id FROM sync_oplog
+         WHERE table_name = 'knowledge_node' AND op = 'delete' ORDER BY row_id`,
+      )
+      .all() as { row_id: string }[];
+
+    expect(tombstones.map((r) => r.row_id)).toEqual(['n1', 'n2', 'n3']);
+  });
+
   it('应用对端数据时也记版本——这类写入不进 oplog，只有这张表能给出时间', () => {
     applyAutoChanges(raw, PEER_DEVICE, [
       {

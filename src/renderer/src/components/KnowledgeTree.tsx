@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { KnowledgeNodeView } from '@shared/ipc';
 import type { CoverageType, NodeKind, NodeStatus } from '@shared/enums';
+import { canExpandNode } from '@shared/diagnosis/tree';
+import { groupNodesByParent } from '@shared/knowledgeTree';
 import { CoverageBadge } from './CoverageBadge';
 
 const KIND_LABEL: Record<NodeKind, string> = {
@@ -91,14 +93,8 @@ export function KnowledgeTree({
     row?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
   }, [selectedNodeId, visibleNodeIds]);
 
-  const roots = filteredNodes.filter((n) => !n.parentId);
-  const byParent = new Map<string | null, KnowledgeNodeView[]>();
-  for (const n of filteredNodes) {
-    const key = n.parentId;
-    const list = byParent.get(key) ?? [];
-    list.push(n);
-    byParent.set(key, list);
-  }
+  const byParent = groupNodesByParent(filteredNodes);
+  const roots = byParent.get(null) ?? [];
 
   const renderNode = (node: KnowledgeNodeView, depth: number): React.JSX.Element => {
     const children = byParent.get(node.id) ?? [];
@@ -400,7 +396,7 @@ function NodeRow({
                 +子节点
               </button>
             )}
-            {(node.kind === 'domain' || node.kind === 'topic') && onExpand && (
+            {canExpandNode(node.kind) && onExpand && (
               <button
                 type="button"
                 disabled={expanding || jobsBusy}

@@ -3,6 +3,8 @@ import { findNodeHandle, Pressable, Text, TextInput, View } from 'react-native';
 import type { ScrollView } from 'react-native';
 import type { CoverageType, NodeKind, NodeStatus } from '@shared/enums';
 import type { KnowledgeNodeView } from '@shared/ipc';
+import { canExpandNode } from '@shared/diagnosis/tree';
+import { groupNodesByParent } from '@shared/knowledgeTree';
 import { useTheme } from '../theme';
 
 const KIND_LABEL: Record<NodeKind, string> = {
@@ -42,6 +44,7 @@ interface KnowledgeTreeProps {
   onExpand?: (nodeId: string) => void;
   onUpdate?: (nodeId: string, patch: NodePatch) => void;
   onCreateChild?: (parentId: string, name: string) => void;
+  onDelete?: (nodeId: string) => void;
 }
 
 export function KnowledgeTree({
@@ -55,6 +58,7 @@ export function KnowledgeTree({
   onExpand,
   onUpdate,
   onCreateChild,
+  onDelete,
 }: KnowledgeTreeProps): React.JSX.Element {
   const theme = useTheme();
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(() => new Set());
@@ -91,15 +95,7 @@ export function KnowledgeTree({
   }, [scrollContainerRef, selectedNodeId, visibleNodeIds]);
 
   const filtered = visibleNodeIds ? nodes.filter((n) => visibleNodeIds.has(n.id)) : nodes;
-  // 根节点按 falsy 判定，和桌面端一致：parentId 可能是 null、undefined 或空串
-  // （同步过来的行、手工造的数据都出现过），只认 null 会让整棵树凭空消失。
-  const byParent = new Map<string | null, KnowledgeNodeView[]>();
-  for (const node of filtered) {
-    const key = node.parentId || null;
-    const list = byParent.get(key) ?? [];
-    list.push(node);
-    byParent.set(key, list);
-  }
+  const byParent = groupNodesByParent(filtered);
   const roots = byParent.get(null) ?? [];
 
   const toggleChildren = (nodeId: string): void => {
@@ -132,6 +128,7 @@ export function KnowledgeTree({
         onExpand={onExpand}
         onUpdate={onUpdate}
         onCreateChild={onCreateChild}
+        onDelete={onDelete}
         detail={renderNodeDetail?.(node)}
       >
         {!collapsed && children.map((child) => renderNode(child, depth + 1))}
@@ -163,6 +160,7 @@ function NodeRow({
   onExpand,
   onUpdate,
   onCreateChild,
+  onDelete,
   detail,
   children,
 }: {
@@ -178,6 +176,7 @@ function NodeRow({
   onExpand?: (nodeId: string) => void;
   onUpdate?: (nodeId: string, patch: NodePatch) => void;
   onCreateChild?: (parentId: string, name: string) => void;
+  onDelete?: (nodeId: string) => void;
   detail?: React.ReactNode;
   children?: React.ReactNode;
 }): React.JSX.Element {
@@ -294,7 +293,7 @@ function NodeRow({
         </View>
 
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
-          {onExpand && (
+          {canExpandNode(node.kind) && onExpand && (
             <Pressable
               onPress={(event) => {
                 event.stopPropagation();
@@ -307,7 +306,7 @@ function NodeRow({
               </Text>
             </Pressable>
           )}
-          {onCreateChild && (
+          {onCreateChild && node.kind !== 'point' && (
             <Pressable
               onPress={(event) => {
                 event.stopPropagation();
@@ -315,6 +314,18 @@ function NodeRow({
               }}
             >
               <Text style={{ color: theme.muted, fontSize: 12 }}>+ 子考点</Text>
+            </Pressable>
+          )}
+          {onDelete && (
+            <Pressable
+              onPress={(event) => {
+                event.stopPropagation();
+                onDelete(node.id);
+              }}
+              // 误点代价大，跟旁边的「细化 / + 子考点」多留点距离，也不加 hitSlop
+              style={{ marginLeft: 8 }}
+            >
+              <Text style={{ color: theme.danger, fontSize: 12 }}>删除</Text>
             </Pressable>
           )}
         </View>
