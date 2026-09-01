@@ -250,6 +250,7 @@ export function ExplanationActionModal({
             <VoiceInputButton
               onTranscript={(text) => onDraftChange(draft + text)}
               disabled={busy}
+              prompt="面试讲解重写要求，讲解风格与侧重点"
             />
           </View>
           <Text style={{ color: theme.muted, fontSize: 11 }}>
@@ -264,6 +265,7 @@ export function ExplanationActionModal({
             <VoiceInputButton
               onTranscript={(text) => onDraftChange(draft + text)}
               disabled={busy}
+              prompt="面试讲解内容与笔记，技术要点"
             />
           </View>
           <View style={{ flex: 1, minHeight: 0 }}>

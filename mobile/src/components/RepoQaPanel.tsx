@@ -180,6 +180,7 @@ export function RepoQaPanel({ repo }: { repo: Repo }): React.JSX.Element {
             <VoiceInputButton
               onTranscript={(text) => setInput((prev) => (prev ? prev + text : text))}
               disabled={busy || clearing}
+              prompt="代码仓库问题，源码与实现"
             />
             <Pressable
               onPress={submit}

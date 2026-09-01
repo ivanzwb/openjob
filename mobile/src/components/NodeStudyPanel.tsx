@@ -172,7 +172,10 @@ export function NodeStudyPanel({
       {!quizResult ? (
         <>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' }}>
-            <VoiceInputButton onTranscript={(text) => setAnswer((prev) => prev + text)} />
+            <VoiceInputButton
+              onTranscript={(text) => setAnswer((prev) => prev + text)}
+              prompt="面试考点回答，技术原理与概念"
+            />
           </View>
           <TextInput
             multiline

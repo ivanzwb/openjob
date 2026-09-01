@@ -222,6 +222,7 @@ export function NodeFollowUpPanel({
         <VoiceInputButton
           disabled={busy || clearing}
           onTranscript={(text) => setInput((prev) => (prev ? `${prev}${text}` : text))}
+          prompt="面试追问回答，技术细节与原理"
         />
         <Pressable
           onPress={send}

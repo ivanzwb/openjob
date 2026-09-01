@@ -12,6 +12,7 @@ import {
   retainWhisperContext,
 } from '../stt/whisperContext';
 import { type PcmChunk, pcmChunksToWhisperBuffer } from '../stt/pcm';
+import { toSimplified } from '../stt/simplify';
 
 /** 录音用 16kHz 单声道 int16 —— whisper 原生输入格式 */
 const SAMPLE_RATE = 16000;
@@ -25,8 +26,15 @@ const MIN_SAMPLES = SAMPLE_RATE / 5;
  * 完全离线，不依赖网络或云端识别。
  *
  * 启停时序全部交给 SpeechCaptureController，这里只把原生能力接上去。
+ *
+ * @param onTranscript 转写完成后回调
+ * @param prompt 转写引导词（whisper initial prompt）：按页面类型传领域关键词，
+ *               既提高领域的识别率，也让解码器偏向输出常用简体词
  */
-export function useSpeechRecognition(onTranscript: (text: string) => void): {
+export function useSpeechRecognition(
+  onTranscript: (text: string) => void,
+  prompt?: string,
+): {
   supported: boolean;
   state: SpeechState;
   isRecording: () => boolean;
@@ -35,6 +43,8 @@ export function useSpeechRecognition(onTranscript: (text: string) => void): {
 } {
   const [state, setState] = useState<SpeechState>({ state: 'idle' });
   const onTranscriptRef = useRef(onTranscript);
+  // prompt 走 ref：controller 只在挂载时建一次，页面传关键词变了也能跟上
+  const promptRef = useRef(prompt);
   // PCM 分块累积走 ref：录音中每 buffer 一次都 setState 会让 UI 卡顿
   const pcmChunksRef = useRef<PcmChunk[]>([]);
   const streamRef = useRef<AudioStream | null>(null);
@@ -43,6 +53,10 @@ export function useSpeechRecognition(onTranscript: (text: string) => void): {
   useEffect(() => {
     onTranscriptRef.current = onTranscript;
   }, [onTranscript]);
+
+  useEffect(() => {
+    promptRef.current = prompt;
+  }, [prompt]);
 
   // useAudioStream 内部已订阅 onBuffer 与 isStreaming，这里只提供回调。
   // isStreaming 这个 React state 故意不用：它比点停止晚一帧，正是 stop 被吞掉的根因
@@ -92,9 +106,15 @@ export function useSpeechRecognition(onTranscript: (text: string) => void): {
       },
       transcribe: async (audio) => {
         const context = await loadWhisperContext();
-        const { promise } = context.transcribeData(audio, { language: 'zh' });
+        const { promise } = context.transcribeData(
+          audio,
+          promptRef.current
+            ? { language: 'zh', prompt: promptRef.current }
+            : { language: 'zh' },
+        );
         const { result } = await promise;
-        return result;
+        // whisper 多语言中文模型输出天然偏繁体，转写后统一转简体
+        return toSimplified(result);
       },
       onState: setState,
       onTranscript: (text) => onTranscriptRef.current(text),

@@ -24,6 +24,7 @@
     "expo-sharing": "~57.0.11",
     "expo-sqlite": "^57.0.1",
     "expo-status-bar": "~57.0.1",
+    "opencc-js": "^1.4.2",
     "react": "19.2.3",
     "react-native": "0.86.2",
     "react-native-safe-area-context": "^5.8.1",

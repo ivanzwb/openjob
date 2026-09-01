@@ -9,13 +9,16 @@ import { useToast } from './Toast';
 export function VoiceInputButton({
   onTranscript,
   disabled,
+  prompt,
 }: {
   onTranscript: (text: string) => void;
   disabled?: boolean;
+  /** 转写引导词（whisper initial prompt）：按页面类型传领域关键词，提高识别率 */
+  prompt?: string;
 }): React.JSX.Element {
   const theme = useTheme();
   const toast = useToast();
-  const { state, isRecording, start, stop } = useSpeechRecognition(onTranscript);
+  const { state, isRecording, start, stop } = useSpeechRecognition(onTranscript, prompt);
 
   const busy = state.state === 'recording' || state.state === 'transcribing';
   const downloading = state.state === 'downloading';

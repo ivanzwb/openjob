@@ -383,7 +383,10 @@ export function DesignScreen(): React.JSX.Element {
             }}
           />
           <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-end' }}>
-            <VoiceInputButton onTranscript={(text) => setAnswer((prev) => prev + text)} />
+            <VoiceInputButton
+              onTranscript={(text) => setAnswer((prev) => prev + text)}
+              prompt="系统设计方案，架构与实现"
+            />
             <Pressable
               onPress={submit}
               disabled={submitting || !answer.trim()}
