@@ -142,6 +142,12 @@ export const knowledgeNode = sqliteTable(
     /** 考我：当前缓存的题目与推荐答案，按考点一份，可同步 */
     quizQuestionMd: text('quiz_question_md'),
     quizRecommendedAnswerMd: text('quiz_recommended_answer_md'),
+    /**
+     * 考我：用户还没提交的作答草稿。
+     * 标了 deviceLocal（见 sync/tables.ts）——正在敲的半截答案是「这台设备上的」，
+     * 同步过去只会让两台设备的半成品用后写覆盖互相吞字。
+     */
+    quizAnswerDraftMd: text('quiz_answer_draft_md'),
     createdAt: integer('created_at').notNull(),
   },
   (t) => [

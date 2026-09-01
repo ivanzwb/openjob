@@ -36,7 +36,9 @@ const SYNCED_TABLES: Array<{ table: Table; deviceLocal?: string[] }> = [
   { table: schema.jobTarget },
   { table: schema.resumeVariant },
   { table: schema.campaign },
-  { table: schema.knowledgeNode },
+  // 作答草稿是本机的：还没提交的半截答案同步过去，两台设备的半成品会用后写
+  // 覆盖互相吞字。题目和推荐答案是生成结果，照常同步。
+  { table: schema.knowledgeNode, deviceLocal: ['quiz_answer_draft_md'] },
   { table: schema.nodeEdge },
   { table: schema.explanation },
   { table: schema.source },

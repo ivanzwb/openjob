@@ -25,7 +25,10 @@ export function QuizPanel({
   const [recommended, setRecommended] = useState('');
   const [editingRecommended, setEditingRecommended] = useState(false);
   const [savedToScripts, setSavedToScripts] = useState(false);
-  const [draftLoaded, setDraftLoaded] = useState(false);
+  // 存的是「state 里这份草稿属于哪个考点」，不是一个 loaded 布尔量：换考点时
+  // 布尔量仍是 true，边打边存那个 effect 会把上一个考点的答案写到新考点名下。
+  // 三个调用点目前都带 key={nodeId} 会重挂，但那是别人的实现细节，不该由它兜底。
+  const [draftFor, setDraftFor] = useState<string | null>(null);
 
   const questionKey = `quiz:question:${nodeId}`;
   const answerKey = `quiz:answer:${nodeId}`;
@@ -41,17 +44,33 @@ export function QuizPanel({
     void invoke('quiz:draft', { nodeId })
       .then((draft) => {
         if (cancelled) return;
-        if (draft.questionMd) setQuestion(draft.questionMd);
-        if (draft.recommendedAnswerMd) setRecommended(draft.recommendedAnswerMd);
-        setDraftLoaded(true);
+        // 一律赋值，不是「有值才赋」：换考点时后者会把上一个考点的题目和答案留在屏幕上
+        setQuestion(draft.questionMd);
+        setRecommended(draft.recommendedAnswerMd ?? '');
+        setAnswer(draft.answerDraftMd ?? '');
+        setDraftFor(nodeId);
       })
       .catch(() => {
-        if (!cancelled) setDraftLoaded(true);
+        if (!cancelled) setDraftFor(nodeId);
       });
     return () => {
       cancelled = true;
     };
   }, [nodeId]);
+
+  /**
+   * 作答边打边存：切走这个面板（换考点、换页）组件就卸载，答案原来只在 state 里，
+   * 一走就没了。草稿读出来之前不能写，否则初始的空串会盖掉库里那份。
+   */
+  useEffect(() => {
+    if (draftFor !== nodeId) return;
+    const timer = setTimeout(() => {
+      void invoke('quiz:updateDraft', { nodeId, answerDraftMd: answer || null }).catch(
+        () => undefined,
+      );
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [answer, draftFor, nodeId]);
 
   useTaskResult<string>(questionKey, (q) => {
     setQuestion(q);
@@ -110,7 +129,7 @@ export function QuizPanel({
     ).catch(() => undefined);
   };
 
-  if (!draftLoaded) {
+  if (draftFor !== nodeId) {
     return (
       <div className="space-y-3">
         <h3 className="text-sm font-medium">考我 · {nodeName}</h3>

@@ -77,6 +77,7 @@ const nodeRow: NodeRow = {
   isUserAdded: false,
   quizQuestionMd: null,
   quizRecommendedAnswerMd: null,
+  quizAnswerDraftMd: null,
   createdAt: 0,
 };
 

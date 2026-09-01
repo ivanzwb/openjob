@@ -669,12 +669,15 @@ export interface QuizDraftResult {
   nodeName: string;
   questionMd: string | null;
   recommendedAnswerMd: string | null;
+  /** 还没提交的作答，只留在本机，见 sync/tables.ts 的 deviceLocal */
+  answerDraftMd: string | null;
 }
 
 export interface QuizUpdateDraftInput {
   nodeId: string;
   questionMd?: string | null;
   recommendedAnswerMd?: string | null;
+  answerDraftMd?: string | null;
 }
 
 export interface QuizQuestionResult {

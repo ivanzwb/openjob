@@ -18,5 +18,6 @@ export const MIGRATIONS: string[] = [
 "ALTER TABLE `session` ADD `context_summary_md` text DEFAULT '' NOT NULL;\r\n--> statement-breakpoint\r\nALTER TABLE `session` ADD `context_summary_through_id` text;\r\n--> statement-breakpoint\r\nALTER TABLE `session` ADD `context_summary_source_count` integer DEFAULT 0 NOT NULL;\r\n",
 "ALTER TABLE `design_case` ADD `user_answer_md` text;--> statement-breakpoint\nALTER TABLE `design_case` ADD `recommended_answer_md` text;\n",
 "CREATE TABLE `sync_row_version` (\r\n\t`table_name` text NOT NULL,\r\n\t`row_id` text NOT NULL,\r\n\t`updated_ms` integer NOT NULL,\r\n\tPRIMARY KEY(`table_name`, `row_id`)\r\n);\r\n",
-"ALTER TABLE `knowledge_node` ADD `quiz_question_md` text;--> statement-breakpoint\nALTER TABLE `knowledge_node` ADD `quiz_recommended_answer_md` text;\n"
+"ALTER TABLE `knowledge_node` ADD `quiz_question_md` text;--> statement-breakpoint\nALTER TABLE `knowledge_node` ADD `quiz_recommended_answer_md` text;\n",
+"ALTER TABLE `knowledge_node` ADD `quiz_answer_draft_md` text;\n"
 ];

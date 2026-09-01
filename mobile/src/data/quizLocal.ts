@@ -34,32 +34,29 @@ function masteryToStatus(mastery: number): NodeStatus {
   return 'shaky';
 }
 
-function rowToDraft(
-  row: {
-    id: string;
-    name: string;
-    quiz_question_md: string | null;
-    quiz_recommended_answer_md: string | null;
-  },
-): QuizDraftResult {
+interface QuizDraftRow {
+  id: string;
+  name: string;
+  quiz_question_md: string | null;
+  quiz_recommended_answer_md: string | null;
+  quiz_answer_draft_md: string | null;
+}
+
+function rowToDraft(row: QuizDraftRow): QuizDraftResult {
   return {
     nodeId: row.id,
     nodeName: row.name,
     questionMd: row.quiz_question_md ?? null,
     recommendedAnswerMd: row.quiz_recommended_answer_md ?? null,
+    answerDraftMd: row.quiz_answer_draft_md ?? null,
   };
 }
 
+const DRAFT_SELECT = `SELECT id, name, quiz_question_md, quiz_recommended_answer_md, quiz_answer_draft_md
+  FROM knowledge_node WHERE id = ?`;
+
 export function getQuizDraft(db: SQLiteDatabase, nodeId: string): QuizDraftResult {
-  const row = db.getFirstSync<{
-    id: string;
-    name: string;
-    quiz_question_md: string | null;
-    quiz_recommended_answer_md: string | null;
-  }>(
-    `SELECT id, name, quiz_question_md, quiz_recommended_answer_md FROM knowledge_node WHERE id = ?`,
-    nodeId,
-  );
+  const row = db.getFirstSync<QuizDraftRow>(DRAFT_SELECT, nodeId);
   if (!row) throw new Error('考点不存在');
   return rowToDraft(row);
 }
@@ -68,46 +65,42 @@ export async function updateQuizDraft(
   db: SQLiteDatabase,
   input: QuizUpdateDraftInput,
 ): Promise<QuizDraftResult> {
-  const row = db.getFirstSync<{
-    id: string;
-    name: string;
-    quiz_question_md: string | null;
-    quiz_recommended_answer_md: string | null;
-  }>(
-    `SELECT id, name, quiz_question_md, quiz_recommended_answer_md FROM knowledge_node WHERE id = ?`,
-    input.nodeId,
-  );
+  const row = db.getFirstSync<QuizDraftRow>(DRAFT_SELECT, input.nodeId);
   if (!row) throw new Error('考点不存在');
-
-  const identity = await getDeviceIdentity(db);
-  const questionMd = input.questionMd !== undefined ? input.questionMd : row.quiz_question_md;
-  const recommendedAnswerMd =
-    input.recommendedAnswerMd !== undefined
-      ? input.recommendedAnswerMd
-      : row.quiz_recommended_answer_md;
 
   if (
     input.questionMd === undefined &&
-    input.recommendedAnswerMd === undefined
+    input.recommendedAnswerMd === undefined &&
+    input.answerDraftMd === undefined
   ) {
     return rowToDraft(row);
   }
 
+  const identity = await getDeviceIdentity(db);
+  const next: QuizDraftRow = {
+    ...row,
+    quiz_question_md: input.questionMd !== undefined ? input.questionMd : row.quiz_question_md,
+    quiz_recommended_answer_md:
+      input.recommendedAnswerMd !== undefined
+        ? input.recommendedAnswerMd
+        : row.quiz_recommended_answer_md,
+    quiz_answer_draft_md:
+      input.answerDraftMd !== undefined ? input.answerDraftMd : row.quiz_answer_draft_md,
+  };
+
   writingAs(db, identity.deviceId, () => {
     db.runSync(
-      `UPDATE knowledge_node SET quiz_question_md = ?, quiz_recommended_answer_md = ? WHERE id = ?`,
-      questionMd,
-      recommendedAnswerMd,
+      `UPDATE knowledge_node
+       SET quiz_question_md = ?, quiz_recommended_answer_md = ?, quiz_answer_draft_md = ?
+       WHERE id = ?`,
+      next.quiz_question_md,
+      next.quiz_recommended_answer_md,
+      next.quiz_answer_draft_md,
       input.nodeId,
     );
   });
 
-  return {
-    nodeId: row.id,
-    nodeName: row.name,
-    questionMd,
-    recommendedAnswerMd,
-  };
+  return rowToDraft(next);
 }
 
 export async function generateQuizQuestion(
@@ -126,7 +119,10 @@ export async function generateQuizQuestion(
   const identity = await getDeviceIdentity(db);
   writingAs(db, identity.deviceId, () => {
     db.runSync(
-      `UPDATE knowledge_node SET quiz_question_md = ?, quiz_recommended_answer_md = NULL WHERE id = ?`,
+      // 换了题，上一题的作答草稿就没有意义了，跟推荐答案一起清掉
+      `UPDATE knowledge_node
+       SET quiz_question_md = ?, quiz_recommended_answer_md = NULL, quiz_answer_draft_md = NULL
+       WHERE id = ?`,
       question,
       nodeId,
     );
@@ -194,7 +190,10 @@ export async function submitQuizAnswer(
 
   writingAs(db, identity.deviceId, () => {
     db.runSync(
-      `UPDATE knowledge_node SET mastery = ?, mastery_source = 'quiz', status = ?, priority_score = ? WHERE id = ?`,
+      // 已经评过分，草稿留着下次进来会又冒出来盖住结果
+      `UPDATE knowledge_node
+       SET mastery = ?, mastery_source = 'quiz', status = ?, priority_score = ?, quiz_answer_draft_md = NULL
+       WHERE id = ?`,
       newMastery,
       nodeStatus,
       priority.score,

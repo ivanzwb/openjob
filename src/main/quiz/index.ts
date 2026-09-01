@@ -35,6 +35,7 @@ function rowToDraft(row: typeof schema.knowledgeNode.$inferSelect): QuizDraftRes
     nodeName: row.name,
     questionMd: row.quizQuestionMd ?? null,
     recommendedAnswerMd: row.quizRecommendedAnswerMd ?? null,
+    answerDraftMd: row.quizAnswerDraftMd ?? null,
   };
 }
 
@@ -60,11 +61,13 @@ export function updateQuizDraft(input: QuizUpdateDraftInput): QuizDraftResult {
   const patch: {
     quizQuestionMd?: string | null;
     quizRecommendedAnswerMd?: string | null;
+    quizAnswerDraftMd?: string | null;
   } = {};
   if (input.questionMd !== undefined) patch.quizQuestionMd = input.questionMd;
   if (input.recommendedAnswerMd !== undefined) {
     patch.quizRecommendedAnswerMd = input.recommendedAnswerMd;
   }
+  if (input.answerDraftMd !== undefined) patch.quizAnswerDraftMd = input.answerDraftMd;
   if (Object.keys(patch).length === 0) return rowToDraft(row);
 
   db.update(schema.knowledgeNode)
@@ -93,8 +96,9 @@ export async function generateQuizQuestion(nodeId: string): Promise<QuizQuestion
   );
 
   const question = result.question.trim();
+  // 换了题，上一题的作答草稿就没有意义了，跟推荐答案一起清掉
   db.update(schema.knowledgeNode)
-    .set({ quizQuestionMd: question, quizRecommendedAnswerMd: null })
+    .set({ quizQuestionMd: question, quizRecommendedAnswerMd: null, quizAnswerDraftMd: null })
     .where(eq(schema.knowledgeNode.id, nodeId))
     .run();
 
@@ -173,6 +177,8 @@ export async function submitQuizAnswer(
       masterySource: 'quiz',
       status: nodeStatus,
       priorityScore: priority.score,
+      // 已经评过分，草稿留着下次进来会又冒出来盖住结果
+      quizAnswerDraftMd: null,
     })
     .where(eq(schema.knowledgeNode.id, nodeId))
     .run();

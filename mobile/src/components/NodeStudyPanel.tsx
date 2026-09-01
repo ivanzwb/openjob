@@ -39,18 +39,41 @@ export function NodeStudyPanel({
   const [quizResult, setQuizResult] = useState<QuizSubmitResult | null>(null);
   const [recommended, setRecommended] = useState('');
   const [editingRecommended, setEditingRecommended] = useState(false);
-  const [draftLoaded, setDraftLoaded] = useState(false);
+  // 存的是「state 里这份草稿属于哪个考点」，不是一个 loaded 布尔量：换考点时
+  // 布尔量仍是 true，边打边存那个 effect 会把上一个考点的答案写到新考点名下。
+  // 调用点目前带 key 会重挂，但那是别人的实现细节，不该由它兜底。
+  const [draftFor, setDraftFor] = useState<string | null>(null);
 
   useEffect(() => {
     if (mode !== 'drill') return;
     try {
       const draft = getQuizDraft(getRawDb(), nodeId);
-      if (draft.questionMd) setQuestion(draft.questionMd);
-      if (draft.recommendedAnswerMd) setRecommended(draft.recommendedAnswerMd);
+      // 一律赋值，不是「有值才赋」：换考点时后者会把上一个考点的题目和答案留在屏幕上
+      setQuestion(draft.questionMd);
+      setRecommended(draft.recommendedAnswerMd ?? '');
+      setAnswer(draft.answerDraftMd ?? '');
     } finally {
-      setDraftLoaded(true);
+      setDraftFor(nodeId);
     }
   }, [mode, nodeId]);
+
+  /**
+   * 作答边打边存。
+   *
+   * 这个面板挂在备考页里，切 tab 就整个卸载，答案原来只在组件 state 里，
+   * 一切走就没了——口述一段长回答再回来发现空白，比不能存更难受。
+   * 防抖 600ms 与模拟面试那边一致；草稿读出来之前不能写，否则初始的空串会
+   * 盖掉库里那份。
+   */
+  useEffect(() => {
+    if (mode !== 'drill' || draftFor !== nodeId) return;
+    const timer = setTimeout(() => {
+      void updateQuizDraft(getRawDb(), { nodeId, answerDraftMd: answer || null }).catch(
+        () => undefined,
+      );
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [answer, draftFor, mode, nodeId]);
 
   useTaskResult<QuizQuestionResult>(questionKey, (result) => {
     setQuestion(result.question);
@@ -69,7 +92,7 @@ export function NodeStudyPanel({
     return <ExplanationStudyPanel nodeId={nodeId} nodeName={nodeName} tier="spoken" />;
   }
 
-  if (!draftLoaded) {
+  if (draftFor !== nodeId) {
     return <Text style={{ color: theme.muted, fontSize: 13 }}>加载中…</Text>;
   }
 
@@ -137,7 +160,7 @@ export function NodeStudyPanel({
         </Text>
       </Pressable>
       <Text style={{ color: theme.muted, fontSize: 11 }}>
-        已生成的题目与推荐答案会自动保存；再次进入会直接显示，只有点「重新出题」才会换题。
+        题目、推荐答案和还没提交的作答都会自动保存；再次进入会直接显示，只有点「重新出题」才会换题。
       </Text>
       {questionError !== null && (
         <Text selectable style={{ color: theme.danger, fontSize: 12 }}>

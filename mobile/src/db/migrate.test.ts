@@ -126,7 +126,10 @@ describe('runMigrations', () => {
 
   it('跨版本升级把中间每一条都补上', () => {
     oldDbThroughMigration10();
-    expect(pendingMigrationIndices(sqlite)).toEqual([11, 12, 13, 14, 15, 16, 17, 18]);
+    // 从 11 一直到清单末尾。写死序号的话每加一条迁移都要来补一笔，
+    // 而这条用例问的本来就是「中间有没有漏」，与总共几条无关。
+    const rest = MIGRATIONS.map((_, i) => i).slice(11);
+    expect(pendingMigrationIndices(sqlite)).toEqual(rest);
 
     runMigrations(sqlite);
 

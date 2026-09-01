@@ -87,20 +87,20 @@ describe('prompt_run 补建', () => {
    */
   it('缺了 prompt_run 的存量库会跑到 0019', () => {
     const entries = journal();
-    // 装了 0019 之前那一版、且当时漏掉了 0013 的库
+    // 装了 0019 之前那一版（水位停在 0018）、且当时漏掉了 0013 的库。
+    // 这里按「停在哪一条」正着描述，不是把不该有的挨个排除——后者每加一条新迁移
+    // 就得记着来补一笔，漏补时水位会被新迁移顶过头，用例反而不再检查任何东西。
+    const stoppedAt = entries.findIndex((e) => e.tag === '0018_sync_row_version');
     const applied = entries
-      .filter(
-        (e) =>
-          e.tag !== '0019_prompt_run_repair' &&
-          e.tag !== '0013_prompt_run' &&
-          e.tag !== '0020_node_quiz_cache',
-      )
+      .slice(0, stoppedAt + 1)
+      .filter((e) => e.tag !== '0013_prompt_run')
       .map((e) => e.when);
 
     const pending = selectPending(entries, applied).map((e) => e.tag);
 
     // 0013 的 when 已经落在水位下面，永远轮不到它了，补建只能靠 0019
-    expect(pending).toEqual(['0019_prompt_run_repair', '0020_node_quiz_cache']);
+    expect(pending[0]).toBe('0019_prompt_run_repair');
+    expect(pending).toEqual(entries.slice(stoppedAt + 1).map((e) => e.tag));
   });
 
   it('0019 在已经有 prompt_run 的库上重跑不会炸', () => {
