@@ -1,6 +1,10 @@
 import type OpenAI from 'openai';
 import type { LlmRole } from '@shared/enums';
-import { parseJsonResponse } from '@shared/llm/parseJson';
+import {
+  SALVAGE_TRUNCATED_PROMPTS,
+  looksTruncated,
+  parseJsonResponse,
+} from '@shared/llm/parseJson';
 import { resolvePrompt } from '@shared/prompts/registry';
 import { getExperiment } from '../ab/experiments';
 import { getFingerprint, recordPromptRun } from '../ab/promptRun';
@@ -113,13 +117,40 @@ export async function completeJson<T>(
     { role: 'user', content: user },
   ]);
 
-  let raw: string | undefined;
+  /** 拿到过正文但没解析成功时留一份，用来给报错提供证据 */
+  let unparsed: string | undefined;
+  let unparsedFinishReason: string | undefined;
   /** 只拿到思考过程时先记下来，所有 attempt 都失败后再用 */
   let reasoningRaw: string | undefined;
   let lastError: unknown;
   let lastUsage: { promptTokens?: number; completionTokens?: number } | undefined;
   let maxTokens = JSON_MAX_TOKENS;
   const attempts = buildAttempts(baseMessages);
+  const parseOptions = { salvageTruncated: SALVAGE_TRUNCATED_PROMPTS.has(promptId) };
+
+  const runRecord = {
+    promptId,
+    versionId: resolved.versionId,
+    fingerprint: fingerprint ?? 'unknown',
+    role,
+    model,
+    tier,
+  };
+  const succeed = (parsed: T, outputJson: string): T => {
+    recordPromptRun({
+      ...runRecord,
+      ok: true,
+      promptTokens: lastUsage?.promptTokens,
+      completionTokens: lastUsage?.completionTokens,
+      latencyMs: Date.now() - startedAt,
+      outputJson,
+    });
+    return parsed;
+  };
+  const fail = (message: string): Error => {
+    recordPromptRun({ ...runRecord, ok: false, error: message, latencyMs: Date.now() - startedAt });
+    return new Error(message);
+  };
 
   for (const attempt of attempts) {
     for (let retry = 0; retry < 2; retry++) {
@@ -143,8 +174,17 @@ export async function completeJson<T>(
         const choice = res.choices[0];
         const text = extractMessageText(choice?.message)?.trim();
         if (text) {
-          raw = text;
-          break;
+          try {
+            return succeed(parseJsonResponse<T>(text, parseOptions), text);
+          } catch (err) {
+            // 解析不出来也算这次 attempt 失败。后面还有折叠 system、去掉
+            // response_format 这些不同配置可以试——以前解析在整个循环之外，
+            // 等于这些回退备着从来用不上，第一次拿到脏输出就直接抛。
+            lastError = err;
+            unparsed ??= text;
+            unparsedFinishReason ??= choice?.finish_reason ?? undefined;
+            break; // 同一套配置重发只会拿到同样的东西，直接换下一套
+          }
         }
         reasoningRaw ??= extractReasoningText(choice?.message)?.trim();
 
@@ -161,58 +201,25 @@ export async function completeJson<T>(
         if (isStrictSystemMessageError(err)) break;
       }
     }
-    if (raw) break;
   }
 
-  // 正文一次都没拿到：推理端点偶尔把 JSON 留在思考过程里，值得试一次。
-  // 撞 token 上限被截断的情况也落在这里，解析不出来会照常报错。
-  if (!raw && reasoningRaw) raw = reasoningRaw;
-
-  if (!raw) {
-    const detail = lastError instanceof Error ? lastError.message : lastError ? String(lastError) : '未知原因';
-    recordPromptRun({
-      promptId,
-      versionId: resolved.versionId,
-      fingerprint: fingerprint ?? 'unknown',
-      role,
-      model,
-      tier,
-      ok: false,
-      error: `模型未返回可用 JSON（${model}）：${detail}`,
-      latencyMs: Date.now() - startedAt,
-    });
-    throw new Error(`模型未返回可用 JSON（${model}）：${detail}`);
+  // 推理端点偶尔把 JSON 留在思考过程里，值得试一次
+  if (reasoningRaw) {
+    try {
+      return succeed(parseJsonResponse<T>(reasoningRaw, parseOptions), reasoningRaw);
+    } catch (err) {
+      lastError = err;
+    }
   }
 
-  try {
-    const parsed = parseJsonResponse<T>(raw);
-    recordPromptRun({
-      promptId,
-      versionId: resolved.versionId,
-      fingerprint: fingerprint ?? 'unknown',
-      role,
-      model,
-      tier,
-      ok: true,
-      promptTokens: lastUsage?.promptTokens,
-      completionTokens: lastUsage?.completionTokens,
-      latencyMs: Date.now() - startedAt,
-      outputJson: raw,
-    });
-    return parsed;
-  } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
-    recordPromptRun({
-      promptId,
-      versionId: resolved.versionId,
-      fingerprint: fingerprint ?? 'unknown',
-      role,
-      model,
-      tier,
-      ok: false,
-      error: `JSON 解析失败：${detail}`,
-      latencyMs: Date.now() - startedAt,
-    });
-    throw err;
+  // 截断要单独说：以前一律抛「Unexpected end of input」，用户看不懂，我们也
+  // 判断不了该缩短输入还是端点有问题
+  if (unparsed && looksTruncated(unparsed)) {
+    throw fail(
+      `模型输出被截断（收到 ${unparsed.length} 字符，finish_reason=${unparsedFinishReason ?? 'unknown'}），建议缩短输入后重试`,
+    );
   }
+
+  const detail = lastError instanceof Error ? lastError.message : lastError ? String(lastError) : '未知原因';
+  throw fail(`模型未返回可用 JSON（${model}）：${detail}`);
 }

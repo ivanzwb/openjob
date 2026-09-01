@@ -135,7 +135,12 @@ export function caseUserHintForType(
   return `${languageHint}\n请出一道【${labels[type]}】类型的面试题。`;
 }
 
+// 篇幅上限不是排版偏好：不写的话回答越长改进稿越长，撞上输出 token 上限会拿到
+// 一份被截断的 JSON，整次评分连分数都没有。
 const SCORE_BASE = `你是面试评委。按 1-5 分评分（5=能扛追问），给出逐点反馈和改进后的口语答题稿（markdown）。
+
+反馈按点写，控制在 5 条以内，每条一两句话。
+改进稿给要点大纲，控制在 3 分钟能讲完的篇幅，不要整篇扩写成长文。
 
 ${SCORE_GROUNDING_RULE}
 

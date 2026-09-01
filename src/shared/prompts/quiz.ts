@@ -22,6 +22,12 @@ export const QUIZ_SCORE_SYSTEM = buildStructuredPrompt({
   role: '你是面试评委。',
   inputs: INTERVIEW_INPUTS,
   task: '按 1-5 分评分（5=能扛追问），给出反馈和改进后的口语表述。',
+  // 不给篇幅上限时，回答越长模型的改进稿越长，撞上输出 token 上限就是一份被截断
+  // 的 JSON——整次评分连分数都拿不到。改进稿和参考答案是同一种东西，按同一个尺寸写。
+  focus: [
+    '- 反馈按点写，控制在 5 条以内，每条一两句话。',
+    '- 改进稿是口语稿，控制在 60-90 秒能讲完的篇幅，不要整篇扩写成长文。',
+  ].join('\n'),
   rules: [SCORE_GROUNDING_RULE, CODE_FENCE_RULE_IN_JSON],
   output:
     '输出 JSON：{ "score": 1-5, "feedbackMd": "...", "improvedScriptMd": "口语改进稿" }',

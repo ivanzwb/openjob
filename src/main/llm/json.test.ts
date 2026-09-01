@@ -191,6 +191,71 @@ describe('completeJson 空正文与推理兜底', () => {
   });
 });
 
+describe('completeJson 解析失败后的回退', () => {
+  it('第一次返回不可解析的正文 -> 继续用剩下的 attempt 配置重试', async () => {
+    // 以前解析在整个循环外：拿到非空正文就 break，解析炸了直接抛，
+    // 后面那几套配置（去掉 response_format、折叠 system）备着从来没用上
+    let attempt = 0;
+    setupClient(() => {
+      attempt++;
+      if (attempt === 1) return completion([responseMessage({ content: '这不是 JSON' })]);
+      return completion([responseMessage({ content: '{"ok":true}' })]);
+    });
+    const result = await completeJson('outline', 'quiz.question', 'user');
+    expect(result).toEqual({ ok: true });
+    expect(calls).toHaveLength(2);
+  });
+
+  it('每套配置只试一次 -> 不会在同一套配置上空转', async () => {
+    // 同样的请求重发只会拿到同样的东西，重试次数应该等于 attempt 套数
+    recordCalls();
+    mockCreate.mockReturnValue(
+      roleClient((req) => {
+        calls.push(req as never);
+        return completion([responseMessage({ content: '这不是 JSON' })]);
+      }),
+    );
+    await expect(completeJson('outline', 'quiz.question', 'user')).rejects.toThrow();
+    expect(calls).toHaveLength(4);
+  });
+
+  it('全部失败 -> 报错里说清是被截断，带上字符数和 finish_reason', async () => {
+    recordCalls();
+    mockCreate.mockReturnValue(
+      roleClient((req) => {
+        calls.push(req as never);
+        return completion([
+          responseMessage({ content: '{"score":4,"feedbackMd":"写到一半' } as never),
+        ]);
+      }),
+    );
+    // 以前这里只会抛一句 Unexpected end of input，用户看不懂，我们也判断不了原因
+    await expect(completeJson('outline', 'quiz.question', 'user')).rejects.toThrow('模型输出被截断');
+  });
+});
+
+describe('completeJson 截断抢救', () => {
+  const truncated = '{"score":4,"feedbackMd":"结构清晰","improvedScriptMd":"我会从三个层面讲';
+
+  it('评分类 prompt -> 补全收口，已写完的字段保住', async () => {
+    setupClient(() => completion([responseMessage({ content: truncated })]));
+    const result = await completeJson<{ score: number; improvedScriptMd: string }>(
+      'quiz',
+      'quiz.score',
+      'user',
+    );
+    expect(result.score).toBe(4);
+    expect(result.improvedScriptMd).toBe('我会从三个层面讲');
+    // 抢救成功就不该再多打一次
+    expect(calls).toHaveLength(1);
+  });
+
+  it('不在名单里的 prompt -> 照样报错，不静默返回残缺数据', async () => {
+    setupClient(() => completion([responseMessage({ content: truncated })]));
+    await expect(completeJson('outline', 'quiz.question', 'user')).rejects.toThrow('模型输出被截断');
+  });
+});
+
 describe('completeJson 端点能力回退', () => {
   it('不支持 json_object -> 去掉 response_format 重试', async () => {
     let attempt = 0;
