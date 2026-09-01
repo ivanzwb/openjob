@@ -36,7 +36,10 @@ function responseMessage(partial: Partial<ResponseMessage>): ResponseMessage {
   } as ResponseMessage;
 }
 
-function completion(messages: ResponseMessage[]): OpenAI.Chat.Completions.ChatCompletion {
+function completion(
+  messages: ResponseMessage[],
+  finishReason: 'length' | 'stop' | 'tool_calls' | 'content_filter' | 'function_call' = 'stop',
+): OpenAI.Chat.Completions.ChatCompletion {
   return {
     id: 'chatcmpl-test',
     object: 'chat.completion',
@@ -45,7 +48,7 @@ function completion(messages: ResponseMessage[]): OpenAI.Chat.Completions.ChatCo
     choices: messages.map((message, i) => ({
       index: i,
       message,
-      finish_reason: 'stop',
+      finish_reason: finishReason,
       logprobs: null,
     })),
     usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
@@ -253,6 +256,46 @@ describe('completeJson 截断抢救', () => {
   it('不在名单里的 prompt -> 照样报错，不静默返回残缺数据', async () => {
     setupClient(() => completion([responseMessage({ content: truncated })]));
     await expect(completeJson('outline', 'quiz.question', 'user')).rejects.toThrow('模型输出被截断');
+  });
+});
+
+describe('completeJson 自闭合短截断', () => {
+  // finish_reason=length 但 JSON 完整收口：模型撞到输出上限，但这段残缺内容本身能
+  // 被当成合法 JSON 解析出来（比如讲解只写到一半就是完整句子便"结束"）。
+  // 以前被当成功放行，用户拿到的讲解在中间断掉却没有报错。现在要能侦测并报截断错。
+  it('finish_reason=length 但 JSON 自闭合 -> 报截断错，不静默返回短内容', async () => {
+    recordCalls();
+    mockCreate.mockReturnValue(
+      roleClient((req) => {
+        calls.push(req as never);
+        return completion(
+          [responseMessage({ content: '{"markdown":"讲到一半就断了"}' })],
+          'length',
+        );
+      }),
+    );
+    await expect(
+      completeJson('explain', 'explain.generate', '考点', undefined, { tier: 'deep' }),
+    ).rejects.toThrow('模型输出被截断');
+  });
+
+  it('自闭合 length 截断后，后续配置返回完整非 length 输出 -> 用完整那份', async () => {
+    let attempt = 0;
+    setupClient(() => {
+      attempt++;
+      if (attempt === 1) {
+        return completion([responseMessage({ content: '{"markdown":"残缺讲解"}' })], 'length');
+      }
+      return completion([responseMessage({ content: '{"markdown":"完整讲解"}' })]);
+    });
+    const result = await completeJson<{ markdown: string }>(
+      'explain',
+      'explain.generate',
+      '考点',
+      undefined,
+      { tier: 'deep' },
+    );
+    expect(result).toEqual({ markdown: '完整讲解' });
   });
 });
 

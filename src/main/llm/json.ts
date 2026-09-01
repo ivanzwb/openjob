@@ -120,6 +120,13 @@ export async function completeJson<T>(
   /** 拿到过正文但没解析成功时留一份，用来给报错提供证据 */
   let unparsed: string | undefined;
   let unparsedFinishReason: string | undefined;
+  /**
+   * 解析成功但 finish_reason=length 的自闭合短截断：
+   * 模型撞到输出上限，但 JSON 恰好收口，解析不出来「未闭合」所以被当成功放行，
+   * 实际 markdown 是残缺的。先记下来继续试后面的配置，全试完还没有完整输出就抛截断错——
+   * 宁可不给，也不能把它当完整讲解交出去。
+   */
+  let selfClosedLength: { text: string; parsed: T; finishReason: string } | undefined;
   /** 只拿到思考过程时先记下来，所有 attempt 都失败后再用 */
   let reasoningRaw: string | undefined;
   let lastError: unknown;
@@ -173,16 +180,29 @@ export async function completeJson<T>(
 
         const choice = res.choices[0];
         const text = extractMessageText(choice?.message)?.trim();
+        const finishReason = choice?.finish_reason ?? 'unknown';
         if (text) {
           try {
-            return succeed(parseJsonResponse<T>(text, parseOptions), text);
+            const parsed = parseJsonResponse<T>(text, parseOptions);
+            // 自闭合短截断：finish_reason=length 且不是走抢救名单的 prompt 时，
+            // 残缺 JSON 即使能解析出来（如讲解在中间断掉）也不能当完整输出静默交付。
+            // 先记下继续试别的配置；后面有完整输出则优先。抢救名单的 prompt 本身就
+            // 接受截断补全，length 是常态，仍按原样返回。
+            if (finishReason === 'length' && !parseOptions.salvageTruncated) {
+              selfClosedLength = { text, parsed, finishReason };
+              lastError = new Error(
+                `模型输出被截断（收到 ${text.length} 字符，finish_reason=${finishReason}），建议缩短输入后重试`,
+              );
+            } else {
+              return succeed(parsed, text);
+            }
           } catch (err) {
             // 解析不出来也算这次 attempt 失败。后面还有折叠 system、去掉
             // response_format 这些不同配置可以试——以前解析在整个循环之外，
             // 等于这些回退备着从来用不上，第一次拿到脏输出就直接抛。
             lastError = err;
             unparsed ??= text;
-            unparsedFinishReason ??= choice?.finish_reason ?? undefined;
+            unparsedFinishReason ??= finishReason;
             break; // 同一套配置重发只会拿到同样的东西，直接换下一套
           }
         }
@@ -217,6 +237,13 @@ export async function completeJson<T>(
   if (unparsed && looksTruncated(unparsed)) {
     throw fail(
       `模型输出被截断（收到 ${unparsed.length} 字符，finish_reason=${unparsedFinishReason ?? 'unknown'}），建议缩短输入后重试`,
+    );
+  }
+
+  // 自闭合短截断：所有配置都撞 length 上限时，宁可报错也不能把残缺讲解当完整交付
+  if (selfClosedLength) {
+    throw fail(
+      `模型输出被截断（收到 ${selfClosedLength.text.length} 字符，finish_reason=${selfClosedLength.finishReason}），建议缩短输入后重试`,
     );
   }
 
