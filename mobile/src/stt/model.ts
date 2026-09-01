@@ -1,13 +1,16 @@
 import { Directory, File, Paths } from 'expo-file-system';
 
-/** whisper.cpp 多语言模型（支持中文），q5_1 量化：体积/质量折中 */
+/**
+ * whisper.cpp 多语言模型（支持中文），q5_1 量化：体积/质量折中。
+ * small 比 base 识别率高一大截（中文场景尤其明显），代价是体积 56.9MB → 190MB。
+ */
 export const WHISPER_MODEL = {
   /** 模型文件名，与 HF 仓库一致 */
-  name: 'ggml-base-q5_1.bin',
+  name: 'ggml-small-q5_1.bin',
   /** 原始 HF 直链 */
-  url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base-q5_1.bin',
-  /** 体积约 56.9MB */
-  sizeBytes: 56.9 * 1024 * 1024,
+  url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small-q5_1.bin',
+  /** 体积约 190MB */
+  sizeBytes: 190 * 1024 * 1024,
 } as const;
 
 export interface ModelProgress {

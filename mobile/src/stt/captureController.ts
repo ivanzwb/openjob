@@ -80,7 +80,7 @@ export class SpeechCaptureController {
 
   /**
    * 预热：模型已经在本地时提前把上下文加载好，按下麦克风就能立刻开录。
-   * 模型不在本地一律什么都不做——为了少等一两秒替用户下 56.9MB 是不能接受的。
+   * 模型不在本地一律什么都不做——为了少等一两秒替用户下 190MB 是不能接受的。
    */
   async prepare(): Promise<void> {
     if (this.disposed || this.contextReady || this.contextPromise) return;
@@ -163,7 +163,7 @@ export class SpeechCaptureController {
     this.stopRequested = true;
     const pending = this.startPromise;
 
-    // 下载 56.9MB 途中点停止：等它下完再收尾会把人晾在那儿几十秒。这时还没开录、
+    // 下载 190MB 途中点停止：等它下完再收尾会把人晾在那儿几十秒。这时还没开录、
     // 没有流要释放，直接静默收场；下载留着跑完，下次点开始就不用再等一遍
     if (pending && this.downloading) {
       this.emit({ state: 'idle' });

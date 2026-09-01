@@ -4,7 +4,7 @@ import { ensureModel } from './model';
 /**
  * 全进程共用一个 whisper 上下文。
  *
- * base 模型驻留原生内存上百 MB，而语音按钮同时挂着好几个（追问、考点学习、方案设计…），
+ * small 模型驻留原生内存数百 MB，而语音按钮同时挂着好几个（追问、考点学习、方案设计…），
  * 各自初始化一份会把手机吃爆；whisper.rn 又只给了 releaseAllWhisper 这种全局释放，
  * 各自持有句柄时谁先卸载就把别人的上下文一起废掉，剩下的按钮拿着野句柄去转写。
  * 所以这里按引用计数集中持有：还有按钮挂着就不释放，全都卸载了才还给系统。
@@ -35,7 +35,7 @@ export function isWhisperContextLoaded(): boolean {
 
 /**
  * 加载并缓存上下文。模型必须已在本地——调用前先用 isModelReady() 判断，
- * 否则 ensureModel 会顺手去下 56.9MB。
+ * 否则 ensureModel 会顺手去下 190MB。
  */
 export function loadWhisperContext(): Promise<WhisperContext> {
   if (context) return Promise.resolve(context);
