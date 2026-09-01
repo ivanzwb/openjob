@@ -1,8 +1,13 @@
-import { useMemo } from 'react';
+import { Fragment, useMemo } from 'react';
 import { ScrollView, Text, View } from 'react-native';
 import { visibleMarkdownBlocks } from '../lib/markdownBlocks';
 import { normalizeDisplayText } from '../lib/markdownDisplay';
-import { parseMarkdownLine, parseMarkdownTextSegments } from '@shared/lib/markdownSegments';
+import { groupParagraphRuns } from '../lib/markdownRuns';
+import {
+  parseMarkdownLine,
+  parseMarkdownTextSegments,
+  type MarkdownLine,
+} from '@shared/lib/markdownSegments';
 import { parseInlineMarkdown } from '@shared/lib/markdownInline';
 import { useTheme } from '../theme';
 
@@ -118,36 +123,26 @@ function MarkdownTable({ rows }: { rows: string[][] }): React.JSX.Element | null
   );
 }
 
+/** 行首标记：项目符号统一成 •，有序列表保留模型给的编号 */
+function lineMarker(line: string, parsed: MarkdownLine): string {
+  if (parsed.kind === 'bullet') return '• ';
+  if (parsed.kind === 'numbered') return line.slice(0, parsed.contentStart);
+  return '';
+}
+
 function MarkdownParagraph({ lines, keyPrefix }: { lines: string[]; keyPrefix: string }): React.JSX.Element {
   const theme = useTheme();
   const trimmed = lines
     .map((line) => line.trim())
     .filter(Boolean);
+  const runs = groupParagraphRuns(trimmed);
 
   return (
     <View style={{ gap: 4 }}>
-      {trimmed.map((line, lineIdx) => {
-        const parsed = parseMarkdownLine(line);
-        const key = `${keyPrefix}-${lineIdx}`;
+      {runs.map((run, runIdx) => {
+        const key = `${keyPrefix}-${runIdx}`;
 
-        if (parsed.kind === 'heading') {
-          return (
-            <Text
-              key={key}
-              selectable
-              style={{
-                color: theme.text,
-                fontSize: parsed.level === 1 ? 16 : 14,
-                lineHeight: 22,
-                fontWeight: '700',
-              }}
-            >
-              <InlineText source={parsed.text} />
-            </Text>
-          );
-        }
-
-        if (parsed.kind === 'quote') {
+        if (run.kind === 'quote') {
           return (
             <Text
               key={key}
@@ -161,21 +156,32 @@ function MarkdownParagraph({ lines, keyPrefix }: { lines: string[]; keyPrefix: s
                 paddingLeft: 8,
               }}
             >
-              <InlineText source={parsed.text} />
+              <InlineText source={parseMarkdownLine(run.line).text} />
             </Text>
           );
         }
 
-        const marker =
-          parsed.kind === 'bullet'
-            ? '• '
-            : parsed.kind === 'numbered'
-              ? line.slice(0, parsed.contentStart)
-              : '';
         return (
           <Text key={key} selectable style={{ color: theme.text, fontSize: 13, lineHeight: 20 }}>
-            {marker}
-            <InlineText source={parsed.text} />
+            {run.lines.map((line, lineIdx) => {
+              const parsed = parseMarkdownLine(line);
+              return (
+                <Fragment key={lineIdx}>
+                  {/* 换行放在嵌套 Text 外面，免得它跟着标题的字号一起变高 */}
+                  {lineIdx > 0 ? '\n' : null}
+                  {parsed.kind === 'heading' ? (
+                    <Text style={{ fontSize: parsed.level === 1 ? 16 : 14, fontWeight: '700' }}>
+                      <InlineText source={parsed.text} />
+                    </Text>
+                  ) : (
+                    <Text>
+                      {lineMarker(line, parsed)}
+                      <InlineText source={parsed.text} />
+                    </Text>
+                  )}
+                </Fragment>
+              );
+            })}
           </Text>
         );
       })}
