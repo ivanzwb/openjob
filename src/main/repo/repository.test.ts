@@ -150,8 +150,23 @@ describe('readRepoFile', () => {
 
     const res = readRepoFile('r1', 'README.md');
 
-    expect(res.content).toContain('# repo');
+    expect(res.content).toBe('# repo');
     expect(res.totalLines).toBe(1);
+  });
+
+  it('给代码面板的正文不重复携带 Agent 专用行号', () => {
+    const localPath = makeRepoDir();
+    writeFileSync(join(localPath, 'README.md'), 'first\nsecond\nthird', 'utf8');
+    fakeDb({ id: 'r1', localPath }, ['README.md']);
+
+    const res = readRepoFile('r1', 'README.md', 2, 3);
+
+    expect(res).toMatchObject({
+      content: 'second\nthird',
+      startLine: 2,
+      endLine: 3,
+      totalLines: 3,
+    });
   });
 
   it('路径是编的时候，说清楚没有这个文件并给出相近的真实路径', () => {

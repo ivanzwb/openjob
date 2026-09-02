@@ -26,6 +26,13 @@ import { buildNodeFollowUpSystem } from '../campaign/candidateContext';
 import { decideSearchTrigger, triggerInstruction } from '../search/trigger';
 import { normalizeChatMessages } from './messages';
 import { buildRepoAnalyzeSystem } from '@shared/prompts/repo';
+import {
+  FINAL_REPO_SYNTHESIS,
+  hasMermaidDiagram,
+  looksLikeToolProtocol,
+  needsFlowDiagram,
+  READ_CODE_BEFORE_ANSWER,
+} from './repoAnswerPolicy';
 
 /** 工具调用的最大轮数，防止 Agent 陷入反复检索 */
 const MAX_TOOL_ROUNDS = 4;
@@ -195,6 +202,9 @@ async function runChat(
     let usage: TokenUsage | null = null;
     const totals: TokenUsage = { promptTokens: 0, completionTokens: 0 };
     let lastPromptTokens: number | null = null;
+    let successfulReads = 0;
+    let forceFinalAnswer = false;
+    const diagramRequired = Boolean(req.repoId && needsFlowDiagram(lastUser));
     const maxRounds = req.repoId ? MAX_REPO_TOOL_ROUNDS : MAX_TOOL_ROUNDS;
     const tools =
       toolKind === 'code'
@@ -206,15 +216,22 @@ async function runChat(
             : undefined;
 
     for (let round = 0; round <= maxRounds; round++) {
+      const finalOnly = Boolean(req.repoId && (forceFinalAnswer || round === maxRounds));
+      forceFinalAnswer = false;
+      if (finalOnly) {
+        messages.push({ role: 'system', content: FINAL_REPO_SYNTHESIS });
+      }
+
       const stream = await openStream(client, controller, {
         model,
         messages: normalizeChatMessages(messages),
         temperature,
-        tools: tools && round < maxRounds ? tools : undefined,
+        tools: tools && round < maxRounds && !finalOnly ? tools : undefined,
       });
 
       let roundText = '';
       let roundUsage: TokenUsage | null = null;
+      let roundFinishReason: string | null = null;
       const pending = new Map<number, PendingToolCall>();
 
       for await (const chunk of stream) {
@@ -225,12 +242,16 @@ async function runChat(
           };
         }
 
-        const delta = chunk.choices[0]?.delta;
+        const choice = chunk.choices[0];
+        if (choice?.finish_reason) roundFinishReason = choice.finish_reason;
+        const delta = choice?.delta;
         if (!delta) continue;
 
         if (delta.content) {
           roundText += delta.content;
-          emit('stream:delta', { streamId, delta: delta.content });
+          // repo Agent 的工具轮 content 常混着 provider 私有的 XML 协议。必须等本轮
+          // 结束、确认没有 tool_calls 后才展示；推理过程由 ToolTrace 单独呈现。
+          if (!req.repoId) emit('stream:delta', { streamId, delta: delta.content });
         }
 
         // tool_calls 是分片下发的，需要按 index 累积拼接
@@ -243,7 +264,7 @@ async function runChat(
         }
       }
 
-      finalText += roundText;
+      if (!req.repoId) finalText += roundText;
 
       if (roundUsage) {
         totals.promptTokens += roundUsage.promptTokens;
@@ -260,14 +281,62 @@ async function runChat(
       }
       usage = roundUsage ?? usage;
 
-      if (pending.size === 0) break;
+      if (roundFinishReason === 'length' && pending.size > 0) {
+        throw new Error('模型的工具调用参数被截断，未执行不完整调用，请重试');
+      }
+
+      if (pending.size === 0) {
+        if (!req.repoId) break;
+
+        if (successfulReads === 0) {
+          if (round >= maxRounds) {
+            throw new Error('代码 Agent 未能打开源码，已停止生成以避免无依据回答，请重试');
+          }
+          // grep/glob 只是导航；没读过文件就不接受模型提前给出的“答案”。
+          messages.push({ role: 'system', content: READ_CODE_BEFORE_ANSWER });
+          continue;
+        }
+
+        const protocolLeak = looksLikeToolProtocol(roundText);
+        const missingDiagram = diagramRequired && !hasMermaidDiagram(roundText);
+        const truncated = roundFinishReason === 'length';
+        const unusable = !roundText.trim() || protocolLeak || missingDiagram || truncated;
+        if (unusable) {
+          if (round >= maxRounds) {
+            const reason = truncated
+              ? '模型最终回答被截断'
+              : protocolLeak
+                ? '模型把工具协议当成了最终回答'
+                : missingDiagram
+                  ? '流程类回答缺少 Mermaid 流程图'
+                  : '模型没有生成最终回答';
+            throw new Error(`${reason}，已停止输出，请重试`);
+          }
+          // 正文草稿可回喂给模型重写；协议泄漏不能回喂，否则它会继续模仿 XML。
+          if (roundText.trim() && !protocolLeak && !truncated) {
+            messages.push({ role: 'assistant', content: roundText });
+          }
+          forceFinalAnswer = true;
+          continue;
+        }
+
+        finalText = roundText;
+        emit('stream:delta', { streamId, delta: roundText });
+        break;
+      }
+
+      if (finalOnly) {
+        throw new Error('模型在最终总结阶段仍请求工具，已停止输出，请重试');
+      }
 
       const roundToolIndexes: number[] = [];
       toolIndexByRound[round] = roundToolIndexes;
 
       messages.push({
         role: 'assistant',
-        content: roundText || null,
+        // repo 工具轮里的 content 可能是 provider 泄漏的 XML 工具协议，不把它带进
+        // 后续上下文，避免最后一轮照样学着输出 <tool_call>。
+        content: req.repoId ? null : roundText || null,
         tool_calls: [...pending.values()].map((p) => ({
           id: p.id,
           type: 'function' as const,
@@ -298,8 +367,14 @@ async function runChat(
         }
 
         if (call.name === 'web_search' || call.name === 'fetch_url') usedWeb = true;
-        if (['list_dir', 'read_file', 'grep'].includes(call.name)) usedCode = true;
-        citations.push(...outcome.citations);
+        if (['glob', 'find_symbol', 'list_dir', 'read_file', 'grep'].includes(call.name)) {
+          usedCode = true;
+        }
+        if (call.name === 'read_file' && outcome.citations.length > 0) successfulReads++;
+        // grep 的命中只是候选位置，不能在最终引用区伪装成“已读证据”。
+        if (!repoRoot || call.name === 'read_file' || call.name === 'web_search' || call.name === 'fetch_url') {
+          citations.push(...outcome.citations);
+        }
 
         emit('stream:tool', {
           streamId,

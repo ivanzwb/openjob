@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Repo } from '@shared/entities';
-import type { AnnotationView } from '@shared/ipc';
+import type { AnnotationView, SessionMessageView, StreamDone } from '@shared/ipc';
 import { normalizeDisplayText } from '@shared/lib/markdownDisplay';
 import { useStream } from '../ipc/useStream';
 import { invoke } from '../ipc';
 import { runTask, useTask, useTaskResult } from '../ipc/taskStore';
+import { ChatBubble } from './ChatBubble';
 import { CodePanel } from './CodePanel';
 import type { CodeLocation } from './MarkdownContent';
 import { MarkdownContent } from './MarkdownContent';
@@ -27,8 +28,13 @@ export function RepoWorkspace({
   const saveSpeechKey = `repo:saveSpeech:${repo.id}`;
   const { running: saving, error: saveError } = useTask(saveSpeechKey);
   useTaskResult(saveSpeechKey, () => setSaved(true));
-  const [, setHistory] = useState<Array<{ role: 'user' | 'assistant'; text: string }>>([]);
+  const [history, setHistory] = useState<SessionMessageView[]>([]);
   const [codeMarks, setCodeMarks] = useState<AnnotationView[]>([]);
+  const sessionStorageKey = `openjob:repoQaSession:${repo.id}`;
+  const initialSessionId = useMemo(
+    () => window.localStorage.getItem(sessionStorageKey),
+    [sessionStorageKey],
+  );
 
   const loadCodeMarks = useCallback(() => {
     void invoke('annotation:listForRepo', { repoId: repo.id }).then(setCodeMarks);
@@ -36,48 +42,112 @@ export function RepoWorkspace({
 
   useEffect(loadCodeMarks, [loadCodeMarks]);
 
-  const handleDone = (done: { contentMd: string }): void => {
-    if (!done.contentMd) return;
-    setHistory((h) => {
-      const last = h[h.length - 1];
-      if (last?.role === 'assistant' && last.text === done.contentMd) return h;
-      return [...h, { role: 'assistant', text: done.contentMd }];
-    });
-  };
+  const fetchHistory = useCallback(
+    (sessionId: string) => invoke('session:getMessages', { sessionId }),
+    [],
+  );
+
+  const handleDone = useCallback(
+    (done: StreamDone): void => {
+      if (!done.sessionId) return;
+      // 主进程已经把最终回答、引用和工具记录作为一个事务序列落库。
+      // 回读数据库而不是手拼一条消息，避免实时态与历史态字段不一致。
+      void fetchHistory(done.sessionId)
+        .then(setHistory)
+        .catch(() => {
+          if (!done.contentMd.trim()) return;
+          setHistory((current) => [
+            ...current,
+            {
+              id: `completed-${Date.now()}`,
+              sessionId: done.sessionId!,
+              role: 'assistant',
+              contentMd: done.contentMd,
+              citations: done.citations,
+              createdAt: Date.now(),
+              usage: done.usage,
+              evidenceKind: done.evidenceKind,
+              toolCalls: [],
+            },
+          ]);
+        });
+    },
+    [fetchHistory],
+  );
 
   const { state, send, cancel, reset, setSessionId } = useStream(
     `repoQa:${repo.id}`,
-    null,
+    initialSessionId,
     handleDone,
   );
+
+  useEffect(() => {
+    if (state.sessionId) window.localStorage.setItem(sessionStorageKey, state.sessionId);
+    else window.localStorage.removeItem(sessionStorageKey);
+  }, [sessionStorageKey, state.sessionId]);
+
+  useEffect(() => {
+    const sessionId = state.sessionId;
+    if (!sessionId || history.length > 0) return;
+    void fetchHistory(sessionId)
+      .then(setHistory)
+      .catch(() => {
+        // 会话可能已在另一台设备删除；清掉失效指针，下一问会新建会话。
+        reset();
+        setSessionId(null);
+      });
+  }, [fetchHistory, history.length, reset, setSessionId, state.sessionId]);
 
   const submit = (): void => {
     const text = input.trim();
     if (!text || state.running || repo.status !== 'ready') return;
     setInput('');
     setSaved(false);
-    setHistory((h) => {
-      const next = [...h, { role: 'user' as const, text }];
-      void send({
-        role: 'codeAgent',
-        repoId: repo.id,
-        allowWebSearch,
-        sessionId: state.sessionId ?? undefined,
-        messages: [
-          ...next.flatMap((m) => [{ role: m.role, content: m.text }]),
-          { role: 'user', content: text },
-        ],
-      });
-      return next;
+    const userMessage: SessionMessageView = {
+      id: `pending-${Date.now()}`,
+      sessionId: state.sessionId ?? '',
+      role: 'user',
+      contentMd: text,
+      citations: [],
+      createdAt: Date.now(),
+      usage: null,
+      evidenceKind: null,
+      toolCalls: [],
+    };
+    const next = [...history, userMessage];
+    setHistory(next);
+    void send({
+      role: 'codeAgent',
+      repoId: repo.id,
+      allowWebSearch,
+      sessionKind: 'repoQa',
+      sessionId: state.sessionId ?? undefined,
+      messages: next.map((message) => ({
+        role: message.role,
+        content: message.contentMd,
+      })),
     });
   };
 
+  const latestAnswer =
+    [...history].reverse().find((message) => message.role === 'assistant')?.contentMd ??
+    state.text;
+
   const saveSpeech = (): void => {
-    if (!state.text.trim()) return;
-    const contentMd = state.text;
+    if (!latestAnswer.trim()) return;
+    const contentMd = latestAnswer;
     void runTask(saveSpeechKey, () =>
       invoke('speech:save', { repoId: repo.id, contentMd, tier: 'spoken' }),
     ).catch(() => undefined);
+  };
+
+  const clearConversation = (): void => {
+    const sessionId = state.sessionId;
+    setHistory([]);
+    reset();
+    setSessionId(null);
+    window.localStorage.removeItem(sessionStorageKey);
+    if (sessionId) void invoke('session:delete', { sessionId });
   };
 
   const openCitation = (filePath?: string, startLine?: number, endLine?: number): void => {
@@ -99,32 +169,80 @@ export function RepoWorkspace({
         <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
           {repo.status !== 'ready' ? (
             <p className="text-sm text-[var(--color-muted)]">仓库索引中，完成后可开始问答…</p>
+          ) : history.length > 0 || state.running ? (
+            <div className="space-y-4">
+              {history.map((message) => (
+                <ChatBubble
+                  key={message.id}
+                  role={message.role === 'user' ? 'user' : 'assistant'}
+                >
+                  <div className="mb-1 flex items-center gap-2">
+                    <span className="text-[10px] uppercase text-[var(--color-muted)]">
+                      {message.role === 'user' ? '你' : '助手'}
+                    </span>
+                    {message.role === 'assistant' && message.evidenceKind && (
+                      <SourceBadge kind={message.evidenceKind} />
+                    )}
+                  </div>
+                  {message.role === 'user' ? (
+                    <div className="whitespace-pre-wrap">{message.contentMd}</div>
+                  ) : (
+                    <MarkdownContent
+                      text={normalizeDisplayText(message.contentMd)}
+                      onCodeClick={setCodeLoc}
+                    />
+                  )}
+                  {message.role === 'assistant' && (
+                    <>
+                      <ToolTrace calls={message.toolCalls} usage={message.usage} />
+                      <CitationList
+                        citations={message.citations}
+                        onCodeClick={(citation) =>
+                          openCitation(
+                            citation.filePath,
+                            citation.startLine,
+                            citation.endLine,
+                          )
+                        }
+                      />
+                    </>
+                  )}
+                </ChatBubble>
+              ))}
+              {state.running && (
+                <ChatBubble role="assistant">
+                  <div className="mb-2 flex items-center gap-2">
+                    <span className="text-[10px] uppercase text-[var(--color-muted)]">助手</span>
+                    <SourceBadge kind={state.evidenceKind} />
+                    <span className="text-xs text-[var(--color-muted)]">
+                      {state.text ? '正在组织回答…' : '正在检索并阅读代码…'}
+                    </span>
+                  </div>
+                  {state.text && (
+                    <MarkdownContent
+                      text={normalizeDisplayText(state.text)}
+                      onCodeClick={setCodeLoc}
+                    />
+                  )}
+                  <ToolTrace calls={state.toolCalls} usage={state.usage} />
+                  <CitationList
+                    citations={state.citations}
+                    onCodeClick={(citation) =>
+                      openCitation(citation.filePath, citation.startLine, citation.endLine)
+                    }
+                  />
+                </ChatBubble>
+              )}
+              {state.error && (
+                <div className="rounded border border-red-900 bg-red-950/40 p-3 text-sm text-red-300">
+                  {state.error}
+                </div>
+              )}
+            </div>
           ) : state.error ? (
             <div className="rounded border border-red-900 bg-red-950/40 p-3 text-sm text-red-300">
               {state.error}
             </div>
-          ) : state.text || state.running ? (
-            <>
-              <div className="mb-1 flex items-center gap-2">
-                <SourceBadge kind={state.evidenceKind} />
-                {state.running && (
-                  <span className="text-xs text-[var(--color-muted)]">分析中…</span>
-                )}
-              </div>
-              {state.text.trim() ? (
-                <MarkdownContent
-                  text={normalizeDisplayText(state.text)}
-                  onCodeClick={setCodeLoc}
-                />
-              ) : state.running ? (
-                <p className="text-xs text-[var(--color-muted)]">正在检索代码并生成回答…</p>
-              ) : null}
-              <ToolTrace calls={state.toolCalls} />
-              <CitationList
-                citations={state.citations}
-                onCodeClick={(c) => openCitation(c.filePath, c.startLine, c.endLine)}
-              />
-            </>
           ) : (
             <p className="text-sm text-[var(--color-muted)]">
               问启动流程、核心模块、关键数据结构… 回答会带 path:line 引用，流程可用 mermaid 图展示。
@@ -147,7 +265,7 @@ export function RepoWorkspace({
             </button>
           ) : (
             <>
-              {state.text && (
+              {latestAnswer && (
                 <>
                   <button
                     type="button"
@@ -160,11 +278,7 @@ export function RepoWorkspace({
                   {saveError && <span className="text-red-400">{saveError}</span>}
                   <button
                     type="button"
-                    onClick={() => {
-                      reset();
-                      setSessionId(null);
-                      setHistory([]);
-                    }}
+                    onClick={clearConversation}
                     className="hover:text-[var(--color-fg)]"
                   >
                     清空

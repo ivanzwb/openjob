@@ -63,7 +63,18 @@ export function readRepoFile(
 ): ReturnType<typeof readFileRange> {
   const root = getRepoLocalPath(repoId);
   try {
-    return readFileRange(root, filePath, startLine, endLine);
+    const range = readFileRange(root, filePath, startLine, endLine);
+    // readFileRange 给 Agent 返回 `41|code`，行号是模型引用源码的必要依据；
+    // repo:readFile 则给 CodePanel 展示，面板自己会根据 startLine 画行号。若把同一份
+    // 编号文本直接交给 Shiki，最终就会变成 `41  41|code`，看起来还像隔了一空行。
+    const content = range.content
+      .split('\n')
+      .map((line, index) => {
+        const prefix = `${range.startLine + index}|`;
+        return line.startsWith(prefix) ? line.slice(prefix.length) : line;
+      })
+      .join('\n');
+    return { ...range, content };
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
     // 回答里的 path:line 是正则从文本里扫出来的，模型编的路径同样会变成可点链接。

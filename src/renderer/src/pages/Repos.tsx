@@ -321,7 +321,9 @@ export function Repos(): React.JSX.Element {
                   <RepoSummaryPanel repo={selected} />
                 </div>
               ) : (
-                <RepoWorkspace repo={selected} />
+                // 每个仓库有独立会话；切换仓库时必须重挂载，不能让上一仓库的
+                // optimistic history 在新仓库恢复数据库历史前短暂露出来。
+                <RepoWorkspace key={selected.id} repo={selected} />
               )}
             </div>
           </>

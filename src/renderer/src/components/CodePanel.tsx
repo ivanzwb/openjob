@@ -86,13 +86,23 @@ function CodePanelBody({
         {!loading && !error && html && (
           // shiki 的输出是自己生成的 HTML，不含用户内容以外的可执行片段
           <div
-            className="shiki-host font-mono text-xs leading-5"
+            className="shiki-host font-mono text-xs leading-4"
+            data-code-panel=""
             data-line-numbers=""
             dangerouslySetInnerHTML={{ __html: html }}
           />
         )}
-        {!loading && !error && !html && (
-          <pre className="font-mono text-xs leading-5 text-[var(--color-fg)]">{content}</pre>
+        {!loading && !error && !html && meta && (
+          <pre className="font-mono text-xs leading-4 text-[var(--color-fg)]">
+            {content.split('\n').map((line, index) => (
+              <span key={meta.startLine + index} className="block min-h-4">
+                <span className="inline-block w-14 select-none pr-4 text-right text-[var(--color-muted)]">
+                  {meta.startLine + index}
+                </span>
+                {line || ' '}
+              </span>
+            ))}
+          </pre>
         )}
       </div>
 
