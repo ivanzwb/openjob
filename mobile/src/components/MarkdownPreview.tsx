@@ -9,6 +9,7 @@ import {
   type MarkdownLine,
 } from '@shared/lib/markdownSegments';
 import { parseInlineMarkdown } from '@shared/lib/markdownInline';
+import { compactArtificialBlankLines } from '@shared/lib/codeDisplay';
 import { useTheme } from '../theme';
 
 const TABLE_CELL_MIN_WIDTH = 88;
@@ -191,6 +192,7 @@ function MarkdownParagraph({ lines, keyPrefix }: { lines: string[]; keyPrefix: s
 
 function CodeBlockView({ label, code }: { label: string; code: string }): React.JSX.Element {
   const theme = useTheme();
+  const displayCode = useMemo(() => compactArtificialBlankLines(code), [code]);
   return (
     <View
       style={{
@@ -204,9 +206,9 @@ function CodeBlockView({ label, code }: { label: string; code: string }): React.
       <Text style={{ color: theme.muted, fontSize: 10, marginBottom: 4 }}>{label}</Text>
       <Text
         selectable
-        style={{ color: theme.text, fontSize: 12, lineHeight: 18, fontFamily: 'monospace' }}
+        style={{ color: theme.text, fontSize: 12, lineHeight: 16, fontFamily: 'monospace' }}
       >
-        {code}
+        {displayCode}
       </Text>
     </View>
   );

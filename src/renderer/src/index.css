@@ -150,13 +150,14 @@ body {
 
 .shiki-host .line {
   display: block;
-  min-height: 1.25rem;
-}
-
-/* 右侧源码阅读器要接近编辑器密度；正文里的代码块仍保留更宽松的 1.25rem。 */
-.shiki-host[data-code-panel] .line {
   min-height: 1rem;
   line-height: 1rem;
+}
+
+/* 右侧源码阅读器再紧一档，尽量让 200 行窗口在有限高度内多露出上下文。 */
+.shiki-host[data-code-panel] .line {
+  min-height: 0.875rem;
+  line-height: 0.875rem;
 }
 
 .shiki-host[data-line-numbers] .line::before {

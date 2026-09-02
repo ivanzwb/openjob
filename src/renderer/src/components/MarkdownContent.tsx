@@ -5,6 +5,7 @@ import { useUiTheme } from '../lib/uiTheme';
 import { visibleMarkdownBlocks } from '../lib/markdownBlocks';
 import { parseMarkdownLine, parseMarkdownTextSegments } from '@shared/lib/markdownSegments';
 import { parseInlineMarkdown } from '@shared/lib/markdownInline';
+import { compactArtificialBlankLines } from '@shared/lib/codeDisplay';
 import {
   filterInlineAnnotations,
   renderTextWithInlineMarkers,
@@ -229,30 +230,31 @@ const LANG_ALIAS: Record<string, string> = {
 
 function CodeBlock({ lang, code }: { lang: string | null; code: string }): React.JSX.Element {
   const [html, setHtml] = useState<string | null>(null);
+  const displayCode = useMemo(() => compactArtificialBlankLines(code), [code]);
 
   useEffect(() => {
     let cancelled = false;
     const normalized = lang ? (LANG_ALIAS[lang.toLowerCase()] ?? lang.toLowerCase()) : null;
-    void highlightToHtml(code, normalized, 1).then((res) => {
+    void highlightToHtml(displayCode, normalized, 1).then((res) => {
       if (!cancelled) setHtml(res);
     });
     return () => {
       cancelled = true;
     };
-  }, [lang, code]);
+  }, [displayCode, lang]);
 
   if (html) {
     return (
       <div
-        className="shiki-host mb-3 mt-3 overflow-x-auto rounded bg-black/20 p-3 font-mono text-xs leading-5 first:mt-0"
+        className="shiki-host mb-3 mt-3 overflow-x-auto rounded bg-black/20 p-3 font-mono text-xs leading-4 first:mt-0"
         dangerouslySetInnerHTML={{ __html: html }}
       />
     );
   }
 
   return (
-    <pre className="mb-3 mt-3 overflow-x-auto rounded bg-black/20 p-3 font-mono text-xs leading-5 first:mt-0">
-      {code}
+    <pre className="mb-3 mt-3 overflow-x-auto rounded bg-black/20 p-3 font-mono text-xs leading-4 first:mt-0">
+      {displayCode}
     </pre>
   );
 }
