@@ -409,8 +409,33 @@ function buildSelectionHtml(
         speechBtn.disabled = speechDone;
       }
     }
+    /**
+     * 量 #content 而不是 body.scrollHeight：工具栏和标记菜单是绝对定位的浮层，
+     * 但绝对定位元素照样算进 scrollHeight。工具栏落在选区下方时会伸出正文底部，
+     * 量 body 就会把 WebView 撑高、收起时再缩回去，选一次词画面上下跳一次。
+     */
     function updateHeight() {
-      post({ type: 'height', height: Math.ceil(document.body.scrollHeight) });
+      post({ type: 'height', height: Math.ceil(content.offsetHeight) });
+    }
+    /**
+     * 系统的选择菜单（复制/分享）也贴着选区弹，WebView 里没有 API 能关掉它或挪走它。
+     * 所以我们的工具栏得整条让开它的高度，否则两条浮动栏叠在一起，哪个都点不准。
+     * 64 是给它留的余量：Android 和 iOS 的浮动菜单大致 40-48px 高。
+     */
+    const OS_MENU_CLEARANCE = 64;
+    function placeToolbar(rect) {
+      const height = toolbar.offsetHeight;
+      const below = rect.bottom + window.scrollY + OS_MENU_CLEARANCE;
+      const above = rect.top + window.scrollY - height - OS_MENU_CLEARANCE;
+      // 下方伸出正文就翻到上方。两个方向留同样的余量——翻上去的时候系统菜单
+      // 通常也在上面，只是这次夹在选区和工具栏中间。
+      const top = below + height <= content.offsetHeight ? below : Math.max(8, above);
+      const left = Math.min(
+        Math.max(8, rect.left + window.scrollX),
+        Math.max(8, window.innerWidth - toolbar.offsetWidth - 8),
+      );
+      toolbar.style.top = top + 'px';
+      toolbar.style.left = left + 'px';
     }
     function updateSelection() {
       const sel = window.getSelection();
@@ -433,11 +458,9 @@ function buildSelectionHtml(
       const start = selectionStartInContent(range) + leading;
       current = { text, start };
       const rect = range.getBoundingClientRect();
+      // 先显示再量：display:none 的元素 offsetHeight 是 0，定位会算错
       toolbar.style.display = 'flex';
-      const top = Math.max(8, rect.top + window.scrollY - toolbar.offsetHeight - 8);
-      const left = Math.min(Math.max(8, rect.left + window.scrollX), window.innerWidth - toolbar.offsetWidth - 8);
-      toolbar.style.top = top + 'px';
-      toolbar.style.left = left + 'px';
+      placeToolbar(rect);
       post({ type: 'selection', text, start });
       refreshToolbarState();
       updateHeight();
@@ -474,7 +497,8 @@ function buildSelectionHtml(
       }
       markerMenu.style.display = 'flex';
       markerMenu.style.left = Math.min(event.pageX, window.innerWidth - 140) + 'px';
-      markerMenu.style.top = Math.min(event.pageY + 6, document.body.scrollHeight - 80) + 'px';
+      // 夹在正文范围内：WebView 的高度按 #content 算，伸出去的部分会被裁掉
+      markerMenu.style.top = Math.min(event.pageY + 6, content.offsetHeight - 80) + 'px';
       updateHeight();
     }
     window.__clearSelection = function () {
