@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { extractSymbolNames, langForExt } from '@shared/repo/symbolScan';
 import { astWasUsed, extractSymbolsAst } from './treeSitter';
 
 const SKIP_DIRS = new Set([
@@ -11,63 +12,9 @@ const TEXT_EXT = new Set([
   '.c', '.cpp', '.h', '.hpp', '.cs', '.rb', '.php', '.swift', '.md',
 ]);
 
-const EXT_LANG: Record<string, string> = {
-  '.ts': 'typescript', '.tsx': 'typescript', '.js': 'javascript', '.jsx': 'javascript',
-  '.py': 'python', '.go': 'go', '.rs': 'rust', '.java': 'java', '.kt': 'kotlin',
-  '.rb': 'ruby', '.php': 'php', '.cs': 'csharp', '.swift': 'swift',
-};
-
-interface SymbolHit {
-  name: string;
-  kind: string;
-  line: number;
-}
-
-const PATTERNS: Record<string, RegExp[]> = {
-  typescript: [
-    /^(?:export\s+)?(?:async\s+)?function\s+(\w+)/,
-    /^(?:export\s+)?class\s+(\w+)/,
-    /^(?:export\s+)?interface\s+(\w+)/,
-    /^(?:export\s+)?type\s+(\w+)/,
-    /^(?:export\s+)?const\s+(\w+)\s*=/,
-  ],
-  javascript: [
-    /^(?:export\s+)?(?:async\s+)?function\s+(\w+)/,
-    /^(?:export\s+)?class\s+(\w+)/,
-    /^(?:export\s+)?const\s+(\w+)\s*=/,
-  ],
-  python: [/^def\s+(\w+)/, /^class\s+(\w+)/],
-  go: [/^func\s+(?:\([^)]*\)\s+)?(\w+)/, /^type\s+(\w+)\s+/],
-  rust: [/^(?:pub\s+)?fn\s+(\w+)/, /^(?:pub\s+)?struct\s+(\w+)/, /^(?:pub\s+)?enum\s+(\w+)/],
-  java: [
-    /^(?:public|private|protected).*(?:class|interface|enum)\s+(\w+)/,
-    /^(?:public|private|protected).*\s+(\w+)\s*\(/,
-  ],
-};
-
-function extractSymbols(content: string, lang: string): SymbolHit[] {
-  const patterns = PATTERNS[lang] ?? PATTERNS.typescript ?? [];
-  const lines = content.split(/\r?\n/);
-  const hits: SymbolHit[] = [];
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]!.trim();
-    if (!line || line.startsWith('//') || line.startsWith('#')) continue;
-    for (const re of patterns) {
-      const m = line.match(re);
-      if (m?.[1]) {
-        hits.push({
-          name: m[1],
-          kind: line.includes('class') ? 'class' : line.includes('interface') ? 'interface' : 'fn',
-          line: i + 1,
-        });
-        break;
-      }
-    }
-    if (hits.length >= 30) break;
-  }
-  return hits;
-}
+// 符号识别的模式和实现都在 shared：find_symbol 工具要用同一套，而手机端跑不了
+// tree-sitter，只能走这条正则路径。两处各存一份迟早会走岔。
+const extractSymbols = extractSymbolNames;
 
 /**
  * 生成带符号骨架的 repo map。
@@ -112,7 +59,7 @@ export async function buildRepoMapAsync(repoRoot: string, maxFiles = 80): Promis
           const content = readFileSync(full, 'utf8');
           let hits = await extractSymbolsAst(content, ext);
           if (!hits) {
-            hits = extractSymbols(content, EXT_LANG[ext] ?? 'typescript');
+            hits = extractSymbols(content, langForExt(ext) ?? 'typescript');
             regexFallbacks++;
           }
           for (const h of hits.slice(0, 12)) {

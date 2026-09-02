@@ -16,6 +16,10 @@ interface FakeRepoRow {
   localPath: string;
 }
 
+const REAL_PATHS = ['src/lib/agent.ts', 'src/lib/parse.ts', 'docs/README.md'];
+/** 模型爱编的那种路径：文件名是真的，前面整段前缀是想象出来的 */
+const MADE_UP_PATH = 'apps/cli/src/lib/agent.ts';
+
 const dbRef = vi.hoisted(() => ({ current: null as unknown }));
 
 vi.mock('../db', async () => {
@@ -31,13 +35,23 @@ vi.mock('./removeDir', async (importOriginal) => {
   return { removeDirTree: vi.fn(actual.removeDirTree) };
 });
 
-const { deleteRepo } = await import('./repository');
+const { deleteRepo, readRepoFile } = await import('./repository');
 
-/** 只实现 deleteRepo 用到的那两条 drizzle 链 */
-function fakeDb(row: FakeRepoRow | null) {
+/**
+ * 只实现这几个函数用到的 drizzle 链。
+ * get 走 repo 行（getRepo），all 走 repo_file 清单（listRepoFilePaths），靠终结方法区分。
+ */
+function fakeDb(row: FakeRepoRow | null, filePaths: string[] = []) {
   const state = { row, deleteCount: 0 };
   dbRef.current = {
-    select: () => ({ from: () => ({ where: () => ({ get: () => state.row }) }) }),
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          get: () => state.row,
+          all: () => filePaths.map((filePath) => ({ filePath })),
+        }),
+      }),
+    }),
     delete: () => ({
       where: () => ({
         run: () => {
@@ -122,5 +136,67 @@ describe('deleteRepo', () => {
 
     expect(state.deleteCount).toBe(0);
     expect(result).toEqual({ leftoverPath: null, reason: null });
+  });
+});
+
+/**
+ * 回答里的 path:line 是正则扫出来的，模型编的路径照样是可点链接。
+ * 点下去必须得到一句人话，而不是带本机绝对路径的 ENOENT。
+ */
+describe('readRepoFile', () => {
+  it('文件真的在就照常读', () => {
+    const localPath = makeRepoDir();
+    fakeDb({ id: 'r1', localPath }, ['README.md']);
+
+    const res = readRepoFile('r1', 'README.md');
+
+    expect(res.content).toContain('# repo');
+    expect(res.totalLines).toBe(1);
+  });
+
+  it('路径是编的时候，说清楚没有这个文件并给出相近的真实路径', () => {
+    const localPath = makeRepoDir();
+    fakeDb({ id: 'r1', localPath }, REAL_PATHS);
+
+    expect(() => readRepoFile('r1', MADE_UP_PATH)).toThrow(
+      /仓库里没有这个文件：apps\/cli\/src\/lib\/agent\.ts/,
+    );
+    expect(() => readRepoFile('r1', MADE_UP_PATH)).toThrow(/- src\/lib\/agent\.ts/);
+  });
+
+  it('报错里不出现本机绝对路径，也不出现 ENOENT', () => {
+    const localPath = makeRepoDir();
+    fakeDb({ id: 'r1', localPath }, REAL_PATHS);
+
+    let message = '';
+    try {
+      readRepoFile('r1', MADE_UP_PATH);
+    } catch (err) {
+      message = (err as Error).message;
+    }
+
+    expect(message).not.toContain(localPath);
+    expect(message).not.toContain('ENOENT');
+  });
+
+  it('找不到相近路径时不硬凑候选', () => {
+    const localPath = makeRepoDir();
+    fakeDb({ id: 'r1', localPath }, REAL_PATHS);
+
+    let message = '';
+    try {
+      readRepoFile('r1', 'server/handler.go');
+    } catch (err) {
+      message = (err as Error).message;
+    }
+
+    expect(message).toContain('仓库里没有这个文件：server/handler.go');
+    expect(message).not.toContain('相近');
+  });
+
+  it('本地目录整个没了时，仍然是「请重新 clone」而不是文件不存在', () => {
+    fakeDb({ id: 'r1', localPath: join(tmpdir(), 'openjob-never-existed-42') }, REAL_PATHS);
+
+    expect(() => readRepoFile('r1', 'src/lib/agent.ts')).toThrow(/重新 clone/);
   });
 });

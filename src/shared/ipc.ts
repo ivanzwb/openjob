@@ -1109,6 +1109,8 @@ export interface IpcInvokeMap {
   'repo:list': { req: void; res: Repo[] };
   'repo:get': { req: { id: string }; res: Repo };
   'repo:add': { req: RepoAddInput; res: DiagnosisJobStarted };
+  /** 把本地 clone 拉到上游最新并重建索引 */
+  'repo:update': { req: { id: string }; res: DiagnosisJobStarted };
   'repo:delete': { req: { id: string }; res: RepoDeleteResult };
   'repo:readFile': { req: RepoReadFileInput; res: RepoReadFileResult };
   'speech:save': { req: SpeechSaveInput; res: SpeechSnippet };
@@ -1307,6 +1309,7 @@ export const IPC_INVOKE_CHANNELS = [
   'repo:list',
   'repo:get',
   'repo:add',
+  'repo:update',
   'repo:delete',
   'repo:readFile',
   'speech:save',

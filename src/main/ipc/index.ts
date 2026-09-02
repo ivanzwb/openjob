@@ -79,6 +79,7 @@ import {
   getRepo,
   listRepos,
   readRepoFile,
+  updateRepoToLatest,
 } from '../repo';
 import { clearCache, fetchUrl, search } from '../search';
 import {
@@ -320,6 +321,9 @@ export function registerIpcHandlers(): void {
   handle('repo:get', ({ id }) => getRepo(id));
   handle('repo:add', (input) => ({
     jobId: startJob('克隆并索引仓库', (jobId) => cloneAndIndex(input.url, jobId)),
+  }));
+  handle('repo:update', ({ id }) => ({
+    jobId: startJob('更新仓库', (jobId) => updateRepoToLatest(id, jobId)),
   }));
   // 返回值带着删不掉的本地目录，界面要据此提示用户手删，不能丢
   handle('repo:delete', ({ id }) => deleteRepo(id));

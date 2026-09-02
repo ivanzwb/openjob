@@ -18,6 +18,7 @@ import {
 } from '../session';
 import { createRoleClient, createTierClient } from './client';
 import { agentTools, AGENT_TOOLS, GRAPH_TOOLS, runTool, type ToolContext } from './tools';
+import { decideToolKind } from './toolPolicy';
 import { getRepo, getRepoLocalPath } from '../repo/repository';
 import { mergedCodeAgentTools, runCodeRepoTool } from '../repo/tools';
 import { getCampaignRow } from '../campaign/repository';
@@ -166,11 +167,10 @@ async function runChat(
         company = null;
       }
     }
-    const toolsEnabled =
-      req.allowTools ?? (req.sessionKind !== 'nodeFollowUp' && !req.repoId);
     const decision = decideSearchTrigger(lastUser, company);
+    const toolKind = decideToolKind(req, decision.trigger === 'required');
     const instruction =
-      toolsEnabled && req.allowWebSearch ? triggerInstruction(decision) : null;
+      toolKind !== 'none' && req.allowWebSearch ? triggerInstruction(decision) : null;
     if (instruction) messages.unshift({ role: 'system', content: instruction });
 
     const toolCtx: ToolContext = { campaignId: req.campaignId ?? null, purpose: lastUser };
@@ -196,14 +196,12 @@ async function runChat(
     const totals: TokenUsage = { promptTokens: 0, completionTokens: 0 };
     let lastPromptTokens: number | null = null;
     const maxRounds = req.repoId ? MAX_REPO_TOOL_ROUNDS : MAX_TOOL_ROUNDS;
-    const tools = !toolsEnabled
-      ? undefined
-      : req.repoId
+    const tools =
+      toolKind === 'code'
         ? mergedCodeAgentTools(toolCtx)
-        : req.allowWebSearch || decision.trigger === 'required'
+        : toolKind === 'web'
           ? agentTools(toolCtx)
-          : // 不联网也仍可读写知识图谱，这部分不产生外部调用
-            toolCtx.campaignId
+          : toolKind === 'graph'
             ? GRAPH_TOOLS
             : undefined;
 

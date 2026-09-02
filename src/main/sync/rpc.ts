@@ -66,7 +66,7 @@ import {
   listRepos,
   readRepoFile,
 } from '../repo';
-import { cloneAndIndex } from '../repo/repository';
+import { cloneAndIndex, updateRepoToLatest } from '../repo/repository';
 import { fetchUrl, search } from '../search';
 import {
   deleteSpeechSnippet,
@@ -208,6 +208,10 @@ const RPC_HANDLERS: Partial<Record<IpcInvokeChannel, RpcHandler>> = {
   'repo:add': (p) => ({
     jobId: startJob('克隆并索引仓库', (jobId) => cloneAndIndex((p as { url: string }).url, jobId)),
   }),
+  // 手机端读的是同步来的快照，代码要更新只能请桌面端去拉
+  'repo:update': (p) => ({
+    jobId: startJob('更新仓库', (jobId) => updateRepoToLatest((p as { id: string }).id, jobId)),
+  }),
   'repo:delete': (p) => deleteRepo((p as { id: string }).id),
   'repo:readFile': (p) => {
     const input = p as IpcReq<'repo:readFile'>;
@@ -325,6 +329,7 @@ export function isJobChannel(channel: IpcInvokeChannel): boolean {
     'diagnosis:expandNode',
     'diagnosis:fetchIntel',
     'repo:add',
+    'repo:update',
   ].includes(channel);
 }
 

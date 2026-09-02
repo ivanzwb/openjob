@@ -1,10 +1,45 @@
 import type OpenAI from 'openai';
 import type { Citation } from '@shared/entities';
+import { formatPathSuggestions, suggestRepoPaths } from '@shared/repo/pathSuggest';
+import { normalizeRepoPath } from '@shared/repo/virtualFs';
 import { agentTools, runTool, type ToolContext, type ToolOutcome } from '../llm/tools';
-import { grepRepo, listDir, readFileRange } from './files';
+import { findSymbolRepo, globRepo, grepRepo, listDir, readFileRange } from './files';
 import { recordCodeRefs } from './repository';
+import { listRepoFilePaths } from './snapshot';
 
 export const CODE_REPO_TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
+  {
+    type: 'function',
+    function: {
+      name: 'glob',
+      description:
+        '按文件名或 glob 找文件，如 "agent.ts"、"src/**/*.ts"。只给文件名时在所有目录下找。' +
+        '不确定某个文件在哪就先用它，不要凭猜测写路径',
+      parameters: {
+        type: 'object',
+        properties: {
+          pattern: { type: 'string', description: '文件名或 glob 模式' },
+        },
+        required: ['pattern'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'find_symbol',
+      description:
+        '按名字找函数/类/接口/类型的定义处，返回 path:line。' +
+        '想知道某个函数写在哪就用它——grep 找到的多是调用点，不是定义',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: '符号名，支持前缀和子串' },
+        },
+        required: ['name'],
+      },
+    },
+  },
   {
     type: 'function',
     function: {
@@ -62,6 +97,24 @@ export async function runCodeRepoTool(
   signal?: AbortSignal,
   ctx?: ToolContext & { repoId?: string },
 ): Promise<ToolOutcome> {
+  if (name === 'glob') {
+    const pattern = String(args['pattern'] ?? '');
+    return {
+      content: globRepo(repoRoot, pattern),
+      summary: `glob ${pattern}`,
+      citations: [],
+    };
+  }
+
+  if (name === 'find_symbol') {
+    const symbol = String(args['name'] ?? '');
+    return {
+      content: findSymbolRepo(repoRoot, symbol),
+      summary: `find_symbol ${symbol}`,
+      citations: [],
+    };
+  }
+
   if (name === 'list_dir') {
     const path = String(args['path'] ?? '.');
     const content = listDir(repoRoot, path);
@@ -76,7 +129,24 @@ export async function runCodeRepoTool(
     const path = String(args['path'] ?? '');
     const start = typeof args['start_line'] === 'number' ? args['start_line'] : 1;
     const end = typeof args['end_line'] === 'number' ? args['end_line'] : undefined;
-    const { content, startLine, endLine } = readFileRange(repoRoot, path, start, end);
+
+    let range;
+    try {
+      range = readFileRange(repoRoot, path, start, end);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+      // 抛出去只会被 agent 循环包成「工具执行失败」，把本机绝对路径塞进上下文，
+      // 而模型仍然不知道真实路径长什么样，往往接着编下一个。回一条照着就能改的结果。
+      const suggestions = ctx?.repoId ? suggestRepoPaths(listRepoFilePaths(ctx.repoId), path) : [];
+      return {
+        content:
+          `文件不存在：${normalizeRepoPath(path)}${formatPathSuggestions(suggestions)}\n` +
+          `用 glob 按文件名找到真实路径再读，不要凭猜测引用。`,
+        summary: `read ${path} 未找到`,
+        citations: [],
+      };
+    }
+    const { content, startLine, endLine } = range;
 
     if (ctx?.repoId) {
       recordCodeRefs(ctx.repoId, [{ filePath: path, startLine, endLine, snippet: content }]);

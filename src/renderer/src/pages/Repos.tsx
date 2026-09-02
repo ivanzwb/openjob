@@ -58,8 +58,10 @@ export function Repos(): React.JSX.Element {
   const [git, setGit] = useState<GitStatus | null>(null);
   const { active } = useJobProgress();
   const cloneJob = useJobFeedback('克隆并索引仓库');
+  const updateJob = useJobFeedback('更新仓库');
   const toast = useToast();
   const cloneWasRunning = useRef(false);
+  const updateWasRunning = useRef(false);
 
   useEffect(() => {
     // 失败显示在源码页本地；成功用 toast 轻提示即可
@@ -68,6 +70,14 @@ export function Repos(): React.JSX.Element {
     }
     cloneWasRunning.current = cloneJob.isRunning;
   }, [cloneJob.isRunning, cloneJob.error, cloneJob.message, toast]);
+
+  useEffect(() => {
+    // 「已是最新」和「快照改了几个文件」都靠这条提示告诉用户，别让人以为没反应
+    if (updateWasRunning.current && !updateJob.isRunning && !updateJob.error && updateJob.message) {
+      toast(updateJob.message, { variant: 'success' });
+    }
+    updateWasRunning.current = updateJob.isRunning;
+  }, [updateJob.isRunning, updateJob.error, updateJob.message, toast]);
 
   useEffect(() => {
     void invoke('repo:gitStatus', undefined).then(setGit);
@@ -105,6 +115,13 @@ export function Repos(): React.JSX.Element {
     } catch (err) {
       alert(err instanceof Error ? err.message : String(err));
     }
+  };
+
+  const pull = (id: string): void => {
+    if (updateJob.isRunning) return;
+    void runTask(`repo:update:${id}`, () => invoke('repo:update', { id })).catch((err: unknown) => {
+      alert(err instanceof Error ? err.message : String(err));
+    });
   };
 
   const remove = (id: string): void => {
@@ -177,6 +194,27 @@ export function Repos(): React.JSX.Element {
           </div>
         )}
 
+        {updateJob.isRunning && (
+          <div className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-xs">
+            <div className="font-medium">{updateJob.statusMessage ?? '更新中…'}</div>
+            {updateJob.progress != null && (
+              <div className="mt-2 h-1.5 rounded-full bg-[var(--color-border)]">
+                <div
+                  className="h-full rounded-full bg-[var(--color-accent)]"
+                  style={{ width: `${Math.round(updateJob.progress * 100)}%` }}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {updateJob.error && (
+          <div className="rounded border border-red-900/70 bg-red-950/30 p-3 text-xs text-red-300">
+            <div className="font-medium">更新仓库失败</div>
+            <div className="mt-1 whitespace-pre-wrap">{updateJob.error}</div>
+          </div>
+        )}
+
         {leftover?.leftoverPath && (
           <div className="rounded border border-amber-900 bg-amber-950/40 p-3 text-xs text-amber-300">
             <div className="font-medium">仓库条目已删除，但本地目录没删掉</div>
@@ -229,14 +267,25 @@ export function Repos(): React.JSX.Element {
                     {r.languages.length > 0 && <span>{r.languages.join(', ')}</span>}
                   </div>
                 </button>
-                <TaskButton
-                  taskKey={`repo:delete:${r.id}`}
-                  onClick={() => remove(r.id)}
-                  runningLabel="删除中…"
-                  className="mt-1 text-xs text-[var(--color-muted)] hover:text-red-400 disabled:opacity-50"
-                >
-                  删除
-                </TaskButton>
+                <div className="mt-1 flex items-center gap-3">
+                  <TaskButton
+                    taskKey={`repo:update:${r.id}`}
+                    onClick={() => pull(r.id)}
+                    disabled={updateJob.isRunning || r.status === 'indexing'}
+                    runningLabel="更新中…"
+                    className="text-xs text-[var(--color-muted)] hover:text-[var(--color-accent)] disabled:opacity-50"
+                  >
+                    更新到最新
+                  </TaskButton>
+                  <TaskButton
+                    taskKey={`repo:delete:${r.id}`}
+                    onClick={() => remove(r.id)}
+                    runningLabel="删除中…"
+                    className="text-xs text-[var(--color-muted)] hover:text-red-400 disabled:opacity-50"
+                  >
+                    删除
+                  </TaskButton>
+                </div>
               </li>
             ))
           )}

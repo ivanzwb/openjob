@@ -1,5 +1,10 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
+import { globFromPaths } from '@shared/repo/virtualFs';
+import { findSymbolsInFiles, formatSymbolMatches } from '@shared/repo/symbolScan';
+
+/** 超过这个大小的文件不进内容扫描：压缩产物和数据文件扫了也没意义 */
+const MAX_SCAN_FILE_BYTES = 512_000;
 
 const SKIP_DIRS = new Set([
   '.git',
@@ -43,6 +48,63 @@ export function listDir(repoRoot: string, relPath = '.'): string {
   }
 
   return lines.join('\n') || '（空目录）';
+}
+
+/**
+ * 仓库里的相对路径清单，给 glob 用。
+ *
+ * 不复用 repo_file 快照：快照有条数和体积上限，桌面端手上是完整的 clone，
+ * 按名字找文件这件事没道理比手机端找得少。上限只是防着超大仓库把内存撑爆。
+ */
+export function listAllFiles(repoRoot: string, max = 20_000): string[] {
+  const out: string[] = [];
+
+  const walk = (dir: string, relBase: string): void => {
+    if (out.length >= max) return;
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (out.length >= max) return;
+      if (SKIP_DIRS.has(e.name)) continue;
+      const rel = relBase === '.' ? e.name : `${relBase}/${e.name}`;
+      if (e.isDirectory()) {
+        walk(join(dir, e.name), rel);
+      } else {
+        out.push(rel);
+      }
+    }
+  };
+
+  walk(repoRoot, '.');
+  return out;
+}
+
+export function globRepo(repoRoot: string, pattern: string): string {
+  const hits = globFromPaths(listAllFiles(repoRoot), pattern);
+  return hits.join('\n') || '未找到匹配的文件';
+}
+
+/** 惰性读盘：符号扫描一次要过整个仓库，没必要先把所有文件内容堆进内存 */
+function* iterateTextFiles(repoRoot: string): Generator<{ path: string; content: string }> {
+  for (const rel of listAllFiles(repoRoot)) {
+    const dot = rel.lastIndexOf('.');
+    if (dot < 0 || !TEXT_EXT.has(rel.slice(dot))) continue;
+    const full = join(repoRoot, rel);
+    try {
+      if (statSync(full).size > MAX_SCAN_FILE_BYTES) continue;
+      yield { path: rel, content: readFileSync(full, 'utf8') };
+    } catch {
+      continue;
+    }
+  }
+}
+
+export function findSymbolRepo(repoRoot: string, name: string): string {
+  return formatSymbolMatches(findSymbolsInFiles(iterateTextFiles(repoRoot), name));
 }
 
 export function readFileRange(

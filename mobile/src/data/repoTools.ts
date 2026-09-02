@@ -1,12 +1,20 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import type { Citation } from '@shared/entities';
 import {
+  globFromPaths,
   grepFileContents,
   listDirFromPaths,
   normalizeRepoPath,
   readFileRangeFromContent,
 } from '@shared/repo/virtualFs';
-import { getRepoFileContent, loadRepoFiles, recordCodeRefs } from './repoFiles';
+import { formatPathSuggestions, suggestRepoPaths } from '@shared/repo/pathSuggest';
+import { findSymbolsInFiles, formatSymbolMatches } from '@shared/repo/symbolScan';
+import {
+  getRepoFileContent,
+  listRepoFilePaths,
+  loadRepoFiles,
+  recordCodeRefs,
+} from './repoFiles';
 
 export interface ToolOutcome {
   content: string;
@@ -20,6 +28,26 @@ export function runCodeRepoTool(
   db: SQLiteDatabase,
   repoId: string,
 ): ToolOutcome {
+  if (name === 'glob') {
+    const pattern = String(args['pattern'] ?? '');
+    const hits = globFromPaths(listRepoFilePaths(db, repoId), pattern);
+    return {
+      content: hits.join('\n') || '未找到匹配的文件',
+      summary: `glob ${pattern}`,
+      citations: [],
+    };
+  }
+
+  if (name === 'find_symbol') {
+    const symbol = String(args['name'] ?? '');
+    const matches = findSymbolsInFiles(loadRepoFiles(db, repoId), symbol);
+    return {
+      content: formatSymbolMatches(matches),
+      summary: `find_symbol ${symbol}`,
+      citations: [],
+    };
+  }
+
   if (name === 'list_dir') {
     const path = String(args['path'] ?? '.');
     const paths = loadRepoFiles(db, repoId).map((f) => f.path);
@@ -33,8 +61,12 @@ export function runCodeRepoTool(
     const end = typeof args['end_line'] === 'number' ? args['end_line'] : undefined;
     const raw = getRepoFileContent(db, repoId, path);
     if (!raw) {
+      // 光说「不存在」模型往往接着编下一个路径，给几条真实的它才改得动
+      const suggestions = suggestRepoPaths(listRepoFilePaths(db, repoId), path);
       return {
-        content: `文件不存在或未同步: ${path}`,
+        content:
+          `文件不存在或未同步：${path}${formatPathSuggestions(suggestions)}\n` +
+          `用 glob 按文件名找到真实路径再读，不要凭猜测引用。`,
         summary: `read ${path} 失败`,
         citations: [],
       };
@@ -84,6 +116,38 @@ export function runCodeRepoTool(
 }
 
 export const CODE_REPO_TOOL_DEFS = [
+  {
+    type: 'function' as const,
+    function: {
+      name: 'glob',
+      description:
+        '按文件名或 glob 找文件，如 "agent.ts"、"src/**/*.ts"。只给文件名时在所有目录下找。' +
+        '不确定某个文件在哪就先用它，不要凭猜测写路径',
+      parameters: {
+        type: 'object',
+        properties: {
+          pattern: { type: 'string', description: '文件名或 glob 模式' },
+        },
+        required: ['pattern'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'find_symbol',
+      description:
+        '按名字找函数/类/接口/类型的定义处，返回 path:line。' +
+        '想知道某个函数写在哪就用它——grep 找到的多是调用点，不是定义',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: '符号名，支持前缀和子串' },
+        },
+        required: ['name'],
+      },
+    },
+  },
   {
     type: 'function' as const,
     function: {
