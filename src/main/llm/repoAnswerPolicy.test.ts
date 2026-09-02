@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildRepoSynthesisMessages,
-  hasMermaidDiagram,
   looksLikeToolProtocol,
-  needsFlowDiagram,
+  shouldRetryRepoSynthesis,
 } from './repoAnswerPolicy';
 
 describe('looksLikeToolProtocol', () => {
@@ -59,6 +58,8 @@ describe('buildRepoSynthesisMessages', () => {
     expect(messages[1]?.content).toContain('## src/agent.ts');
     expect(messages[1]?.content).toContain('41|while (next)');
     expect(messages.some((message) => message.content.includes('assistant.tool_calls'))).toBe(false);
+    expect(messages.some((message) => message.content.includes('<tool_call'))).toBe(false);
+    expect(messages[0]?.content).toContain('第一行必须以“结论：”开头');
   });
 
   it('限制证据体积，避免总结请求再次撑爆上下文', () => {
@@ -67,20 +68,33 @@ describe('buildRepoSynthesisMessages', () => {
     ]);
     expect(messages[1]!.content.length).toBeLessThan(61_000);
   });
-});
 
-describe('流程图判定', () => {
-  it.each(['ReAct loop 是怎么实现的', '启动流程是什么', '解释请求生命周期', 'architecture'])(
-    '流程类问题要求 Mermaid：%s',
-    (question) => expect(needsFlowDiagram(question)).toBe(true),
-  );
-
-  it('查一个配置值不强制画图', () => {
-    expect(needsFlowDiagram('默认超时时间是多少')).toBe(false);
+  it('由模型根据源码语义判断是否适合生成流程图', () => {
+    const messages = buildRepoSynthesisMessages('解释 ReAct loop', [
+      { path: 'agent.ts', content: '1|while (next) {}' },
+    ]);
+    expect(messages[0]!.content).toContain('先根据问题和源码证据判断');
+    expect(messages[0]!.content).toContain('不存在时用一句话说明不适合生成流程图');
   });
 
-  it('只接受完整的 mermaid 围栏', () => {
-    expect(hasMermaidDiagram('```mermaid\nflowchart TD\nA-->B\n```')).toBe(true);
-    expect(hasMermaidDiagram('mermaid flowchart TD A-->B')).toBe(false);
+  it('不可交付后的重写进入严格定稿模式', () => {
+    const messages = buildRepoSynthesisMessages(
+      '解释 Agent',
+      [{ path: 'agent.ts', content: '1|export function run() {}' }],
+      true,
+    );
+    expect(messages[0]!.content).toContain('上一次输出不可交付');
+    expect(messages[1]!.content).toContain('请现在提交最终报告');
+  });
+});
+
+describe('最终回答判定', () => {
+  it('有效文字回答不会因为没有 Mermaid 被重试', () => {
+    expect(
+      shouldRetryRepoSynthesis({
+        text: '结论：源码只定义了一个静态配置，不存在可验证的执行流程。',
+        truncated: false,
+      }),
+    ).toBe(false);
   });
 });

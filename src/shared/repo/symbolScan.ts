@@ -144,6 +144,49 @@ export function findSymbolsInFiles(
   return ranked.slice(0, limit).map((r) => r.match);
 }
 
+/** 桌面端异步遍历版本：每个文件读取之间把事件循环还给 Electron，避免窗口假死。 */
+export async function findSymbolsInAsyncFiles(
+  files: AsyncIterable<{ path: string; content: string }>,
+  query: string,
+  limit = 40,
+): Promise<SymbolMatch[]> {
+  const target = query.trim().toLowerCase();
+  if (!target) return [];
+
+  const ranked: Array<{ match: SymbolMatch; rank: number }> = [];
+  for await (const file of files) {
+    const lang = langForPath(file.path);
+    if (!lang) continue;
+    const patterns = SYMBOL_PATTERNS[lang] ?? SYMBOL_PATTERNS.typescript!;
+    const lines = file.content.split(/\r?\n/);
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]!.trim();
+      const name = symbolOnLine(line, patterns);
+      if (!name) continue;
+      const rank = rankName(name, target);
+      if (rank === 0) continue;
+      ranked.push({
+        match: {
+          path: normalizeRepoPath(file.path),
+          name,
+          kind: kindOfLine(line),
+          line: i + 1,
+        },
+        rank,
+      });
+    }
+  }
+
+  ranked.sort(
+    (a, b) =>
+      b.rank - a.rank ||
+      a.match.path.length - b.match.path.length ||
+      a.match.path.localeCompare(b.match.path) ||
+      a.match.line - b.match.line,
+  );
+  return ranked.slice(0, limit).map((entry) => entry.match);
+}
+
 export function formatSymbolMatches(matches: SymbolMatch[]): string {
   if (matches.length === 0) return '未找到同名符号定义';
   return matches.map((m) => `${m.path}:${m.line}: ${m.kind} ${m.name}`).join('\n');

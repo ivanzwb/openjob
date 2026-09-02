@@ -1,7 +1,16 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
+import {
+  readdir as readdirAsync,
+  readFile as readFileAsync,
+  stat as statAsync,
+} from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 import { globFromPaths } from '@shared/repo/virtualFs';
-import { findSymbolsInFiles, formatSymbolMatches } from '@shared/repo/symbolScan';
+import {
+  findSymbolsInAsyncFiles,
+  findSymbolsInFiles,
+  formatSymbolMatches,
+} from '@shared/repo/symbolScan';
 
 /** 超过这个大小的文件不进内容扫描：压缩产物和数据文件扫了也没意义 */
 const MAX_SCAN_FILE_BYTES = 512_000;
@@ -50,6 +59,19 @@ export function listDir(repoRoot: string, relPath = '.'): string {
   return lines.join('\n') || '（空目录）';
 }
 
+export async function listDirAsync(repoRoot: string, relPath = '.'): Promise<string> {
+  const dir = safeRepoPath(repoRoot, relPath);
+  const entries = await readdirAsync(dir, { withFileTypes: true });
+  const lines = entries
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .filter((entry) => !SKIP_DIRS.has(entry.name))
+    .map((entry) => {
+      const prefix = entry.isDirectory() ? '[dir] ' : '[file]';
+      return `${prefix}${join(relPath === '.' ? '' : relPath, entry.name).replace(/\\/g, '/')}`;
+    });
+  return lines.join('\n') || '（空目录）';
+}
+
 /**
  * 仓库里的相对路径清单，给 glob 用。
  *
@@ -83,8 +105,40 @@ export function listAllFiles(repoRoot: string, max = 20_000): string[] {
   return out;
 }
 
+export async function listAllFilesAsync(
+  repoRoot: string,
+  max = 20_000,
+): Promise<string[]> {
+  const out: string[] = [];
+
+  const walk = async (dir: string, relBase: string): Promise<void> => {
+    if (out.length >= max) return;
+    let entries;
+    try {
+      entries = await readdirAsync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (out.length >= max) return;
+      if (SKIP_DIRS.has(entry.name)) continue;
+      const rel = relBase === '.' ? entry.name : `${relBase}/${entry.name}`;
+      if (entry.isDirectory()) await walk(join(dir, entry.name), rel);
+      else out.push(rel);
+    }
+  };
+
+  await walk(repoRoot, '.');
+  return out;
+}
+
 export function globRepo(repoRoot: string, pattern: string): string {
   const hits = globFromPaths(listAllFiles(repoRoot), pattern);
+  return hits.join('\n') || '未找到匹配的文件';
+}
+
+export async function globRepoAsync(repoRoot: string, pattern: string): Promise<string> {
+  const hits = globFromPaths(await listAllFilesAsync(repoRoot), pattern);
   return hits.join('\n') || '未找到匹配的文件';
 }
 
@@ -107,6 +161,28 @@ export function findSymbolRepo(repoRoot: string, name: string): string {
   return formatSymbolMatches(findSymbolsInFiles(iterateTextFiles(repoRoot), name));
 }
 
+async function* iterateTextFilesAsync(
+  repoRoot: string,
+): AsyncGenerator<{ path: string; content: string }> {
+  for (const rel of await listAllFilesAsync(repoRoot)) {
+    const dot = rel.lastIndexOf('.');
+    if (dot < 0 || !TEXT_EXT.has(rel.slice(dot))) continue;
+    const full = join(repoRoot, rel);
+    try {
+      if ((await statAsync(full)).size > MAX_SCAN_FILE_BYTES) continue;
+      yield { path: rel, content: await readFileAsync(full, 'utf8') };
+    } catch {
+      continue;
+    }
+  }
+}
+
+export async function findSymbolRepoAsync(repoRoot: string, name: string): Promise<string> {
+  return formatSymbolMatches(
+    await findSymbolsInAsyncFiles(iterateTextFilesAsync(repoRoot), name),
+  );
+}
+
 export function readFileRange(
   repoRoot: string,
   relPath: string,
@@ -122,6 +198,23 @@ export function readFileRange(
   const slice = lines.slice(start - 1, end);
 
   const numbered = slice.map((l, i) => `${start + i}|${l}`).join('\n');
+  return { content: numbered, totalLines: total, startLine: start, endLine: end };
+}
+
+export async function readFileRangeAsync(
+  repoRoot: string,
+  relPath: string,
+  startLine = 1,
+  endLine?: number,
+): Promise<{ content: string; totalLines: number; startLine: number; endLine: number }> {
+  const file = safeRepoPath(repoRoot, relPath);
+  const raw = await readFileAsync(file, 'utf8');
+  const lines = raw.split(/\r?\n/);
+  const total = lines.length;
+  const start = Math.max(1, startLine);
+  const end = Math.min(endLine ?? start + 199, total);
+  const slice = lines.slice(start - 1, end);
+  const numbered = slice.map((line, index) => `${start + index}|${line}`).join('\n');
   return { content: numbered, totalLines: total, startLine: start, endLine: end };
 }
 
@@ -175,8 +268,61 @@ export function grepRepo(
   return results.join('\n') || '未找到匹配';
 }
 
+export async function grepRepoAsync(
+  repoRoot: string,
+  pattern: string,
+  relPath = '.',
+  maxMatches = 40,
+): Promise<string> {
+  let regex: RegExp;
+  try {
+    regex = new RegExp(pattern, 'i');
+  } catch {
+    regex = new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+  }
+
+  const results: string[] = [];
+  const root = safeRepoPath(repoRoot, relPath);
+
+  const walk = async (dir: string): Promise<void> => {
+    if (results.length >= maxMatches) return;
+    let entries;
+    try {
+      entries = await readdirAsync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (results.length >= maxMatches) return;
+      const full = join(dir, entry.name);
+      const rel = relative(repoRoot, full).replace(/\\/g, '/');
+      if (entry.isDirectory()) {
+        if (!SKIP_DIRS.has(entry.name)) await walk(full);
+        continue;
+      }
+      if (!TEXT_EXT.has(entry.name.slice(entry.name.lastIndexOf('.')))) continue;
+      try {
+        if ((await statAsync(full)).size > MAX_SCAN_FILE_BYTES) continue;
+        const hits = searchContent(await readFileAsync(full, 'utf8'), regex, rel);
+        for (const hit of hits) {
+          results.push(hit);
+          if (results.length >= maxMatches) return;
+        }
+      } catch {
+        continue;
+      }
+    }
+  };
+
+  await walk(root);
+  return results.join('\n') || '未找到匹配';
+}
+
 function searchFile(file: string, regex: RegExp, rel: string): string[] {
-  const content = readFileSync(file, 'utf8');
+  return searchContent(readFileSync(file, 'utf8'), regex, rel);
+}
+
+function searchContent(content: string, regex: RegExp, rel: string): string[] {
   const lines = content.split(/\r?\n/);
   const out: string[] = [];
   for (let i = 0; i < lines.length; i++) {

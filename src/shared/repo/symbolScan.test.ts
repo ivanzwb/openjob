@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { extractSymbolNames, findSymbolsInFiles, formatSymbolMatches } from './symbolScan';
+import {
+  extractSymbolNames,
+  findSymbolsInAsyncFiles,
+  findSymbolsInFiles,
+  formatSymbolMatches,
+} from './symbolScan';
 
 const TS = `import { x } from './x';
 
@@ -99,5 +104,20 @@ describe('formatSymbolMatches', () => {
     expect(formatSymbolMatches([{ path: 'a.ts', name: 'f', kind: 'fn', line: 7 }])).toBe(
       'a.ts:7: fn f',
     );
+  });
+});
+
+describe('findSymbolsInAsyncFiles', () => {
+  it('异步文件流与同步扫描返回相同定义', async () => {
+    async function* files(): AsyncGenerator<{ path: string; content: string }> {
+      yield { path: 'src/agent.ts', content: TS };
+      await Promise.resolve();
+      yield { path: 'src/other.ts', content: 'export function unrelated() {}' };
+    }
+
+    const hits = await findSymbolsInAsyncFiles(files(), 'runAgent');
+    expect(hits).toEqual([
+      { path: 'src/agent.ts', name: 'runAgent', kind: 'fn', line: 3 },
+    ]);
   });
 });

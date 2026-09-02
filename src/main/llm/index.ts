@@ -28,10 +28,9 @@ import { normalizeChatMessages } from './messages';
 import { buildRepoAnalyzeSystem } from '@shared/prompts/repo';
 import {
   buildRepoSynthesisMessages,
-  hasMermaidDiagram,
   looksLikeToolProtocol,
-  needsFlowDiagram,
   READ_CODE_BEFORE_ANSWER,
+  shouldRetryRepoSynthesis,
 } from './repoAnswerPolicy';
 
 /** 工具调用的最大轮数，防止 Agent 陷入反复检索 */
@@ -205,9 +204,11 @@ async function runChat(
     let lastPromptTokens: number | null = null;
     let successfulReads = 0;
     const repoReadEvidence: Array<{ path: string; content: string }> = [];
+    const repoReadRanges: Array<{ path: string; startLine: number; endLine: number }> = [];
+    const repoCandidates: Array<{ path: string; line: number }> = [];
+    let autoEvidenceHydrated = false;
     let forceFinalAnswer = false;
     let synthesisAttempts = 0;
-    const diagramRequired = Boolean(req.repoId && needsFlowDiagram(lastUser));
     const maxRounds = req.repoId ? MAX_REPO_TOOL_ROUNDS : MAX_TOOL_ROUNDS;
     const lastRound = req.repoId
       ? maxRounds + MAX_REPO_SYNTHESIS_ATTEMPTS - 1
@@ -227,7 +228,11 @@ async function runChat(
       if (finalOnly) synthesisAttempts++;
       const roundMessages =
         finalOnly && req.repoId
-          ? buildRepoSynthesisMessages(lastUser, repoReadEvidence)
+          ? buildRepoSynthesisMessages(
+              lastUser,
+              repoReadEvidence,
+              synthesisAttempts > 1,
+            )
           : messages;
 
       const stream = await openStream(client, controller, {
@@ -296,6 +301,78 @@ async function runChat(
       if (pending.size === 0) {
         if (!req.repoId) break;
 
+        // 模型经常先 grep 到 219 行，却随后 read_file(path) 只读默认的 1–200 行，
+        // 然后因证据缺口在总结阶段再次吐工具协议。把尚未被读取区间覆盖的定位结果
+        // 自动补读一小段，再用隔离上下文总结；这相当于替用户完成那次手动重试。
+        if (repoRoot && repoCandidates.length > 0 && !autoEvidenceHydrated) {
+          const selected: Array<{ path: string; line: number }> = [];
+          for (const candidate of repoCandidates) {
+            const covered = repoReadRanges.some(
+              (range) =>
+                range.path === candidate.path &&
+                candidate.line >= range.startLine &&
+                candidate.line <= range.endLine,
+            );
+            const nearSelected = selected.some(
+              (item) =>
+                item.path === candidate.path && Math.abs(item.line - candidate.line) <= 80,
+            );
+            if (!covered && !nearSelected) selected.push(candidate);
+            if (selected.length >= 3) break;
+          }
+
+          let hydrated = false;
+          autoEvidenceHydrated = true;
+          for (const candidate of selected) {
+            const args = {
+              path: candidate.path,
+              start_line: Math.max(1, candidate.line - 30),
+              end_line: candidate.line + 100,
+            };
+            const startedAt = Date.now();
+            const outcome = await runCodeRepoTool(
+              'read_file',
+              args,
+              repoRoot,
+              controller.signal,
+              { ...toolCtx, repoId: req.repoId },
+            );
+            const durationMs = Date.now() - startedAt;
+            if (outcome.citations.length === 0) continue;
+
+            const citation = outcome.citations[0]!;
+            successfulReads++;
+            usedCode = true;
+            hydrated = true;
+            repoReadEvidence.push({ path: candidate.path, content: outcome.content });
+            repoReadRanges.push({
+              path: candidate.path,
+              startLine: citation.startLine!,
+              endLine: citation.endLine!,
+            });
+            citations.push(...outcome.citations);
+            emit('stream:tool', {
+              streamId,
+              toolName: 'read_file',
+              args,
+              resultSummary: outcome.summary,
+              durationMs,
+            });
+            pendingToolRecords.push({
+              name: 'read_file',
+              args,
+              summary: outcome.summary,
+              durationMs,
+              resultChars: outcome.content.length,
+              tokenCost: null,
+            });
+          }
+          if (hydrated) {
+            forceFinalAnswer = true;
+            continue;
+          }
+        }
+
         if (successfulReads === 0) {
           if (round >= maxRounds) {
             throw new Error('代码 Agent 未能打开源码，已停止生成以避免无依据回答，请重试');
@@ -306,18 +383,19 @@ async function runChat(
         }
 
         const protocolLeak = looksLikeToolProtocol(roundText);
-        const missingDiagram = diagramRequired && !hasMermaidDiagram(roundText);
         const truncated = roundFinishReason === 'length';
-        const unusable = !roundText.trim() || protocolLeak || missingDiagram || truncated;
+        // 是否适合画流程图由模型根据已读源码判断；应用层只拦截真正不可交付的结果。
+        const unusable = shouldRetryRepoSynthesis({
+          text: roundText,
+          truncated,
+        });
         if (unusable) {
           if (finalOnly && synthesisAttempts >= MAX_REPO_SYNTHESIS_ATTEMPTS) {
             const reason = truncated
               ? '模型最终回答被截断'
               : protocolLeak
                 ? '模型把工具协议当成了最终回答'
-                : missingDiagram
-                  ? '流程类回答缺少 Mermaid 流程图'
-                  : '模型没有生成最终回答';
+                : '模型没有生成最终回答';
             throw new Error(`${reason}，已停止输出，请重试`);
           }
           // 正文草稿可回喂给模型重写；协议泄漏不能回喂，否则它会继续模仿 XML。
@@ -382,12 +460,24 @@ async function runChat(
         if (['glob', 'find_symbol', 'list_dir', 'read_file', 'grep'].includes(call.name)) {
           usedCode = true;
         }
-        if (call.name === 'read_file' && outcome.citations.length > 0) successfulReads++;
         if (call.name === 'read_file' && outcome.citations.length > 0) {
+          successfulReads++;
+          const citation = outcome.citations[0]!;
           repoReadEvidence.push({
-            path: String(args['path'] ?? outcome.citations[0]?.filePath ?? 'unknown'),
+            path: String(args['path'] ?? citation.filePath ?? 'unknown'),
             content: outcome.content,
           });
+          repoReadRanges.push({
+            path: String(args['path'] ?? citation.filePath ?? 'unknown'),
+            startLine: citation.startLine!,
+            endLine: citation.endLine!,
+          });
+        }
+        if (call.name === 'grep' || call.name === 'find_symbol') {
+          for (const citation of outcome.citations) {
+            if (!citation.filePath || citation.startLine == null) continue;
+            repoCandidates.push({ path: citation.filePath, line: citation.startLine });
+          }
         }
         // grep 的命中只是候选位置，不能在最终引用区伪装成“已读证据”。
         if (!repoRoot || call.name === 'read_file' || call.name === 'web_search' || call.name === 'fetch_url') {

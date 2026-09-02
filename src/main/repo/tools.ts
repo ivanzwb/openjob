@@ -3,7 +3,13 @@ import type { Citation } from '@shared/entities';
 import { formatPathSuggestions, suggestRepoPaths } from '@shared/repo/pathSuggest';
 import { normalizeRepoPath } from '@shared/repo/virtualFs';
 import { agentTools, runTool, type ToolContext, type ToolOutcome } from '../llm/tools';
-import { findSymbolRepo, globRepo, grepRepo, listDir, readFileRange } from './files';
+import {
+  findSymbolRepoAsync,
+  globRepoAsync,
+  grepRepoAsync,
+  listDirAsync,
+  readFileRangeAsync,
+} from './files';
 import { recordCodeRefs } from './repository';
 import { listRepoFilePaths } from './snapshot';
 
@@ -100,7 +106,7 @@ export async function runCodeRepoTool(
   if (name === 'glob') {
     const pattern = String(args['pattern'] ?? '');
     return {
-      content: globRepo(repoRoot, pattern),
+      content: await globRepoAsync(repoRoot, pattern),
       summary: `glob ${pattern}`,
       citations: [],
     };
@@ -108,16 +114,28 @@ export async function runCodeRepoTool(
 
   if (name === 'find_symbol') {
     const symbol = String(args['name'] ?? '');
+    const content = await findSymbolRepoAsync(repoRoot, symbol);
+    const citations: Citation[] = [];
+    for (const line of content.split('\n')) {
+      const match = /^(.+):(\d+):/.exec(line);
+      if (!match) continue;
+      citations.push({
+        kind: 'code',
+        filePath: match[1]!,
+        startLine: Number(match[2]),
+        endLine: Number(match[2]),
+      });
+    }
     return {
-      content: findSymbolRepo(repoRoot, symbol),
+      content,
       summary: `find_symbol ${symbol}`,
-      citations: [],
+      citations,
     };
   }
 
   if (name === 'list_dir') {
     const path = String(args['path'] ?? '.');
-    const content = listDir(repoRoot, path);
+    const content = await listDirAsync(repoRoot, path);
     return {
       content,
       summary: `list_dir ${path}`,
@@ -132,7 +150,7 @@ export async function runCodeRepoTool(
 
     let range;
     try {
-      range = readFileRange(repoRoot, path, start, end);
+      range = await readFileRangeAsync(repoRoot, path, start, end);
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
       // 抛出去只会被 agent 循环包成「工具执行失败」，把本机绝对路径塞进上下文，
@@ -169,7 +187,7 @@ export async function runCodeRepoTool(
   if (name === 'grep') {
     const pattern = String(args['pattern'] ?? '');
     const path = String(args['path'] ?? '.');
-    const content = grepRepo(repoRoot, pattern, path);
+    const content = await grepRepoAsync(repoRoot, pattern, path);
     const citations: Citation[] = [];
     for (const line of content.split('\n')) {
       const m = /^([^:]+):(\d+):/.exec(line);
