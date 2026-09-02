@@ -45,3 +45,42 @@ export const FINAL_REPO_SYNTHESIS = `工具检索阶段已经结束。现在必�
 - 如果用户问的是流程、循环、生命周期或架构，必须给出一个 mermaid flowchart；
 - 不要输出 <tool_call>、<function=...>、参数 XML 或“我接下来要读取”等过程文字。`;
 
+export interface RepoReadEvidence {
+  path: string;
+  content: string;
+}
+
+const MAX_SYNTHESIS_EVIDENCE_CHARS = 60_000;
+
+/**
+ * 最终总结使用一段全新的上下文，而不是接着 assistant.tool_calls → tool 的轨迹续写。
+ * 一些兼容端点即使不再传 tools，只要看到那段轨迹仍会继续生成 XML 工具协议；
+ * 新上下文里只有用户问题与 read_file 的实际结果，模型没有协议可模仿。
+ */
+export function buildRepoSynthesisMessages(
+  question: string,
+  evidence: RepoReadEvidence[],
+): Array<{ role: 'system' | 'user'; content: string }> {
+  let remaining = MAX_SYNTHESIS_EVIDENCE_CHARS;
+  const sections: string[] = [];
+
+  for (const item of evidence) {
+    if (remaining <= 0) break;
+    const header = `## ${item.path}\n`;
+    const body = item.content.slice(0, Math.max(0, remaining - header.length));
+    if (!body) break;
+    sections.push(`${header}${body}`);
+    remaining -= header.length + body.length;
+  }
+
+  return [
+    { role: 'system', content: FINAL_REPO_SYNTHESIS },
+    {
+      role: 'user',
+      content: `# 用户问题\n${question}\n\n# 已读取的源码证据\n${
+        sections.join('\n\n') || '（没有可用源码证据）'
+      }`,
+    },
+  ];
+}
+

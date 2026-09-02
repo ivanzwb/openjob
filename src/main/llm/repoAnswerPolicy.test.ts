@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildRepoSynthesisMessages,
   hasMermaidDiagram,
   looksLikeToolProtocol,
   needsFlowDiagram,
@@ -44,6 +45,27 @@ describe('looksLikeToolProtocol', () => {
 
   it('空内容不是协议泄漏', () => {
     expect(looksLikeToolProtocol('')).toBe(false);
+  });
+});
+
+describe('buildRepoSynthesisMessages', () => {
+  it('最终上下文只有问题和已读源码，不携带工具调用轨迹', () => {
+    const messages = buildRepoSynthesisMessages('ReAct loop 怎么实现？', [
+      { path: 'src/agent.ts', content: '41|while (next) {\n42|  await run(next);\n43|}' },
+    ]);
+
+    expect(messages).toHaveLength(2);
+    expect(messages[1]?.content).toContain('ReAct loop 怎么实现？');
+    expect(messages[1]?.content).toContain('## src/agent.ts');
+    expect(messages[1]?.content).toContain('41|while (next)');
+    expect(messages.some((message) => message.content.includes('assistant.tool_calls'))).toBe(false);
+  });
+
+  it('限制证据体积，避免总结请求再次撑爆上下文', () => {
+    const messages = buildRepoSynthesisMessages('问题', [
+      { path: 'huge.ts', content: 'x'.repeat(100_000) },
+    ]);
+    expect(messages[1]!.content.length).toBeLessThan(61_000);
   });
 });
 

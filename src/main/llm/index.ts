@@ -27,7 +27,7 @@ import { decideSearchTrigger, triggerInstruction } from '../search/trigger';
 import { normalizeChatMessages } from './messages';
 import { buildRepoAnalyzeSystem } from '@shared/prompts/repo';
 import {
-  FINAL_REPO_SYNTHESIS,
+  buildRepoSynthesisMessages,
   hasMermaidDiagram,
   looksLikeToolProtocol,
   needsFlowDiagram,
@@ -37,6 +37,7 @@ import {
 /** 工具调用的最大轮数，防止 Agent 陷入反复检索 */
 const MAX_TOOL_ROUNDS = 4;
 const MAX_REPO_TOOL_ROUNDS = 8;
+const MAX_REPO_SYNTHESIS_ATTEMPTS = 2;
 
 const active = new Map<string, AbortController>();
 
@@ -203,9 +204,14 @@ async function runChat(
     const totals: TokenUsage = { promptTokens: 0, completionTokens: 0 };
     let lastPromptTokens: number | null = null;
     let successfulReads = 0;
+    const repoReadEvidence: Array<{ path: string; content: string }> = [];
     let forceFinalAnswer = false;
+    let synthesisAttempts = 0;
     const diagramRequired = Boolean(req.repoId && needsFlowDiagram(lastUser));
     const maxRounds = req.repoId ? MAX_REPO_TOOL_ROUNDS : MAX_TOOL_ROUNDS;
+    const lastRound = req.repoId
+      ? maxRounds + MAX_REPO_SYNTHESIS_ATTEMPTS - 1
+      : maxRounds;
     const tools =
       toolKind === 'code'
         ? mergedCodeAgentTools(toolCtx)
@@ -215,16 +221,18 @@ async function runChat(
             ? GRAPH_TOOLS
             : undefined;
 
-    for (let round = 0; round <= maxRounds; round++) {
-      const finalOnly = Boolean(req.repoId && (forceFinalAnswer || round === maxRounds));
+    for (let round = 0; round <= lastRound; round++) {
+      const finalOnly = Boolean(req.repoId && (forceFinalAnswer || round >= maxRounds));
       forceFinalAnswer = false;
-      if (finalOnly) {
-        messages.push({ role: 'system', content: FINAL_REPO_SYNTHESIS });
-      }
+      if (finalOnly) synthesisAttempts++;
+      const roundMessages =
+        finalOnly && req.repoId
+          ? buildRepoSynthesisMessages(lastUser, repoReadEvidence)
+          : messages;
 
       const stream = await openStream(client, controller, {
         model,
-        messages: normalizeChatMessages(messages),
+        messages: normalizeChatMessages(roundMessages),
         temperature,
         tools: tools && round < maxRounds && !finalOnly ? tools : undefined,
       });
@@ -302,7 +310,7 @@ async function runChat(
         const truncated = roundFinishReason === 'length';
         const unusable = !roundText.trim() || protocolLeak || missingDiagram || truncated;
         if (unusable) {
-          if (round >= maxRounds) {
+          if (finalOnly && synthesisAttempts >= MAX_REPO_SYNTHESIS_ATTEMPTS) {
             const reason = truncated
               ? '模型最终回答被截断'
               : protocolLeak
@@ -326,7 +334,11 @@ async function runChat(
       }
 
       if (finalOnly) {
-        throw new Error('模型在最终总结阶段仍请求工具，已停止输出，请重试');
+        if (synthesisAttempts >= MAX_REPO_SYNTHESIS_ATTEMPTS) {
+          throw new Error('模型在最终总结阶段仍请求工具，已停止输出，请重试');
+        }
+        forceFinalAnswer = true;
+        continue;
       }
 
       const roundToolIndexes: number[] = [];
@@ -371,6 +383,12 @@ async function runChat(
           usedCode = true;
         }
         if (call.name === 'read_file' && outcome.citations.length > 0) successfulReads++;
+        if (call.name === 'read_file' && outcome.citations.length > 0) {
+          repoReadEvidence.push({
+            path: String(args['path'] ?? outcome.citations[0]?.filePath ?? 'unknown'),
+            content: outcome.content,
+          });
+        }
         // grep 的命中只是候选位置，不能在最终引用区伪装成“已读证据”。
         if (!repoRoot || call.name === 'read_file' || call.name === 'web_search' || call.name === 'fetch_url') {
           citations.push(...outcome.citations);
