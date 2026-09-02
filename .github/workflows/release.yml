@@ -14,8 +14,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # release 必须先于三个 package job 存在，且只能有一个创建者。
+  # 否则并行的 electron-builder 各自「查不到就创建」，同时 POST /releases，
+  # 抢输的那个直接以 422 already_exists 失败，它那一份安装包就永远不会上传
+  # （v0.6.21 的 macOS DMG 就是这么丢的）。release 先建好之后，三个 job 一律
+  # 只会查到并上传，谁都不再创建。build-android.yml 那边等 release 就绪的重试
+  # 也顺带变成几乎立即命中。
+  prepare-release:
+    name: Ensure GitHub Release exists
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create release if missing
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # 正式 release 而非 draft，与 electron-builder.yml 的 releaseType: release 保持一致，
+          # 否则 electron-builder 会判定 existing type not compatible 而跳过上传
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "release $TAG already exists"
+            exit 0
+          fi
+          # 重跑时可能与别的 job 撞上，创建失败就再查一次：真的存在了才算通过
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "${TAG#v}" --notes "" \
+            || gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+
   package:
     name: Package (${{ matrix.os }})
+    needs: prepare-release
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
