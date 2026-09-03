@@ -1,24 +1,27 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Annotation } from '@shared/entities';
-import { MARKER_ICON, MARKER_LABEL, markerKinds, type InlineMarkerKind } from '@shared/inlineMarkers';
+import {
+  MARKER_LABEL,
+  markerBadgeLabel,
+  markerKinds,
+  resolveInlineAnnotationIndex,
+} from '@shared/inlineMarkers';
 import { normalizeDisplayText } from '@shared/lib/markdownDisplay';
 import { highlightTextStyle } from '../lib/highlightStyle';
 import { useAdaptivePopover } from '../lib/popoverLayout';
 import { ResizeHandleGlyph, useResizablePanel } from './ResizablePopover';
 import { MarkdownContent, type TextHighlight } from './MarkdownContent';
 
-export type InlineAnnotation = Pick<Annotation, 'id' | 'kind' | 'selectedText' | 'noteMd'>;
+export type InlineAnnotation = Pick<
+  Annotation,
+  'id' | 'kind' | 'selectedText' | 'noteMd' | 'selectionStart'
+>;
 
 function markerTextClass(markers: InlineAnnotation[]): string {
-  const { hasNote, hasElaboration } = markerKinds(markers);
-  if (hasNote && hasElaboration) {
-    return 'font-bold text-amber-300 border-b-2 border-amber-400 underline decoration-dashed decoration-sky-400 decoration-2 underline-offset-[3px]';
-  }
-  if (hasNote) {
-    return 'font-bold text-amber-300 border-b-2 border-amber-400';
-  }
-  return 'font-bold text-sky-300 border-b-2 border-dashed border-sky-400/90';
+  return markers.length
+    ? 'border-b border-dashed border-[var(--color-accent)]'
+    : '';
 }
 
 function markerTitle(markers: InlineAnnotation[]): string {
@@ -28,21 +31,20 @@ function markerTitle(markers: InlineAnnotation[]): string {
   return '查看细化讲解';
 }
 
-function MarkerGlyph({
-  kind,
+function MarkerBadge({
+  markers,
   onClick,
 }: {
-  kind: InlineMarkerKind;
+  markers: InlineAnnotation[];
   onClick: (e: React.MouseEvent) => void;
 }): React.JSX.Element {
-  const vertical = kind === 'note' ? 'align-sub' : 'align-super';
-  const color = kind === 'note' ? 'text-amber-300' : 'text-sky-300';
+  const label = markerBadgeLabel(markers);
   return (
     <span
       role="button"
       tabIndex={0}
-      title={MARKER_LABEL[kind]}
-      className={`${vertical} mx-0.5 inline cursor-pointer text-[10px] leading-none ${color} hover:opacity-80`}
+      title={markerTitle(markers)}
+      className="ml-0.5 inline-flex -translate-y-[0.35em] cursor-pointer items-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-1 text-[9px] font-semibold leading-[13px] text-[var(--color-accent)] transition-colors hover:border-[var(--color-accent)] hover:bg-[var(--color-accent)]/10"
       onClick={onClick}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -51,7 +53,7 @@ function MarkerGlyph({
         }
       }}
     >
-      {MARKER_ICON[kind]}
+      {label}
     </span>
   );
 }
@@ -217,18 +219,6 @@ function InlineMarkedText({
     setShowPicker(true);
   }, [markers]);
 
-  const openKind = useCallback(
-    (kind: InlineMarkerKind) => {
-      const rect = ref.current?.getBoundingClientRect();
-      const marker = markers.find((m) => m.kind === kind);
-      if (!rect || !marker) return;
-      setAnchorRect(rect);
-      setActiveMarker(marker);
-      setShowPicker(false);
-    },
-    [markers],
-  );
-
   const close = useCallback(() => {
     setActiveMarker(null);
     setShowPicker(false);
@@ -246,8 +236,7 @@ function InlineMarkedText({
     setShowPicker(false);
   }, [focusAnnotationId, markers]);
 
-  const textClass = `cursor-pointer rounded-sm px-0.5 transition-opacity hover:opacity-90 ${markerTextClass(markers)}`;
-  const { hasNote, hasElaboration } = markerKinds(markers);
+  const textClass = `cursor-pointer rounded-[3px] px-0.5 transition-colors hover:bg-[var(--color-accent)]/10 ${markerTextClass(markers)}`;
   const annotationIds = markers.map((m) => m.id).join(' ');
   const inner = highlight ? (
     <mark
@@ -282,24 +271,13 @@ function InlineMarkedText({
         }}
       >
         {inner}
-        {hasNote && (
-          <MarkerGlyph
-            kind="note"
-            onClick={(e) => {
-              e.stopPropagation();
-              openKind('note');
-            }}
-          />
-        )}
-        {hasElaboration && (
-          <MarkerGlyph
-            kind="elaboration"
-            onClick={(e) => {
-              e.stopPropagation();
-              openKind('elaboration');
-            }}
-          />
-        )}
+        <MarkerBadge
+          markers={markers}
+          onClick={(e) => {
+            e.stopPropagation();
+            open();
+          }}
+        />
       </span>
       {showPicker && anchorRect && (
         <MarkerPickMenu
@@ -331,12 +309,9 @@ type TextSegment =
   | { type: 'plain'; text: string }
   | { type: 'marked'; text: string; start: number; end: number; markers: InlineAnnotation[] };
 
-function firstLineOf(text: string): string {
-  return text.split('\n').map((line) => line.trim()).find(Boolean) ?? '';
-}
-
 function splitByInlineAnnotations(
   text: string,
+  blockStart: number,
   annotations: InlineAnnotation[],
 ): TextSegment[] {
   if (!annotations.length) return [{ type: 'plain', text }];
@@ -348,10 +323,14 @@ function splitByInlineAnnotations(
     if (!sel) continue;
     // 正文按行渲染后跨行选区落不进任何一行，退而把角标挂到首行上，
     // 总比整条笔记在正文里没有入口强
-    const needle = text.includes(sel) ? sel : firstLineOf(sel);
-    if (!needle) continue;
-    const idx = text.indexOf(needle);
-    if (idx < 0) continue;
+    const resolved = resolveInlineAnnotationIndex(
+      text,
+      blockStart,
+      sel,
+      ann.selectionStart,
+    );
+    if (!resolved) continue;
+    const { index: idx, needle } = resolved;
     const end = idx + needle.length;
     const existing = matches.find((m) => m.start === idx && m.end === end);
     if (existing) {
@@ -408,7 +387,7 @@ export function renderTextWithInlineMarkers(
   highlights?: TextHighlight[],
   focusAnnotationId?: string | null,
 ): React.ReactNode[] {
-  const segments = splitByInlineAnnotations(text, annotations);
+  const segments = splitByInlineAnnotations(text, blockStart, annotations);
   const nodes: React.ReactNode[] = [];
 
   segments.forEach((seg, i) => {
@@ -441,5 +420,6 @@ export function filterInlineAnnotations(annotations: Annotation[]): InlineAnnota
       kind: a.kind,
       selectedText: a.selectedText,
       noteMd: a.noteMd,
+      selectionStart: a.selectionStart,
     }));
 }

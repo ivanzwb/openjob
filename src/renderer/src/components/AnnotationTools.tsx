@@ -142,8 +142,16 @@ export function useAnnotationTools({
   addHighlight: () => void;
   highlightText: (text: string, color?: string, selectionStart?: number) => Promise<void>;
   addNote: () => void;
-  addNoteOnSelection: (selectedText: string, noteMd: string) => Promise<void>;
-  addElaborationOnSelection: (selectedText: string, elaborationMd: string) => Promise<void>;
+  addNoteOnSelection: (
+    selectedText: string,
+    noteMd: string,
+    selectionStart?: number,
+  ) => Promise<void>;
+  addElaborationOnSelection: (
+    selectedText: string,
+    elaborationMd: string,
+    selectionStart?: number,
+  ) => Promise<void>;
   deleteMark: (id: string) => void;
 } {
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
@@ -218,7 +226,11 @@ export function useAnnotationTools({
         },
       );
     },
-    addNoteOnSelection: async (selectedText: string, noteMd: string) => {
+    addNoteOnSelection: async (
+      selectedText: string,
+      noteMd: string,
+      selectionStart?: number,
+    ) => {
       const note = noteMd.trim();
       const sel = selectedText.trim();
       if (!note) return;
@@ -228,13 +240,18 @@ export function useAnnotationTools({
         kind: 'note',
         noteMd: note,
         selectedText: sel ? sel.slice(0, 500) : undefined,
+        ...(selectionStart !== undefined ? { selectionStart } : {}),
       });
       setNoteText('');
       setShowNote(false);
       refresh();
       window.getSelection()?.removeAllRanges();
     },
-    addElaborationOnSelection: async (selectedText: string, elaborationMd: string) => {
+    addElaborationOnSelection: async (
+      selectedText: string,
+      elaborationMd: string,
+      selectionStart?: number,
+    ) => {
       const md = elaborationMd.trim();
       const sel = selectedText.trim();
       if (!md) return;
@@ -244,6 +261,7 @@ export function useAnnotationTools({
         kind: 'elaboration',
         noteMd: md,
         selectedText: sel ? sel.slice(0, 500) : undefined,
+        ...(selectionStart !== undefined ? { selectionStart } : {}),
       });
       refresh();
       window.getSelection()?.removeAllRanges();

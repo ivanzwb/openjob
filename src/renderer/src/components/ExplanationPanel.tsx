@@ -747,7 +747,11 @@ export function ExplanationPanel({
         selectedText: sel.text,
         contextMd,
       });
-      await annotation.addElaborationOnSelection(res.selectedText, res.elaborationMd);
+      await annotation.addElaborationOnSelection(
+        res.selectedText,
+        res.elaborationMd,
+        sel.selectionStart,
+      );
       toast('细化讲解已保存', { variant: 'success' });
       clearSelection();
     });
@@ -951,7 +955,7 @@ export function ExplanationPanel({
           onSaveNote={() => {
             const draft = noteDraft;
             runOnSelection(noteKey, async (sel) => {
-              await annotation.addNoteOnSelection(sel.text, draft);
+              await annotation.addNoteOnSelection(sel.text, draft, sel.selectionStart);
               clearSelection();
             });
           }}
