@@ -38,6 +38,30 @@ describe('markdownToAnnotatedSelectionHtml', () => {
     expect(html).not.toContain('**');
   });
 
+  it('笔记保存选区后在对应原文渲染可点击标记', () => {
+    const contentMd = '并发修改需要加锁保护共享状态';
+    const html = markdownToAnnotatedSelectionHtml(
+      contentMd,
+      [
+        {
+          id: 'note-1',
+          targetType: 'explanation',
+          targetId: 'e1',
+          kind: 'note',
+          selectedText: '加锁',
+          noteMd: '避免竞态条件',
+          selectionStart: contentMd.indexOf('加锁'),
+          highlightColor: null,
+          createdAt: 0,
+        },
+      ],
+      '#fef08a',
+    );
+    expect(html).toContain('class="annotation-mark"');
+    expect(html).toContain('data-annotation-id="note-1"');
+    expect(html).toContain('data-badge="笔"');
+  });
+
   it('行内标记渲染成标签，可见字符仍逐个映射回原文', () => {
     const contentMd = '用 **synchronized** 或 `ReentrantLock`';
     const html = markdownToAnnotatedSelectionHtml(contentMd, [], '#fef08a');

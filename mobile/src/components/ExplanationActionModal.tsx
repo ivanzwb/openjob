@@ -13,17 +13,12 @@ import {
 } from 'react-native';
 import type { Annotation } from '@shared/entities';
 import { DEFAULT_HIGHLIGHT_COLOR, HIGHLIGHT_COLORS } from '../lib/annotationMarks';
+import type { ActionModalMode } from '../lib/explanationSelectionState';
 import { useTheme } from '../theme';
 import { MarkdownPreview } from './MarkdownPreview';
 import { VoiceInputButton } from './VoiceInputButton';
 
-export type ActionModalMode =
-  | 'highlight'
-  | 'note'
-  | 'edit'
-  | 'elaboration'
-  | 'viewMarker'
-  | 'regenerate';
+export type { ActionModalMode } from '../lib/explanationSelectionState';
 
 type PanelPreset = 'edit' | 'note' | 'default';
 
@@ -326,13 +321,13 @@ export function ExplanationActionModal({
         {mode === 'note' && (
           <Pressable
             onPress={onSaveNote}
-            disabled={busy || !draft.trim()}
+            disabled={busy || !phrase.trim() || !draft.trim()}
             style={{
               backgroundColor: theme.accent,
               paddingHorizontal: 14,
               paddingVertical: 8,
               borderRadius: 8,
-              opacity: busy || !draft.trim() ? 0.5 : 1,
+              opacity: busy || !phrase.trim() || !draft.trim() ? 0.5 : 1,
             }}
           >
             <Text style={{ color: '#fff', fontSize: 13 }}>{busy ? '保存中…' : '保存笔记'}</Text>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
   Alert,
   Pressable,
@@ -40,6 +40,10 @@ import {
   findHighlightMark,
   phraseSelectionStart,
 } from '../lib/annotationMarks';
+import {
+  EMPTY_EXPLANATION_SELECTION,
+  explanationSelectionReducer,
+} from '../lib/explanationSelectionState';
 import { markdownToAnnotatedSelectionHtml } from '../lib/markdownDisplay';
 import { useLocalDataReload } from '../hooks/useLocalDataReload';
 
@@ -548,9 +552,10 @@ export function ExplanationStudyPanel({
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [editing, setEditing] = useState(false);
   const [draftMd, setDraftMd] = useState('');
-  const [phrase, setPhrase] = useState('');
-  const [selectionStart, setSelectionStart] = useState<number | undefined>(undefined);
-  const [modalMode, setModalMode] = useState<ActionModalMode | null>(null);
+  const [{ phrase, selectionStart, modalMode }, dispatchSelection] = useReducer(
+    explanationSelectionReducer,
+    EMPTY_EXPLANATION_SELECTION,
+  );
   const [modalDraft, setModalDraft] = useState('');
   const [highlightColor, setHighlightColor] = useState<string>(DEFAULT_HIGHLIGHT_COLOR);
   const [viewMarker, setViewMarker] = useState<Annotation | null>(null);
@@ -648,6 +653,10 @@ export function ExplanationStudyPanel({
   }, [content, loadAnnotations, loadSavedSpeech]);
   useLocalDataReload(reloadPanelData);
 
+  const changeModalMode = useCallback((mode: ActionModalMode | null) => {
+    dispatchSelection(mode === null ? { type: 'close' } : { type: 'open', mode });
+  }, []);
+
   const clearWebSelection = useCallback(() => {
     webViewRef.current?.injectJavaScript('window.__clearSelection && window.__clearSelection(); true;');
   }, []);
@@ -737,11 +746,9 @@ export function ExplanationStudyPanel({
   // 前两件是同步 setState，但它们和第三件的发起动作绑在同一次切换上，拆开反而容易漏
   useEffect(() => {
     flushSaveRef.current();
+    dispatchSelection({ type: 'reset' });
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setPhrase('');
-    setSelectionStart(undefined);
     setEditing(false);
-    setModalMode(null);
     setModalDraft('');
     loadSavedSpeech();
     const cached = getExplanation(getRawDb(), nodeId, tier);
@@ -766,7 +773,15 @@ export function ExplanationStudyPanel({
         limitMessage: '已有讲解生成任务进行中，请稍后再试',
       },
     ).catch(() => undefined);
-  }, [nodeId, tier, loadKey, adopt, loadSavedSpeech, notifyDataChanged, generationBlocked]);
+  }, [
+    nodeId,
+    tier,
+    loadKey,
+    adopt,
+    loadSavedSpeech,
+    notifyDataChanged,
+    generationBlocked,
+  ]);
 
   const openModal = (mode: ActionModalMode): void => {
     // 重新生成和查看标记都不针对选区，其余动作没选中词句就无从下手
@@ -777,21 +792,26 @@ export function ExplanationStudyPanel({
     }
     if (mode === 'edit') setModalDraft(phrase);
     if (mode === 'note' || mode === 'elaboration' || mode === 'regenerate') setModalDraft('');
-    setModalMode(mode);
+    changeModalMode(mode);
   };
 
   const locateMark = (mark: Annotation): void => {
     const text = mark.selectedText?.trim();
+    const start = text
+      ? mark.selectionStart ??
+        (content ? phraseSelectionStart(content.contentMd, text) : undefined)
+      : undefined;
     if (text) {
-      setPhrase(text);
-      setSelectionStart(
-        mark.selectionStart ??
-          (content ? phraseSelectionStart(content.contentMd, text) : undefined),
-      );
+      dispatchSelection({ type: 'select', phrase: text, selectionStart: start });
     }
     if (mark.kind === 'note' || mark.kind === 'elaboration') {
       setViewMarker(mark);
-      setModalMode('viewMarker');
+      dispatchSelection({
+        type: 'open',
+        mode: 'viewMarker',
+        ...(text ? { phrase: text } : {}),
+        ...(start !== undefined ? { selectionStart: start } : {}),
+      });
     }
   };
 
@@ -813,23 +833,32 @@ export function ExplanationStudyPanel({
 
   const setSelectionFromWeb = (text: string, start: number): string => {
     const selected = text.trim();
-    setPhrase(selected);
-    setSelectionStart(
-      content ? resolveSelectionStart(content.contentMd, text, start) : start,
-    );
+    dispatchSelection({
+      type: 'select',
+      phrase: selected,
+      selectionStart: content ? resolveSelectionStart(content.contentMd, text, start) : start,
+    });
     return selected;
   };
 
   const openSelectionModal = (mode: ActionModalMode, text: string, start: number): void => {
-    const selected = setSelectionFromWeb(text, start);
+    const selected = text.trim();
     if (!selected && mode !== 'viewMarker' && mode !== 'regenerate') return;
+    const resolvedStart = content
+      ? resolveSelectionStart(content.contentMd, text, start)
+      : start;
     if (mode === 'highlight') {
-      const existing = findHighlightMark(selected, highlightMarks, start);
+      const existing = findHighlightMark(selected, highlightMarks, resolvedStart);
       setHighlightColor(existing?.highlightColor ?? DEFAULT_HIGHLIGHT_COLOR);
     }
     if (mode === 'edit') setModalDraft(selected);
     if (mode === 'note' || mode === 'elaboration' || mode === 'regenerate') setModalDraft('');
-    setModalMode(mode);
+    dispatchSelection({
+      type: 'open',
+      mode,
+      phrase: selected,
+      selectionStart: resolvedStart,
+    });
   };
 
   const handleSelectionWebMessage = (event: WebViewMessageEvent): void => {
@@ -844,8 +873,7 @@ export function ExplanationStudyPanel({
       return;
     }
     if (message.type === 'clear') {
-      setPhrase('');
-      setSelectionStart(undefined);
+      dispatchSelection({ type: 'clear' });
       return;
     }
     if (message.type === 'marker') {
@@ -882,7 +910,7 @@ export function ExplanationStudyPanel({
   const submitRegenerate = (): void => {
     if (generationBlocked) return;
     const instruction = modalDraft.trim();
-    setModalMode(null);
+    changeModalMode(null);
     setModalDraft('');
     void runTask(
       regenerateKey,
@@ -931,7 +959,7 @@ export function ExplanationStudyPanel({
     })
       .then(() => {
         loadAnnotations(explanationId);
-        setModalMode(null);
+        changeModalMode(null);
         clearWebSelection();
       })
       .catch(() => undefined);
@@ -948,14 +976,14 @@ export function ExplanationStudyPanel({
     })
       .then(() => {
         loadAnnotations(explanationId);
-        setModalMode(null);
+        changeModalMode(null);
         clearWebSelection();
       })
       .catch(() => undefined);
   };
 
   const saveNote = (): void => {
-    if (!content || !modalDraft.trim() || noteMark) return;
+    if (!content || !phrase.trim() || !modalDraft.trim() || noteMark) return;
     const explanationId = content.id;
     const trimmed = phrase.trim().slice(0, 500);
     const noteMd = modalDraft.trim();
@@ -972,7 +1000,7 @@ export function ExplanationStudyPanel({
     })
       .then(() => {
         loadAnnotations(explanationId);
-        setModalMode(null);
+        changeModalMode(null);
         setModalDraft('');
         clearWebSelection();
       })
@@ -991,9 +1019,7 @@ export function ExplanationStudyPanel({
     )
       .then((result) => {
         adopt(result);
-        setModalMode(null);
-        setPhrase('');
-        setSelectionStart(undefined);
+        dispatchSelection({ type: 'reset' });
         clearWebSelection();
       })
       .catch(() => undefined);
@@ -1010,8 +1036,7 @@ export function ExplanationStudyPanel({
       .then((message) => {
         Alert.alert('话术库', message);
         loadSavedSpeech();
-        setPhrase('');
-        setSelectionStart(undefined);
+        dispatchSelection({ type: 'reset' });
         clearWebSelection();
       })
       .catch(() => undefined);
@@ -1021,7 +1046,11 @@ export function ExplanationStudyPanel({
     const text = phrase.trim();
     // 已细化过就别再请求模型：白花一次调用，落库那头也会当重复丢掉
     if (!text || !content || elaborationMark || elaborationBlocked) return;
-    const target = { id: content.id, contentMd: content.contentMd };
+    const target = {
+      id: content.id,
+      contentMd: content.contentMd,
+      selectionStart: selectionStart ?? phraseSelectionStart(content.contentMd, text),
+    };
     // 细化要请求模型，落库放在任务里：切走再回来，标记已经在正文上了
     void runTask(
       elaborateKey,
@@ -1040,7 +1069,9 @@ export function ExplanationStudyPanel({
           kind: 'elaboration',
           noteMd: result.elaborationMd,
           selectedText: result.selectedText.slice(0, 500),
-          ...(selectionStart !== undefined ? { selectionStart } : {}),
+          ...(target.selectionStart !== undefined
+            ? { selectionStart: target.selectionStart }
+            : {}),
         });
         return '细化讲解已保存';
       },
@@ -1055,7 +1086,7 @@ export function ExplanationStudyPanel({
   useTaskResult(elaborateKey, () => {
     const explanationId = content?.id ?? getExplanation(getRawDb(), nodeId, tier)?.id;
     if (explanationId) loadAnnotations(explanationId);
-    setModalMode(null);
+    changeModalMode(null);
     clearWebSelection();
   });
 
@@ -1069,7 +1100,7 @@ export function ExplanationStudyPanel({
     })
       .then(() => {
         loadAnnotations(explanationId);
-        setModalMode(null);
+        changeModalMode(null);
         setViewMarker(null);
         clearWebSelection();
       })
@@ -1199,8 +1230,9 @@ export function ExplanationStudyPanel({
         onDraftChange={setModalDraft}
         onHighlightColorChange={setHighlightColor}
         onClose={() => {
-          setModalMode(null);
+          dispatchSelection({ type: 'reset' });
           setViewMarker(null);
+          clearWebSelection();
         }}
         onSaveHighlight={saveHighlight}
         onClearHighlight={clearHighlight}
