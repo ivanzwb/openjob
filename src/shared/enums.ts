@@ -43,6 +43,46 @@ export type ExplanationTier = (typeof EXPLANATION_TIERS)[number];
 export const EXAM_FORMS = ['concept', 'coding', 'design', 'scenario'] as const;
 export type ExamForm = (typeof EXAM_FORMS)[number];
 
+/** 插件分类。Role/Industry Pack 只提供声明式配置，Capability 才能申请执行权限。 */
+export const PLUGIN_TYPES = ['role-pack', 'industry-pack', 'capability'] as const;
+export type PluginType = (typeof PLUGIN_TYPES)[number];
+
+/** 客户端对某项插件能力的本地支持程度。 */
+export const RUNTIME_AVAILABILITIES = ['full', 'view-only', 'unsupported'] as const;
+export type RuntimeAvailability = (typeof RUNTIME_AVAILABILITIES)[number];
+
+/** 跨岗位复用的面试交互协议；具体题型 ID 由岗位包定义。 */
+export const INTERVIEW_PROTOCOLS = [
+  'knowledge',
+  'behavioral',
+  'case',
+  'role-play',
+  'work-sample',
+  'presentation',
+  'portfolio',
+  'coding',
+] as const;
+export type InterviewProtocol = (typeof INTERVIEW_PROTOCOLS)[number];
+
+export const COMPETENCY_CATEGORIES = ['knowledge', 'skill', 'behavior', 'experience'] as const;
+export type CompetencyCategory = (typeof COMPETENCY_CATEGORIES)[number];
+
+export const FOLLOW_UP_STRATEGIES = ['fixed', 'adaptive'] as const;
+export type FollowUpStrategy = (typeof FOLLOW_UP_STRATEGIES)[number];
+
+/**
+ * 候选人亲身经历的证据分类。
+ * 与下方 EvidenceKind（模型/网页/代码引用来源）语义不同，禁止合并。
+ */
+export const CANDIDATE_EVIDENCE_KINDS = [
+  'experience',
+  'achievement',
+  'skill',
+  'behavior',
+  'credential',
+] as const;
+export type CandidateEvidenceKind = (typeof CANDIDATE_EVIDENCE_KINDS)[number];
+
 export const MASTERY_SOURCES = ['self', 'quiz', 'mixed'] as const;
 export type MasterySource = (typeof MASTERY_SOURCES)[number];
 
