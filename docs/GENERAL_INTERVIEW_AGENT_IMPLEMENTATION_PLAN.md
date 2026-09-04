@@ -237,7 +237,7 @@ interface HostRenderedInteraction {
 
 ## 7. Phase 0：兼容外壳
 
-### T01 Shared plugin contracts
+### [T01 Shared plugin contracts](https://github.com/ivanzwb/openjob/issues/3)
 
 **目标**
 
@@ -275,7 +275,7 @@ interface HostRenderedInteraction {
 - 不实现 resolver；
 - 不修改现有业务流程。
 
-### T02 Built-in registry and deterministic resolver
+### [T02 Built-in registry and deterministic resolver](https://github.com/ivanzwb/openjob/issues/4)
 
 **目标**
 
@@ -322,7 +322,7 @@ type RuntimeResolveErrorCode =
 - 可选依赖失败时记录 `disabledReason`；
 - 桌面和手机 fixture 解析 hash 一致。
 
-### T03 Persistence, sync and atomic backfill
+### [T03 Persistence, sync and atomic backfill](https://github.com/ivanzwb/openjob/issues/5)
 
 **目标**
 
@@ -368,7 +368,7 @@ RoleProfile
 - 老版本手机写插件字段时得到明确升级错误；
 - `mobile/app.json` 与根版本对齐。
 
-### T04 Software Engineering Role Pack adapter
+### [T04 Software Engineering Role Pack adapter](https://github.com/ivanzwb/openjob/issues/6)
 
 **目标**
 
@@ -400,7 +400,7 @@ export const softwareEngineeringRolePack: RolePack;
 - 岗位包通过 T01 contract；
 - 不复制现有 Prompt 文本。
 
-### T05 Source repository capability and permission gateway
+### [T05 Source repository capability and permission gateway](https://github.com/ivanzwb/openjob/issues/7)
 
 **目标**
 
@@ -435,7 +435,7 @@ authorize({
 - 拒绝结果不泄露路径、文件或密钥；
 - 原有 tool policy/repo answer tests 继续通过。
 
-### T06 Core Prompt composer and provenance
+### [T06 Core Prompt composer and provenance](https://github.com/ivanzwb/openjob/issues/8)
 
 **目标**
 
@@ -467,7 +467,7 @@ composePrompt(input: PromptCompositionInput): ComposedPrompt;
 - 工程岗位组合后的有效 Prompt 语义不变；
 - Prompt run 可复现所用插件版本。
 
-### T07 Shared planner contribution
+### [T07 Shared planner contribution](https://github.com/ivanzwb/openjob/issues/9)
 
 **目标**
 
@@ -498,7 +498,7 @@ collectPlannerContributions(
 - 不支持该任务的手机端显示“需桌面完成”；
 - 两端相同输入产生相同插件任务。
 
-### T08 Runtime IPC and client capability view
+### [T08 Runtime IPC and client capability view](https://github.com/ivanzwb/openjob/issues/10)
 
 **目标**
 
@@ -529,7 +529,7 @@ collectPlannerContributions(
 - IPC、preload、RPC whitelist 和 contract tests 同步；
 - 未知 artifact schema 只读，不尝试解析。
 
-### T09 Phase 0 compatibility gate
+### [T09 Phase 0 compatibility gate](https://github.com/ivanzwb/openjob/issues/11)
 
 **目标**
 
@@ -557,7 +557,7 @@ collectPlannerContributions(
 
 ## 8. Phase 1：通用核心
 
-### T10 CandidateEvidence service
+### [T10 CandidateEvidence service](https://github.com/ivanzwb/openjob/issues/12)
 
 **目标**
 
@@ -591,7 +591,7 @@ interface EvidenceService {
 - 未确认 proposal 不进入个人化回答；
 - 每条 Evidence 可定位原文。
 
-### T11 Competency diagnosis and priority
+### [T11 Competency diagnosis and priority](https://github.com/ivanzwb/openjob/issues/13)
 
 **目标**
 
@@ -623,7 +623,7 @@ diagnoseCompetencies(input: {
 - evidenceRisk 与 stageWeight 有确定计算和测试；
 - 非工程岗位不产生工程能力污染。
 
-### T12 Generic Practice and Rubric engine
+### [T12 Generic Practice and Rubric engine](https://github.com/ivanzwb/openjob/issues/14)
 
 **目标**
 
@@ -655,7 +655,7 @@ interface PracticeProtocol {
 - 旧 IPC 保持可用一个发布周期；
 - mastery 回写路径唯一。
 
-### T13 Story and Speech integration
+### [T13 Story and Speech integration](https://github.com/ivanzwb/openjob/issues/15)
 
 **目标**
 
@@ -687,7 +687,7 @@ interface StoryService {
 - 删除 Story 不删除 Evidence；
 - Speech source 支持 `story`。
 
-### T14 Product Manager Role Pack
+### [T14 Product Manager Role Pack](https://github.com/ivanzwb/openjob/issues/16)
 
 **目标**
 
@@ -717,7 +717,7 @@ interface StoryService {
 - 产品案例评分与工程设计评分维度显著不同；
 - 无 analytics-case 时仍可完成纯文本案例。
 
-### T15 Desktop role, evidence and practice UI
+### [T15 Desktop role, evidence and practice UI](https://github.com/ivanzwb/openjob/issues/17)
 
 **目标**
 
@@ -740,7 +740,7 @@ interface StoryService {
 - Evidence proposal 可确认/拒绝；
 - UI 只消费 descriptor，不自行判断岗位字符串。
 
-### T16 Mobile role, resume attach and debrief UI
+### [T16 Mobile role, resume attach and debrief UI](https://github.com/ivanzwb/openjob/issues/18)
 
 **目标**
 
@@ -764,7 +764,7 @@ interface StoryService {
 - 不支持的插件任务显示明确原因；
 - 实现前核对 Expo 57 文档。
 
-### T17 Phase 1 cross-client and golden gate
+### [T17 Phase 1 cross-client and golden gate](https://github.com/ivanzwb/openjob/issues/19)
 
 **目标**
 
@@ -791,7 +791,7 @@ interface StoryService {
 
 ## 9. Phase 2/3：扩展验证与发布
 
-### T18 Sales and Customer Success Role Pack
+### [T18 Sales and Customer Success Role Pack](https://github.com/ivanzwb/openjob/issues/20)
 
 **目标**
 
@@ -817,7 +817,7 @@ interface StoryService {
 - 无 role-play 插件时可降级为文本行为题；
 - 评分不使用技术准确性/QPS 等工程维度。
 
-### T19 Host-rendered interaction and role-play capability
+### [T19 Host-rendered interaction and role-play capability](https://github.com/ivanzwb/openjob/issues/21)
 
 **目标**
 
@@ -852,7 +852,7 @@ interface HostRenderedInteraction {
 - 角色状态可恢复；
 - 两端对同一 interaction schema 有一致降级行为。
 
-### T20 Analytics case and v1.0 integration gate
+### [T20 Analytics case and v1.0 integration gate](https://github.com/ivanzwb/openjob/issues/22)
 
 **目标**
 
