@@ -167,10 +167,18 @@ export interface ResolvedPluginRef {
   version: string;
 }
 
-export interface ResolvedCapabilityRef extends ResolvedPluginRef {
-  enabled: boolean;
-  disabledReason?: string;
-}
+export type ResolvedCapabilityRef =
+  | (ResolvedPluginRef & {
+      enabled: true;
+      disabledReason?: never;
+    })
+  | {
+      id: string;
+      /** 未安装的可选依赖没有可固定的精确版本。 */
+      version?: string;
+      enabled: false;
+      disabledReason: string;
+    };
 
 export interface CampaignRuntimeDescriptor {
   campaignId: string;
