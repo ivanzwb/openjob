@@ -156,6 +156,8 @@ function CampaignListView({
             onPress={(e) => e.stopPropagation()}
             style={{
               gap: 10,
+              width: '100%',
+              maxHeight: '90%',
               borderRadius: 16,
               borderWidth: 1,
               borderColor: theme.border,
@@ -169,31 +171,38 @@ function CampaignListView({
                 <Text style={{ color: theme.muted, fontSize: 13 }}>关闭</Text>
               </Pressable>
             </View>
-            <TextInput
-              placeholder="公司"
-              placeholderTextColor={theme.muted}
-              value={company}
-              onChangeText={setCompany}
-              editable={!creating}
-              style={inputStyle(theme)}
-            />
-            <TextInput
-              placeholder="岗位"
-              placeholderTextColor={theme.muted}
-              value={role}
-              onChangeText={setRole}
-              editable={!creating}
-              style={inputStyle(theme)}
-            />
-            <TextInput
-              placeholder="JD"
-              placeholderTextColor={theme.muted}
-              value={jd}
-              onChangeText={setJd}
-              editable={!creating}
-              multiline
-              style={[inputStyle(theme), { minHeight: 120, textAlignVertical: 'top' }]}
-            />
+            <ScrollView
+              style={{ flexShrink: 1 }}
+              contentContainerStyle={{ gap: 10 }}
+              keyboardShouldPersistTaps="handled"
+            >
+              <TextInput
+                placeholder="公司"
+                placeholderTextColor={theme.muted}
+                value={company}
+                onChangeText={setCompany}
+                editable={!creating}
+                style={inputStyle(theme)}
+              />
+              <TextInput
+                placeholder="岗位"
+                placeholderTextColor={theme.muted}
+                value={role}
+                onChangeText={setRole}
+                editable={!creating}
+                style={inputStyle(theme)}
+              />
+              <TextInput
+                placeholder="JD"
+                placeholderTextColor={theme.muted}
+                value={jd}
+                onChangeText={setJd}
+                editable={!creating}
+                multiline
+                scrollEnabled
+                style={[inputStyle(theme), { height: 160, textAlignVertical: 'top' }]}
+              />
+            </ScrollView>
             <Pressable
               onPress={create}
               disabled={creating || !company.trim() || !role.trim() || !jd.trim()}
