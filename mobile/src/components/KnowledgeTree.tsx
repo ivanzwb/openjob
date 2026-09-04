@@ -306,7 +306,7 @@ function NodeRow({
               </Text>
             </Pressable>
           )}
-          {onCreateChild && node.kind !== 'point' && (
+          {onCreateChild && canExpandNode(node.kind) && (
             <Pressable
               onPress={(event) => {
                 event.stopPropagation();
@@ -330,7 +330,7 @@ function NodeRow({
           )}
         </View>
 
-        {adding && (
+        {adding && canExpandNode(node.kind) && (
           <View style={{ gap: 6, marginTop: 8 }}>
             <TextInput
               value={childName}
