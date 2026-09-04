@@ -387,7 +387,7 @@ function NodeRow({
                 笔记
               </button>
             )}
-            {onCreateChild && node.kind !== 'point' && (
+            {onCreateChild && canExpandNode(node.kind) && (
               <button
                 type="button"
                 onClick={() => setAdding((v) => !v)}
@@ -450,7 +450,7 @@ function NodeRow({
           </div>
         </div>
       )}
-      {adding && onCreateChild && (
+      {adding && onCreateChild && canExpandNode(node.kind) && (
         <div
           className="flex gap-2 px-2 py-1"
           style={{ paddingLeft: `${(depth + 1) * 16 + 8}px` }}
