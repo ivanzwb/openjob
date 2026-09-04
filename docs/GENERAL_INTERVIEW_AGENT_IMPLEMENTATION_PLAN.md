@@ -62,7 +62,11 @@ flowchart LR
     T01 --> T05["T05 Repo capability"]
     T02 --> T06["T06 Prompt composer"]
     T02 --> T07["T07 Planner hook"]
+    T04 --> T07
+    T05 --> T07
     T03 --> T08["T08 Runtime IPC"]
+    T02 --> T08
+    T03 --> T09["T09 Phase 0 gate"]
     T04 --> T09["T09 Phase 0 gate"]
     T05 --> T09
     T06 --> T09
@@ -70,12 +74,15 @@ flowchart LR
     T08 --> T09
     T09 --> T10["T10 Candidate evidence"]
     T09 --> T11["T11 Competency"]
+    T10 --> T11
     T09 --> T12["T12 Practice engine"]
+    T06 --> T12
     T10 --> T13["T13 Story speech"]
     T11 --> T14["T14 Product pack"]
     T12 --> T14
     T08 --> T15["T15 Desktop UI"]
     T10 --> T15
+    T12 --> T15
     T08 --> T16["T16 Mobile UI debrief"]
     T10 --> T16
     T13 --> T17["T17 Phase 1 gate"]
