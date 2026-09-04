@@ -36,7 +36,9 @@ const PANEL_PRESETS: Record<
 
 function panelPreset(mode: ActionModalMode | null): PanelPreset {
   if (mode === 'edit') return 'edit';
-  if (mode === 'note' || mode === 'elaboration') return 'note';
+  // viewMarker 也是「查看内容」：默认给高一点，长讲解内容能多露几行，
+  // 和 note/elaboration 一致（否则 260 的 default 预设看长内容会被裁得很憋屈）
+  if (mode === 'note' || mode === 'elaboration' || mode === 'viewMarker') return 'note';
   return 'default';
 }
 
@@ -150,6 +152,11 @@ export function ExplanationActionModal({
   const useCenterPanel =
     mode === 'note' || mode === 'edit' || mode === 'viewMarker' || mode === 'regenerate' || mode === 'elaboration';
 
+  // viewMarker 的内容滚动区：面板高是 resizable 的固定值，非滚动区（垂直内边距 32 +
+  // 标题行约 21 + 间隙 10 ≈ 63）给内容滚动区留出确定的高度，而不是只靠 flex:1 去撑，
+  // 避免内容多时被父级 overflow:hidden 裁掉而没有滚动条。
+  const scrollViewportHeight = Math.max(80, height - 63);
+
   const panelBody = (
     <View
       style={{
@@ -179,7 +186,10 @@ export function ExplanationActionModal({
       )}
 
       {mode === 'viewMarker' && marker && (
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 8 }}>
+        <ScrollView
+          style={{ height: scrollViewportHeight, flexShrink: 1 }}
+          contentContainerStyle={{ paddingBottom: 8 }}
+        >
           {marker.selectedText && (
             <Text style={{ color: theme.muted, fontSize: 11, marginBottom: 8 }}>
               「{marker.selectedText}」
