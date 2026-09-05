@@ -127,20 +127,24 @@ class DatabasePermissionScopeProvider implements PermissionScopeProvider {
       (item) => item.id === request.capabilityId,
     );
     const capabilityEnabled = capability?.enabled === true;
+    const capabilityVersion = capability?.version;
 
-    const binding = db
-      .select({
-        activeExecution: schema.campaignPluginBinding.activeExecution,
-      })
-      .from(schema.campaignPluginBinding)
-      .where(
-        and(
-          eq(schema.campaignPluginBinding.campaignId, request.campaignId),
-          eq(schema.campaignPluginBinding.pluginId, request.capabilityId),
-        ),
-      )
-      .orderBy(desc(schema.campaignPluginBinding.revision))
-      .get();
+    const binding = capabilityVersion
+      ? db
+          .select({
+            activeExecution: schema.campaignPluginBinding.activeExecution,
+          })
+          .from(schema.campaignPluginBinding)
+          .where(
+            and(
+              eq(schema.campaignPluginBinding.campaignId, request.campaignId),
+              eq(schema.campaignPluginBinding.pluginId, request.capabilityId),
+              eq(schema.campaignPluginBinding.pluginVersion, capabilityVersion),
+              eq(schema.campaignPluginBinding.revision, descriptor!.revision),
+            ),
+          )
+          .get()
+      : undefined;
 
     const linkedTask = db
       .select({ id: schema.task.id })
