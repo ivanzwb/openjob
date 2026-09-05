@@ -3,11 +3,16 @@ import type { Citation } from '@shared/entities';
 import { fetchUrl, freshnessLabel, search } from '../search';
 import { compressForContext } from './compress';
 
+export type AgentFunctionTool = Extract<
+  OpenAI.Chat.Completions.ChatCompletionTool,
+  { type: 'function' }
+>;
+
 /**
  * 交给模型的工具定义。描述里写清「什么时候不该用」和「必须引用出处」，
  * 因为模型对「我需不需要搜」的判断本身就不准，需要在 prompt 层面收紧。
  */
-export const AGENT_TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
+export const AGENT_TOOLS: AgentFunctionTool[] = [
   {
     type: 'function',
     function: {
@@ -48,7 +53,7 @@ export const AGENT_TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
 ];
 
 /** 只在有 Campaign 上下文时开放，否则 nodeName 无从解析 */
-export const GRAPH_TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
+export const GRAPH_TOOLS: AgentFunctionTool[] = [
   {
     type: 'function',
     function: {
@@ -89,8 +94,28 @@ export interface ToolContext {
   purpose?: string;
 }
 
-export function agentTools(ctx?: ToolContext): OpenAI.Chat.Completions.ChatCompletionTool[] {
-  return ctx?.campaignId ? [...AGENT_TOOLS, ...GRAPH_TOOLS] : AGENT_TOOLS;
+/**
+ * Tool names are a process-wide contract. Silently overriding one would let a
+ * capability execute another capability's implementation or permission scope.
+ */
+export function mergeToolDefinitions(
+  ...groups: ReadonlyArray<ReadonlyArray<AgentFunctionTool>>
+): AgentFunctionTool[] {
+  const names = new Set<string>();
+  return groups.flatMap((group) =>
+    group.map((tool) => {
+      const name = tool.function.name;
+      if (names.has(name)) throw new Error(`工具重复注册：${name}`);
+      names.add(name);
+      return tool;
+    }),
+  );
+}
+
+export function agentTools(ctx?: ToolContext): AgentFunctionTool[] {
+  return ctx?.campaignId
+    ? mergeToolDefinitions(AGENT_TOOLS, GRAPH_TOOLS)
+    : [...AGENT_TOOLS];
 }
 
 export interface ToolOutcome {

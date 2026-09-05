@@ -1,8 +1,23 @@
-import type OpenAI from 'openai';
 import type { Citation } from '@shared/entities';
+import {
+  SOURCE_REPOSITORY_CAPABILITY_ID,
+  SOURCE_REPOSITORY_TOOL_DEFINITIONS,
+} from '@shared/plugins/builtin/sourceRepository';
 import { formatPathSuggestions, suggestRepoPaths } from '@shared/repo/pathSuggest';
 import { normalizeRepoPath } from '@shared/repo/virtualFs';
-import { agentTools, runTool, type ToolContext, type ToolOutcome } from '../llm/tools';
+import {
+  agentTools,
+  mergeToolDefinitions,
+  runTool,
+  type AgentFunctionTool,
+  type ToolContext,
+  type ToolOutcome,
+} from '../llm/tools';
+import {
+  PermissionDeniedError,
+  permissionGateway as defaultPermissionGateway,
+  type PermissionGateway,
+} from '../plugins/permissionGateway';
 import {
   findSymbolRepoAsync,
   globRepoAsync,
@@ -13,7 +28,7 @@ import {
 import { recordCodeRefs } from './repository';
 import { listRepoFilePaths } from './snapshot';
 
-export const CODE_REPO_TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
+export const CODE_REPO_TOOLS: AgentFunctionTool[] = [
   {
     type: 'function',
     function: {
@@ -90,10 +105,20 @@ export const CODE_REPO_TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   },
 ];
 
+const SOURCE_REPOSITORY_TOOL_NAMES: ReadonlySet<string> = new Set(
+  SOURCE_REPOSITORY_TOOL_DEFINITIONS.map((tool) => tool.name),
+);
+
 export function mergedCodeAgentTools(
   ctx?: ToolContext,
-): OpenAI.Chat.Completions.ChatCompletionTool[] {
-  return [...CODE_REPO_TOOLS, ...agentTools(ctx)];
+): AgentFunctionTool[] {
+  return mergeToolDefinitions(CODE_REPO_TOOLS, agentTools(ctx));
+}
+
+export interface CodeRepoToolContext extends ToolContext {
+  repoId?: string;
+  /** Test seam; production callers always use the process-wide default-deny gateway. */
+  permissionGateway?: PermissionGateway;
 }
 
 export async function runCodeRepoTool(
@@ -101,8 +126,21 @@ export async function runCodeRepoTool(
   args: Record<string, unknown>,
   repoRoot: string,
   signal?: AbortSignal,
-  ctx?: ToolContext & { repoId?: string },
+  ctx?: CodeRepoToolContext,
 ): Promise<ToolOutcome> {
+  if (SOURCE_REPOSITORY_TOOL_NAMES.has(name)) {
+    const decision = (ctx?.permissionGateway ?? defaultPermissionGateway).authorize({
+      campaignId: ctx?.campaignId ?? '',
+      capabilityId: SOURCE_REPOSITORY_CAPABILITY_ID,
+      permission: 'repository:read',
+      resource: {
+        kind: 'repository',
+        id: ctx?.repoId ?? '',
+      },
+    });
+    if (!decision.allowed) throw new PermissionDeniedError(decision);
+  }
+
   if (name === 'glob') {
     const pattern = String(args['pattern'] ?? '');
     return {
