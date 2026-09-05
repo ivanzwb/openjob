@@ -48,12 +48,12 @@ export interface SyncErrorBody {
 /**
  * 两端版本是否允许同步。
  *
- * 要求补丁号也一致，而不是只比大版本：带数据库迁移的发布经常只抬补丁号，
- * 而迁移正是最容易把两端库结构拉开的东西。宁可多拦一次，也不能让 0.6.5
- * 的手机去写 0.6.6 的库。
+ * 要求完整版本（含 prerelease/build 后缀）一致，而不是只比大版本：
+ * 带数据库迁移的发布经常只抬补丁号，beta 与正式版也可能落在不同 schema。
+ * 宁可多拦一次，也不能让不同构建互写。
  */
 export function isSyncCompatible(a: string, b: string): boolean {
-  return compareVersions(a, b) === 0;
+  return normalizeVersion(a) === normalizeVersion(b);
 }
 
 /** 谁落后了。两端拿同一份文案，避免各写一句、说法还不一样 */
@@ -61,6 +61,13 @@ export function versionMismatchMessage(desktopVersion: string, peerVersion: stri
   if (!peerVersion) {
     return `手机端版本过旧，无法确认版本号（桌面端 v${desktopVersion}）。为避免写坏数据，本次不同步，请先把手机端升级到 v${desktopVersion}。`;
   }
-  const behind = compareVersions(peerVersion, desktopVersion) < 0 ? '手机端' : '桌面端';
+  const comparison = compareVersions(peerVersion, desktopVersion);
+  if (comparison === 0) {
+    return (
+      `版本构建不一致：桌面端 v${desktopVersion}，手机端 v${peerVersion}。` +
+      '为避免写坏数据，本次不同步，请在两端安装完全相同的构建版本。'
+    );
+  }
+  const behind = comparison < 0 ? '手机端' : '桌面端';
   return `版本不一致：桌面端 v${desktopVersion}，手机端 v${peerVersion}。为避免写坏数据，本次不同步，请先升级${behind}到相同版本。`;
 }

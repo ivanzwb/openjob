@@ -92,6 +92,7 @@ const campaignRow: CampaignRow = {
     seniority: '高级',
   },
   jobTargetId: null,
+  roleProfileId: null,
   resumeId: 'r1',
   interviewDate: null,
   dailyMinutes: null,

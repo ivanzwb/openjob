@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { compareVersions, isSyncCompatible, normalizeVersion, versionMismatchMessage } from './version';
 
@@ -44,6 +46,11 @@ describe('isSyncCompatible', () => {
     expect(isSyncCompatible('0.6.0', '0.7.0')).toBe(false);
     expect(isSyncCompatible('0.7.0', '0.6.0')).toBe(false);
   });
+
+  it('beta、正式版和不同构建后缀不能互写', () => {
+    expect(isSyncCompatible('0.6.25-beta.1', '0.6.25')).toBe(false);
+    expect(isSyncCompatible('0.6.25+desktop', '0.6.25+mobile')).toBe(false);
+  });
 });
 
 describe('versionMismatchMessage', () => {
@@ -58,6 +65,14 @@ describe('versionMismatchMessage', () => {
     expect(msg).toContain('v0.6.0');
   });
 
+  it('仅构建后缀不同时不猜哪一端落后，要求安装同一构建', () => {
+    const msg = versionMismatchMessage('0.6.25', '0.6.25-beta.1');
+    expect(msg).toContain('构建不一致');
+    expect(msg).toContain('两端安装完全相同');
+    expect(msg).not.toContain('升级桌面端');
+    expect(msg).not.toContain('升级手机端');
+  });
+
   it('认不出对端版本时也给出可执行的指引', () => {
     const msg = versionMismatchMessage('0.7.0', null);
     expect(msg).toContain('版本过旧');
@@ -67,5 +82,25 @@ describe('versionMismatchMessage', () => {
   it('都说明本次没有同步数据', () => {
     expect(versionMismatchMessage('0.7.0', '0.6.0')).toContain('不同步');
     expect(versionMismatchMessage('0.7.0', null)).toContain('不同步');
+  });
+});
+
+describe('双端发布版本配置', () => {
+  it('根 package、mobile package 与 Expo app.json 保持精确一致', () => {
+    const root = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as {
+      version: string;
+    };
+    const mobile = JSON.parse(
+      readFileSync(join(process.cwd(), 'mobile', 'package.json'), 'utf8'),
+    ) as { version: string };
+    const appConfig = JSON.parse(
+      readFileSync(join(process.cwd(), 'mobile', 'app.json'), 'utf8'),
+    ) as { expo: { version: string; android: { versionCode: number } } };
+
+    expect(mobile.version).toBe(root.version);
+    expect(appConfig.expo.version).toBe(root.version);
+    expect(appConfig.expo.android.versionCode).toBe(
+      Number(root.version.split('.').map((part) => part.padStart(2, '0')).join('')),
+    );
   });
 });

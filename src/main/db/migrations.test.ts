@@ -124,3 +124,39 @@ describe('prompt_run 补建', () => {
     db.close();
   });
 });
+
+describe('plugin runtime persistence migration', () => {
+  it('桌面与手机使用同一份 T03 DDL', () => {
+    const desktop = sqlOf('0022_plugin_runtime_persistence').replace(/\r\n/g, '\n');
+    const mobile = readFileSync(
+      join(process.cwd(), 'mobile', 'src', 'db', 'migrations', '0020_plugin_runtime_persistence.sql'),
+      'utf8',
+    ).replace(/\r\n/g, '\n');
+    expect(mobile).toBe(desktop);
+  });
+
+  it('空库迁移后新表和 Campaign 外键齐全', () => {
+    const db = new DatabaseSync(':memory:');
+    db.exec('PRAGMA foreign_keys = ON');
+    journal().forEach((entry) => applySql(db, sqlOf(entry.tag)));
+
+    for (const table of [
+      'role_profile',
+      'campaign_plugin_binding',
+      'campaign_runtime_descriptor',
+      'migration_checkpoint',
+    ]) {
+      expect(
+        db
+          .prepare(`SELECT count(*) AS n FROM sqlite_master WHERE type = 'table' AND name = ?`)
+          .get(table),
+      ).toEqual({ n: 1 });
+    }
+    const roleProfileColumn = db
+      .prepare(`PRAGMA table_info(campaign)`)
+      .all()
+      .find((column) => (column as { name: string }).name === 'role_profile_id');
+    expect(roleProfileColumn).toBeDefined();
+    db.close();
+  });
+});
