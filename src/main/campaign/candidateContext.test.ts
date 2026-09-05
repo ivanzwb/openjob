@@ -56,6 +56,7 @@ const campaignRow: CampaignRow = {
   jdRaw: 'JD 原文',
   jdParsed: null,
   jobTargetId: null,
+  roleProfileId: null,
   resumeId: 'r1',
   interviewDate: null,
   dailyMinutes: null,

@@ -1,4 +1,12 @@
-import { index, integer, primaryKey, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import {
+  index,
+  integer,
+  primaryKey,
+  real,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from 'drizzle-orm/sqlite-core';
 import type {
   AnnotationKind,
   AnnotationTarget,
@@ -24,6 +32,7 @@ import type {
 } from '../../shared/enums';
 import type { Citation, JdParsed, ResumeParsed } from '../../shared/entities';
 import type { MockInterviewKind, MockInterviewType } from '../../shared/design/prompts';
+import type { ResolvedCapabilityRef, ResolvedPluginRef } from '../../shared/plugins';
 
 /**
  * 全量 schema 一次到位——后续阶段只填数据不改结构，避免频繁迁移。
@@ -97,6 +106,22 @@ export const resumeVariant = sqliteTable(
   ],
 );
 
+export const roleProfile = sqliteTable(
+  'role_profile',
+  {
+    id: text('id').primaryKey(),
+    roleFamily: text('role_family').notNull(),
+    rolePackId: text('role_pack_id').notNull(),
+    level: text('level'),
+    industryPackId: text('industry_pack_id'),
+    location: text('location'),
+    interviewLanguage: text('interview_language').notNull(),
+    confidence: real('confidence').notNull(),
+    userConfirmed: integer('user_confirmed', { mode: 'boolean' }).notNull().default(false),
+  },
+  (t) => [index('idx_role_profile_pack').on(t.rolePackId, t.industryPackId)],
+);
+
 export const campaign = sqliteTable('campaign', {
   id: text('id').primaryKey(),
   company: text('company').notNull(),
@@ -104,6 +129,9 @@ export const campaign = sqliteTable('campaign', {
   jdRaw: text('jd_raw').notNull(),
   jdParsed: text('jd_parsed', { mode: 'json' }).$type<JdParsed>(),
   jobTargetId: text('job_target_id').references(() => jobTarget.id, { onDelete: 'set null' }),
+  roleProfileId: text('role_profile_id').references(() => roleProfile.id, {
+    onDelete: 'set null',
+  }),
   resumeId: text('resume_id').references(() => resume.id, { onDelete: 'set null' }),
   interviewDate: text('interview_date'),
   dailyMinutes: integer('daily_minutes'),
@@ -111,6 +139,70 @@ export const campaign = sqliteTable('campaign', {
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
 });
+
+export const campaignPluginBinding = sqliteTable(
+  'campaign_plugin_binding',
+  {
+    id: text('id').primaryKey(),
+    campaignId: text('campaign_id')
+      .notNull()
+      .references(() => campaign.id, { onDelete: 'cascade' }),
+    pluginId: text('plugin_id').notNull(),
+    pluginVersion: text('plugin_version').notNull(),
+    configJson: text('config_json', { mode: 'json' }).$type<unknown>().notNull(),
+    configSnapshotHash: text('config_snapshot_hash').notNull(),
+    revision: integer('revision').notNull(),
+    activeExecution: integer('active_execution', { mode: 'boolean' }).notNull().default(true),
+    enabledAt: integer('enabled_at').notNull(),
+  },
+  (t) => [
+    uniqueIndex('uq_campaign_plugin_binding_revision').on(
+      t.campaignId,
+      t.pluginId,
+      t.revision,
+    ),
+    index('idx_campaign_plugin_binding_active').on(t.campaignId, t.activeExecution),
+  ],
+);
+
+export const campaignRuntimeDescriptor = sqliteTable(
+  'campaign_runtime_descriptor',
+  {
+    id: text('id').primaryKey(),
+    campaignId: text('campaign_id')
+      .notNull()
+      .references(() => campaign.id, { onDelete: 'cascade' }),
+    revision: integer('revision').notNull(),
+    coreVersion: text('core_version').notNull(),
+    rolePack: text('role_pack', { mode: 'json' }).$type<ResolvedPluginRef>().notNull(),
+    industryPack: text('industry_pack', { mode: 'json' }).$type<ResolvedPluginRef>(),
+    capabilities: text('capabilities', { mode: 'json' })
+      .$type<ResolvedCapabilityRef[]>()
+      .notNull(),
+    competencyBaselineVersion: text('competency_baseline_version').notNull(),
+    configSnapshotHash: text('config_snapshot_hash').notNull(),
+    resolvedAt: integer('resolved_at').notNull(),
+  },
+  (t) => [
+    uniqueIndex('uq_campaign_runtime_descriptor_revision').on(t.campaignId, t.revision),
+    index('idx_campaign_runtime_descriptor_hash').on(t.configSnapshotHash),
+  ],
+);
+
+export const migrationCheckpoint = sqliteTable(
+  'migration_checkpoint',
+  {
+    id: text('id').primaryKey(),
+    campaignId: text('campaign_id')
+      .notNull()
+      .references(() => campaign.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    completedAt: integer('completed_at').notNull(),
+  },
+  (t) => [
+    uniqueIndex('uq_migration_checkpoint_campaign_kind').on(t.campaignId, t.kind),
+  ],
+);
 
 // ---------------------------------------------------------------------------
 // 知识点

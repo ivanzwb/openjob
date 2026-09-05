@@ -309,6 +309,7 @@ export function getCampaignDetail(db: SQLiteDatabase, id: string): CampaignDetai
     jd_raw: string;
     jd_parsed: string | null;
     job_target_id: string | null;
+    role_profile_id: string | null;
     resume_id: string | null;
     interview_date: string | null;
     daily_minutes: number | null;
@@ -420,6 +421,7 @@ export function getCampaignDetail(db: SQLiteDatabase, id: string): CampaignDetai
       jdRaw: row.jd_raw,
       jdParsed: row.jd_parsed ? JSON.parse(row.jd_parsed) : null,
       jobTargetId: row.job_target_id,
+      roleProfileId: row.role_profile_id,
       resumeId: row.resume_id,
       interviewDate: row.interview_date,
       dailyMinutes: row.daily_minutes,
