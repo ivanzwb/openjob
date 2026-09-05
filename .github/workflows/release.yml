@@ -131,10 +131,14 @@ jobs:
         run: node node_modules/electron/install.js
 
       # 从 tag 同步版本号：防止 tag 与 package.json 版本不一致时，安装包被发布到错误的 release
-      # （例如打 v0.2.1 tag 但 package.json 仍是 0.2.0，electron-builder 会按版本挂到 v0.2.0）
+      # （例如打 v0.2.1 tag 但 package.json 仍是 0.2.0，electron-builder 会按版本挂到 v0.2.0）。
+      # 同时用 mobile/scripts/sync-version.mjs 同步手机端（mobile/package.json + app.json +
+      # versionCode），否则 src/shared/version.test.ts 的双端版本一致性检查会失败。
       - name: Sync version from tag
         if: startsWith(github.ref, 'refs/tags/v')
-        run: node -e "const { readFileSync, writeFileSync } = require('node:fs'); const p = JSON.parse(readFileSync('package.json', 'utf8')); const v = process.env.GITHUB_REF_NAME.replace(/^v/, ''); if (p.version !== v) { p.version = v; writeFileSync('package.json', JSON.stringify(p, null, 2) + '\n'); console.log('version synced to ' + v); } else { console.log('version already ' + v); }"
+        run: |
+          node -e "const { readFileSync, writeFileSync } = require('node:fs'); const p = JSON.parse(readFileSync('package.json', 'utf8')); const v = process.env.GITHUB_REF_NAME.replace(/^v/, ''); if (p.version !== v) { p.version = v; writeFileSync('package.json', JSON.stringify(p, null, 2) + '\n'); console.log('version synced to ' + v); } else { console.log('version already ' + v); }"
+          cd mobile && node scripts/sync-version.mjs
 
       - name: Typecheck
         run: pnpm run typecheck
