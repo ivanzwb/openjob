@@ -7,6 +7,7 @@ import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { getAppPaths } from '../paths';
 import { createBackup } from '../sync/backup';
 import { initSyncLayer } from '../sync/identity';
+import { backfillLegacyCampaignPluginRuntime } from './backfill/pluginRuntime';
 import * as schema from './schema';
 
 export type Db = BetterSQLite3Database<typeof schema>;
@@ -106,6 +107,11 @@ export function getDb(): Db {
 
   // 迁移之后才装：触发器要写 sync_oplog / sync_meta，这两张表由迁移创建
   initSyncLayer(raw);
+
+  const pluginBackfill = backfillLegacyCampaignPluginRuntime(raw);
+  if (pluginBackfill.failures.length > 0) {
+    console.warn('部分旧 Campaign 插件运行时回填失败，将在下次启动重试', pluginBackfill.failures);
+  }
 
   import('../config/syncMirror').then(({ ensureAppSettingsMirrored }) => ensureAppSettingsMirrored()).catch(() => {});
 

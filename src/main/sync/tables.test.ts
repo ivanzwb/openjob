@@ -41,6 +41,25 @@ describe('表规格自检', () => {
     expect(syncTableSpec('knowledge_node').columns).toContain('quiz_answer_draft_md');
   });
 
+  it('插件运行时表全部同步，且父表顺序先于引用方', () => {
+    const names = syncTableSpecs().map((spec) => spec.name);
+    for (const table of [
+      'role_profile',
+      'campaign_plugin_binding',
+      'campaign_runtime_descriptor',
+      'migration_checkpoint',
+    ]) {
+      expect(names).toContain(table);
+    }
+    expect(names.indexOf('role_profile')).toBeLessThan(names.indexOf('campaign'));
+    expect(names.indexOf('campaign')).toBeLessThan(names.indexOf('campaign_plugin_binding'));
+    expect(names.indexOf('campaign')).toBeLessThan(
+      names.indexOf('campaign_runtime_descriptor'),
+    );
+    expect(names.indexOf('campaign')).toBeLessThan(names.indexOf('migration_checkpoint'));
+    expect(syncTableSpec('campaign').columns).toContain('role_profile_id');
+  });
+
   it('不在清单里的表要报错，别让调用方以为它在同步', () => {
     expect(() => syncTableSpec('search_cache')).toThrow('不在同步清单里');
   });

@@ -121,6 +121,19 @@ describe('runMigrations', () => {
       .getAllSync<{ name: string; notnull: number }>(`PRAGMA table_info(resume_variant)`)
       .find((c) => c.name === 'source_resume_id');
     expect(col?.notnull).toBe(0);
+    for (const table of [
+      'role_profile',
+      'campaign_plugin_binding',
+      'campaign_runtime_descriptor',
+      'migration_checkpoint',
+    ]) {
+      expect(tableExists(table), table).toBe(true);
+    }
+    expect(
+      sqlite
+        .getAllSync<{ name: string }>(`PRAGMA table_info(campaign)`)
+        .some((column) => column.name === 'role_profile_id'),
+    ).toBe(true);
     expect(pendingMigrationIndices(sqlite)).toEqual([]);
   });
 

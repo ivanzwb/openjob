@@ -101,6 +101,31 @@ export interface JdParsed {
   seniority: string | null;
 }
 
+/** Campaign 的岗位选择意图；精确插件版本只保存在 binding 中。 */
+export interface RoleProfile {
+  id: Id;
+  roleFamily: string;
+  rolePackId: string;
+  level: string | null;
+  industryPackId: string | null;
+  location: string | null;
+  interviewLanguage: string;
+  confidence: number;
+  userConfirmed: boolean;
+}
+
+export interface CampaignPluginBinding {
+  id: Id;
+  campaignId: Id;
+  pluginId: string;
+  pluginVersion: string;
+  configJson: unknown;
+  configSnapshotHash: string;
+  revision: number;
+  activeExecution: boolean;
+  enabledAt: Timestamp;
+}
+
 /** 系统的中心对象：一场具体面试的备考单元 */
 export interface Campaign {
   id: Id;
@@ -109,6 +134,7 @@ export interface Campaign {
   jdRaw: string;
   jdParsed: JdParsed | null;
   jobTargetId: Id | null;
+  roleProfileId: Id | null;
   resumeId: Id | null;
   /** 面试日期，驱动整个日程编排 */
   interviewDate: DateOnly | null;
