@@ -11,6 +11,7 @@ import {
   formatResumeExperienceForPrompt,
   resumeExperienceBlock,
   resumeFactsBlockForSelfIntro,
+  skillsFromResumeMd,
 } from './experienceTimeline';
 
 const RESUME = `## 基本信息
@@ -173,5 +174,86 @@ describe('resumeFactsBlockForSelfIntro', () => {
 
     expect(block).toContain('自我介绍唯一事实来源');
     expect(block).toContain('某项目：做了些事');
+  });
+});
+
+describe('resumeFactsBlockForSelfIntro 身份素材', () => {
+  it('开场身份素材包含基本信息里的姓名（脱敏字段不进）', () => {
+    const block = resumeFactsBlockForSelfIntro(RESUME);
+    expect(block).toContain('基本信息（开场身份素材）');
+    expect(block).toContain('姓名：张三');
+    expect(block).not.toContain('1380000');
+  });
+});
+
+describe('resumeFactsBlockForSelfIntro 工作线并入', () => {
+  const NESTED = `## 工作经历
+
+### 甲厂 | 后端工程师 | 2020-01 ~ 至今
+
+- 负责订单中台
+
+## 项目经历
+
+### 订单中台重构 | 技术负责人 | 2022-06 ~ 至今
+
+- 把下单链路延迟降低 40%
+
+### 毕业设计 | 学生 | 2018-03 ~ 2018-06
+
+- 课程作业
+`;
+
+  it('落在工作经历期间的项目紧随该工作条目，并标注并入', () => {
+    const block = resumeFactsBlockForSelfIntro(NESTED);
+    const workIdx = block.indexOf('1. [工作·进行中]');
+    const projectIdx = block.indexOf('订单中台重构');
+    expect(workIdx).toBeGreaterThanOrEqual(0);
+    expect(projectIdx).toBeGreaterThan(workIdx);
+    expect(block).toContain('[项目·并入工作线');
+    expect(block).toContain('不要重复报时间与职级');
+    // 工作期之外的项目不并入、也不加注
+    expect(block).toContain('[项目]');
+  });
+
+  it('工作条目与项目条目按时间各自归位，不影响「按时间倒序」说明', () => {
+    expect(resumeFactsBlockForSelfIntro(NESTED)).toContain('按时间倒序');
+  });
+});
+
+describe('resumeFactsBlockForSelfIntro 岗位匹配候选素材', () => {
+  it('按 JD 要求预筛出相关经历与技能节，带命中要求与权重', () => {
+    const block = resumeFactsBlockForSelfIntro(RESUME, null, [
+      { skill: '数据看板重构 首屏', weight: 0.9 },
+      { skill: 'TypeScript', weight: 0.8 },
+    ]);
+    expect(block).toContain('岗位匹配候选素材');
+    expect(block).toContain('经历条目 2');
+    expect(block).toContain('数据看板重构');
+    expect(block).toContain('命中：数据看板重构 首屏(90%)');
+    // 内容仍然只准从唯一事实来源取
+    expect(block.indexOf('岗位匹配候选素材')).toBeGreaterThan(block.indexOf('唯一事实来源'));
+  });
+
+  it('没有能覆盖 JD 要求的素材时不生成候选块（退回全量事实）', () => {
+    const block = resumeFactsBlockForSelfIntro(RESUME, null, [
+      { skill: '量子计算 拓扑纠错', weight: 0.9 },
+    ]);
+    expect(block).not.toContain('岗位匹配候选素材');
+    expect(block).toContain('现东家网络');
+  });
+
+  it('不传 JD 要求时不生成候选块', () => {
+    expect(resumeFactsBlockForSelfIntro(RESUME)).not.toContain('岗位匹配候选素材');
+  });
+});
+
+describe('skillsFromResumeMd', () => {
+  it('parsed 缺失时能从专业技能节提取技能（冒号后按顿号拆）', () => {
+    expect(skillsFromResumeMd(RESUME)).toEqual(['React', 'TypeScript']);
+  });
+
+  it('没有专业技能节时返回空', () => {
+    expect(skillsFromResumeMd('## 工作经历\n\n### A | B | 2020 ~ 至今\n- x')).toEqual([]);
   });
 });

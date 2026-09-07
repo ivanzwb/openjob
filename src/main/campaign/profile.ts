@@ -10,6 +10,7 @@
 import { eq } from 'drizzle-orm';
 import type { ResumeParsed } from '@shared/entities';
 import { pickVariantForCampaign } from '@shared/resume/campaignBinding';
+import { skillsFromResumeMd } from '@shared/resume/experienceTimeline';
 import { getDb, schema } from '../db';
 import { getCampaignRow, getResumeRow } from './repository';
 
@@ -18,6 +19,11 @@ export interface CampaignProfile {
   text: string;
   /** 母版结构数据（skills/projects 等），派生版沿用 */
   parsed: ResumeParsed | null;
+  /**
+   * 「简历技能」行的素材：优先 parsed.skills；parsed 缺失时从正文
+   * 「专业技能」节提取兜底，避免装配行空着（模型只能自己从长文里猜）。
+   */
+  skills: string[];
 }
 
 export function loadCampaignProfile(campaignId: string): CampaignProfile | null {
@@ -27,7 +33,12 @@ export function loadCampaignProfile(campaignId: string): CampaignProfile | null 
   if (!master) return null;
 
   const text = variantContentFor(campaign.jobTargetId, campaign.resumeId) ?? master.rawText ?? '';
-  return { text, parsed: master.parsed ?? null };
+  const parsedSkills = master.parsed?.skills ?? [];
+  return {
+    text,
+    parsed: master.parsed ?? null,
+    skills: parsedSkills.length > 0 ? parsedSkills : skillsFromResumeMd(text),
+  };
 }
 
 function variantContentFor(jobTargetId: string | null, resumeId: string): string | null {

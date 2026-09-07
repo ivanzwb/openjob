@@ -22,7 +22,7 @@ function buildResumeContext(campaignId: string, query: ResumeRelevanceQuery): st
   return buildExplainResumeContext(
     {
       resumeRawText: profile.text,
-      resumeSkills: profile.parsed?.skills ?? null,
+      resumeSkills: profile.skills.length > 0 ? profile.skills : null,
       resumeProjects: profile.parsed?.projects ?? null,
     },
     query,

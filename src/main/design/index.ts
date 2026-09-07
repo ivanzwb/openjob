@@ -123,7 +123,7 @@ function buildInterviewContext(campaignId: string, query?: ResumeRelevanceQuery)
   return `公司：${campaign.company}
 岗位：${campaign.roleTitle}
 JD 摘要：${jdSummary}
-简历技能：${profile?.parsed?.skills?.join('、') ?? '（未提供）'}
+简历技能：${profile?.skills.join('、') || '（未提供）'}
 ${
   query
     ? relevantResumeExperienceBlock(profile?.text ?? '', query, {
@@ -266,9 +266,11 @@ export async function generateRecommendedAnswer(
     interviewType === 'selfIntro'
       ? (() => {
           const resume = getCampaignResume(campaignId);
+          const jdRequirements = getCampaignRow(campaignId).jdParsed?.requirements ?? null;
           return `\n\n${resumeFactsBlockForSelfIntro(
             resume?.rawText ?? '',
             resume?.projects,
+            jdRequirements,
           )}`;
         })()
       : '';

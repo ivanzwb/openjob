@@ -30,7 +30,7 @@ export function buildCampaignCandidateContext(
       company: campaign.company,
       roleTitle: campaign.roleTitle,
       jdSummary: jdSummaryForPrompt(campaign),
-      resumeSkills: profile?.parsed?.skills ?? null,
+      resumeSkills: profile && profile.skills.length > 0 ? profile.skills : null,
       resumeRawText: profile?.text ?? null,
       resumeProjects: profile?.parsed?.projects ?? null,
     },

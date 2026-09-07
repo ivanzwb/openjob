@@ -14,6 +14,7 @@ import {
   pickVariantForCampaign,
   type ResumeVariantBrief,
 } from '@shared/resume/campaignBinding';
+import { skillsFromResumeMd } from '@shared/resume/experienceTimeline';
 import type { FallbackProject } from '@shared/resume/experienceTimeline';
 
 export interface ResumePromptFields {
@@ -42,16 +43,30 @@ function loadMaster(db: SQLiteDatabase, resumeId: string | null): ResumePromptFi
   const row = resumeId
     ? db.getFirstSync<MasterRow>(`SELECT parsed, raw_text FROM resume WHERE id = ?`, resumeId)
     : null;
-  if (!row?.parsed) return { skills: [], projects: [], rawText: row?.raw_text ?? '' };
-  try {
-    const parsed = JSON.parse(row.parsed) as {
-      projects?: FallbackProject[];
-      skills?: string[];
-    };
-    return { skills: parsed.skills ?? [], projects: parsed.projects ?? [], rawText: row.raw_text ?? '' };
-  } catch {
-    return { skills: [], projects: [], rawText: row.raw_text ?? '' };
+  const rawText = row?.raw_text ?? '';
+  let skills: string[] = [];
+  if (row?.parsed) {
+    try {
+      const parsed = JSON.parse(row.parsed) as {
+        projects?: FallbackProject[];
+        skills?: string[];
+      };
+      skills = parsed.skills ?? [];
+    } catch {
+      skills = [];
+    }
   }
+  // parsed 缺失时从「专业技能」节兜底，让「简历技能」行不至于空着
+  if (skills.length === 0) skills = skillsFromResumeMd(rawText);
+  let projects: FallbackProject[] = [];
+  if (row?.parsed) {
+    try {
+      projects = (JSON.parse(row.parsed) as { projects?: FallbackProject[] }).projects ?? [];
+    } catch {
+      projects = [];
+    }
+  }
+  return { skills, projects, rawText };
 }
 
 interface VariantPromptRow {

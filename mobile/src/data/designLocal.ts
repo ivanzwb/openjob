@@ -301,7 +301,11 @@ export async function generateRecommendedAnswer(
       ? (() => {
           const campaign = getCampaign(db, campaignId);
           const resume = loadCampaignResumeForPrompt(db, campaign);
-          return `\n\n${resumeFactsBlockForSelfIntro(resume.rawText, resume.projects)}`;
+          return `\n\n${resumeFactsBlockForSelfIntro(
+            resume.rawText,
+            resume.projects,
+            campaign.jdParsed?.requirements ?? null,
+          )}`;
         })()
       : '';
 
