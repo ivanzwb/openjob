@@ -57,28 +57,40 @@ function CampaignListView({
   const [company, setCompany] = useState('');
   const [role, setRole] = useState('');
   const [jd, setJd] = useState('');
+  const [resumes, setResumes] = useState<{ id: string; label: string }[]>([]);
+  // null = 用默认（最新母版）；创建对话框里默认值按最新母版预选
+  const [resumeId, setResumeId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
 
   const reload = useCallback(() => setCampaigns(listCampaigns(getRawDb())), []);
 
   useLocalDataReload(reload);
 
+  const openCreateDialog = (): void => {
+    setCreateOpen(true);
+    setResumeId(null);
+    const rows = getRawDb().getAllSync<{ id: string; label: string }>(
+      `SELECT id, label FROM resume ORDER BY updated_at DESC, created_at DESC`,
+    );
+    setResumes(rows);
+  };
+
   // 创建在任务里落库，跑完后即使这页被重建也能接着打开详情
   useTaskResult<string>(CREATE_CAMPAIGN_KEY, (id) => {
     setCompany('');
     setRole('');
     setJd('');
+    setResumeId(null);
     setCreateOpen(false);
     onOpenDetail(id);
   });
 
   const create = (): void => {
-    const input = { company, role, jd };
     void runTask(
       CREATE_CAMPAIGN_KEY,
       '创建备考',
       async () => {
-        const id = await createCampaign(getRawDb(), input.company, input.role, input.jd);
+        const id = await createCampaign(getRawDb(), company, role, jd, resumeId);
         notifyDataChanged();
         await triggerSync().catch(() => undefined);
         return id;
@@ -134,10 +146,7 @@ function CampaignListView({
             </Pressable>
           </View>
         ))}
-        <Pressable
-          onPress={() => setCreateOpen(true)}
-          style={[btnStyle(theme), { marginTop: campaigns.length ? 4 : 0 }]}
-        >
+        <Pressable onPress={openCreateDialog} style={[btnStyle(theme), { marginTop: campaigns.length ? 4 : 0 }]}>
           <Text style={{ color: '#fff' }}>创建备考职位</Text>
         </Pressable>
       </ScrollView>
@@ -202,6 +211,30 @@ function CampaignListView({
                 scrollEnabled
                 style={[inputStyle(theme), { height: 160, textAlignVertical: 'top' }]}
               />
+              {resumes.length === 0 ? (
+                <Text style={{ color: theme.muted, fontSize: 12 }}>
+                  暂无简历：出题与参考答案将无法结合你的履历，可在「简历」页导入或从桌面端同步
+                </Text>
+              ) : (
+                <View style={{ gap: 2 }}>
+                  <Text style={{ color: theme.muted, fontSize: 12 }}>绑定简历（答题上下文用，可改）</Text>
+                  <Pressable
+                    onPress={() => setResumeId(null)}
+                    style={{ paddingVertical: 8, flexDirection: 'row', justifyContent: 'space-between' }}
+                  >
+                    <Text style={{ color: resumeId === null ? theme.accent : theme.text, fontSize: 13 }}>
+                      默认 · 最新母版（{resumes[0].label}）
+                    </Text>
+                  </Pressable>
+                  {resumes.map((r) => (
+                    <Pressable key={r.id} onPress={() => setResumeId(r.id)} style={{ paddingVertical: 4 }}>
+                      <Text style={{ color: resumeId === r.id ? theme.accent : theme.text, fontSize: 13 }}>
+                        {r.label}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
             </ScrollView>
             <Pressable
               onPress={create}

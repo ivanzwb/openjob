@@ -17,6 +17,7 @@ import type {
   BlindSpotQuestion,
 } from '@shared/ipc';
 import { structureResumeText } from '@shared/resume/importStructure';
+import { pickDefaultResumeId } from '@shared/resume/campaignBinding';
 import { getDb, schema } from '../db';
 import { attachPriorityReason, computePriority } from '../diagnosis/priority';
 import { countCrossCampaignReports } from '../diagnosis/prior';
@@ -246,6 +247,11 @@ export function createCampaign(input: CreateCampaignInput): Campaign {
     throw new Error('请选择目标岗位，或填写公司与 JD');
   }
 
+  // 没显式选简历时按默认规则绑定：目标岗位有优化派生版 → 绑派生版的母版
+  // （prompt 取数会按 source_resume_id 命中派生版正文），否则绑最新母版。
+  const resumeId =
+    input.resumeId !== undefined ? input.resumeId : defaultResumeIdForTarget(jobTargetId);
+
   const row = {
     id,
     company,
@@ -253,7 +259,7 @@ export function createCampaign(input: CreateCampaignInput): Campaign {
     jdRaw,
     jdParsed,
     jobTargetId,
-    resumeId: null,
+    resumeId,
     interviewDate: null,
     dailyMinutes: null,
     status: 'planning' as const,
@@ -262,6 +268,29 @@ export function createCampaign(input: CreateCampaignInput): Campaign {
   };
   db.insert(schema.campaign).values(row).run();
   return rowToCampaign(row);
+}
+
+function defaultResumeIdForTarget(jobTargetId: string): string | null {
+  const db = getDb();
+  const variants = db
+    .select({
+      id: schema.resumeVariant.id,
+      sourceResumeId: schema.resumeVariant.sourceResumeId,
+      updatedAt: schema.resumeVariant.updatedAt,
+      createdAt: schema.resumeVariant.createdAt,
+    })
+    .from(schema.resumeVariant)
+    .where(eq(schema.resumeVariant.jobTargetId, jobTargetId))
+    .all();
+  const resumes = db
+    .select({
+      id: schema.resume.id,
+      updatedAt: schema.resume.updatedAt,
+      createdAt: schema.resume.createdAt,
+    })
+    .from(schema.resume)
+    .all();
+  return pickDefaultResumeId(variants, resumes);
 }
 
 export function updateCampaign(input: UpdateCampaignInput): Campaign {

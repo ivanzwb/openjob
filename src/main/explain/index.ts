@@ -8,22 +8,22 @@ import { normalizeDisplayText } from '@shared/lib/markdownDisplay';
 import { completeJson } from '../llm/json';
 import { resolveLlmRole } from '../config';
 import { getDb, schema } from '../db';
-import { getCampaignRow, getResumeRow, rowToNode } from '../campaign/repository';
+import { getCampaignRow, rowToNode } from '../campaign/repository';
+import { loadCampaignProfile } from '../campaign/profile';
 
 /**
  * 措辞和筛选都在共享层（手机端调同一个函数），这里只负责取数。
  * query 决定从简历里挑哪几段，所以每个调用点都要把考点名和用户这轮的输入传进来。
  */
 function buildResumeContext(campaignId: string, query: ResumeRelevanceQuery): string {
-  const campaign = getCampaignRow(campaignId);
-  if (!campaign.resumeId) return buildExplainResumeContext(null, query);
+  const profile = loadCampaignProfile(campaignId);
+  if (!profile) return buildExplainResumeContext(null, query);
 
-  const resume = getResumeRow(campaign.resumeId);
   return buildExplainResumeContext(
     {
-      resumeRawText: resume.rawText,
-      resumeSkills: resume.parsed?.skills ?? null,
-      resumeProjects: resume.parsed?.projects ?? null,
+      resumeRawText: profile.text,
+      resumeSkills: profile.parsed?.skills ?? null,
+      resumeProjects: profile.parsed?.projects ?? null,
     },
     query,
   );

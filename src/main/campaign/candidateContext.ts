@@ -12,6 +12,7 @@ import { buildCandidateContext, jdSummaryForPrompt } from '@shared/prompts/candi
 import { resolvePrompt } from '@shared/prompts/registry';
 import { getDb, schema } from '../db';
 import { getCampaignRow, rowToNode } from './repository';
+import { loadCampaignProfile } from './profile';
 
 type NodeContext = Pick<KnowledgeNode, 'name' | 'coverageType' | 'examForms'>;
 
@@ -22,18 +23,16 @@ export function buildCampaignCandidateContext(
   userText?: string | null,
 ): string {
   const campaign = getCampaignRow(campaignId);
-  const resume = campaign.resumeId
-    ? getDb().select().from(schema.resume).where(eq(schema.resume.id, campaign.resumeId)).get()
-    : null;
+  const profile = loadCampaignProfile(campaignId);
 
   return buildCandidateContext(
     {
       company: campaign.company,
       roleTitle: campaign.roleTitle,
       jdSummary: jdSummaryForPrompt(campaign),
-      resumeSkills: resume?.parsed?.skills ?? null,
-      resumeRawText: resume?.rawText ?? null,
-      resumeProjects: resume?.parsed?.projects ?? null,
+      resumeSkills: profile?.parsed?.skills ?? null,
+      resumeRawText: profile?.text ?? null,
+      resumeProjects: profile?.parsed?.projects ?? null,
     },
     node
       ? { name: node.name, coverageType: node.coverageType, examForms: node.examForms }

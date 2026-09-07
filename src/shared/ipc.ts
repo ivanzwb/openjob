@@ -305,6 +305,11 @@ export interface CreateCampaignInput {
   company?: string;
   roleTitle?: string;
   jdRaw?: string;
+  /**
+   * 绑定的母版简历。不传时按默认规则取：目标岗位有优化派生版 → 派生版的母版，
+   * 否则最新母版（规则见 @shared/resume/campaignBinding）。
+   */
+  resumeId?: string | null;
 }
 
 export interface UpdateCampaignInput {

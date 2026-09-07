@@ -393,23 +393,36 @@ export async function saveSpeechFromDesign(
   return { id, existing: false };
 }
 
+/**
+ * 新建备考。resumeId 缺省时绑最新母版（移动端新建不选目标岗位、也没有派生版
+ * 可选，规则见 @shared/resume/campaignBinding：无派生版 → 最新母版），保证
+ * 出题/参考答案的 prompt 里有候选人履历。
+ */
 export async function createCampaign(
   db: SQLiteDatabase,
   company: string,
   roleTitle: string,
   jdRaw: string,
+  resumeId?: string | null,
 ): Promise<string> {
   const identity = await getDeviceIdentity(db);
   const id = Crypto.randomUUID();
   const now = Date.now();
+  const boundResumeId =
+    resumeId ??
+    db.getFirstSync<{ id: string }>(
+      `SELECT id FROM resume ORDER BY updated_at DESC, created_at DESC LIMIT 1`,
+    )?.id ??
+    null;
   writingAs(db, identity.deviceId, () => {
     db.runSync(
-      `INSERT INTO campaign (id, company, role_title, jd_raw, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, 'planning', ?, ?)`,
+      `INSERT INTO campaign (id, company, role_title, jd_raw, resume_id, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'planning', ?, ?)`,
       id,
       company.trim(),
       roleTitle.trim(),
       jdRaw.trim(),
+      boundResumeId,
       now,
       now,
     );

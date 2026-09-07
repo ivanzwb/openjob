@@ -10,6 +10,7 @@ import type { ExamForm } from '@shared/enums';
 import type { InferSelectModel } from 'drizzle-orm';
 import { completeJson } from '../llm/json';
 import { getCampaignRow } from '../campaign/repository';
+import { loadCampaignProfile } from '../campaign/profile';
 import { buildCampaignCandidateContext } from '../campaign/candidateContext';
 import { getDb, schema } from '../db';
 import { saveSpeechFromDesign } from '../speech';
@@ -59,15 +60,9 @@ function getCampaignResume(campaignId: string): {
   rawText: string;
   projects: NonNullable<InferSelectModel<typeof schema.resume>['parsed']>['projects'] | undefined;
 } | null {
-  const campaign = getCampaignRow(campaignId);
-  if (!campaign.resumeId) return null;
-  const resume = getDb()
-    .select()
-    .from(schema.resume)
-    .where(eq(schema.resume.id, campaign.resumeId))
-    .get();
-  if (!resume) return null;
-  return { rawText: resume.rawText ?? '', projects: resume.parsed?.projects };
+  const profile = loadCampaignProfile(campaignId);
+  if (!profile) return null;
+  return { rawText: profile.text, projects: profile.parsed?.projects };
 }
 
 /**
@@ -94,9 +89,7 @@ function buildInterviewContext(campaignId: string, query?: ResumeRelevanceQuery)
     .where(eq(schema.companyIntel.campaignId, campaignId))
     .get();
 
-  const resume = campaign.resumeId
-    ? db.select().from(schema.resume).where(eq(schema.resume.id, campaign.resumeId)).get()
-    : null;
+  const profile = loadCampaignProfile(campaignId);
 
   const blindSpots = db
     .select({ questionText: schema.interviewQuestion.questionText })
@@ -130,13 +123,13 @@ function buildInterviewContext(campaignId: string, query?: ResumeRelevanceQuery)
   return `公司：${campaign.company}
 岗位：${campaign.roleTitle}
 JD 摘要：${jdSummary}
-简历技能：${resume?.parsed?.skills?.join('、') ?? '（未提供）'}
+简历技能：${profile?.parsed?.skills?.join('、') ?? '（未提供）'}
 ${
   query
-    ? relevantResumeExperienceBlock(resume?.rawText ?? '', query, {
-        fallbackProjects: resume?.parsed?.projects,
+    ? relevantResumeExperienceBlock(profile?.text ?? '', query, {
+        fallbackProjects: profile?.parsed?.projects,
       })
-    : resumeExperienceBlock(resume?.rawText ?? '', resume?.parsed?.projects)
+    : resumeExperienceBlock(profile?.text ?? '', profile?.parsed?.projects)
 }
 公司技术栈：${intel?.techStackMd?.slice(0, 600) ?? '（未调研，可结合 JD 推断）'}
 面试流程：${intel?.interviewProcessMd?.slice(0, 400) ?? '（未调研）'}

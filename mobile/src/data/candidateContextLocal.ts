@@ -62,12 +62,17 @@ export function loadResumeForPrompt(
   return parseResumeForPrompt(row);
 }
 
+// 战役级「派生版优先」取数单独放 resumeProfileLocal（campaignLocal 也要用，
+// 直接放这里会和它成环）；这里转发一份，designLocal 等从本模块取数不换 import。
+import { loadCampaignResumeForPrompt } from './resumeProfileLocal';
+export { loadCampaignResumeForPrompt };
+
 export function loadCandidateContextInput(
   db: SQLiteDatabase,
   campaignId: string,
 ): CandidateContextInput {
   const campaign = getCampaign(db, campaignId);
-  const resume = loadResumeForPrompt(db, campaign.resumeId);
+  const resume = loadCampaignResumeForPrompt(db, campaign);
   return {
     company: campaign.company,
     roleTitle: campaign.roleTitle,

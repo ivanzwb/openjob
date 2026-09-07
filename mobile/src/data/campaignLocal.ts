@@ -3,6 +3,7 @@ import type { Campaign, KnowledgeNode, Resume } from '@shared/entities';
 import type { CoverageType, ExamForm, MasterySource, NodeKind, NodeStatus } from '@shared/enums';
 import { buildExplainResumeContext } from '@shared/prompts/candidateContext';
 import type { ResumeRelevanceQuery } from '@shared/resume/relevance';
+import { loadCampaignResumeForPrompt } from './resumeProfileLocal';
 
 type NodeRow = {
   id: string;
@@ -129,12 +130,13 @@ export function buildResumeContext(
   const campaign = getCampaign(db, campaignId);
   if (!campaign.resumeId) return buildExplainResumeContext(null, query);
 
-  const resume = getResume(db, campaign.resumeId);
+  // 派生版优先：目标岗位有该母版的优化版时正文用优化版 content_md（见 resumeProfileLocal）
+  const resume = loadCampaignResumeForPrompt(db, campaign);
   return buildExplainResumeContext(
     {
       resumeRawText: resume.rawText,
-      resumeSkills: resume.parsed?.skills ?? null,
-      resumeProjects: resume.parsed?.projects ?? null,
+      resumeSkills: resume.skills.length > 0 ? resume.skills : null,
+      resumeProjects: resume.projects.length > 0 ? resume.projects : null,
     },
     query,
   );

@@ -29,8 +29,8 @@ import { completeJson } from '../llm/json';
 import { getCampaign } from './campaignLocal';
 import {
   jdSummaryForPrompt,
+  loadCampaignResumeForPrompt,
   loadCandidateContextInput,
-  loadResumeForPrompt,
 } from './candidateContextLocal';
 import {
   relevantResumeExperienceBlock,
@@ -114,7 +114,7 @@ function buildInterviewContext(
     hot_topics_md: string;
   }>(`SELECT tech_stack_md, interview_process_md, hot_topics_md FROM company_intel WHERE campaign_id = ?`, campaignId);
 
-  const resume = loadResumeForPrompt(db, campaign.resumeId);
+  const resume = loadCampaignResumeForPrompt(db, campaign);
   const resumeSkills = resume.skills.join('、') || '（未提供）';
 
   const blindSpots = db
@@ -299,7 +299,8 @@ export async function generateRecommendedAnswer(
   const resumeFacts =
     interviewType === 'selfIntro'
       ? (() => {
-          const resume = loadResumeForPrompt(db, getCampaign(db, campaignId).resumeId);
+          const campaign = getCampaign(db, campaignId);
+          const resume = loadCampaignResumeForPrompt(db, campaign);
           return `\n\n${resumeFactsBlockForSelfIntro(resume.rawText, resume.projects)}`;
         })()
       : '';

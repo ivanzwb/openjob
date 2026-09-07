@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
-import type { JobTarget } from '@shared/entities';
+import type { JobTarget, Resume } from '@shared/entities';
+import type { ResumeVariantView } from '@shared/ipc';
+import { latestVariantOfTarget, pickDefaultResumeId } from '@shared/resume/campaignBinding';
 import { invoke } from '../ipc';
 import { runTask, useTask, useTaskResult } from '../ipc/taskStore';
 import { PageShell } from '../components/PageShell';
@@ -13,6 +15,10 @@ export function CampaignCreate({
 }): React.JSX.Element {
   const [targets, setTargets] = useState<JobTarget[]>([]);
   const [jobTargetId, setJobTargetId] = useState('');
+  const [resumes, setResumes] = useState<Resume[]>([]);
+  const [variantsOfTarget, setVariantsOfTarget] = useState<ResumeVariantView[]>([]);
+  // '' = 交给主进程按默认规则绑定；有简历但用户没动过时提交 null 由前端显式传默认
+  const [resumeId, setResumeId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // 按岗位记：创建过程中切走再回来，按钮还是「创建中…」，也不会重复建一份
   const createKey = `campaign:create:${jobTargetId}`;
@@ -23,7 +29,23 @@ export function CampaignCreate({
       setTargets(list);
       if (list[0]) setJobTargetId(list[0].id);
     });
+    void invoke('resume:list', undefined).then(setResumes);
   }, []);
+
+  // 目标岗位切换后按默认规则预选简历；选项仍允许手动改
+  useEffect(() => {
+    setResumeId(null);
+    if (!jobTargetId) {
+      setVariantsOfTarget([]);
+      return;
+    }
+    void invoke('resumeVariant:list', { jobTargetId }).then(setVariantsOfTarget);
+  }, [jobTargetId]);
+
+  const resumeOptions = [...resumes].sort((a, b) => b.updatedAt - a.updatedAt);
+  const hintVariant = latestVariantOfTarget(variantsOfTarget);
+  const hintVariantView = variantsOfTarget.find((v) => v.id === hintVariant?.id) ?? null;
+  const hasResume = resumeOptions.length > 0;
 
   const submit = (): void => {
     if (!jobTargetId) {
@@ -31,7 +53,12 @@ export function CampaignCreate({
       return;
     }
     setError(null);
-    void runTask(createKey, () => invoke('campaign:create', { jobTargetId })).catch(() => undefined);
+    void runTask(createKey, () =>
+      invoke('campaign:create', {
+        jobTargetId,
+        resumeId: resumeId ?? (hasResume ? pickDefaultResumeId(variantsOfTarget, resumeOptions) : null),
+      }),
+    ).catch(() => undefined);
   };
 
   useTaskResult<{ id: string }>(createKey, (created) => onCreated(created.id));
@@ -43,7 +70,7 @@ export function CampaignCreate({
       <header>
         <h2 className="text-lg font-semibold">新建备考</h2>
         <p className="mt-1 text-xs text-[var(--color-muted)]">
-          选择目标岗位（公司 / 岗位 / JD 在「简历」页维护），创建后可补简历与面试日期
+          选择目标岗位（公司 / 岗位 / JD 在「简历」页维护）；简历默认按岗位自动匹配，可手动改
         </p>
       </header>
 
@@ -59,6 +86,35 @@ export function CampaignCreate({
             <option key={t.id} value={t.id}>{t.company} · {t.roleTitle}</option>
           ))}
         </select>
+      </label>
+
+      <label className="block space-y-1">
+        <span className="text-sm text-[var(--color-muted)]">简历</span>
+        {!hasResume ? (
+          <div className="rounded-lg border border-[var(--color-border)] px-3 py-2 text-xs text-[var(--color-muted)]">
+            暂无简历：出题与参考答案将无法结合你的履历，请先到「简历」页导入母版
+          </div>
+        ) : (
+          <>
+            <select
+              value={resumeId ?? pickDefaultResumeId(variantsOfTarget, resumeOptions) ?? ''}
+              onChange={(e) => setResumeId(e.target.value || null)}
+              className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm"
+            >
+              {resumeOptions.map((r) => (
+                <option key={r.id} value={r.id}>{r.label}</option>
+              ))}
+            </select>
+            {hintVariantView && (
+              <p className="pt-1 text-xs text-[var(--color-muted)]">
+                该岗位已有优化版「{hintVariantView.label}」，默认使用它（其母版：{' '}
+                {resumeOptions.find((r) => r.id === hintVariantView.sourceResumeId)?.label ??
+                  '母版已删除'}
+                ），答题上下文将以优化版表述为准
+              </p>
+            )}
+          </>
+        )}
       </label>
 
       {selected && (
