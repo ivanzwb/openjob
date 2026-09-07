@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import type { SpeechSnippetView } from '@shared/ipc';
 import { getRawDb } from '../db';
@@ -62,6 +62,9 @@ export function ScriptsScreen(): React.JSX.Element {
   const [draft, setDraft] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
   const [overallPreviewOpen, setOverallPreviewOpen] = useState(false);
+  // 下拉过滤：'all' 显示全部；否则只显示该 campaignId 的话术
+  const [filterKey, setFilterKey] = useState<string>('all');
+  const [filterPickerOpen, setFilterPickerOpen] = useState(false);
 
   const reload = useCallback(() => {
     const list = listSpeechSnippets(getRawDb());
@@ -86,6 +89,32 @@ export function ScriptsScreen(): React.JSX.Element {
   }, []);
 
   useLocalDataReload(reload);
+
+  // 下拉选项：全部 + 各 JD（公司 · 岗位），按组内最新一条倒序
+  const filterOptions = useMemo(() => {
+    const byCampaign = new Map<string, { label: string; latest: number }>();
+    for (const s of items) {
+      if (s.campaignId && s.campaignLabel) {
+        const cur = byCampaign.get(s.campaignId);
+        byCampaign.set(s.campaignId, {
+          label: s.campaignLabel,
+          latest: Math.max(cur?.latest ?? 0, s.createdAt),
+        });
+      }
+    }
+    return [...byCampaign.entries()]
+      .sort((a, b) => b[1].latest - a[1].latest)
+      .map(([campaignId, v]) => ({ campaignId, label: v.label }));
+  }, [items]);
+
+  // 无法归属 JD 的话术（campaignId 为 null）在「全部」里可见
+  const visibleSnippets = useMemo(
+    () =>
+      filterKey === 'all'
+        ? items
+        : items.filter((s) => s.campaignId === filterKey),
+    [items, filterKey],
+  );
 
   const selected = items.find((s) => s.id === selectedId) ?? null;
   const dirty = Boolean(selected && draft !== selected.contentMd);
@@ -164,6 +193,31 @@ export function ScriptsScreen(): React.JSX.Element {
         </Text>
       ) : (
         <>
+          {/* JD 过滤下拉选择器 */}
+          {filterOptions.length > 0 && (
+            <Pressable
+              onPress={() => setFilterPickerOpen(true)}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 8,
+                borderWidth: 1,
+                borderColor: theme.border,
+                borderRadius: 8,
+                backgroundColor: theme.surface,
+                paddingHorizontal: 12,
+                paddingVertical: 10,
+              }}
+            >
+              <Text style={{ flex: 1, color: theme.text, fontSize: 13 }} numberOfLines={1}>
+                {filterKey === 'all'
+                  ? `全部（${items.length}）`
+                  : filterOptions.find((o) => o.campaignId === filterKey)?.label ?? '全部'}
+              </Text>
+              <Text style={{ color: theme.muted, fontSize: 12 }}>▾</Text>
+            </Pressable>
+          )}
+
           {/* 话术下拉选择器：列表折叠为一行，正文获得全部剩余空间 */}
           <Pressable
             onPress={() => setPickerOpen(true)}
@@ -182,7 +236,7 @@ export function ScriptsScreen(): React.JSX.Element {
             <Text style={{ flex: 1, color: theme.text, fontSize: 13, fontWeight: '600' }} numberOfLines={1}>
               {selected ? selected.sourceLabel : '选择一条话术'}
             </Text>
-            <Text style={{ color: theme.muted, fontSize: 11 }}>共 {items.length} 条</Text>
+            <Text style={{ color: theme.muted, fontSize: 11 }}>共 {visibleSnippets.length} 条</Text>
             <Text style={{ color: theme.muted, fontSize: 12 }}>▾</Text>
           </Pressable>
 
@@ -320,12 +374,12 @@ export function ScriptsScreen(): React.JSX.Element {
           >
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               <Text style={{ color: theme.text, fontWeight: '600', fontSize: 15 }}>话术列表</Text>
-              <Text style={{ color: theme.muted, fontSize: 11 }}>共 {items.length} 条</Text>
+              <Text style={{ color: theme.muted, fontSize: 11 }}>共 {visibleSnippets.length} 条</Text>
             </View>
 
             <ScrollView style={{ maxHeight: 420 }} keyboardShouldPersistTaps="handled">
               <View style={{ gap: 8 }}>
-                {items.map((s) => (
+                {visibleSnippets.map((s) => (
                   <View key={s.id} style={{ flexDirection: 'row', alignItems: 'stretch', gap: 8 }}>
                     <Pressable
                       onPress={() => {
@@ -361,8 +415,80 @@ export function ScriptsScreen(): React.JSX.Element {
           </View>
         </View>
       </Modal>
+
+      {/* JD 过滤下拉列表 */}
+      <Modal visible={filterPickerOpen} transparent animationType="fade" onRequestClose={() => setFilterPickerOpen(false)}>
+        <View style={{ flex: 1, justifyContent: 'center', padding: 16 }}>
+          <Pressable
+            style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: theme.scrim }}
+            onPress={() => setFilterPickerOpen(false)}
+          />
+          <View
+            style={{
+              maxHeight: '85%',
+              borderRadius: 12,
+              borderWidth: 1,
+              borderColor: theme.border,
+              backgroundColor: theme.surface,
+              padding: 14,
+              gap: 10,
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text style={{ color: theme.text, fontWeight: '600', fontSize: 15 }}>按 JD 过滤话术</Text>
+              <Text style={{ color: theme.muted, fontSize: 11 }}>共 {items.length} 条</Text>
+            </View>
+
+            <ScrollView style={{ maxHeight: 420 }} keyboardShouldPersistTaps="handled">
+              <View style={{ gap: 8 }}>
+                {/* 全部选项 */}
+                <Pressable
+                  onPress={() => {
+                    setFilterKey('all');
+                    setFilterPickerOpen(false);
+                  }}
+                  style={{
+                    borderWidth: 1,
+                    borderColor: filterKey === 'all' ? theme.accent : theme.border,
+                    borderRadius: 8,
+                    padding: 10,
+                    backgroundColor: filterKey === 'all' ? `${theme.accent}18` : theme.bg,
+                  }}
+                >
+                  <Text style={{ color: theme.text, fontSize: 13, fontWeight: '600' }}>
+                    全部（{items.length}）
+                  </Text>
+                </Pressable>
+
+                {/* 各 JD 选项 */}
+                {filterOptions.map((o) => (
+                  <Pressable
+                    key={o.campaignId}
+                    onPress={() => {
+                      setFilterKey(o.campaignId);
+                      setFilterPickerOpen(false);
+                    }}
+                    style={{
+                      borderWidth: 1,
+                      borderColor: filterKey === o.campaignId ? theme.accent : theme.border,
+                      borderRadius: 8,
+                      padding: 10,
+                      backgroundColor: filterKey === o.campaignId ? `${theme.accent}18` : theme.bg,
+                    }}
+                  >
+                    <Text style={{ color: theme.text, fontSize: 13, fontWeight: '600' }} numberOfLines={1}>
+                      {o.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
       {overallPreviewOpen && (
-        <SpeechLibraryPreviewModal items={items} onClose={() => setOverallPreviewOpen(false)} />
+        <SpeechLibraryPreviewModal items={visibleSnippets} onClose={() => setOverallPreviewOpen(false)} />
       )}
     </View>
   );

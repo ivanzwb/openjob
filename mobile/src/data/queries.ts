@@ -60,6 +60,47 @@ export function listCampaigns(db: SQLiteDatabase): CampaignSummary[] {
   });
 }
 
+function resolveSnippetCampaign(
+  db: SQLiteDatabase,
+  sourceType: SpeechSnippetView['sourceType'],
+  sourceId: string,
+): { campaignId: string; label: string } | null {
+  // design：sourceId 直接就是 campaignId；其余类型经 knowledge_node 取 campaign_id
+  if (sourceType === 'design') {
+    const campaign = db.getFirstSync<{ company: string; role_title: string }>(
+      `SELECT company, role_title FROM campaign WHERE id = ?`,
+      sourceId,
+    );
+    return campaign
+      ? { campaignId: sourceId, label: `${campaign.company} · ${campaign.role_title}` }
+      : null;
+  }
+  let nodeId: string | null = null;
+  if (sourceType === 'node') {
+    nodeId = sourceId;
+  } else if (sourceType === 'quiz') {
+    // 评分后自动存的那条挂在作答上，手动存的推荐答案挂在考点上，两种 id 都要认出来
+    const attempt = db.getFirstSync<{ node_id: string }>(
+      `SELECT node_id FROM quiz_attempt WHERE id = ?`,
+      sourceId,
+    );
+    nodeId = attempt?.node_id ?? sourceId;
+  }
+  if (!nodeId) return null;
+  const node = db.getFirstSync<{ campaign_id: string }>(
+    `SELECT campaign_id FROM knowledge_node WHERE id = ?`,
+    nodeId,
+  );
+  if (!node?.campaign_id) return null;
+  const campaign = db.getFirstSync<{ company: string; role_title: string }>(
+    `SELECT company, role_title FROM campaign WHERE id = ?`,
+    node.campaign_id,
+  );
+  return campaign
+    ? { campaignId: node.campaign_id, label: `${campaign.company} · ${campaign.role_title}` }
+    : null;
+}
+
 export function listSpeechSnippets(db: SQLiteDatabase): SpeechSnippetView[] {
   const rows = db.getAllSync<{
     id: string;
@@ -73,6 +114,7 @@ export function listSpeechSnippets(db: SQLiteDatabase): SpeechSnippetView[] {
 
   return rows.map((row) => {
     const sourceType = row.source_type as SpeechSnippetView['sourceType'];
+    const campaign = resolveSnippetCampaign(db, sourceType, row.source_id);
     return {
       id: row.id,
       sourceType,
@@ -82,6 +124,8 @@ export function listSpeechSnippets(db: SQLiteDatabase): SpeechSnippetView[] {
       isUserEdited: Boolean(row.is_user_edited),
       createdAt: row.created_at,
       sourceLabel: resolveSpeechSourceLabel(db, sourceType, row.source_id),
+      campaignId: campaign?.campaignId ?? null,
+      campaignLabel: campaign?.label ?? null,
     };
   });
 }

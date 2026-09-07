@@ -61,13 +61,67 @@ function resolveSourceLabel(sourceType: SpeechSnippet['sourceType'], sourceId: s
   return '话术';
 }
 
+/**
+ * 话术 → 备考（JD）的追溯：一条话术最终挂在哪次备考上。
+ * - design：sourceId 直接就是 campaignId
+ * - node：knowledgeNode.campaignId
+ * - quiz：挂在作答或考点上，两种 id 都要能认出来，再经 node 取 campaignId
+ * - codeRef：仓库话术不绑定备考，返回 null
+ */
+function resolveCampaign(
+  sourceType: SpeechSnippet['sourceType'],
+  sourceId: string,
+): { campaignId: string; label: string } | null {
+  const db = getDb();
+  let campaignId: string | null = null;
+
+  if (sourceType === 'design') {
+    campaignId = sourceId;
+  } else if (sourceType === 'node') {
+    const node = db
+      .select()
+      .from(schema.knowledgeNode)
+      .where(eq(schema.knowledgeNode.id, sourceId))
+      .get();
+    campaignId = node?.campaignId ?? null;
+  } else if (sourceType === 'quiz') {
+    const attempt = db
+      .select()
+      .from(schema.quizAttempt)
+      .where(eq(schema.quizAttempt.id, sourceId))
+      .get();
+    const nodeId = attempt?.nodeId ?? sourceId;
+    const node = db
+      .select()
+      .from(schema.knowledgeNode)
+      .where(eq(schema.knowledgeNode.id, nodeId))
+      .get();
+    campaignId = node?.campaignId ?? null;
+  }
+
+  if (!campaignId) return null;
+
+  const campaign = db
+    .select()
+    .from(schema.campaign)
+    .where(eq(schema.campaign.id, campaignId))
+    .get();
+  if (!campaign) return null;
+  return { campaignId: campaign.id, label: `${campaign.company} · ${campaign.roleTitle}` };
+}
+
 export function listSpeechSnippets(): SpeechSnippetView[] {
   const rows = getDb().select().from(schema.speechSnippet).all();
   return rows
-    .map((row) => ({
-      ...rowToSnippet(row),
-      sourceLabel: resolveSourceLabel(row.sourceType, row.sourceId),
-    }))
+    .map((row) => {
+      const campaign = resolveCampaign(row.sourceType, row.sourceId);
+      return {
+        ...rowToSnippet(row),
+        sourceLabel: resolveSourceLabel(row.sourceType, row.sourceId),
+        campaignId: campaign?.campaignId ?? null,
+        campaignLabel: campaign?.label ?? null,
+      };
+    })
     .sort((a, b) => b.createdAt - a.createdAt);
 }
 

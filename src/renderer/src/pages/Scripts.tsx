@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { SpeechSnippetView } from '@shared/ipc';
 import { normalizeDisplayText } from '@shared/lib/markdownDisplay';
 import { MarkdownContent } from '../components/MarkdownContent';
@@ -16,6 +16,8 @@ export function Scripts(): React.JSX.Element {
   const [draft, setDraft] = useState('');
   const [panelMode, setPanelMode] = useState<PanelMode>('preview');
   const [exportMsg, setExportMsg] = useState<string | null>(null);
+  // 下拉过滤：'all' 显示全部；否则只显示该 campaignId 的话术
+  const [filterKey, setFilterKey] = useState<string>('all');
 
   const refresh = useCallback(() => {
     void invoke('speech:list', undefined).then((list) => {
@@ -37,6 +39,32 @@ export function Scripts(): React.JSX.Element {
   }, [refresh]);
 
   useDataRefresh(refresh);
+
+  // 下拉选项：全部 + 各 JD（公司 · 岗位），按组内最新一条倒序
+  const filterOptions = useMemo(() => {
+    const byCampaign = new Map<string, { label: string; latest: number }>();
+    for (const s of snippets) {
+      if (s.campaignId && s.campaignLabel) {
+        const cur = byCampaign.get(s.campaignId);
+        byCampaign.set(s.campaignId, {
+          label: s.campaignLabel,
+          latest: Math.max(cur?.latest ?? 0, s.createdAt),
+        });
+      }
+    }
+    return [...byCampaign.entries()]
+      .sort((a, b) => b[1].latest - a[1].latest)
+      .map(([campaignId, v]) => ({ campaignId, label: v.label }));
+  }, [snippets]);
+
+  // 无法归属 JD 的话术（campaignId 为 null）在「全部」里可见
+  const visibleSnippets = useMemo(
+    () =>
+      filterKey === 'all'
+        ? snippets
+        : snippets.filter((s) => s.campaignId === filterKey),
+    [snippets, filterKey],
+  );
 
   const selected = snippets.find((s) => s.id === selectedId) ?? null;
   const dirty = Boolean(selected && draft !== selected.contentMd);
@@ -126,11 +154,25 @@ export function Scripts(): React.JSX.Element {
         </div>
         {exportMsg && <p className="text-xs text-emerald-400">{exportMsg}</p>}
 
+        <select
+          value={filterKey}
+          onChange={(e) => setFilterKey(e.target.value)}
+          className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm outline-none focus:border-[var(--color-accent)]"
+          title="按 JD 过滤话术"
+        >
+          <option value="all">全部（{snippets.length}）</option>
+          {filterOptions.map((o) => (
+            <option key={o.campaignId} value={o.campaignId}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+
         <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto">
-          {snippets.length === 0 ? (
+          {visibleSnippets.length === 0 ? (
             <li className="text-sm text-[var(--color-muted)]">还没有话术，完成考我或源码问答后可沉淀</li>
           ) : (
-            snippets.map((s) => (
+            visibleSnippets.map((s) => (
               <li key={s.id} className="flex gap-2">
                 <button
                   type="button"

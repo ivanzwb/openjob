@@ -781,6 +781,10 @@ export interface SpeechListForSourceInput {
 
 export interface SpeechSnippetView extends SpeechSnippet {
   sourceLabel: string;
+  /** 话术可追溯到的备考（JD）；无法归属（如纯源码话术）时为 null */
+  campaignId: string | null;
+  /** 分组标题：公司 · 岗位 */
+  campaignLabel: string | null;
 }
 
 export interface SpeechUpdateInput {
