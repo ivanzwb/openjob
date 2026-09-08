@@ -16,9 +16,20 @@ export function CampaignCreate({
   const [targets, setTargets] = useState<JobTarget[]>([]);
   const [jobTargetId, setJobTargetId] = useState('');
   const [resumes, setResumes] = useState<Resume[]>([]);
-  const [variantsOfTarget, setVariantsOfTarget] = useState<ResumeVariantView[]>([]);
-  // '' = 交给主进程按默认规则绑定；有简历但用户没动过时提交 null 由前端显式传默认
-  const [resumeId, setResumeId] = useState<string | null>(null);
+  // 这两份状态都把所属岗位一起记下来，读的时候比对当前岗位再决定用不用。
+  // 换成「岗位一变就在 effect 里同步重置」会多跑一轮渲染，也挡不住请求乱序返回时
+  // 把上一个岗位的优化版列表写进来。
+  const [variants, setVariants] = useState<{ jobTargetId: string; items: ResumeVariantView[] }>({
+    jobTargetId: '',
+    items: [],
+  });
+  // null = 用户没动过选择，提交时由前端按默认规则算
+  const [resumePick, setResumePick] = useState<{ jobTargetId: string; resumeId: string | null }>({
+    jobTargetId: '',
+    resumeId: null,
+  });
+  const variantsOfTarget = variants.jobTargetId === jobTargetId ? variants.items : [];
+  const resumeId = resumePick.jobTargetId === jobTargetId ? resumePick.resumeId : null;
   const [error, setError] = useState<string | null>(null);
   // 按岗位记：创建过程中切走再回来，按钮还是「创建中…」，也不会重复建一份
   const createKey = `campaign:create:${jobTargetId}`;
@@ -34,12 +45,14 @@ export function CampaignCreate({
 
   // 目标岗位切换后按默认规则预选简历；选项仍允许手动改
   useEffect(() => {
-    setResumeId(null);
-    if (!jobTargetId) {
-      setVariantsOfTarget([]);
-      return;
-    }
-    void invoke('resumeVariant:list', { jobTargetId }).then(setVariantsOfTarget);
+    if (!jobTargetId) return;
+    let active = true;
+    void invoke('resumeVariant:list', { jobTargetId }).then((items) => {
+      if (active) setVariants({ jobTargetId, items });
+    });
+    return () => {
+      active = false;
+    };
   }, [jobTargetId]);
 
   const resumeOptions = [...resumes].sort((a, b) => b.updatedAt - a.updatedAt);
@@ -98,7 +111,7 @@ export function CampaignCreate({
           <>
             <select
               value={resumeId ?? pickDefaultResumeId(variantsOfTarget, resumeOptions) ?? ''}
-              onChange={(e) => setResumeId(e.target.value || null)}
+              onChange={(e) => setResumePick({ jobTargetId, resumeId: e.target.value || null })}
               className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm"
             >
               {resumeOptions.map((r) => (
