@@ -14,11 +14,16 @@ import {
   SOURCE_REPOSITORY_CAPABILITY_ID,
   sourceRepositoryCapabilityPlugin,
 } from '../plugins/builtin/sourceRepository';
+import {
+  buildClientCapabilityView,
+  listBuiltInPlugins,
+  type ClientDegradationReason,
+  type ClientPluginStatus,
+} from '../plugins/clientView';
 import { hashRuntimeConfig } from '../plugins/resolver';
 import type {
   CampaignRuntimeDescriptor,
   ClientPlatform,
-  PluginManifest,
   RolePack,
   TaskTemplate,
 } from '../plugins/types';
@@ -90,10 +95,6 @@ const AVAILABILITY_RANK: Record<RuntimeAvailability, number> = {
   full: 2,
 };
 
-const BUILT_IN_CAPABILITY_MANIFESTS: readonly PluginManifest[] = [
-  sourceRepositoryCapabilityPlugin.manifest,
-];
-
 function requireTaskTemplate(
   pack: RolePack,
   taskKind: TaskKind,
@@ -142,45 +143,51 @@ const readCodeContribution: PlannerContribution = {
 
 const PLANNER_CONTRIBUTIONS: readonly PlannerContribution[] = [readCodeContribution];
 
-function availabilityFor(manifest: PluginManifest, platform: ClientPlatform): RuntimeAvailability {
-  return manifest.runtime?.[platform] ?? 'full';
-}
-
-function clientView(
-  manifest: PluginManifest,
+/**
+ * 本机对该能力的判定。
+ *
+ * 平台可用性只在 clientView 一处算，排程不自己读 Manifest——两处各判一次时，
+ * 「本机能做什么」迟早会漂移。
+ */
+function capabilityStatus(
+  runtime: CampaignRuntimeDescriptor,
   contribution: PlannerContribution,
   platform: ClientPlatform,
-): PlannedTaskClientView {
-  const availability = availabilityFor(manifest, platform);
+): ClientPluginStatus | null {
+  if (!contribution.rolePackIds.includes(runtime.rolePack.id)) return null;
+  const view = buildClientCapabilityView({
+    descriptor: runtime,
+    platform,
+    installed: listBuiltInPlugins(),
+  });
+  return view.capabilities.find((item) => item.id === contribution.capabilityId) ?? null;
+}
+
+/** 按架构第 8.6 节，这些降级只保留历史结果，不再生成新的插件任务。 */
+const NO_NEW_TASK_REASONS: readonly ClientDegradationReason[] = [
+  'capability-disabled',
+  'plugin-not-installed',
+  'pinned-version-unavailable',
+];
+
+/** 返回 null 表示该贡献者当前不排任务；平台能力不足只降级，不停排。 */
+function activeClientView(
+  runtime: CampaignRuntimeDescriptor,
+  contribution: PlannerContribution,
+  platform: ClientPlatform,
+): PlannedTaskClientView | null {
+  const status = capabilityStatus(runtime, contribution, platform);
+  if (!status) return null;
+  if (status.reason !== null && NO_NEW_TASK_REASONS.includes(status.reason)) return null;
+
   const executable =
-    AVAILABILITY_RANK[availability] >= AVAILABILITY_RANK[contribution.minimumAvailability];
+    AVAILABILITY_RANK[status.mode] >= AVAILABILITY_RANK[contribution.minimumAvailability];
   return {
     platform,
-    availability,
+    availability: status.mode,
     executable,
     blockedReason: executable ? null : REQUIRES_DESKTOP_REASON,
   };
-}
-
-/**
- * 取 descriptor 固定的那个精确版本。
- *
- * 版本没安装时返回 null：按架构第 8.6 节，固定版本不可用只保留历史结果，
- * 不再生成新的插件任务。
- */
-function activeManifest(
-  runtime: CampaignRuntimeDescriptor,
-  contribution: PlannerContribution,
-): PluginManifest | null {
-  if (!contribution.rolePackIds.includes(runtime.rolePack.id)) return null;
-  const resolved = runtime.capabilities.find((item) => item.id === contribution.capabilityId);
-  if (!resolved?.enabled) return null;
-  return (
-    BUILT_IN_CAPABILITY_MANIFESTS.find(
-      (manifest) =>
-        manifest.id === contribution.capabilityId && manifest.version === resolved.version,
-    ) ?? null
-  );
 }
 
 export function collectPlannerContributions(
@@ -191,9 +198,8 @@ export function collectPlannerContributions(
   let usedMinutes = context.usedMinutes;
 
   for (const contribution of PLANNER_CONTRIBUTIONS) {
-    const manifest = activeManifest(runtime, contribution);
-    if (!manifest) continue;
-    const client = clientView(manifest, contribution, context.platform);
+    const client = activeClientView(runtime, contribution, context.platform);
+    if (!client) continue;
     for (const payload of contribution.createTasks({ ...context, usedMinutes })) {
       tasks.push({
         ...payload,
@@ -220,9 +226,9 @@ export function pluginTaskClientView(
 ): PlannedTaskClientView | null {
   for (const contribution of PLANNER_CONTRIBUTIONS) {
     if (!contribution.taskKinds.includes(taskKind)) continue;
-    const manifest = activeManifest(runtime, contribution);
-    if (!manifest) continue;
-    return clientView(manifest, contribution, platform);
+    const client = activeClientView(runtime, contribution, platform);
+    if (!client) continue;
+    return client;
   }
   return null;
 }
