@@ -142,6 +142,30 @@ export type RepoStatus = (typeof REPO_STATUSES)[number];
 export const EVIDENCE_KINDS = ['model', 'web', 'code'] as const;
 export type EvidenceKind = (typeof EVIDENCE_KINDS)[number];
 
+/**
+ * 能产出 CandidateEvidence 的来源文档类型。
+ *
+ * 与下方 JOB_CONTEXT_SOURCE_KINDS 是两个不相交的集合，而不是同一个枚举里的
+ * 几个取值：JD 和公司情报描述的是岗位要求，把它们和简历放进同一个字段，
+ * 就等于给「把 JD 背成自己的经历」留了一条合法路径。
+ */
+export const CANDIDATE_SOURCE_KINDS = ['resume', 'resumeVariant', 'selfReport'] as const;
+export type CandidateSourceKind = (typeof CANDIDATE_SOURCE_KINDS)[number];
+
+/** 岗位侧文档。只能用于判断哪条候选人事实更重要，永远不能成为事实本身。 */
+export const JOB_CONTEXT_SOURCE_KINDS = ['jd', 'company'] as const;
+export type JobContextSourceKind = (typeof JOB_CONTEXT_SOURCE_KINDS)[number];
+
+/**
+ * 候选人证据的审核状态。
+ *
+ * 不用架构文档里那个 `userConfirmed: boolean`：拒绝必须留痕，否则同一段原文
+ * 每次抽取都会重新冒出来，用户得反复拒同一条。三态里只有 confirmed 能进
+ * 个人化回答。
+ */
+export const EVIDENCE_STATUSES = ['proposed', 'confirmed', 'rejected'] as const;
+export type EvidenceStatus = (typeof EVIDENCE_STATUSES)[number];
+
 /** Agent 共享工具箱 */
 export const TOOL_NAMES = [
   'web_search',

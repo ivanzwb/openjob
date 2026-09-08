@@ -169,6 +169,13 @@
       "when": 1787580000000,
       "tag": "0023_plugin_runtime_persistence",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1787590000000,
+      "tag": "0024_candidate_evidence",
+      "breakpoints": true
     }
   ]
 }

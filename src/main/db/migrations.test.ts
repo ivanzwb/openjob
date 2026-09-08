@@ -187,3 +187,44 @@ describe('plugin runtime persistence migration', () => {
     db.close();
   });
 });
+
+describe('candidate evidence migration', () => {
+  it('桌面与手机使用同一份 T10 DDL', () => {
+    const desktop = sqlOf('0024_candidate_evidence').replace(/\r\n/g, '\n');
+    const mobile = readFileSync(
+      join(process.cwd(), 'mobile', 'src', 'db', 'migrations', '0022_candidate_evidence.sql'),
+      'utf8',
+    ).replace(/\r\n/g, '\n');
+    expect(mobile).toBe(desktop);
+  });
+
+  /**
+   * 唯一索引是「重复抽取不会把已确认项打回待确认」的落库前提：同一段原文的同一
+   * 类事实只能有一行，否则用户确认过的那条会被下一次抽取插出来的新行盖掉。
+   */
+  it('空库迁移后 candidate_evidence 的来源区间唯一索引在位', () => {
+    const db = new DatabaseSync(':memory:');
+    db.exec('PRAGMA foreign_keys = ON');
+    journal().forEach((entry) => applySql(db, sqlOf(entry.tag)));
+
+    const indexes = db
+      .prepare(`PRAGMA index_list(candidate_evidence)`)
+      .all() as Array<{ name: string; unique: number }>;
+    const span = indexes.find((index) => index.name === 'uq_candidate_evidence_span');
+
+    expect(span?.unique).toBe(1);
+    expect(
+      (db.prepare(`PRAGMA index_info(uq_candidate_evidence_span)`).all() as Array<{
+        name: string;
+      }>).map((column) => column.name),
+    ).toEqual([
+      'campaign_id',
+      'kind',
+      'source_kind',
+      'source_document_id',
+      'source_start',
+      'source_end',
+    ]);
+    db.close();
+  });
+});

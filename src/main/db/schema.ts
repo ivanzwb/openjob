@@ -11,9 +11,12 @@ import type {
   AnnotationKind,
   AnnotationTarget,
   CampaignStatus,
+  CandidateEvidenceKind,
+  CandidateSourceKind,
   CoverageType,
   EdgeRelation,
   EvidenceKind,
+  EvidenceStatus,
   ExamForm,
   ExplanationTier,
   MasterySource,
@@ -775,5 +778,55 @@ export const promptRun = sqliteTable(
   (t) => [
     index('idx_prompt_run_prompt_version').on(t.promptId, t.versionId),
     index('idx_prompt_run_created').on(t.createdAt),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// 候选人证据
+// ---------------------------------------------------------------------------
+
+/**
+ * 候选人个人事实的唯一可信来源。
+ *
+ * `source_document_id` 刻意不加外键：它按 `source_kind` 分别指向 resume /
+ * resume_variant / interview_report，和 annotation.target_id 是同一种多态引用。
+ * 反过来说，这一列永远指不到 job_target ——JD 描述的是岗位要求，不是候选人
+ * 做过的事，让它有机会成为证据来源，等于允许用户背着编造的经历进考场。
+ */
+export const candidateEvidence = sqliteTable(
+  'candidate_evidence',
+  {
+    id: text('id').primaryKey(),
+    campaignId: text('campaign_id')
+      .notNull()
+      .references(() => campaign.id, { onDelete: 'cascade' }),
+    kind: text('kind').$type<CandidateEvidenceKind>().notNull(),
+    title: text('title').notNull(),
+    statement: text('statement').notNull(),
+    /** 只取 CANDIDATE_SOURCE_KINDS；'jd' / 'company' 不是这一列的合法取值 */
+    sourceKind: text('source_kind').$type<CandidateSourceKind>().notNull(),
+    sourceDocumentId: text('source_document_id').notNull(),
+    /** 原文半开区间 [start, end)，确认时会拿它回读来源文档比对 */
+    sourceStart: integer('source_start').notNull(),
+    sourceEnd: integer('source_end').notNull(),
+    sourceText: text('source_text').notNull(),
+    occurredAt: text('occurred_at'),
+    confidence: real('confidence').notNull().default(1),
+    status: text('status').$type<EvidenceStatus>().notNull().default('proposed'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (t) => [
+    // 同一段原文对同一类事实只能有一条：重复抽取不该让确认列表里冒出两份一样的
+    uniqueIndex('uq_candidate_evidence_span').on(
+      t.campaignId,
+      t.kind,
+      t.sourceKind,
+      t.sourceDocumentId,
+      t.sourceStart,
+      t.sourceEnd,
+    ),
+    index('idx_candidate_evidence_status').on(t.campaignId, t.status),
+    index('idx_candidate_evidence_source').on(t.sourceKind, t.sourceDocumentId),
   ],
 );

@@ -63,6 +63,9 @@ const SYNCED_TABLES: Array<{ table: Table; deviceLocal?: string[] }> = [
   { table: schema.session },
   { table: schema.message },
   { table: schema.toolCall },
+  // 证据是候选人事实的唯一来源，两端都要能看到：手机端复盘时确认的条目，
+  // 桌面端出题和评分立刻就要用上
+  { table: schema.candidateEvidence },
 ];
 
 function buildSpec(table: Table, deviceLocal: string[]): SyncTableSpec {

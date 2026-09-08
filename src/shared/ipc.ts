@@ -28,6 +28,7 @@ import type {
 } from './enums';
 import type {
   Campaign,
+  CandidateEvidence,
   Citation,
   CompanyIntel,
   Explanation,
@@ -58,6 +59,7 @@ import type {
   InstalledPlugin,
 } from './plugins/clientView';
 import type { CampaignRuntimeDescriptor, ClientPlatform } from './plugins/types';
+import type { EvidenceProposal, EvidenceScope } from './evidence/types';
 
 // ---------------------------------------------------------------------------
 // 通用
@@ -1038,6 +1040,21 @@ export interface ClientCapabilityViewRequest {
 }
 
 // ---------------------------------------------------------------------------
+// 候选人证据
+// ---------------------------------------------------------------------------
+
+/**
+ * 证据抽取的入参只有 campaignId。
+ *
+ * 刻意不让调用方传文档：能进抽取的是哪几份文档，是这个任务的核心边界，
+ * 交给渲染进程或手机端去挑，等于把「JD 不能变成证据」放到了两个客户端各自的
+ * 代码里再赌一次。主进程按 Campaign 取数，JD 与公司情报只作为相关度排序输入。
+ */
+export interface EvidenceExtractRequest {
+  campaignId: string;
+}
+
+// ---------------------------------------------------------------------------
 // 通道映射
 // ---------------------------------------------------------------------------
 
@@ -1253,6 +1270,16 @@ export interface IpcInvokeMap {
   'stt:status': { req: void; res: SttStatus };
   /** 本地离线转写：16kHz 单声道 Float32 PCM → 文本 */
   'stt:transcribe': { req: { audio: Float32Array }; res: { text: string } };
+
+  /** 从本战役的候选人文档抽取待确认证据；纯计算，不落库 */
+  'evidence:extract': { req: EvidenceExtractRequest; res: EvidenceProposal[] };
+  /** 已确认证据。个人化回答只能用这个通道的结果 */
+  'evidence:listConfirmed': { req: EvidenceScope; res: CandidateEvidence[] };
+  'evidence:listProposed': { req: EvidenceScope; res: CandidateEvidence[] };
+  /** 引文在候选人文档里定位不上时拒绝写入，不返回部分结果 */
+  'evidence:propose': { req: EvidenceProposal; res: CandidateEvidence };
+  'evidence:confirm': { req: { id: string }; res: CandidateEvidence };
+  'evidence:reject': { req: { id: string }; res: void };
 }
 
 /** 主进程 → 渲染进程的单向推送 */
@@ -1428,6 +1455,12 @@ export const IPC_INVOKE_CHANNELS = [
   'sync:deleteBackup',
   'stt:status',
   'stt:transcribe',
+  'evidence:extract',
+  'evidence:listConfirmed',
+  'evidence:listProposed',
+  'evidence:propose',
+  'evidence:confirm',
+  'evidence:reject',
 ] as const satisfies readonly IpcInvokeChannel[];
 
 export const IPC_EVENT_CHANNELS = [

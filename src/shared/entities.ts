@@ -12,9 +12,12 @@ import type {
   AnnotationKind,
   AnnotationTarget,
   CampaignStatus,
+  CandidateEvidenceKind,
+  CandidateSourceKind,
   CoverageType,
   EdgeRelation,
   EvidenceKind,
+  EvidenceStatus,
   ExamForm,
   ExplanationTier,
   MasterySource,
@@ -402,4 +405,45 @@ export interface ToolCallRecord {
   durationMs: number;
   tokenCost: number | null;
   createdAt: Timestamp;
+}
+
+// ---------------------------------------------------------------------------
+// 候选人证据
+// ---------------------------------------------------------------------------
+
+/**
+ * 一条证据在来源文档里的位置。
+ *
+ * 存整段引文加字符区间，而不是只存一句改写后的话：证据的用处是让用户在面试
+ * 现场能翻回简历原文核对。只有一句提炼过的 statement 时，「这句到底是我写的
+ * 还是模型补的」永远说不清，而这正是 fail-closed 要挡住的那种内容。
+ */
+export interface EvidenceSourceRef {
+  /** 只允许候选人自述文档；jd / company 在类型上就进不来 */
+  kind: CandidateSourceKind;
+  /** resume.id / resume_variant.id / interview_report.id */
+  documentId: Id;
+  /** 原文的半开区间 [start, end) */
+  start: number;
+  end: number;
+  /** 区间内的逐字原文，落库与确认时都会拿它跟文档重新比对 */
+  quote: string;
+}
+
+/** 候选人个人事实的唯一可信来源 */
+export interface CandidateEvidence {
+  id: Id;
+  campaignId: Id;
+  kind: CandidateEvidenceKind;
+  title: string;
+  /** 提炼后的一句陈述，注入 prompt 时用这句 */
+  statement: string;
+  source: EvidenceSourceRef;
+  /** 'YYYY-MM' 或 'YYYY-MM-DD'，原文没写时为 null */
+  occurredAt: string | null;
+  /** 抽取置信度 0-1；不影响是否可用，可用性只由 status 决定 */
+  confidence: number;
+  status: EvidenceStatus;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
 }

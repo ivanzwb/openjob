@@ -91,6 +91,12 @@ import {
   listSessions,
   searchSessions,
 } from '../session';
+import {
+  createEvidenceService,
+  extractCampaignEvidence,
+  listConfirmedEvidence,
+  listProposedEvidence,
+} from '../evidence';
 
 type RpcHandler = (payload: unknown) => Promise<unknown> | unknown;
 
@@ -322,6 +328,18 @@ const RPC_HANDLERS: Partial<Record<IpcInvokeChannel, RpcHandler>> = {
   'llm:cancel': (p) => cancelStream((p as { streamId: string }).streamId),
   'search:query': (p) => search(p as IpcReq<'search:query'>),
   'search:fetchUrl': (p) => fetchUrl(p as IpcReq<'search:fetchUrl'>),
+  // 手机端面后复盘会现场确认证据，抽取与定位校验都留在桌面这一处
+  'evidence:extract': (p) =>
+    extractCampaignEvidence(getRawDb(), (p as IpcReq<'evidence:extract'>).campaignId),
+  'evidence:listConfirmed': (p) =>
+    listConfirmedEvidence(getRawDb(), p as IpcReq<'evidence:listConfirmed'>),
+  'evidence:listProposed': (p) =>
+    listProposedEvidence(getRawDb(), p as IpcReq<'evidence:listProposed'>),
+  'evidence:propose': (p) =>
+    createEvidenceService(getRawDb()).propose(p as IpcReq<'evidence:propose'>),
+  'evidence:confirm': (p) =>
+    createEvidenceService(getRawDb()).confirm((p as { id: string }).id),
+  'evidence:reject': (p) => createEvidenceService(getRawDb()).reject((p as { id: string }).id),
 };
 
 export async function invokeRpc<C extends IpcInvokeChannel>(

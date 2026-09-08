@@ -115,6 +115,12 @@ import { handle } from './bridge';
 import { applyWindowTheme } from '../theme';
 import { importResumeFromFile } from '../campaign/resumeImport';
 import {
+  createEvidenceService,
+  extractCampaignEvidence,
+  listConfirmedEvidence,
+  listProposedEvidence,
+} from '../evidence';
+import {
   beginPairing,
   createBackup,
   deleteBackup,
@@ -466,6 +472,13 @@ export function registerIpcHandlers(): void {
 
   handle('stt:status', () => getSttStatus());
   handle('stt:transcribe', ({ audio }) => transcribe(audio).then((text) => ({ text })));
+
+  handle('evidence:extract', ({ campaignId }) => extractCampaignEvidence(getRawDb(), campaignId));
+  handle('evidence:listConfirmed', (scope) => listConfirmedEvidence(getRawDb(), scope));
+  handle('evidence:listProposed', (scope) => listProposedEvidence(getRawDb(), scope));
+  handle('evidence:propose', (input) => createEvidenceService(getRawDb()).propose(input));
+  handle('evidence:confirm', ({ id }) => createEvidenceService(getRawDb()).confirm(id));
+  handle('evidence:reject', ({ id }) => createEvidenceService(getRawDb()).reject(id));
 }
 
 export { emit, handle } from './bridge';
