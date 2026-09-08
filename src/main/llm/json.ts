@@ -5,6 +5,7 @@ import {
   looksTruncated,
   parseJsonResponse,
 } from '@shared/llm/parseJson';
+import type { ComposedPrompt, PromptProvenance } from '@shared/prompts/composer';
 import { resolvePrompt } from '@shared/prompts/registry';
 import { getExperiment } from '../ab/experiments';
 import { getFingerprint, recordPromptRun } from '../ab/promptRun';
@@ -86,29 +87,35 @@ function buildAttempts(baseMessages: ChatMessage[]): JsonAttempt[] {
   return attempts;
 }
 
+interface JsonRequest {
+  role: LlmRole;
+  /** registry key，或插件自带片段的稳定标识 */
+  promptId: string;
+  /** 实际命中的版本，落进 prompt_run 供 AB 分析 */
+  versionId: string;
+  /** 已经组合好的 system 正文 */
+  systemText: string;
+  user: string;
+  signal?: AbortSignal;
+  fingerprint?: string;
+  /** 走 Core Prompt 组合器时的插件来源，用于复现 */
+  provenance?: PromptProvenance;
+}
+
 /**
- * 向模型请求 JSON 并解析。诊断流水线（解析 JD、建树、交叉分析）都走这条路，
- * 用 outline 角色——结构化输出、token 用量相对可控。
+ * 唯一的 Model Gateway：所有结构化模型调用都在这里发出，并在这里打标。
  *
- * 传 promptId 而不是直接传 system 文本：文本由 @shared/prompts/registry 解析，
- * AB 实验换版本只改注册表，调用点不变。params 只对 build 型 prompt 生效。
+ * completeJson 与 completeComposedJson 只负责决定 system 正文怎么来，降档、
+ * 端点能力回退和截断判定这一整套只此一份——插件也不例外，它们拿不到 client，
+ * 只能通过组合器把请求交到这里。
  */
-export async function completeJson<T>(
-  role: LlmRole,
-  promptId: string,
-  user: string,
-  signal?: AbortSignal,
-  params?: Record<string, string | undefined>,
-): Promise<T> {
+async function requestJson<T>(request: JsonRequest): Promise<T> {
+  const { role, promptId, versionId, user, signal } = request;
   const { client, model, temperature, tier } = createRoleClient(role);
-  // AB 实验：按 promptId 查开关，按设备指纹稳定分流。未开启/拿不到指纹时退化为 v1。
-  const experiment = getExperiment(promptId);
-  const fingerprint = getFingerprint();
-  const resolved = resolvePrompt(promptId, params, experiment, fingerprint);
   const startedAt = Date.now();
 
   const systemContent =
-    resolved.text +
+    request.systemText +
     '\n\n只输出合法 JSON，不要 markdown 代码块，不要任何解释文字。' +
     '字符串值里的双引号必须写成 \\"，换行必须写成 \\n。';
 
@@ -137,11 +144,12 @@ export async function completeJson<T>(
 
   const runRecord = {
     promptId,
-    versionId: resolved.versionId,
-    fingerprint: fingerprint ?? 'unknown',
+    versionId,
+    fingerprint: request.fingerprint ?? 'unknown',
     role,
     model,
     tier,
+    ...(request.provenance ? { provenance: request.provenance } : {}),
   };
   const succeed = (parsed: T, outputJson: string): T => {
     recordPromptRun({
@@ -249,4 +257,62 @@ export async function completeJson<T>(
 
   const detail = lastError instanceof Error ? lastError.message : lastError ? String(lastError) : '未知原因';
   throw fail(`模型未返回可用 JSON（${model}）：${detail}`);
+}
+
+/**
+ * 向模型请求 JSON 并解析。诊断流水线（解析 JD、建树、交叉分析）都走这条路，
+ * 用 outline 角色——结构化输出、token 用量相对可控。
+ *
+ * 传 promptId 而不是直接传 system 文本：文本由 @shared/prompts/registry 解析，
+ * AB 实验换版本只改注册表，调用点不变。params 只对 build 型 prompt 生效。
+ */
+export async function completeJson<T>(
+  role: LlmRole,
+  promptId: string,
+  user: string,
+  signal?: AbortSignal,
+  params?: Record<string, string | undefined>,
+): Promise<T> {
+  // AB 实验：按 promptId 查开关，按设备指纹稳定分流。未开启/拿不到指纹时退化为 v1。
+  const experiment = getExperiment(promptId);
+  const fingerprint = getFingerprint();
+  const resolved = resolvePrompt(promptId, params, experiment, fingerprint);
+  return requestJson<T>({
+    role,
+    promptId,
+    versionId: resolved.versionId,
+    systemText: resolved.text,
+    user,
+    signal,
+    fingerprint,
+  });
+}
+
+export interface GroundedModelRequest {
+  role: LlmRole;
+  /** composePrompt 的产物：system 正文和 provenance 都从这里取 */
+  prompt: ComposedPrompt;
+  user: string;
+  signal?: AbortSignal;
+}
+
+/**
+ * 插件链路唯一的模型入口：只接受 Core Prompt 组合器的产物。
+ *
+ * 不接受裸 system 文本，是因为那等于把「Core Policy 必须在第一节」这条约束
+ * 交给调用点自觉。组合器已经在 provenance 里固定了插件精确版本，这里原样带进
+ * prompt run，历史结果才解释得出当时用的是哪套片段和量规。
+ */
+export async function completeComposedJson<T>(request: GroundedModelRequest): Promise<T> {
+  const { provenance } = request.prompt;
+  return requestJson<T>({
+    role: request.role,
+    promptId: provenance.promptId,
+    versionId: provenance.promptVersionId,
+    systemText: request.prompt.systemPrompt,
+    user: request.user,
+    signal: request.signal,
+    fingerprint: getFingerprint(),
+    provenance,
+  });
 }
