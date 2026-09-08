@@ -98,6 +98,7 @@ import {
   listConfirmedEvidence,
   listProposedEvidence,
 } from '../evidence';
+import { getStoryService } from '../story';
 
 type RpcHandler = (payload: unknown) => Promise<unknown> | unknown;
 
@@ -350,6 +351,23 @@ const RPC_HANDLERS: Partial<Record<IpcInvokeChannel, RpcHandler>> = {
   'evidence:confirm': (p) =>
     createEvidenceService(getRawDb()).confirm((p as { id: string }).id),
   'evidence:reject': (p) => createEvidenceService(getRawDb()).reject((p as { id: string }).id),
+  // Story 的事实校验与口述生成都留在桌面这一处：手机端只发起，不自带证据判定
+  'story:list': (p) => getStoryService().list((p as IpcReq<'story:list'>).campaignId),
+  'story:get': (p) => getStoryService().get((p as IpcReq<'story:get'>).id),
+  'story:create': (p) => getStoryService().create(p as IpcReq<'story:create'>),
+  'story:revise': (p) => {
+    const input = p as IpcReq<'story:revise'>;
+    return getStoryService().revise(input.id, input.patch);
+  },
+  'story:delete': (p) => {
+    getStoryService().remove((p as { id: string }).id);
+  },
+  'story:createDelivery': (p) => {
+    const input = p as IpcReq<'story:createDelivery'>;
+    return getStoryService().createDelivery(input.id, input.duration);
+  },
+  'story:listDeliveries': (p) =>
+    getStoryService().listDeliveries((p as IpcReq<'story:listDeliveries'>).id),
 };
 
 export async function invokeRpc<C extends IpcInvokeChannel>(

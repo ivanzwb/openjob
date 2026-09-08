@@ -121,6 +121,7 @@ import {
   listConfirmedEvidence,
   listProposedEvidence,
 } from '../evidence';
+import { getStoryService } from '../story';
 import {
   beginPairing,
   createBackup,
@@ -487,6 +488,18 @@ export function registerIpcHandlers(): void {
   handle('evidence:propose', (input) => createEvidenceService(getRawDb()).propose(input));
   handle('evidence:confirm', ({ id }) => createEvidenceService(getRawDb()).confirm(id));
   handle('evidence:reject', ({ id }) => createEvidenceService(getRawDb()).reject(id));
+
+  handle('story:list', ({ campaignId }) => getStoryService().list(campaignId));
+  handle('story:get', ({ id }) => getStoryService().get(id));
+  handle('story:create', (input) => getStoryService().create(input));
+  handle('story:revise', ({ id, patch }) => getStoryService().revise(id, patch));
+  handle('story:delete', ({ id }) => {
+    getStoryService().remove(id);
+  });
+  handle('story:createDelivery', ({ id, duration }) =>
+    getStoryService().createDelivery(id, duration),
+  );
+  handle('story:listDeliveries', ({ id }) => getStoryService().listDeliveries(id));
 }
 
 export { emit, handle } from './bridge';

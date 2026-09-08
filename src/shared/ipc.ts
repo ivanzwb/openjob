@@ -71,6 +71,13 @@ import type {
   PracticeTurn,
   PracticeTurnInput,
 } from './practice/types';
+import type {
+  Story,
+  StoryDeliveryDuration,
+  StoryDeliveryView,
+  StoryInput,
+  StoryPatch,
+} from './story/types';
 
 // ---------------------------------------------------------------------------
 // 通用
@@ -1306,6 +1313,25 @@ export interface IpcInvokeMap {
   'evidence:propose': { req: EvidenceProposal; res: CandidateEvidence };
   'evidence:confirm': { req: { id: string }; res: CandidateEvidence };
   'evidence:reject': { req: { id: string }; res: void };
+
+  /**
+   * Story 工作台。
+   *
+   * create / revise 在没有已确认证据时直接拒绝，不返回部分结果；createDelivery 的
+   * 入参只有 Story id 与时长，三档口述因此不可能各带一份事实进来。
+   */
+  'story:list': { req: { campaignId: string }; res: Story[] };
+  'story:get': { req: { id: string }; res: Story | null };
+  'story:create': { req: StoryInput; res: Story };
+  'story:revise': { req: { id: string; patch: StoryPatch }; res: Story };
+  /** 删 Story 只删它自己和它的口述话术，candidate_evidence 一行不动 */
+  'story:delete': { req: { id: string }; res: void };
+  'story:createDelivery': {
+    req: { id: string; duration: StoryDeliveryDuration };
+    res: SpeechSnippet;
+  };
+  /** 已生成的口述版本，带正文与事实集合指纹 */
+  'story:listDeliveries': { req: { id: string }; res: StoryDeliveryView[] };
 }
 
 /** 主进程 → 渲染进程的单向推送 */
@@ -1493,6 +1519,13 @@ export const IPC_INVOKE_CHANNELS = [
   'evidence:propose',
   'evidence:confirm',
   'evidence:reject',
+  'story:list',
+  'story:get',
+  'story:create',
+  'story:revise',
+  'story:delete',
+  'story:createDelivery',
+  'story:listDeliveries',
 ] as const satisfies readonly IpcInvokeChannel[];
 
 export const IPC_EVENT_CHANNELS = [

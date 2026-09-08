@@ -962,3 +962,93 @@ export const candidateEvidence = sqliteTable(
     index('idx_candidate_evidence_source').on(t.sourceKind, t.sourceDocumentId),
   ],
 );
+
+// ---------------------------------------------------------------------------
+// Story（STAR/CAR 可复用经历）
+// ---------------------------------------------------------------------------
+
+/**
+ * 一段整理好的真实经历。
+ *
+ * 只存叙事分段，事实本身仍然在 candidate_evidence 里——Story 是「怎么讲」，证据
+ * 是「讲的是什么」。把证据正文复制进来就会出现两份可以各自漂移的事实，用户改了
+ * 简历之后没人知道该信哪一份。
+ */
+export const story = sqliteTable(
+  'story',
+  {
+    id: text('id').primaryKey(),
+    campaignId: text('campaign_id')
+      .notNull()
+      .references(() => campaign.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    situationMd: text('situation_md').notNull().default(''),
+    taskMd: text('task_md').notNull().default(''),
+    actionMd: text('action_md').notNull().default(''),
+    resultMd: text('result_md').notNull().default(''),
+    /** CAR 结构没有这一段，允许空串 */
+    reflectionMd: text('reflection_md').notNull().default(''),
+    competencyIds: text('competency_ids', { mode: 'json' })
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (t) => [index('idx_story_campaign').on(t.campaignId, t.createdAt)],
+);
+
+/**
+ * Story 与已确认证据的关联。
+ *
+ * `evidence_id` 刻意不加外键。这条链接的方向只有一个：Story 依赖证据，证据不知道
+ * 自己被哪个 Story 引用。加了外键就等于开出一条从 Story 侧删到候选人事实的通路
+ * （级联、或者删证据时连带失败），而「删 Story 不删 Evidence」是这张表存在的前提。
+ * 引用是否有效由服务层在写入时逐条校验（必须是同一 Campaign 的 confirmed 条目），
+ * 不交给外键。
+ */
+export const storyEvidence = sqliteTable(
+  'story_evidence',
+  {
+    id: text('id').primaryKey(),
+    storyId: text('story_id')
+      .notNull()
+      .references(() => story.id, { onDelete: 'cascade' }),
+    evidenceId: text('evidence_id').notNull(),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => [
+    uniqueIndex('uq_story_evidence').on(t.storyId, t.evidenceId),
+    index('idx_story_evidence_evidence').on(t.evidenceId),
+  ],
+);
+
+/**
+ * 一个口述版本的元数据；正文在 speech_snippet 里（source_type='story'）。
+ *
+ * `fact_set_hash` 是「不同口述版本共享事实集合」的落库证据：30/60/120 三行的
+ * 指纹必须相同。不记这一列的话，三档是不是在同一组事实上生成的就只能靠读正文
+ * 猜，而这恰恰是最需要事后能查清的一件事。
+ */
+export const storyDelivery = sqliteTable(
+  'story_delivery',
+  {
+    id: text('id').primaryKey(),
+    storyId: text('story_id')
+      .notNull()
+      .references(() => story.id, { onDelete: 'cascade' }),
+    snippetId: text('snippet_id')
+      .notNull()
+      .references(() => speechSnippet.id, { onDelete: 'cascade' }),
+    /** 30 / 60 / 120 */
+    durationSeconds: integer('duration_seconds').notNull(),
+    factSetHash: text('fact_set_hash').notNull(),
+    promptVersionId: text('prompt_version_id').notNull(),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => [
+    // 一个 Story 每档只留一条：重新生成是替换，不是再攒一条让用户自己挑
+    uniqueIndex('uq_story_delivery_duration').on(t.storyId, t.durationSeconds),
+    index('idx_story_delivery_snippet').on(t.snippetId),
+  ],
+);

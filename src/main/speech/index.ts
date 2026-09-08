@@ -58,6 +58,12 @@ function resolveSourceLabel(sourceType: SpeechSnippet['sourceType'], sourceId: s
       .get();
     return campaign ? `模拟面试 · ${campaign.company}` : '模拟面试';
   }
+  if (sourceType === 'story') {
+    // 标题用 Story 自己的标题而不是时长档位：用户找的是「哪一段经历」，
+    // 三档口述在详情里再分。
+    const row = db.select().from(schema.story).where(eq(schema.story.id, sourceId)).get();
+    return row ? `经历 · ${row.title}` : '经历';
+  }
   return '话术';
 }
 
@@ -66,6 +72,7 @@ function resolveSourceLabel(sourceType: SpeechSnippet['sourceType'], sourceId: s
  * - design：sourceId 直接就是 campaignId
  * - node：knowledgeNode.campaignId
  * - quiz：挂在作答或考点上，两种 id 都要能认出来，再经 node 取 campaignId
+ * - story：story.campaignId
  * - codeRef：仓库话术不绑定备考，返回 null
  */
 function resolveCampaign(
@@ -97,6 +104,9 @@ function resolveCampaign(
       .where(eq(schema.knowledgeNode.id, nodeId))
       .get();
     campaignId = node?.campaignId ?? null;
+  } else if (sourceType === 'story') {
+    const row = db.select().from(schema.story).where(eq(schema.story.id, sourceId)).get();
+    campaignId = row?.campaignId ?? null;
   }
 
   if (!campaignId) return null;

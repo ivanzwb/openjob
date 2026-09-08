@@ -60,6 +60,19 @@ describe('表规格自检', () => {
     expect(syncTableSpec('campaign').columns).toContain('role_profile_id');
   });
 
+  it('Story 三张表都同步，且排在它们引用的父表之后', () => {
+    // 漏掉任何一张，手机端就只能看到孤零零的口述话术：点开找不到对应的 Story，
+    // 也追不回任何一条证据。
+    const names = syncTableSpecs().map((spec) => spec.name);
+    for (const table of ['story', 'story_evidence', 'story_delivery']) {
+      expect(names).toContain(table);
+    }
+    expect(names.indexOf('campaign')).toBeLessThan(names.indexOf('story'));
+    expect(names.indexOf('story')).toBeLessThan(names.indexOf('story_evidence'));
+    expect(names.indexOf('story')).toBeLessThan(names.indexOf('story_delivery'));
+    expect(names.indexOf('speech_snippet')).toBeLessThan(names.indexOf('story_delivery'));
+  });
+
   it('不在清单里的表要报错，别让调用方以为它在同步', () => {
     expect(() => syncTableSpec('search_cache')).toThrow('不在同步清单里');
   });

@@ -71,6 +71,11 @@ const SYNCED_TABLES: Array<{ table: Table; deviceLocal?: string[] }> = [
   { table: schema.practiceTurn },
   { table: schema.practiceAttempt },
   { table: schema.practiceScore },
+  // Story 的口述版本正文在 speech_snippet 里，story_delivery 引用它，
+  // 所以这三张表排在 speech_snippet 之后：story → evidence 链接 / delivery。
+  { table: schema.story },
+  { table: schema.storyEvidence },
+  { table: schema.storyDelivery },
 ];
 
 function buildSpec(table: Table, deviceLocal: string[]): SyncTableSpec {

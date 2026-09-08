@@ -228,3 +228,51 @@ describe('candidate evidence migration', () => {
     db.close();
   });
 });
+
+describe('story migration', () => {
+  it('桌面与手机使用同一份 T13 DDL', () => {
+    const desktop = sqlOf('0026_story').replace(/\r\n/g, '\n');
+    const mobile = readFileSync(
+      join(process.cwd(), 'mobile', 'src', 'db', 'migrations', '0024_story.sql'),
+      'utf8',
+    ).replace(/\r\n/g, '\n');
+    expect(mobile).toBe(desktop);
+  });
+
+  /**
+   * 「删 Story 不删 Evidence」这条验收，最终守在这里：story_evidence.evidence_id
+   * 一旦被加成外键，删 Story 就有了一条可能级联到候选人事实的通路，而服务层的
+   * 那句 DELETE 看起来仍然完全正常。
+   */
+  it('story_evidence 只对 story 有外键，指向 candidate_evidence 的那条边不存在', () => {
+    const db = new DatabaseSync(':memory:');
+    db.exec('PRAGMA foreign_keys = ON');
+    journal().forEach((entry) => applySql(db, sqlOf(entry.tag)));
+
+    const parents = (
+      db.prepare(`PRAGMA foreign_key_list('story_evidence')`).all() as Array<{ table: string }>
+    ).map((fk) => fk.table);
+
+    expect(parents).toEqual(['story']);
+    db.close();
+  });
+
+  it('每个 Story 每档口述只能有一条：唯一索引在位', () => {
+    const db = new DatabaseSync(':memory:');
+    db.exec('PRAGMA foreign_keys = ON');
+    journal().forEach((entry) => applySql(db, sqlOf(entry.tag)));
+
+    const indexes = db
+      .prepare(`PRAGMA index_list(story_delivery)`)
+      .all() as Array<{ name: string; unique: number }>;
+    const duration = indexes.find((index) => index.name === 'uq_story_delivery_duration');
+
+    expect(duration?.unique).toBe(1);
+    expect(
+      (db.prepare(`PRAGMA index_info(uq_story_delivery_duration)`).all() as Array<{
+        name: string;
+      }>).map((column) => column.name),
+    ).toEqual(['story_id', 'duration_seconds']);
+    db.close();
+  });
+});

@@ -123,7 +123,14 @@ export type AnnotationTarget = (typeof ANNOTATION_TARGETS)[number];
 export const ANNOTATION_KINDS = ['highlight', 'note', 'elaboration', 'bookmark'] as const;
 export type AnnotationKind = (typeof ANNOTATION_KINDS)[number];
 
-export const SPEECH_SOURCE_TYPES = ['node', 'codeRef', 'quiz', 'design'] as const;
+/**
+ * 一条话术从哪条链路来。
+ *
+ * `story` 是 STAR/CAR 经历的口述版本，sourceId 是 story.id。新增取值必须同时更新
+ * 两端解析 sourceType 的地方（桌面 src/main/speech，手机 mobile/src/data/queries），
+ * 否则话术库里会出现一条标题是「话术」、又归不到任何一场备考下的孤儿条目。
+ */
+export const SPEECH_SOURCE_TYPES = ['node', 'codeRef', 'quiz', 'design', 'story'] as const;
 export type SpeechSourceType = (typeof SPEECH_SOURCE_TYPES)[number];
 
 export const SESSION_KINDS = ['quiz', 'repoQa', 'freeChat', 'nodeFollowUp', 'planning'] as const;
