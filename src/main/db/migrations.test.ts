@@ -31,6 +31,10 @@ function sqlOf(tag: string): string {
   return readFileSync(join(MIGRATIONS_DIR, `${tag}.sql`), 'utf8');
 }
 
+function stripSqlComments(sql: string): string {
+  return sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ');
+}
+
 function applySql(db: DatabaseSync, sql: string): void {
   for (const stmt of sql.split('--> statement-breakpoint')) {
     const trimmed = stmt.trim();
@@ -76,6 +80,29 @@ describe('迁移 journal', () => {
 
       expect(pending, `旧库停在 ${entries[k].tag} 时`).toEqual(expected);
     }
+  });
+});
+
+describe('迁移 SQL 切分', () => {
+  /**
+   * Drizzle 把文件按 `--> statement-breakpoint` 切开后原样逐条 run，既不 trim
+   * 也不跳过空串（migrator.js 里那个 map 就是 `return it`）。所以文件开头或结尾
+   * 多一个分隔符，就会多出一条空语句，getDb() 直接抛「Failed to run the query ''」，
+   * 应用连启动都启动不了——0022 就是这么把 CI 的启动冒烟弄挂的。
+   *
+   * 上面的 applySql 会把空语句过滤掉，正因如此它永远验不出这件事，这里必须照着
+   * Drizzle 的方式原样切。
+   */
+  it('没有迁移会切出空语句或纯注释语句', () => {
+    const offenders = journal()
+      .map((e) => e.tag)
+      .filter((tag) =>
+        sqlOf(tag)
+          .split('--> statement-breakpoint')
+          .some((stmt) => stripSqlComments(stmt).trim() === ''),
+      );
+
+    expect(offenders).toEqual([]);
   });
 });
 
