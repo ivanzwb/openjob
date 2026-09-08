@@ -19,6 +19,7 @@ import type {
   ExamForm,
   InterviewProtocol,
   FollowUpStrategy,
+  NodeStatus,
   PracticeAttemptSource,
   PracticeSessionStatus,
   PracticeTurnKind,
@@ -156,7 +157,7 @@ export interface PracticeEvaluation {
 export interface PracticeMasteryUpdate {
   nodeId: string;
   mastery: number;
-  status: string;
+  status: NodeStatus;
   priorityScore: number;
 }
 
@@ -181,7 +182,14 @@ export interface PracticeAttempt {
   transcriptMd: string | null;
   /** dimensionId → 1-5；历史投影为空对象 */
   dimensionScores: Record<string, number>;
-  totalScore: number;
+  /**
+   * 归一化后的 1-5 总分；null 表示这条记录从来没有被评分过。
+   *
+   * 必须可空是因为 design_case 只存了题目和作答：旧链路把分数返回给界面就丢了，
+   * 库里没有。给这类行填 0 会让它在历史里显示成「评了 0 分」，而按平均分算趋势时
+   * 又会把整条曲线压下去——两种都是凭空造出来的结论。
+   */
+  totalScore: number | null;
   feedbackMd: string;
   previousAttemptId: string | null;
   createdAt: number;
@@ -212,6 +220,8 @@ export interface PracticeProtocol {
 }
 
 export type PracticeErrorCode =
+  | 'campaign-not-found'
+  | 'role-pack-unavailable'
   | 'unknown-format'
   | 'unknown-rubric'
   | 'session-not-found'

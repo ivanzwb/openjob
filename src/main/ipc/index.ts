@@ -76,6 +76,7 @@ import {
   reorderTasks,
   updateTaskMinutes,
 } from '../plan/edit';
+import { getPracticeService, listPracticeAttempts, listPracticeScores } from '../practice';
 import { generateQuizAnswer, generateQuizQuestion, getQuizDraft, submitQuizAnswer, updateQuizDraft } from '../quiz';
 import {
   cloneAndIndex,
@@ -336,6 +337,13 @@ export function registerIpcHandlers(): void {
   handle('quiz:question', ({ nodeId }) => generateQuizQuestion(nodeId));
   handle('quiz:answer', ({ nodeId, question }) => generateQuizAnswer(nodeId, question));
   handle('quiz:submit', (input) => submitQuizAnswer(input.nodeId, input.question, input.userAnswer));
+
+  handle('practice:createSession', (input) => getPracticeService().createSession(input));
+  handle('practice:getSession', ({ sessionId }) => getPracticeService().getSession(sessionId));
+  handle('practice:nextTurn', (input) => getPracticeService().nextTurn(input));
+  handle('practice:evaluate', (input) => getPracticeService().evaluate(input));
+  handle('practice:listAttempts', (query) => listPracticeAttempts(query));
+  handle('practice:listScores', ({ attemptId }) => listPracticeScores(attemptId));
 
   handle('repo:gitStatus', () => getGitStatus());
   handle('repo:list', () => listRepos());

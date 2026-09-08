@@ -1,7 +1,6 @@
 import { eq } from 'drizzle-orm';
-import { getDb, schema } from '../db';
-import { rowToNode } from '../campaign/repository';
-import { computePriority } from '../diagnosis/priority';
+import { getDb, getRawDb, schema } from '../db';
+import { writeMasterySignal } from '../practice/mastery';
 import type { ToolOutcome } from './tools';
 
 const COVERAGE_LABEL: Record<string, string> = {
@@ -81,19 +80,15 @@ export function runGraphTool(
       citations: [],
     };
   }
-  const mastery = Math.min(5, Math.max(0, raw));
-
-  // 来自对话的自评比答题得分弱，标 mixed 而非 quiz，避免污染客观分
-  const node = rowToNode({ ...target, mastery });
-  const { score } = computePriority(node);
-  db.update(schema.knowledgeNode)
-    .set({ mastery, masterySource: 'mixed', priorityScore: score })
-    .where(eq(schema.knowledgeNode.id, target.id))
-    .run();
+  // 自评的收敛、来源标记与 status/priority 重算都在唯一的回写入口里
+  const updated = writeMasterySignal(getRawDb(), target.id, {
+    kind: 'selfReport',
+    mastery: raw,
+  });
 
   return {
-    content: `已把「${target.name}」的掌握度更新为 ${mastery}/5。`,
-    summary: `update_mastery ${target.name} → ${mastery}`,
+    content: `已把「${target.name}」的掌握度更新为 ${updated.mastery}/5。`,
+    summary: `update_mastery ${target.name} → ${updated.mastery}`,
     citations: [],
   };
 }

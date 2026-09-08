@@ -60,6 +60,17 @@ import type {
 } from './plugins/clientView';
 import type { CampaignRuntimeDescriptor, ClientPlatform } from './plugins/types';
 import type { EvidenceProposal, EvidenceScope } from './evidence/types';
+import type {
+  PracticeAttempt,
+  PracticeAttemptQuery,
+  PracticeDimensionScore,
+  PracticeEvaluation,
+  PracticeEvaluationInput,
+  PracticeSession,
+  PracticeSessionInput,
+  PracticeTurn,
+  PracticeTurnInput,
+} from './practice/types';
 
 // ---------------------------------------------------------------------------
 // 通用
@@ -1193,6 +1204,21 @@ export interface IpcInvokeMap {
   'quiz:answer': { req: QuizAnswerInput; res: QuizAnswerResult };
   'quiz:submit': { req: QuizSubmitInput; res: QuizSubmitResult };
 
+  /**
+   * 通用练习协议。
+   *
+   * 与上面的 quiz:* / 下面的 design:* 并存而不是取代它们：旧通道要保持可用一个
+   * 发布周期，手机端升级不同步时仍然走旧链路。
+   */
+  'practice:createSession': { req: PracticeSessionInput; res: PracticeSession };
+  'practice:getSession': { req: { sessionId: string }; res: PracticeSession | null };
+  'practice:nextTurn': { req: PracticeTurnInput; res: PracticeTurn };
+  'practice:evaluate': { req: PracticeEvaluationInput; res: PracticeEvaluation };
+  /** 三种来源合并的练习历史；quiz/design 行为只读投影 */
+  'practice:listAttempts': { req: PracticeAttemptQuery; res: PracticeAttempt[] };
+  /** 单条练习记录的逐维度分数、量规锚点与原回答引用 */
+  'practice:listScores': { req: { attemptId: string }; res: PracticeDimensionScore[] };
+
   'repo:gitStatus': { req: void; res: GitStatus };
   'repo:list': { req: void; res: Repo[] };
   'repo:get': { req: { id: string }; res: Repo };
@@ -1407,6 +1433,12 @@ export const IPC_INVOKE_CHANNELS = [
   'quiz:question',
   'quiz:answer',
   'quiz:submit',
+  'practice:createSession',
+  'practice:getSession',
+  'practice:nextTurn',
+  'practice:evaluate',
+  'practice:listAttempts',
+  'practice:listScores',
   'repo:gitStatus',
   'repo:list',
   'repo:get',

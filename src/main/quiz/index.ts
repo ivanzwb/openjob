@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import type { QuizAttempt } from '@shared/entities';
-import type { NodeStatus } from '@shared/enums';
 import type {
   QuizAnswerResult,
   QuizDraftResult,
@@ -11,22 +10,16 @@ import type {
 } from '@shared/ipc';
 import { normalizeDisplayText } from '@shared/lib/markdownDisplay';
 import { completeJson } from '../llm/json';
-import { getDb, schema } from '../db';
+import { getDb, getRawDb, schema } from '../db';
 import { rowToNode } from '../campaign/repository';
 import { buildCampaignCandidateContext } from '../campaign/candidateContext';
-import { computePriority } from '../diagnosis/priority';
+import { writeMasterySignal } from '../practice/mastery';
 import { saveSpeechFromQuiz } from '../speech';
 
 interface QuizScoreResult {
   score: number;
   feedbackMd: string;
   improvedScriptMd: string;
-}
-
-function masteryToStatus(mastery: number): NodeStatus {
-  if (mastery >= 4.5) return 'mastered';
-  if (mastery >= 2.5) return 'learning';
-  return 'shaky';
 }
 
 function rowToDraft(row: typeof schema.knowledgeNode.$inferSelect): QuizDraftResult {
@@ -163,23 +156,13 @@ export async function submitQuizAnswer(
   );
 
   const score = Math.min(5, Math.max(1, Math.round(scored.score)));
-  // 答题得分权重更高，与自评混合
-  const newMastery = node.masterySource === 'quiz'
-    ? node.mastery * 0.3 + score * 0.7
-    : node.mastery * 0.5 + score * 0.5;
 
-  const nodeStatus = masteryToStatus(newMastery);
-  const priority = computePriority({ ...node, mastery: newMastery });
+  // 混合权重与 status/priority 的重算都在这一处，答题和对话自评走的是同一条路
+  const mastery = writeMasterySignal(getRawDb(), nodeId, { kind: 'practice', score });
 
   db.update(schema.knowledgeNode)
-    .set({
-      mastery: newMastery,
-      masterySource: 'quiz',
-      status: nodeStatus,
-      priorityScore: priority.score,
-      // 已经评过分，草稿留着下次进来会又冒出来盖住结果
-      quizAnswerDraftMd: null,
-    })
+    // 已经评过分，草稿留着下次进来会又冒出来盖住结果
+    .set({ quizAnswerDraftMd: null })
     .where(eq(schema.knowledgeNode.id, nodeId))
     .run();
 
@@ -215,7 +198,7 @@ export async function submitQuizAnswer(
 
   return {
     attempt,
-    masteryUpdated: newMastery,
-    nodeStatus,
+    masteryUpdated: mastery.mastery,
+    nodeStatus: mastery.status,
   };
 }

@@ -15,9 +15,28 @@ type ResumeRow = typeof schema.resume.$inferSelect;
 const dbRef = vi.hoisted(() => ({ current: null as unknown }));
 const llm = vi.hoisted(() => ({ calls: [] as Array<{ promptId: string; user: string }> }));
 
+/**
+ * 掌握度回写走原始连接（practice/mastery 是唯一写入方），这里只要它不炸：
+ * 本文件守的是喂给模型的 user message，掌握度规则有自己的用例。
+ */
+const rawDb = vi.hoisted(() => ({
+  prepare: () => ({
+    get: () => ({
+      id: 'n1',
+      coverage_type: 'deepDive',
+      exam_prob: 0.8,
+      est_minutes: 30,
+      mastery: 2,
+      mastery_source: 'self',
+    }),
+    run: () => undefined,
+    all: () => [],
+  }),
+}));
+
 vi.mock('../db', async () => {
   const real = await import('../db/schema');
-  return { getDb: () => dbRef.current, schema: real };
+  return { getDb: () => dbRef.current, getRawDb: () => rawDb, schema: real };
 });
 
 vi.mock('../llm/json', () => ({

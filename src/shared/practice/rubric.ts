@@ -61,31 +61,26 @@ function clampScore(value: unknown): RubricScore | null {
 }
 
 /**
- * 把原文压成「单空格分隔」并保留每个字符在原文里的下标。
+ * 去掉全部空白，并保留每个剩余字符在原文里的下标。
  *
  * 模型引用时经常顺手改掉换行和缩进，逐字比较会把这类引用一律判成编造。折中是
- * 只允许空白差异：内容必须一字不差，位置仍然定位回原文。
+ * 忽略空白：非空白字符必须一字不差且连续，位置仍然定位回原文。
+ *
+ * 这里不能只把连续空白压成一个空格——原文里连写的 `IO，覆盖索引`，模型在逗号后
+ * 断行就成了 `IO，\n覆盖索引`，压缩后多出一个空格仍然匹配不上。真实答案本来就
+ * 不带排版，被挡下来的是一次合法引用，用户看到的却是一次失败的评分。
+ *
+ * 反编造的性质不受影响：indexOf 要求在压缩串里连续，也就要求在原文里连续（至多
+ * 隔着空白），拼接两处远隔的原话依然过不了。
  */
 function normalizeWithIndex(text: string): { normalized: string; indices: number[] } {
   const chars: string[] = [];
   const indices: number[] = [];
-  let previousWasSpace = true;
   for (let i = 0; i < text.length; i++) {
     const char = text[i];
-    if (/\s/.test(char)) {
-      if (previousWasSpace) continue;
-      chars.push(' ');
-      indices.push(i);
-      previousWasSpace = true;
-      continue;
-    }
+    if (/\s/.test(char)) continue;
     chars.push(char);
     indices.push(i);
-    previousWasSpace = false;
-  }
-  while (chars.length > 0 && chars[chars.length - 1] === ' ') {
-    chars.pop();
-    indices.pop();
   }
   return { normalized: chars.join(''), indices };
 }

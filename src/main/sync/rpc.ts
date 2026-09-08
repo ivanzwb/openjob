@@ -65,6 +65,7 @@ import {
   reorderTasks,
   updateTaskMinutes,
 } from '../plan/edit';
+import { getPracticeService, listPracticeAttempts, listPracticeScores } from '../practice';
 import { generateQuizAnswer, generateQuizQuestion, getQuizDraft, submitQuizAnswer, updateQuizDraft } from '../quiz';
 import {
   deleteRepo,
@@ -224,6 +225,15 @@ const RPC_HANDLERS: Partial<Record<IpcInvokeChannel, RpcHandler>> = {
     const input = p as IpcReq<'quiz:submit'>;
     return submitQuizAnswer(input.nodeId, input.question, input.userAnswer);
   },
+  'practice:createSession': (p) =>
+    getPracticeService().createSession(p as IpcReq<'practice:createSession'>),
+  'practice:getSession': (p) =>
+    getPracticeService().getSession((p as IpcReq<'practice:getSession'>).sessionId),
+  'practice:nextTurn': (p) => getPracticeService().nextTurn(p as IpcReq<'practice:nextTurn'>),
+  'practice:evaluate': (p) => getPracticeService().evaluate(p as IpcReq<'practice:evaluate'>),
+  'practice:listAttempts': (p) => listPracticeAttempts(p as IpcReq<'practice:listAttempts'>),
+  'practice:listScores': (p) =>
+    listPracticeScores((p as IpcReq<'practice:listScores'>).attemptId),
   'repo:list': () => listRepos(),
   'repo:get': (p) => getRepo((p as { id: string }).id),
   'repo:add': (p) => ({
