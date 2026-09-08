@@ -12,6 +12,13 @@ import {
   deleteResume,
   updateCampaign,
 } from '../campaign/repository';
+import { getRawDb } from '../db';
+import {
+  getCampaignRuntime,
+  getClientCapabilityView,
+  listInstalledPlugins,
+  setCampaignRoleProfile,
+} from '../plugins/runtime';
 import { createNode, deleteNode, updateNode } from '../campaign/nodes';
 import { createEdge, deleteEdge, listEdges } from '../campaign/edges';
 import { applyHistorySignals, getCampaignNudges } from '../insights';
@@ -92,6 +99,14 @@ type RpcHandler = (payload: unknown) => Promise<unknown> | unknown;
  * 配置/密钥/文件对话框/导出等桌面专属能力不在此列。
  */
 const RPC_HANDLERS: Partial<Record<IpcInvokeChannel, RpcHandler>> = {
+  'plugin:listInstalled': () => listInstalledPlugins(),
+  // 手机端只取 descriptor 和本机视图，插件依赖解析始终留在桌面 resolver 一处
+  'campaign:getRuntimeDescriptor': (p) =>
+    getCampaignRuntime(getRawDb(), (p as IpcReq<'campaign:getRuntimeDescriptor'>).campaignId),
+  'campaign:setRoleProfile': (p) =>
+    setCampaignRoleProfile(getRawDb(), p as IpcReq<'campaign:setRoleProfile'>),
+  'campaign:getClientCapabilityView': (p) =>
+    getClientCapabilityView(getRawDb(), p as IpcReq<'campaign:getClientCapabilityView'>),
   'campaign:list': () => listCampaigns(),
   'campaign:getOverview': () => getCampaignOverview(),
   'campaign:compare': (p) => compareCampaigns((p as { campaignIdA: string; campaignIdB: string }).campaignIdA, (p as { campaignIdA: string; campaignIdB: string }).campaignIdB),

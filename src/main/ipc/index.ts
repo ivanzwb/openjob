@@ -50,7 +50,13 @@ import {
   toggleBookmark,
 } from '../annotation';
 import { generateDesignCase, submitDesignAnswer, updateDesignCaseAnswers, generateRecommendedAnswer, elaborateDesignAnswer } from '../design';
-import { dbHealth } from '../db';
+import { dbHealth, getRawDb } from '../db';
+import {
+  getCampaignRuntime,
+  getClientCapabilityView,
+  listInstalledPlugins,
+  setCampaignRoleProfile,
+} from '../plugins/runtime';
 import { generateExplanation, generateFallbackScript, getExplanation, updateExplanation, elaborateExplanationSelection, rewriteExplanationSelection } from '../explain';
 import { startJob } from '../jobs';
 import { cancelStream, startChat, testTier } from '../llm';
@@ -172,6 +178,8 @@ export function registerIpcHandlers(): void {
 
   handle('db:health', () => dbHealth());
 
+  handle('plugin:listInstalled', () => listInstalledPlugins());
+
   handle('campaign:list', () => listCampaigns());
   handle('campaign:getOverview', () => getCampaignOverview());
   handle('campaign:compare', ({ campaignIdA, campaignIdB }) =>
@@ -183,6 +191,13 @@ export function registerIpcHandlers(): void {
   handle('campaign:delete', ({ id }) => {
     deleteCampaign(id);
   });
+  handle('campaign:getRuntimeDescriptor', ({ campaignId }) =>
+    getCampaignRuntime(getRawDb(), campaignId),
+  );
+  handle('campaign:setRoleProfile', (input) => setCampaignRoleProfile(getRawDb(), input));
+  handle('campaign:getClientCapabilityView', (input) =>
+    getClientCapabilityView(getRawDb(), input),
+  );
 
   handle('resume:list', () => listResumes());
   // 导入/粘贴的纯文本先用模型归类成固定模块，模型不可用时退回规则识别

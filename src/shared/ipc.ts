@@ -42,6 +42,7 @@ import type {
   Task,
   Annotation,
   JdParsed,
+  RoleProfile,
 } from './entities';
 import type {
   BackupInfo,
@@ -51,6 +52,12 @@ import type {
   SyncStatus,
 } from './sync';
 import type { MockInterviewKind, MockInterviewLanguage } from './design/prompts';
+import type {
+  ArtifactSchemaRef,
+  ClientCapabilityView,
+  InstalledPlugin,
+} from './plugins/clientView';
+import type { CampaignRuntimeDescriptor, ClientPlatform } from './plugins/types';
 
 // ---------------------------------------------------------------------------
 // 通用
@@ -988,6 +995,49 @@ export interface SttStatus {
 }
 
 // ---------------------------------------------------------------------------
+// 插件运行时与本机能力
+// ---------------------------------------------------------------------------
+
+/**
+ * Campaign 当前激活的运行配置。
+ *
+ * descriptor 是 resolver 解析结果的只读快照，桌面和手机都只消费它，
+ * 不各自展开插件依赖；精确版本以同 revision 的 binding 为权威。
+ */
+export interface CampaignRuntimeView {
+  descriptor: CampaignRuntimeDescriptor;
+  /** 对应的 campaign_plugin_binding revision。 */
+  revision: number;
+  roleProfile: RoleProfile | null;
+}
+
+export interface SetRoleProfileInput {
+  campaignId: string;
+  roleFamily: string;
+  rolePackId: string;
+  level?: string | null;
+  industryPackId?: string | null;
+  location?: string | null;
+  /** 默认 zh。 */
+  interviewLanguage?: string;
+  /** 0–1，自动识别的置信度，默认 1（用户显式选择）。 */
+  confidence?: number;
+  /** 默认 true；自动识别待确认时传 false。 */
+  userConfirmed?: boolean;
+  /** 额外显式启用的能力插件；岗位包声明的可选依赖由 resolver 自动展开。 */
+  capabilityIds?: string[];
+}
+
+export interface ClientCapabilityViewRequest {
+  campaignId: string;
+  platform: ClientPlatform;
+  /** 手机端传本机已安装清单；不传时按调用端内置清单计算。 */
+  installed?: InstalledPlugin[];
+  /** 需要判断能否解析的 artifact；未知 schema 一律只读。 */
+  artifacts?: ArtifactSchemaRef[];
+}
+
+// ---------------------------------------------------------------------------
 // 通道映射
 // ---------------------------------------------------------------------------
 
@@ -1023,6 +1073,9 @@ export interface IpcInvokeMap {
 
   'db:health': { req: void; res: { ok: boolean; tables: number; path: string } };
 
+  /** 本机随应用发布的插件清单，不代表任一 Campaign 已启用 */
+  'plugin:listInstalled': { req: void; res: InstalledPlugin[] };
+
   'campaign:list': { req: void; res: CampaignSummary[] };
   'campaign:getOverview': { req: void; res: CampaignOverview };
   'campaign:compare': { req: { campaignIdA: string; campaignIdB: string }; res: CampaignCompareResult };
@@ -1030,6 +1083,15 @@ export interface IpcInvokeMap {
   'campaign:create': { req: CreateCampaignInput; res: Campaign };
   'campaign:update': { req: UpdateCampaignInput; res: Campaign };
   'campaign:delete': { req: { id: string }; res: void };
+  /** 尚未回填/激活的 Campaign 返回 null，调用方走旧执行路径 */
+  'campaign:getRuntimeDescriptor': { req: { campaignId: string }; res: CampaignRuntimeView | null };
+  /** 写岗位意图并激活新的 binding revision；解析失败时不写任何一行 */
+  'campaign:setRoleProfile': { req: SetRoleProfileInput; res: CampaignRuntimeView };
+  /** 纯视图计算：只读 descriptor 与本机安装清单，不修改 Campaign binding */
+  'campaign:getClientCapabilityView': {
+    req: ClientCapabilityViewRequest;
+    res: ClientCapabilityView | null;
+  };
 
   'resume:list': { req: void; res: Resume[] };
   /** 创建简历时先用模型归类到固定模块；模型不可用退回规则识别，fallbackReason 说明这一点 */
@@ -1251,6 +1313,7 @@ export const IPC_INVOKE_CHANNELS = [
   'search:fetchUrl',
   'search:clearCache',
   'db:health',
+  'plugin:listInstalled',
   'campaign:list',
   'campaign:getOverview',
   'campaign:compare',
@@ -1258,6 +1321,9 @@ export const IPC_INVOKE_CHANNELS = [
   'campaign:create',
   'campaign:update',
   'campaign:delete',
+  'campaign:getRuntimeDescriptor',
+  'campaign:setRoleProfile',
+  'campaign:getClientCapabilityView',
   'resume:list',
   'resume:create',
   'resume:update',
