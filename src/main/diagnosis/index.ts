@@ -22,8 +22,17 @@ import {
   type JdDiagnosisResult,
 } from '@shared/diagnosis/prompts';
 import { insertEdgesByName } from '../campaign/edges';
-import { findDuplicateByName, flattenChildren, flattenGeneratedTree } from './tree';
-import { EXPAND_DEPTH_LIMIT_MESSAGE, canExpandNode } from '@shared/diagnosis/tree';
+import { flattenChildren, flattenGeneratedTree } from './tree';
+import {
+  EXPAND_DEPTH_LIMIT_MESSAGE,
+  canExpandNode,
+  findCrossLevelDuplicate,
+  findSameLevelDuplicate,
+} from '@shared/diagnosis/tree';
+import {
+  findUncoveredRequirements,
+  uncoveredRequirementsMessage,
+} from '@shared/diagnosis/coverage';
 import { filterDuplicatesByEmbedding } from './embedding';
 import { applyHistoricalPrior } from './prior';
 import { computePriority } from './priority';
@@ -66,12 +75,21 @@ export async function diagnoseFromJd(campaignId: string, jobId: string): Promise
 
     const priorBoosted = applyHistoricalPrior(campaignId, campaign.company);
     updateCampaign({ id: campaignId, roleTitle: result.jdParsed.roleTitle || campaign.roleTitle });
+
+    // 模型只是被要求「逐条覆盖 JD」，没人核对它做没做到。漏的要报出来，
+    // 否则用户得把清单和 JD 逐条对着看才发现。
+    const uncovered = findUncoveredRequirements(
+      result.jdParsed.requirements ?? [],
+      rows.map((r) => r.name),
+    );
+
     done(
       jobId,
       label,
       `已生成 ${rows.length} 个考点` +
         (edgesCreated > 0 ? `、${edgesCreated} 条关系` : '') +
-        (priorBoosted > 0 ? `，${priorBoosted} 个考点已应用历史真题先验` : ''),
+        (priorBoosted > 0 ? `，${priorBoosted} 个考点已应用历史真题先验` : '') +
+        uncoveredRequirementsMessage(uncovered),
     );
   } catch (err) {
     fail(jobId, label, err instanceof Error ? err.message : String(err));
@@ -162,23 +180,28 @@ export async function diagnoseExpandNode(nodeId: string, jobId: string): Promise
       `公司：${campaign.company}\n岗位：${campaign.roleTitle}\n主题：${parent.name}\nJD 摘要：${campaign.jdRaw.slice(0, 2000)}`,
     );
 
-    const siblings = db
+    // 细化产出的一律是 point，所以只有已有的 point 算同层，domain/topic 都是跨层
+    const existing = db
       .select()
       .from(schema.knowledgeNode)
       .where(eq(schema.knowledgeNode.campaignId, parent.campaignId))
       .all();
-    const existingNames = siblings.map((n) => n.name);
+    const sameLevelNames = existing.filter((n) => n.kind === 'point').map((n) => n.name);
+    const crossLevelNames = existing.filter((n) => n.kind !== 'point').map((n) => n.name);
 
     const candidateNames = result.children.map((c) => c.name);
     const embeddingSkipped = await filterDuplicatesByEmbedding(
       parent.campaignId,
       candidateNames,
+      'point',
     );
     const embeddingSkipSet = new Set(embeddingSkipped);
 
     const filtered = result.children.filter(
       (c) =>
-        !findDuplicateByName(existingNames, c.name) && !embeddingSkipSet.has(c.name),
+        !findSameLevelDuplicate(sameLevelNames, c.name) &&
+        !findCrossLevelDuplicate(crossLevelNames, c.name) &&
+        !embeddingSkipSet.has(c.name),
     );
 
     const rows = flattenChildren(

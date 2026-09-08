@@ -5,14 +5,19 @@ import type { ExpandNodeResult, JdDiagnosisResult } from '@shared/diagnosis/prom
 import {
   EXPAND_DEPTH_LIMIT_MESSAGE,
   canExpandNode,
+  findCrossLevelDuplicate,
+  findSameLevelDuplicate,
   flattenGeneratedTree,
 } from '@shared/diagnosis/tree';
+import {
+  findUncoveredRequirements,
+  uncoveredRequirementsMessage,
+} from '@shared/diagnosis/coverage';
 import { completeJson } from '../llm/json';
 import { getCampaign } from './campaignLocal';
 import {
   applyHistoricalPrior,
   clearCampaignNodes,
-  findDuplicateNodeName,
   flattenChildrenForParent,
   insertEdgesByName,
   insertNodes,
@@ -61,10 +66,17 @@ export async function diagnoseFromJd(db: SQLiteDatabase, campaignId: string): Pr
     campaignId,
   )?.n ?? 0;
 
+  // 模型只是被要求「逐条覆盖 JD」，没人核对它做没做到，漏的要报出来
+  const uncovered = findUncoveredRequirements(
+    result.jdParsed.requirements ?? [],
+    rows.map((row) => row.name),
+  );
+
   return (
     `已生成 ${rowCount} 个考点` +
     (edgesCreated > 0 ? `、${edgesCreated} 条关系` : '') +
-    (priorBoosted > 0 ? `，${priorBoosted} 个考点已应用历史真题先验` : '')
+    (priorBoosted > 0 ? `，${priorBoosted} 个考点已应用历史真题先验` : '') +
+    uncoveredRequirementsMessage(uncovered)
   );
 }
 
@@ -143,13 +155,18 @@ export async function diagnoseExpandNode(db: SQLiteDatabase, nodeId: string): Pr
     `公司：${campaign.company}\n岗位：${campaign.roleTitle}\n主题：${parent.name}\nJD 摘要：${campaign.jdRaw.slice(0, 2000)}`,
   );
 
-  const existingNames = db
-    .getAllSync<{ name: string }>(
-      `SELECT name FROM knowledge_node WHERE campaign_id = ?`,
-      parent.campaign_id,
-    )
-    .map((row) => row.name);
-  const filtered = result.children.filter((child) => !findDuplicateNodeName(existingNames, child.name));
+  // 细化产出的一律是 point，所以只有已有的 point 算同层，domain/topic 都是跨层
+  const existing = db.getAllSync<{ name: string; kind: string }>(
+    `SELECT name, kind FROM knowledge_node WHERE campaign_id = ?`,
+    parent.campaign_id,
+  );
+  const sameLevelNames = existing.filter((row) => row.kind === 'point').map((row) => row.name);
+  const crossLevelNames = existing.filter((row) => row.kind !== 'point').map((row) => row.name);
+  const filtered = result.children.filter(
+    (child) =>
+      !findSameLevelDuplicate(sameLevelNames, child.name) &&
+      !findCrossLevelDuplicate(crossLevelNames, child.name),
+  );
   const rows = flattenChildrenForParent(
     parent.campaign_id,
     parent.id,

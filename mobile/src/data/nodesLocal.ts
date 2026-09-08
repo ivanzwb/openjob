@@ -369,19 +369,3 @@ export function flattenChildrenForParent(
     Crypto.randomUUID,
   ).map((row) => ({ ...row, parentId }));
 }
-
-export function findDuplicateNodeName(existingNames: string[], candidate: string): string | null {
-  const norm = normalizeNodeName(candidate);
-  for (const name of existingNames) {
-    const current = normalizeNodeName(name);
-    if (current === norm || current.includes(norm) || norm.includes(current)) return name;
-  }
-  return null;
-}
-
-function normalizeNodeName(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/\s+/g, '')
-    .replace(/[·、，,（）()/\\_-]/g, '');
-}

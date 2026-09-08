@@ -73,7 +73,7 @@ export function flattenGeneratedTree(
   const walk = (items: GeneratedNode[], parentId: string | null): void => {
     const accepted: string[] = [];
     for (const item of items) {
-      if (accepted.some((a) => isNearDuplicate(a, item.name))) continue;
+      if (findSameLevelDuplicate(accepted, item.name)) continue;
       const norm = normalizeName(item.name);
       if (globalNames.includes(norm)) continue;
       accepted.push(item.name);
@@ -133,7 +133,8 @@ export function normalizeName(name: string): string {
     .replace(/[·、，,（）()/\\_-]/g, '');
 }
 
-function tokenize(name: string): string[] {
+/** 拆出命名 token：英文/数字词（长度≥2）+ 中文单字（滤掉连接助词） */
+export function tokenizeName(name: string): string[] {
   const lower = name.toLowerCase();
   const latin = (lower.match(/[a-z0-9]+/g) ?? []).filter((t) => t.length >= 2);
   const cjk = lower
@@ -148,12 +149,44 @@ function isNearDuplicate(a: string, b: string): boolean {
   const na = normalizeName(a);
   const nb = normalizeName(b);
   if (na.includes(nb) || nb.includes(na)) return true;
-  const ta = tokenize(a);
-  const tb = tokenize(b);
+  const ta = tokenizeName(a);
+  const tb = tokenizeName(b);
   if (!ta.length || !tb.length) return false;
   const bigger = ta.length >= tb.length ? ta : tb;
   const smaller = ta.length >= tb.length ? tb : ta;
   return smaller.every((t) => bigger.includes(t)) && bigger.length > smaller.length;
+}
+
+/**
+ * 同层去重：同一深度上出现两个含义重叠的考点，清单读起来就是重复的，判定要严——
+ * 完全同名、互相包含、短名 token 被长名全覆盖都算重复。
+ */
+export function findSameLevelDuplicate(
+  existingNames: readonly string[],
+  candidate: string,
+): string | null {
+  for (const name of existingNames) {
+    if (isNearDuplicate(name, candidate)) return name;
+  }
+  return null;
+}
+
+/**
+ * 跨层去重：只拦完全同名。
+ *
+ * 这里曾经沿用同层那套包含判定，代价是父子命名天然共享前缀——「索引」下面就是
+ * 「索引下推」「聚簇索引」，「Redis」下面就是「Redis 持久化」，于是细化一次
+ * 一个新考点都加不进来，一次模型调用换不回任何东西，用户看到的是「考点覆盖不全」。
+ */
+export function findCrossLevelDuplicate(
+  existingNames: readonly string[],
+  candidate: string,
+): string | null {
+  const norm = normalizeName(candidate);
+  for (const name of existingNames) {
+    if (normalizeName(name) === norm) return name;
+  }
+  return null;
 }
 
 export type GeneratedEdgeSpec = { from: string; to: string; relation: EdgeRelation };

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { CoverageType, ExamForm } from '@shared/enums';
+import { findSameLevelDuplicate, normalizeName } from '@shared/diagnosis/tree';
 import { computePriority } from './priority';
 import type { GeneratedNode } from '@shared/diagnosis/prompts';
 import type * as schema from '../db/schema';
@@ -26,7 +27,7 @@ export function flattenGeneratedTree(campaignId: string, nodes: GeneratedNode[])
     // 名称包含/token 覆盖即跳过，避免清单里出现重复考点
     const accepted: string[] = [];
     for (const item of items) {
-      if (accepted.some((a) => isNearDuplicate(a, item.name))) continue;
+      if (findSameLevelDuplicate(accepted, item.name)) continue;
       const norm = normalizeName(item.name);
       if (globalNames.includes(norm)) continue;
       accepted.push(item.name);
@@ -97,56 +98,4 @@ function validExamForms(forms: unknown): ExamForm[] {
     (f): f is ExamForm => typeof f === 'string' && allowed.includes(f as ExamForm),
   );
   return filtered.length ? filtered : ['concept'];
-}
-
-/** 名称归一化后比较，用于细化时的简单去重（embedding 去重留到 embedding 角色配置后） */
-export function normalizeName(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/\s+/g, '')
-    .replace(/[·、，,（）()/\\_-]/g, '');
-}
-
-export function findDuplicateByName(
-  existingNames: string[],
-  candidate: string,
-): string | null {
-  const norm = normalizeName(candidate);
-  for (const name of existingNames) {
-    if (normalizeName(name) === norm) return name;
-    // 包含关系也视为重复，避免「GC」与「垃圾回收」并存
-    const n = normalizeName(name);
-    if (n.includes(norm) || norm.includes(n)) return name;
-  }
-  return null;
-}
-
-/** 拆出命名 token：英文/数字词（长度≥2）+ 中文单字（滤掉连接助词）。基于原始名，勿先删空格，否则 AI/ML 会粘连 */
-function tokenize(name: string): string[] {
-  const lower = name.toLowerCase();
-  const latin = (lower.match(/[a-z0-9]+/g) ?? []).filter((t) => t.length >= 2);
-  const cjk = lower
-    .replace(/[a-z0-9]+/g, ' ')
-    .split('')
-    .filter((c) => /[\u4e00-\u9fff]/.test(c) && !'与和及的了之而在对于被把'.includes(c));
-  return latin.concat(cjk);
-}
-
-/**
- * 兄弟近义判定：完全/互相包含，或短名的 token 全部出现在长名中
- * （「Python与AI/ML生态」⊆「Python AI/ML 生态与数据处理基础」→ 重复）。
- * 仅用于同层兄弟去重，避免清单里呈现近义考点。
- */
-function isNearDuplicate(a: string, b: string): boolean {
-  if (normalizeName(a) === normalizeName(b)) return true;
-  const na = normalizeName(a);
-  const nb = normalizeName(b);
-  if (na.includes(nb) || nb.includes(na)) return true;
-  const ta = tokenize(a);
-  const tb = tokenize(b);
-  if (!ta.length || !tb.length) return false;
-  const bigger = ta.length >= tb.length ? ta : tb;
-  const smaller = ta.length >= tb.length ? tb : ta;
-  // 短名的每个 token 都在长名出现且长名严格更全 → 超集重复
-  return smaller.every((t) => bigger.includes(t)) && bigger.length > smaller.length;
 }

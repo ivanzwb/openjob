@@ -40,8 +40,11 @@ export interface ReportExtractResult {
 }
 
 export const JD_SYSTEM = `你是面试备考诊断助手。根据岗位 JD 抽取技能要求，并生成两层知识点树：
-- 第一层 kind=domain（领域，3-6 个）
-- 第二层 kind=topic（主题，每个 domain 下 2-5 个）
+- 第一层 kind=domain（领域，4-8 个）
+- 第二层 kind=topic（主题，每个 domain 下 4-8 个）
+
+覆盖要求：JD 里明写的每一条技能与职责，都必须至少有一个 topic 接得住；该岗位公认必考、
+但 JD 没写出来的基础能力也要补上。在不违反下面去重约束的前提下宁可拆细，不要漏。
 
 每个知识点需给出：examProb(0-1)、difficulty(1-5)、estMinutes、examForms(concept/coding/design/scenario 数组)。
 difficulty 是“备考顺序”的唯一主排序依据，必须拉开梯度：
@@ -96,7 +99,7 @@ export function crossAnalyzeUser(
   return JSON.stringify({ jdParsed: jd, resumeParsed: resume, nodes: nodeNames });
 }
 
-export const EXPAND_SYSTEM = `你是知识点细化助手。为给定主题生成 3-6 个子知识点（kind=point）。
+export const EXPAND_SYSTEM = `你是知识点细化助手。为给定主题生成 4-8 个子知识点（kind=point）。
  保持名称具体、可独立备考。给出 examProb、difficulty、estMinutes、examForms、coverageType。
  严禁生成含义重叠的子知识点：兄弟节点名称不得互相包含或近义（如「数据处理」与「数据处理基础」只能保留一个）。
  difficulty 锚点：1=基础概念，2=入门用法，3=进阶应用，4=底层机制，5=专家级整合；兄弟节点难度必须拉开梯度，严禁全部相同。

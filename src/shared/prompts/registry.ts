@@ -82,7 +82,9 @@ export const PROMPT_REGISTRY: Record<string, PromptEntry> = {
   // ── 诊断（文本来自 shared/diagnosis/prompts，原本就是双端唯一事实源）──
   'diagnosis.jd': {
     id: 'diagnosis.jd',
-    versions: [{ id: 'diagnosis.jd@v1', text: JD_SYSTEM, note: '初始版本' }],
+    versions: [
+      { id: 'diagnosis.jd@v2', text: JD_SYSTEM, note: '放宽层级数量上限，要求逐条覆盖 JD' },
+    ],
   },
   'diagnosis.resume': {
     id: 'diagnosis.resume',
@@ -96,7 +98,7 @@ export const PROMPT_REGISTRY: Record<string, PromptEntry> = {
   },
   'diagnosis.expand': {
     id: 'diagnosis.expand',
-    versions: [{ id: 'diagnosis.expand@v1', text: EXPAND_SYSTEM, note: '初始版本' }],
+    versions: [{ id: 'diagnosis.expand@v2', text: EXPAND_SYSTEM, note: '子考点数量 3-6 放宽到 4-8' }],
   },
   'diagnosis.intel': {
     id: 'diagnosis.intel',
