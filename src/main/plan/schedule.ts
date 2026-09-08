@@ -1,8 +1,14 @@
 import { randomUUID } from 'node:crypto';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import type { DateOnly } from '@shared/entities';
 import type { PlanGenerateResult, TaskView, TodayCampaignOption, TodayPlan } from '@shared/ipc';
 import type { TaskKind } from '@shared/enums';
+import {
+  collectPlannerContributions,
+  legacyRuntimeDescriptor,
+  type PlannerRepo,
+} from '@shared/planner/contributions';
+import type { CampaignRuntimeDescriptor } from '@shared/plugins/types';
 import { getDb, schema } from '../db';
 import { getCampaignRow, listCampaigns, rowToNode, updateCampaign } from '../campaign/repository';
 import { sortNodesByStudyOrder } from '../campaign/edges';
@@ -44,6 +50,28 @@ function dailyBudget(minutes: number): number {
 /** 预估学习时长再打折，避免第一天就排爆 */
 function conservativeEst(minutes: number): number {
   return Math.max(10, Math.ceil(minutes * 0.75));
+}
+
+/** 取当前激活的 revision；旧 Campaign 回填之前继续走工程岗位包默认值 */
+function loadRuntimeDescriptor(campaignId: string): CampaignRuntimeDescriptor {
+  const row = getDb()
+    .select()
+    .from(schema.campaignRuntimeDescriptor)
+    .where(eq(schema.campaignRuntimeDescriptor.campaignId, campaignId))
+    .orderBy(desc(schema.campaignRuntimeDescriptor.revision))
+    .get();
+  if (!row) return legacyRuntimeDescriptor(campaignId);
+
+  return {
+    campaignId,
+    coreVersion: row.coreVersion,
+    rolePack: row.rolePack,
+    industryPack: row.industryPack ?? undefined,
+    capabilities: row.capabilities,
+    competencyBaselineVersion: row.competencyBaselineVersion,
+    configSnapshotHash: row.configSnapshotHash,
+    resolvedAt: row.resolvedAt,
+  };
 }
 
 export function generatePlan(
@@ -118,12 +146,11 @@ export function generatePlan(
   let overflowFallbacks = 0;
   const learnedQueue: string[] = [];
 
-  const readyRepos = getDb()
-    .select()
+  const runtime = loadRuntimeDescriptor(campaignId);
+  const repos: PlannerRepo[] = db
+    .select({ id: schema.repo.id, url: schema.repo.url, status: schema.repo.status })
     .from(schema.repo)
-    .all()
-    .filter((r) => r.status === 'ready');
-  const defaultRepoId = readyRepos[0]?.id ?? null;
+    .all();
 
   for (let di = 0; di < dates.length; di++) {
     const date = dates[di]!;
@@ -196,19 +223,23 @@ export function generatePlan(
       }
     }
 
-    // 每隔一天安排源码阅读（有已索引仓库时）
-    if (defaultRepoId && di % 2 === 1) {
-      const est = 25;
-      if (used + est <= budget) {
-        dayTasks.push({
-          kind: 'readCode',
-          nodeId: null,
-          repoId: defaultRepoId,
-          estMinutes: est,
-          orderIdx: dayTasks.length,
-        });
-        used += est;
-      }
+    // 插件任务（源码阅读等）由共享 PlannerContribution 决定，两端不各自判断
+    for (const planned of collectPlannerContributions(runtime, {
+      platform: 'desktop',
+      dayIndex: di,
+      dayCount: dates.length,
+      budgetMinutes: budget,
+      usedMinutes: used,
+      repos,
+    })) {
+      dayTasks.push({
+        kind: planned.kind,
+        nodeId: planned.nodeId,
+        repoId: planned.repoId,
+        estMinutes: planned.estMinutes,
+        orderIdx: dayTasks.length,
+      });
+      used += planned.estMinutes;
     }
 
     db.insert(schema.planDay)
