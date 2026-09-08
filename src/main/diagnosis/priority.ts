@@ -1,7 +1,7 @@
 import type { KnowledgeNode, PriorityBreakdown } from '@shared/entities';
 import type { PriorityWeights } from '@shared/config';
 import { DEFAULT_PRIORITY_WEIGHTS } from '@shared/config';
-import { computePriority as computePriorityCore } from '@shared/priority';
+import { computePriority as computePriorityCore, type PriorityFactors } from '@shared/priority';
 import { getConfig } from '../config';
 
 /**
@@ -17,14 +17,16 @@ function weights(): PriorityWeights {
 }
 
 /**
- * 优先级 = 考察概率^probExp × 掌握差距^gapExp × 覆盖类型倍率 ÷ 预估时长^costExp。
+ * 优先级 = 考察概率^probExp × 掌握差距^gapExp × 覆盖类型倍率 × 证据风险 × 轮次权重
+ *         ÷ 预估时长^costExp。
  * reason 必须人类可读——排序依据对用户可见是产品形态成立的前提。
  */
 export function computePriority(
   node: Pick<KnowledgeNode, 'id' | 'coverageType' | 'examProb' | 'mastery' | 'estMinutes'>,
   override?: PriorityWeights,
+  factors?: PriorityFactors,
 ): PriorityBreakdown {
-  return computePriorityCore(node, override ?? weights());
+  return computePriorityCore(node, override ?? weights(), factors);
 }
 
 export function attachPriorityReason<T extends KnowledgeNode>(

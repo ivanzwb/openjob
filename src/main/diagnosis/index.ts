@@ -289,6 +289,11 @@ export async function diagnoseFetchIntel(campaignId: string, jobId: string): Pro
   }
 }
 
+export {
+  diagnoseCampaignCompetencies,
+  type CampaignCompetencyDeps,
+  type CampaignCompetencyInput,
+} from './competency';
 export { ingestInterviewReport } from './ingest';
 export { ingestWebReports } from './webIngest';
 export { listReports } from './reports';
