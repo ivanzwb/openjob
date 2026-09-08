@@ -166,6 +166,27 @@ export type JobContextSourceKind = (typeof JOB_CONTEXT_SOURCE_KINDS)[number];
 export const EVIDENCE_STATUSES = ['proposed', 'confirmed', 'rejected'] as const;
 export type EvidenceStatus = (typeof EVIDENCE_STATUSES)[number];
 
+/**
+ * 通用练习协议的枚举。
+ * 题型 ID 与评分维度由岗位包声明，这里只固定跨岗位不变的会话/回合形态。
+ */
+export const PRACTICE_SESSION_STATUSES = ['open', 'evaluated', 'abandoned'] as const;
+export type PracticeSessionStatus = (typeof PRACTICE_SESSION_STATUSES)[number];
+
+export const PRACTICE_TURN_SPEAKERS = ['interviewer', 'candidate'] as const;
+export type PracticeTurnSpeaker = (typeof PRACTICE_TURN_SPEAKERS)[number];
+
+/** closing 由引擎按 followUpPolicy 直接生成，不经模型 */
+export const PRACTICE_TURN_KINDS = ['question', 'followUp', 'answer', 'closing'] as const;
+export type PracticeTurnKind = (typeof PRACTICE_TURN_KINDS)[number];
+
+/**
+ * PracticeAttempt 的来源。
+ * quiz / design 是历史记录的只读投影，不写回原表，也不产生新的 practice_attempt 行。
+ */
+export const PRACTICE_ATTEMPT_SOURCES = ['practice', 'quiz', 'design'] as const;
+export type PracticeAttemptSource = (typeof PRACTICE_ATTEMPT_SOURCES)[number];
+
 /** Agent 共享工具箱 */
 export const TOOL_NAMES = [
   'web_search',

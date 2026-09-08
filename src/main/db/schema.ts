@@ -32,6 +32,11 @@ import type {
   TaskKind,
   TaskStatus,
   ToolName,
+  FollowUpStrategy,
+  InterviewProtocol,
+  PracticeSessionStatus,
+  PracticeTurnKind,
+  PracticeTurnSpeaker,
 } from '../../shared/enums';
 import type { Citation, JdParsed, ResumeParsed } from '../../shared/entities';
 import type { MockInterviewKind, MockInterviewType } from '../../shared/design/prompts';
@@ -450,6 +455,133 @@ export const quizAttempt = sqliteTable(
     createdAt: integer('created_at').notNull(),
   },
   (t) => [index('idx_quiz_node').on(t.nodeId)],
+);
+
+// ---------------------------------------------------------------------------
+// 通用练习（题目 / 追问 / 评分 / 复练）
+// ---------------------------------------------------------------------------
+
+/**
+ * 一次练习会话。
+ *
+ * role_pack_id/version 与 config_snapshot_hash 是当时的执行版本快照：岗位包升级
+ * 之后回头看这条记录，只有精确版本能解释当时用的是哪套题型和量规。
+ */
+export const practiceSession = sqliteTable(
+  'practice_session',
+  {
+    id: text('id').primaryKey(),
+    campaignId: text('campaign_id')
+      .notNull()
+      .references(() => campaign.id, { onDelete: 'cascade' }),
+    /** 绑定考点时评分会回写掌握度；通用练习保持 null */
+    nodeId: text('node_id').references(() => knowledgeNode.id, { onDelete: 'set null' }),
+    formatId: text('format_id').notNull(),
+    protocol: text('protocol').$type<InterviewProtocol>().notNull(),
+    rubricId: text('rubric_id').notNull(),
+    rolePackId: text('role_pack_id').notNull(),
+    rolePackVersion: text('role_pack_version').notNull(),
+    configSnapshotHash: text('config_snapshot_hash').notNull(),
+    maxFollowUps: integer('max_follow_ups').notNull().default(0),
+    followUpStrategy: text('follow_up_strategy')
+      .$type<FollowUpStrategy>()
+      .notNull()
+      .default('adaptive'),
+    status: text('status').$type<PracticeSessionStatus>().notNull().default('open'),
+    /**
+     * 复练指向上一次 attempt。不加外键：attempt 反过来引用 session，成环之后
+     * 同步的建表与写入顺序就没有一个合法解。
+     */
+    previousAttemptId: text('previous_attempt_id'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (t) => [
+    index('idx_practice_session_campaign').on(t.campaignId, t.createdAt),
+    index('idx_practice_session_node').on(t.nodeId),
+  ],
+);
+
+export const practiceTurn = sqliteTable(
+  'practice_turn',
+  {
+    id: text('id').primaryKey(),
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => practiceSession.id, { onDelete: 'cascade' }),
+    turnIndex: integer('turn_index').notNull(),
+    speaker: text('speaker').$type<PracticeTurnSpeaker>().notNull(),
+    kind: text('kind').$type<PracticeTurnKind>().notNull(),
+    contentMd: text('content_md').notNull(),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => [uniqueIndex('uq_practice_turn_index').on(t.sessionId, t.turnIndex)],
+);
+
+export const practiceAttempt = sqliteTable(
+  'practice_attempt',
+  {
+    id: text('id').primaryKey(),
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => practiceSession.id, { onDelete: 'cascade' }),
+    campaignId: text('campaign_id')
+      .notNull()
+      .references(() => campaign.id, { onDelete: 'cascade' }),
+    nodeId: text('node_id').references(() => knowledgeNode.id, { onDelete: 'set null' }),
+    formatId: text('format_id').notNull(),
+    rubricId: text('rubric_id').notNull(),
+    competencyIds: text('competency_ids', { mode: 'json' })
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    questionMd: text('question_md').notNull(),
+    answerMd: text('answer_md').notNull(),
+    transcriptMd: text('transcript_md'),
+    totalScore: real('total_score').notNull().default(0),
+    feedbackMd: text('feedback_md').notNull().default(''),
+    improvedScriptMd: text('improved_script_md'),
+    needsRepractice: integer('needs_repractice', { mode: 'boolean' }).notNull().default(false),
+    previousAttemptId: text('previous_attempt_id'),
+    promptVersionId: text('prompt_version_id').notNull(),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => [
+    index('idx_practice_attempt_campaign').on(t.campaignId, t.createdAt),
+    index('idx_practice_attempt_session').on(t.sessionId),
+    index('idx_practice_attempt_previous').on(t.previousAttemptId),
+  ],
+);
+
+/**
+ * 逐维度分数。
+ *
+ * 单独一张表而不是 attempt 上的一列 JSON：锚点原文和用户原回答的位置是分数
+ * 成立的依据，能被单独查询和复核才算数据，塞进 JSON 就只是一段展示文本。
+ */
+export const practiceScore = sqliteTable(
+  'practice_score',
+  {
+    id: text('id').primaryKey(),
+    attemptId: text('attempt_id')
+      .notNull()
+      .references(() => practiceAttempt.id, { onDelete: 'cascade' }),
+    rubricId: text('rubric_id').notNull(),
+    dimensionId: text('dimension_id').notNull(),
+    dimensionLabel: text('dimension_label').notNull(),
+    weight: real('weight').notNull().default(0),
+    critical: integer('critical', { mode: 'boolean' }).notNull().default(false),
+    /** 1-5 */
+    score: integer('score').notNull(),
+    /** 该等级在岗位包 rubric 里的行为锚点原文 */
+    anchorMd: text('anchor_md').notNull(),
+    /** 用户原回答里的逐字片段，以及它在 answer_md 上的区间 */
+    answerQuote: text('answer_quote').notNull(),
+    answerStart: integer('answer_start').notNull(),
+    answerEnd: integer('answer_end').notNull(),
+    rationaleMd: text('rationale_md').notNull().default(''),
+  },
+  (t) => [uniqueIndex('uq_practice_score_dimension').on(t.attemptId, t.dimensionId)],
 );
 
 // ---------------------------------------------------------------------------

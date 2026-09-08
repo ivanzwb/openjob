@@ -66,6 +66,11 @@ const SYNCED_TABLES: Array<{ table: Table; deviceLocal?: string[] }> = [
   // 证据是候选人事实的唯一来源，两端都要能看到：手机端复盘时确认的条目，
   // 桌面端出题和评分立刻就要用上
   { table: schema.candidateEvidence },
+  // 练习记录按 session → turn/attempt → score 的外键顺序排，父表先于子表应用。
+  { table: schema.practiceSession },
+  { table: schema.practiceTurn },
+  { table: schema.practiceAttempt },
+  { table: schema.practiceScore },
 ];
 
 function buildSpec(table: Table, deviceLocal: string[]): SyncTableSpec {
