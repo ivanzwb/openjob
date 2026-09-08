@@ -22,7 +22,7 @@ describe('softwareEngineeringRolePack contract', () => {
       id: 'software-engineering',
       version: '1.0.0',
       type: 'role-pack',
-      compatibility: { core: '^1.0.0', schema: 22 },
+      compatibility: { core: '^1.0.0', schema: 23 },
       permissions: [],
       dependencies: [{ id: 'source-repository', version: '^1.0.0', optional: true }],
     });

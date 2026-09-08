@@ -52,7 +52,7 @@ export const sourceRepositoryCapabilityPlugin: CapabilityPlugin = {
     description: 'Read-only repository navigation, source inspection, and grounded citations.',
     compatibility: {
       core: '^1.0.0',
-      schema: 22,
+      schema: 23,
     },
     permissions: ['repository:read'],
     runtime: {

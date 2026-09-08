@@ -154,7 +154,7 @@ export const softwareEngineeringRolePack: RolePack = {
     type: 'role-pack',
     displayName: '软件工程',
     description: '软件工程岗位的技术诊断、训练和模拟面试声明',
-    compatibility: { core: '^1.0.0', schema: 22 },
+    compatibility: { core: '^1.0.0', schema: 23 },
     permissions: [],
     dependencies: [{ id: 'source-repository', version: '^1.0.0', optional: true }],
   },
