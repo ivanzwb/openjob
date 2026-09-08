@@ -1,55 +1,11 @@
-import { readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 import type { Database } from 'better-sqlite3';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   PLUGIN_RUNTIME_BACKFILL_KIND,
   backfillLegacyCampaignPluginRuntime,
 } from './pluginRuntime';
+import { newLegacyDb } from '../__fixtures__/legacyDb';
 import { installSyncTriggers } from '../../sync/triggers';
-
-const MIGRATIONS_DIR = join(__dirname, '..', 'migrations');
-
-function adapt(db: DatabaseSync): Database {
-  return {
-    prepare: (sql: string) => {
-      const statement = db.prepare(sql);
-      return {
-        all: (...args: unknown[]) => statement.all(...(args as never[])),
-        get: (...args: unknown[]) => statement.get(...(args as never[])),
-        run: (...args: unknown[]) => statement.run(...(args as never[])),
-      };
-    },
-    exec: (sql: string) => db.exec(sql),
-    transaction:
-      (task: (...args: never[]) => unknown) =>
-      (...args: never[]) => {
-        db.exec('BEGIN');
-        try {
-          const result = task(...args);
-          db.exec('COMMIT');
-          return result;
-        } catch (error) {
-          db.exec('ROLLBACK');
-          throw error;
-        }
-      },
-    close: () => db.close(),
-  } as unknown as Database;
-}
-
-function applyMigrations(raw: Database): void {
-  const files = readdirSync(MIGRATIONS_DIR)
-    .filter((file) => file.endsWith('.sql'))
-    .sort();
-  files.forEach((file) => {
-    const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
-    sql.split('--> statement-breakpoint').forEach((statement) => {
-      if (statement.trim()) raw.exec(statement);
-    });
-  });
-}
 
 function seedCampaign(raw: Database, id: string): void {
   raw
@@ -79,9 +35,7 @@ describe('legacy Campaign plugin runtime backfill', () => {
   let raw: Database;
 
   beforeEach(() => {
-    raw = adapt(new DatabaseSync(':memory:'));
-    raw.exec('PRAGMA foreign_keys = ON');
-    applyMigrations(raw);
+    raw = newLegacyDb();
   });
 
   it('在单事务中写入 profile、binding、descriptor、关联和 checkpoint', () => {
