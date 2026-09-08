@@ -22,6 +22,7 @@ import {
 import { resolvePrompt } from '@shared/prompts/registry';
 import type { FallbackProject } from '@shared/resume/experienceTimeline';
 import { getCampaign, getKnowledgeNode } from './campaignLocal';
+import { loadCampaignResumeForPrompt } from './resumeProfileLocal';
 
 export interface ResumePromptRow {
   parsed: string | null;
@@ -64,7 +65,6 @@ export function loadResumeForPrompt(
 
 // 战役级「派生版优先」取数单独放 resumeProfileLocal（campaignLocal 也要用，
 // 直接放这里会和它成环）；这里转发一份，designLocal 等从本模块取数不换 import。
-import { loadCampaignResumeForPrompt } from './resumeProfileLocal';
 export { loadCampaignResumeForPrompt };
 
 export function loadCandidateContextInput(
