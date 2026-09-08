@@ -16,10 +16,10 @@ import {
   type FallbackProject,
 } from '../resume/experienceTimeline';
 import {
+  explainHighlightsBlock,
   relevantResumeExperienceBlock,
   type ResumeRelevanceQuery,
 } from '../resume/relevance';
-import { RESUME_ALIGN_RULES } from './explain';
 
 /** JD 摘要在考我/追问里只用来定重点，给全文既挤占篇幅又容易被当经历取材 */
 const JD_SUMMARY_LIMIT = 800;
@@ -120,6 +120,9 @@ export interface ExplainResumeInput {
  * 改成按考点和用户这轮的问题把经历排序、裁到几条再注入，相关与否由模型自己判断
  * （见 relevance.ts 顶部）。结构化 JSON 整个去掉：它的内容（技能、项目名、可深挖
  * 点）已经在技能行和经历块里，重复一遍只是把预算花在花括号和缩进上。
+ *
+ * 简历对齐规则不在这里重复：system（explain.generate / fallback）已经带了一份，
+ * 双写只烧 token 且迟早漂移。
  */
 export function buildExplainResumeContext(
   input: ExplainResumeInput | null,
@@ -132,12 +135,15 @@ export function buildExplainResumeContext(
 
   const parts = ['## 候选人简历'];
   if (skills.length > 0) parts.push(`简历技能：${skills.join('、')}`);
+  // 个人优势里的近期亮点（新方向、量化结果、课程奖项）先于经历条目给出：
+  // 经历检索够不到它们，而它们往往正是本题最好的举例素材
+  const highlights = explainHighlightsBlock(input.resumeRawText ?? '', query);
+  if (highlights) parts.push(highlights);
   parts.push(
     relevantResumeExperienceBlock(input.resumeRawText ?? '', query, {
       fallbackProjects: input.resumeProjects,
     }),
   );
-  parts.push(RESUME_ALIGN_RULES);
 
   return parts.join('\n\n');
 }

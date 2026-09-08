@@ -3,6 +3,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import type { Explanation } from '@shared/entities';
 import type { ExplanationTier } from '@shared/enums';
 import { normalizeDisplayText } from '@shared/lib/markdownDisplay';
+import { quizAnchorBlock } from '@shared/explain/prompt';
 import { completeJson } from '../llm/json';
 import { resolveLlmRole } from '../llm/resolve';
 import { buildResumeContext, getCampaign, getKnowledgeNode } from './campaignLocal';
@@ -32,7 +33,7 @@ export async function generateExplanation(
 考点：${node.name}
 覆盖类型：${node.coverageType}
 考察形式：${node.examForms.join(', ')}
-
+${quizAnchorBlock(node.quizQuestionMd)}
 ${resumeContext}`,
     undefined,
     { tier, instruction },

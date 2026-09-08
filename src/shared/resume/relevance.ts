@@ -33,6 +33,7 @@ import {
   type FallbackProject,
   type ResumeExperienceEntry,
 } from './experienceTimeline';
+import { parseMarkdownToDocument } from './document';
 
 /** 技术词信号远强于中文二元组：命中一个 Kafka 比蹭上三个「系统」有意义得多 */
 const LATIN_WEIGHT = 3;
@@ -283,4 +284,53 @@ export function relevantResumeExperienceBlock(
   }
 
   return NO_EXPERIENCE_ENTRIES_NOTICE;
+}
+
+export interface ExplainHighlightsOptions {
+  max?: number;
+  maxChars?: number;
+}
+
+/**
+ * 讲解（explain）专用的「亮点素材」块。
+ *
+ * 经历条目检索够不到的内容：近两年做的新方向、带量化结果的亮点、课程与奖项，
+ * 常常写在「个人优势」而不是经历条目里（候选人做 RAG/Agent 的素材全在个人优势，
+ * 经历条目按 RAG 考点检索却把通信项目排到前面）。这一块把「个人优势」的段落
+ * 按与问题的词面重叠排序，取出有命中的前几条附在简历上下文里，让讲解的举例
+ * 有真实素材可用。
+ *
+ * 同样不做硬门禁（见文件头的理由）：这里只做「有词面命中才出现」的最小过滤，
+ * 真正取舍交给 LLM；没有命中就整块不出现，不干扰原有经历块。
+ */
+export function explainHighlightsBlock(
+  resumeMd: string,
+  query: ResumeRelevanceQuery,
+  options: ExplainHighlightsOptions = {},
+): string {
+  const { max = 2, maxChars = 420 } = options;
+  const doc = parseMarkdownToDocument(resumeMd ?? '');
+  const section = doc.sections.find((s) => s.key === 'summary');
+  if (!section?.contentMd.trim()) return '';
+
+  // 个人优势常见两种写法：空行分隔的整段 prose（按空行拆），或整节每行一段、
+  // 行间只有一个换行（按行拆）。拆错了会把「近两年做 AI」这种关键段落埋进
+  // 一段 400 字长文里，截断时恰好把最有用的部分切掉。
+  const paragraphs = section.contentMd.includes('\n\n')
+    ? section.contentMd.split(/\n{2,}/)
+    : section.contentMd.split('\n');
+  const passages = paragraphs.map((p) => p.trim()).filter((p) => p.length > 0);
+
+  const needles = queryTerms(query);
+  const scored = rankDocs(passages, (p) => p, query)
+    .filter((s) => s.score > 0)
+    .slice(0, max);
+  if (scored.length === 0) return '';
+
+  const lines = scored.map((s, i) => {
+    const body = truncateAroundMatch(s.doc, maxChars, needles);
+    return `${i + 1}. ${body}`;
+  });
+  return `个人优势亮点素材（讲解举例优先从这里取；只能转述原文事实，不得扩展细节）：
+${lines.join('\n')}`;
 }

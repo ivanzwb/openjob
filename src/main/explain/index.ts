@@ -3,6 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import type { Explanation } from '@shared/entities';
 import type { ExplanationTier } from '@shared/enums';
 import { buildExplainResumeContext } from '@shared/prompts/candidateContext';
+import { quizAnchorBlock } from '@shared/explain/prompt';
 import type { ResumeRelevanceQuery } from '@shared/resume/relevance';
 import { normalizeDisplayText } from '@shared/lib/markdownDisplay';
 import { completeJson } from '../llm/json';
@@ -81,7 +82,7 @@ export async function generateExplanation(
 考点：${node.name}
 覆盖类型：${node.coverageType}
 考察形式：${node.examForms.join(', ')}
-
+${quizAnchorBlock(node.quizQuestionMd)}
 ${resumeContext}`,
     undefined,
     { tier, instruction },

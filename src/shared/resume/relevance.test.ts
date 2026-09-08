@@ -11,6 +11,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   NO_EXPERIENCE_ENTRIES_NOTICE,
+  explainHighlightsBlock,
   rankResumeExperience,
   rankResumeProjects,
   relevantResumeExperienceBlock,
@@ -308,5 +309,41 @@ describe('rankResumeProjects', () => {
 
   it('没有项目时返回空', () => {
     expect(rankResumeProjects(null, { nodeName: 'Kafka' })).toEqual([]);
+  });
+});
+
+/** 一份带「个人优势」的简历：亮点素材写在优势节而不在经历条目里 */
+const HIGHLIGHT_RESUME = `# 张三
+
+## 基本信息
+- 姓名：张三
+
+## 个人优势
+
+近两年专注 AI Agent 架构：自研开源 Agent 运行时（agent-brain、agent-skills），独立落地生产级 RAG 知识问答系统（Milvus 向量检索 + 多模态摄取 + 流式问答），并编写课程培训 70 余人。
+
+此前深耕消息中间件与存储：主导过 Kafka 集群治理与 MySQL 分库分表。
+
+## 工作经历
+
+### 涌泉科技 | 后端工程师 | 2021-04 ~ 至今
+- 重构对账中心，用 Kafka 做异步削峰
+`;
+
+describe('explainHighlightsBlock', () => {
+  it('个人优势里的近期亮点能按考点被捞出来（经历条目检索不到它）', () => {
+    const block = explainHighlightsBlock(HIGHLIGHT_RESUME, { nodeName: 'RAG 检索增强生成 架构' });
+    expect(block).toContain('个人优势亮点素材');
+    expect(block).toContain('生产级 RAG 知识问答系统');
+    expect(block).toContain('不得扩展细节');
+  });
+
+  it('考点与个人优势无关时不出现整块', () => {
+    const block = explainHighlightsBlock(HIGHLIGHT_RESUME, { nodeName: '分布式事务 两阶段提交' });
+    expect(block).toBe('');
+  });
+
+  it('简历没有个人优势节时不出现整块', () => {
+    expect(explainHighlightsBlock(BACKEND_RESUME, { nodeName: 'Kafka 幂等' })).toBe('');
   });
 });
