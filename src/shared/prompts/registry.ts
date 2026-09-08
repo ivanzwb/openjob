@@ -11,6 +11,7 @@
  */
 
 import type { ExplanationTier } from '@shared/enums';
+import type { PromptFragmentSet } from '@shared/plugins/types';
 import {
   EXPAND_SYSTEM,
   INTEL_SYSTEM,
@@ -44,6 +45,28 @@ import { COMPRESS_SYSTEM } from './compress';
 import { MATCH_SYSTEM } from './ingest';
 import { REPO_SUMMARY_SYSTEM, buildRepoAnalyzeSystem } from './repo';
 
+/**
+ * 岗位包能贡献片段的 Prompt Slot。名字与 PromptFragmentSet 的键绑死，
+ * 插件新增 slot 必须先改 T01 的契约，改不动这里就等于改不动组合顺序。
+ */
+export type PromptSlot = keyof PromptFragmentSet;
+
+/**
+ * 某条 prompt 文本归谁所有。
+ *
+ * Core 自有的条目永远是 `core`：岗位包在 promptFragments 里填的是这里的
+ * promptId，只是「选用哪一条」，不是「改写这一条」。插件自带文本时才记
+ * pluginId/pluginVersion，provenance 里凭这个区分该次生成能不能被 Core 复现。
+ */
+export interface PromptSource {
+  owner: 'core' | 'plugin';
+  pluginId?: string;
+  pluginVersion?: string;
+  slot?: PromptSlot;
+}
+
+const CORE_PROMPT_SOURCE: PromptSource = { owner: 'core' };
+
 export interface PromptVersion {
   /** 版本 id，形如 'quiz.question@v1' */
   id: string;
@@ -59,12 +82,15 @@ export interface PromptEntry {
   /** promptId，如 'quiz.question' */
   id: string;
   versions: PromptVersion[];
+  /** 缺省即 Core 自有 */
+  source?: PromptSource;
 }
 
 export interface ResolvedPrompt {
   promptId: string;
   versionId: string;
   text: string;
+  source: PromptSource;
 }
 
 /** AB 实验配置：promptId → 是否开启 + 新版流量占比 */
@@ -260,6 +286,15 @@ export const PROMPT_REGISTRY: Record<string, PromptEntry> = {
   },
 };
 
+/** 岗位包片段填的是 promptId 还是自带文本，由这个判断分流 */
+export function isRegisteredPrompt(promptId: string): boolean {
+  return Object.hasOwn(PROMPT_REGISTRY, promptId);
+}
+
+export function listPromptIds(): string[] {
+  return Object.keys(PROMPT_REGISTRY).sort();
+}
+
 /**
  * 稳定分流：同一 promptId + 同一指纹永远分到同一组。
  * djb2 哈希取模——换指纹/换 promptId 才可能跳组，设备固定则组固定。
@@ -307,5 +342,10 @@ export function resolvePrompt(
     throw new Error(`prompt ${version.id} 既没有 text 也没有 build`);
   }
 
-  return { promptId, versionId: version.id, text };
+  return {
+    promptId,
+    versionId: version.id,
+    text,
+    source: entry.source ?? CORE_PROMPT_SOURCE,
+  };
 }
