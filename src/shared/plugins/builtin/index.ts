@@ -10,12 +10,14 @@
 
 import type { CapabilityPlugin, PluginManifest, RolePack } from '../types';
 import { productManagerRolePack } from './productManager';
+import { salesCustomerSuccessRolePack } from './salesCustomerSuccess';
 import { softwareEngineeringRolePack } from './softwareEngineering';
 import { sourceRepositoryCapabilityPlugin } from './sourceRepository';
 
 export const BUILT_IN_ROLE_PACKS: readonly RolePack[] = [
   softwareEngineeringRolePack,
   productManagerRolePack,
+  salesCustomerSuccessRolePack,
 ];
 
 export const BUILT_IN_CAPABILITY_PLUGINS: readonly CapabilityPlugin[] = [

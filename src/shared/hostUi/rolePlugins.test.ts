@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { listBuiltInPlugins } from '../plugins/clientView';
-import { PRODUCT_MANAGER_ROLE_PACK_ID } from '../plugins/builtin/productManager';
 import { SOFTWARE_ENGINEERING_ROLE_PACK_ID } from '../plugins/builtin/softwareEngineering';
 import { SOURCE_REPOSITORY_CAPABILITY_ID } from '../plugins/builtin/sourceRepository';
 import { buildCapabilityView, buildDescriptor, buildRuntimeView, CAMPAIGN_ID } from './__fixtures__/runtime';
@@ -21,11 +20,23 @@ const installed = listBuiltInPlugins();
 const rolePackOptions = listPluginOptions(installed, 'role-pack');
 
 describe('listPluginOptions', () => {
+  /**
+   * 断言「按类型筛选 + 按显示名排序」这两条性质，而不是抄一份岗位包清单过来。
+   * 用例名说的就是界面不需要认识任何一个具体岗位包，可它原先枚举了全部内置包，
+   * 于是每加一个包都要回来改一次——那句话在用例里反而是假的。
+   */
   it('按类型筛出可选插件，界面不需要认识任何一个具体岗位包', () => {
-    expect(rolePackOptions.map((option) => option.id)).toEqual([
-      PRODUCT_MANAGER_ROLE_PACK_ID,
-      SOFTWARE_ENGINEERING_ROLE_PACK_ID,
-    ]);
+    const installedRolePackIds = installed
+      .filter((plugin) => plugin.type === 'role-pack')
+      .map((plugin) => plugin.id);
+
+    expect(rolePackOptions.map((option) => option.id).sort()).toEqual(
+      [...installedRolePackIds].sort(),
+    );
+    // 下拉框按显示名排序，用户每次打开看到的顺序才是同一个
+    const names = rolePackOptions.map((option) => option.displayName);
+    expect(names).toEqual([...names].sort());
+
     expect(listPluginOptions(installed, 'capability').map((option) => option.id)).toEqual([
       SOURCE_REPOSITORY_CAPABILITY_ID,
     ]);
