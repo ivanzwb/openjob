@@ -1,9 +1,6 @@
 import { and, desc, eq } from 'drizzle-orm';
 import type { PluginPermission } from '@shared/plugins';
-import {
-  SOURCE_REPOSITORY_CAPABILITY_ID,
-  sourceRepositoryCapabilityPlugin,
-} from '@shared/plugins/builtin/sourceRepository';
+import { BUILT_IN_CAPABILITY_PLUGINS } from '@shared/plugins/builtin';
 import { getDb, schema } from '../db';
 
 export interface CapabilityResource {
@@ -43,9 +40,15 @@ export interface PermissionGateway {
   authorize(request: CapabilityRequest): PermissionDecision;
 }
 
+/**
+ * 授权判断需要的全部事实。
+ *
+ * 刻意不含 rolePackId：网关一旦看得见岗位包，就会有人写出「只有工程岗能用」
+ * 这种判断（v1.0 之前正是如此，于是产品岗和销售岗的能力插件全被拒），而某个
+ * 能力在某个 Campaign 里能不能用，descriptor 已经判过了，再判一次只会判错。
+ */
 export interface CampaignCapabilityScope {
   campaignExists: boolean;
-  rolePackId: string | null;
   capabilityEnabled: boolean;
   capabilityActive: boolean;
   resourceInScope: boolean;
@@ -81,12 +84,7 @@ export class DefaultDenyPermissionGateway implements PermissionGateway {
 
     const scope = this.scopes.resolve(request);
     if (!scope.campaignExists) return deny('campaign-not-found');
-    if (
-      scope.rolePackId !== 'software-engineering' ||
-      !scope.capabilityEnabled
-    ) {
-      return deny('capability-not-enabled');
-    }
+    if (!scope.capabilityEnabled) return deny('capability-not-enabled');
     if (!scope.capabilityActive) return deny('permission-revoked');
     if (!scope.resourceInScope) return deny('resource-out-of-scope');
 
@@ -110,7 +108,6 @@ class DatabasePermissionScopeProvider implements PermissionScopeProvider {
     if (!campaign) {
       return {
         campaignExists: false,
-        rolePackId: null,
         capabilityEnabled: false,
         capabilityActive: false,
         resourceInScope: false,
@@ -160,7 +157,6 @@ class DatabasePermissionScopeProvider implements PermissionScopeProvider {
 
     return {
       campaignExists: true,
-      rolePackId: descriptor?.rolePack.id ?? null,
       capabilityEnabled,
       capabilityActive: binding?.activeExecution === true,
       resourceInScope: request.resource.kind === 'repository' && Boolean(linkedTask),
@@ -168,12 +164,19 @@ class DatabasePermissionScopeProvider implements PermissionScopeProvider {
   }
 }
 
-const BUILT_IN_PERMISSION_CONTRACTS: CapabilityPermissionContracts = new Map([
-  [
-    SOURCE_REPOSITORY_CAPABILITY_ID,
-    new Set(sourceRepositoryCapabilityPlugin.manifest.permissions),
-  ],
-]);
+/**
+ * 每个能力插件申请的权限就是它的上限，由内置清单直接推导。
+ *
+ * 原来这里只手写了 source-repository 一项：新能力插件即使在 Manifest 里声明了
+ * 权限，到网关这一层也会被判成 permission-undeclared——表现是能力装上了、
+ * 界面也开了，一到真正取数据就失败，而错误信息指向「插件没声明」，与事实相反。
+ */
+export const BUILT_IN_PERMISSION_CONTRACTS: CapabilityPermissionContracts = new Map(
+  BUILT_IN_CAPABILITY_PLUGINS.map((plugin) => [
+    plugin.manifest.id,
+    new Set(plugin.manifest.permissions),
+  ]),
+);
 
 export const permissionGateway: PermissionGateway = new DefaultDenyPermissionGateway(
   new DatabasePermissionScopeProvider(),

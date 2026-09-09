@@ -143,6 +143,13 @@
       "breakpoints": true
     },
     {
+      "idx": 20,
+      "version": "6",
+      "when": 1787570000000,
+      "tag": "0020_campaign_resume_backfill",
+      "breakpoints": true
+    },
+    {
       "idx": 21,
       "version": "6",
       "when": 1787580000000,

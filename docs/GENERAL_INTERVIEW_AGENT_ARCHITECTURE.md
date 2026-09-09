@@ -255,14 +255,17 @@ flowchart TB
 
 首批内置插件可以包括：
 
-| 插件 | 功能 | 适用岗位 |
-|---|---|---|
-| `source-repository` | Git 仓库、符号索引、源码问答和引用 | 软件、数据、算法 |
-| `portfolio-review` | 作品集结构、叙事和展示评审 | 设计、产品、市场 |
-| `analytics-case` | CSV/XLSX 数据分析与案例作答 | 数据、产品、运营、咨询 |
-| `role-play` | 客户、面试官、利益相关者角色扮演 | 销售、客户成功、管理 |
-| `presentation-review` | 演示结构、内容和表达反馈 | 产品、咨询、管理 |
-| `document-corpus` | 案例包、SOP、行业材料的摄入与检索 | 通用 |
+| 插件 | 功能 | 适用岗位 | v1.0 |
+|---|---|---|---|
+| `source-repository` | Git 仓库、符号索引、源码问答和引用 | 软件、数据、算法 | 已交付 |
+| `role-play` | 客户、面试官、利益相关者角色扮演 | 销售、客户成功、管理 | 已交付 |
+| `analytics-case` | CSV/XLSX 数据分析与案例作答 | 数据、产品、运营、咨询 | 已交付（CSV；XLSX 提取器待补） |
+| `portfolio-review` | 作品集结构、叙事和展示评审 | 设计、产品、市场 | backlog |
+| `presentation-review` | 演示结构、内容和表达反馈 | 产品、咨询、管理 | backlog |
+| `document-corpus` | 案例包、SOP、行业材料的摄入与检索 | 通用 | backlog |
+
+backlog 中的插件缺席时只降级为 disabled，不让岗位解析失败，也不让任何一种题型
+不可用；具体行为见 [V1_UPGRADE_ROLLBACK.md](V1_UPGRADE_ROLLBACK.md) 第 5 节。
 
 ---
 
@@ -1137,10 +1140,10 @@ Backfill 必须可重复执行并记录 checkpoint。低于最小兼容版本的
 ### Phase 3：能力插件
 
 - 在 Phase 0 内置插件协议基础上扩展通用能力插件；
-- `portfolio-review`；
-- `analytics-case`；
-- `role-play`；
-- `presentation-review`；
+- `role-play`（v1.0 已交付）；
+- `analytics-case`（v1.0 已交付）；
+- `portfolio-review`（backlog）；
+- `presentation-review`（backlog）；
 - 插件超时、隔离、暂停和恢复机制。
 
 验收：
@@ -1148,6 +1151,15 @@ Backfill 必须可重复执行并记录 checkpoint。低于最小兼容版本的
 - 插件只能通过授权服务访问数据；
 - 插件不可绕过事实规则；
 - 桌面和手机能够正确展示能力可用性。
+
+v1.0 的隔离由两层共同保证，守在 `src/main/plugins/capabilityIsolation.test.ts`：
+运行期上限来自 Manifest 声明的权限（按内置清单推导，越界请求在读 Campaign 状态
+之前就被拒），静态一层则直接扫描插件源码，确认里面没有数据库、文件系统、模型
+SDK 与环境变量的入口——网关只能拦经过它的请求，拦不住一个自己 import 了驱动的
+插件，真正的边界是插件够不到那些东西。
+
+授权网关不接收 `rolePackId`：能力在某个 Campaign 里能不能用，运行描述符已经判过
+一次，网关再按岗位判一次只会判错（v1.0 之前正是如此，非工程岗的能力插件全被拒）。
 
 ### Phase 4：生态化
 

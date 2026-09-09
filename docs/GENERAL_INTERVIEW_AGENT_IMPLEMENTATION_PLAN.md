@@ -946,3 +946,42 @@ interface HostRenderedInteraction {
 - 迁移、回滚、权限和同步验证通过；
 - 无 P0/P1 已知缺陷；
 - Feature #2 的所有阻塞任务关闭。
+
+---
+
+## 12. 实施状态
+
+截至 T20，v1.0 范围内的任务全部完成。各项验收守在哪里见
+[V1_UPGRADE_ROLLBACK.md](V1_UPGRADE_ROLLBACK.md) 第 4 节。
+
+| 任务 | 状态 | 交付物 |
+|---|---|---|
+| T01—T08 | 完成 | 插件协议、resolver、Prompt 组合、Phase 0 迁移与回填 |
+| T09 | 完成 | Phase 0 关卡（`phase0Gate`、`phase0Compat`） |
+| T10—T13 | 完成 | 通用模型（Evidence / Competency / PracticeAttempt / Story） |
+| T14 | 完成 | `product-manager` 岗位包 |
+| T15—T16 | 完成 | 桌面岗位与练习入口、手机面后复盘 |
+| T17 | 完成 | Phase 1 跨端与 golden 关卡（`phase1Gate`、`phase1ProductGate`） |
+| T18 | 完成 | `sales-customer-success` 岗位包 |
+| T19 | 完成 | 宿主渲染交互协议与 `role-play` 能力 |
+| T20 | 完成 | `analytics-case` 能力、v1.0 集成关卡、发布文档 |
+
+### v1.0 期间修掉的两处存量问题
+
+这两处都不是新功能带出来的，而是被新岗位包和新能力照出来的：
+
+1. **权限网关硬编码只放行工程岗**。`DefaultDenyPermissionGateway` 里有一句
+   `rolePackId !== 'software-engineering'` 就拒，意味着产品岗和销售岗装上的能力
+   插件在真正取数据时必然失败。同一处还把权限契约手写成只有 `source-repository`
+   一项，新能力即使在 Manifest 里声明了权限也会被判成「未声明」。现在契约按内置
+   清单推导，且 `CampaignCapabilityScope` 结构上不再携带 `rolePackId`。
+2. **手机端 journal 缺 `0020`**。`0020_campaign_resume_backfill.sql` 在磁盘上、
+   也在 `bundle.ts` 里（所以运行时正常），但 `meta/_journal.json` 只有 24 条。
+   下一次 `drizzle-kit generate` 会按 24 条来命名新文件，正好撞上已存在的
+   `0024_story.sql`。已补齐 journal，并加了两端清单一致性测试。
+
+### 留在 backlog 的能力
+
+`portfolio-review`、`presentation-review`、`document-corpus` 与 XLSX 读入均**不在
+v1.0 范围**，且不阻塞发布。缺席时的具体行为见
+[V1_UPGRADE_ROLLBACK.md](V1_UPGRADE_ROLLBACK.md) 第 5 节。

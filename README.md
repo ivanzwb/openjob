@@ -82,7 +82,7 @@ OpenJob 把模型放进一套有状态的流程：JD 和简历决定考点，面
 - 距离面试只剩几天或几周，需要迅速做取舍；
 - 收藏了大量资料，但每天不知道从哪里开始；
 - 简历技术点较多，担心被连续深挖；
-- 正在准备开发、架构、数据或算法等技术岗位；
+- 正在准备开发、架构、数据、算法等技术岗位，或产品、销售与客户成功岗位；
 - 希望通过口述和模拟面试训练输出，而不只是继续阅读；
 - 希望在桌面与手机之间延续同一套备考进度。
 
@@ -96,8 +96,11 @@ OpenJob 把模型放进一套有状态的流程：JD 和简历决定考点，面
 | 目标岗位库、简历定向优化与 PDF 导出 | ✅ | ✅（编辑、分块优化、导出 PDF） |
 | 每日计划与任务推进 | ✅ | ✅ |
 | 知识点讲解、考我、模拟面试 | ✅ | ✅ |
+| 岗位包：软件工程 / 产品经理 / 销售与客户成功 | ✅ | ✅（同步后浏览与学习） |
 | 仓库克隆与 tree-sitter 索引 | ✅ | — |
 | 源码 Agent 与 `file:line` 引用 | ✅ | ✅（同步源码快照后） |
+| 客户对话角色扮演（销售 / 客户成功） | ✅ | ✅（查看对话记录） |
+| 表格数据案例分析（CSV） | ✅ | ✅（查看分析结果） |
 | 联网检索（博查 / Tavily） | ✅ | 按配置 |
 | 多端 P2P 同步 | ✅ | ✅ |
 | 浅色 / 深色主题 | ✅ | ✅ |
@@ -195,6 +198,10 @@ openJob/
 ## 文档
 
 - [docs/DESIGN.md](docs/DESIGN.md) — 产品定位、数据模型、Agent 流程、同步协议、实施阶段与踩坑记录
+- [docs/USER_MANUAL.md](docs/USER_MANUAL.md) — 使用手册：从建战役到面后复盘的完整流程
+- [docs/GENERAL_INTERVIEW_AGENT_ARCHITECTURE.md](docs/GENERAL_INTERVIEW_AGENT_ARCHITECTURE.md) — 岗位包与能力插件的插件化架构
+- [docs/GENERAL_INTERVIEW_AGENT_IMPLEMENTATION_PLAN.md](docs/GENERAL_INTERVIEW_AGENT_IMPLEMENTATION_PLAN.md) — 实施计划与实施状态
+- [docs/V1_UPGRADE_ROLLBACK.md](docs/V1_UPGRADE_ROLLBACK.md) — v1.0 升级、回滚与发布验收
 - [OpenJob 产品长文](docs/marketing/openjob-longform.md) — 功能逻辑、使用价值与完整产品截图
 
 ## 许可证

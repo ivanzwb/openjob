@@ -83,6 +83,64 @@ describe('迁移 journal', () => {
   });
 });
 
+const MOBILE_MIGRATIONS_DIR = join(process.cwd(), 'mobile', 'src', 'db', 'migrations');
+
+function mobileJournal(): JournalEntry[] {
+  const raw = readFileSync(join(MOBILE_MIGRATIONS_DIR, 'meta', '_journal.json'), 'utf8');
+  return (JSON.parse(raw) as { entries: JournalEntry[] }).entries;
+}
+
+function mobileSqlFiles(): string[] {
+  return readdirSync(MOBILE_MIGRATIONS_DIR)
+    .filter((file) => file.endsWith('.sql'))
+    .sort();
+}
+
+/**
+ * 手机端迁移清单。
+ *
+ * 桌面那份清单上面已经逐条验过了，手机那份长期没人验——而它有两个各自独立、
+ * 各自静默的事实源：运行时真正执行的是 `bundle.ts`（由 .sql 文件生成），
+ * drizzle-kit 生成新迁移时看的却是 `meta/_journal.json`。两边只要有一边漏了
+ * 一条，都不会有任何报错。
+ */
+describe('手机端迁移清单', () => {
+  it('每条 journal 记录都有对应的 .sql，反过来也一样', () => {
+    // 0020_campaign_resume_backfill 就这么缺过：文件在、bundle 里也在、
+    // 于是运行时一切正常，但 journal 只有 24 条，drizzle-kit 生成下一条时
+    // 会按第 24 条来命名，正好撞上已经存在的 0024_story
+    const tags = mobileJournal().map((entry) => entry.tag);
+    expect([...tags].sort()).toEqual(mobileSqlFiles().map((file) => file.replace(/\.sql$/, '')));
+  });
+
+  it('when 严格递增，否则新迁移会在已升级的手机库上被永久跳过', () => {
+    const entries = mobileJournal();
+    expect(
+      entries
+        .filter((entry, index) => index > 0 && entry.when <= entries[index - 1].when)
+        .map((entry) => `${entry.tag} (when=${entry.when})`),
+    ).toEqual([]);
+  });
+
+  it('idx 连续，没有空号', () => {
+    expect(mobileJournal().map((entry) => entry.idx)).toEqual(
+      mobileJournal().map((_, index) => index),
+    );
+  });
+
+  it('bundle.ts 与 .sql 文件逐字对应，不会漏跑没重新打包的迁移', () => {
+    // runMigrations 按 MIGRATIONS 的下标记录进度，所以少打包一条不是「晚一点跑」，
+    // 而是那条永远不跑，且后面每一条的下标都错位
+    const bundle = readFileSync(join(MOBILE_MIGRATIONS_DIR, 'bundle.ts'), 'utf8');
+    const missing = mobileSqlFiles().filter(
+      (file) =>
+        !bundle.includes(JSON.stringify(readFileSync(join(MOBILE_MIGRATIONS_DIR, file), 'utf8'))),
+    );
+
+    expect(missing, '有迁移没重新打包：跑一次 npm run db:bundle').toEqual([]);
+  });
+});
+
 describe('迁移 SQL 切分', () => {
   /**
    * Drizzle 把文件按 `--> statement-breakpoint` 切开后原样逐条 run，既不 trim

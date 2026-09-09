@@ -21,7 +21,6 @@ const request: CapabilityRequest = {
 
 const allowedScope: CampaignCapabilityScope = {
   campaignExists: true,
-  rolePackId: 'software-engineering',
   capabilityEnabled: true,
   capabilityActive: true,
   resourceInScope: true,
@@ -72,16 +71,16 @@ describe('DefaultDenyPermissionGateway', () => {
     ).toMatchObject({ allowed: false, code: 'permission-revoked' });
   });
 
-  it('does not grant repository tools to a non-engineering Campaign', () => {
-    const decision = gateway({
-      ...allowedScope,
-      rolePackId: 'product-manager',
-    }).gateway.authorize(request);
+  it('只看 descriptor 判能力是否启用，不看是哪个岗位包', () => {
+    // 网关拿不到 rolePackId 是有意的：这里曾硬编码只放行 software-engineering，
+    // 结果产品岗和销售岗装上的能力插件在真正取数据时全被拒
+    expect(Object.keys(allowedScope)).not.toContain('rolePackId');
 
-    expect(decision).toMatchObject({
-      allowed: false,
-      code: 'capability-not-enabled',
-    });
+    const denied = gateway({ ...allowedScope, capabilityEnabled: false }).gateway.authorize(
+      request,
+    );
+    expect(denied).toMatchObject({ allowed: false, code: 'capability-not-enabled' });
+    expect(gateway(allowedScope).gateway.authorize(request).allowed).toBe(true);
   });
 
   it('rejects undeclared permissions before consulting Campaign state', () => {
