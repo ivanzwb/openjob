@@ -19,6 +19,7 @@ import {
 import { composePrompt } from '../prompts/composer';
 import type { PromptSlot } from '../prompts/registry';
 import { BUILT_IN_CAPABILITY_PLUGINS, BUILT_IN_ROLE_PACKS } from './builtin';
+import { ANALYTICS_CASE_CAPABILITY_ID } from './builtin/analyticsCase';
 import {
   PRODUCT_MANAGER_FORMAT_IDS,
   PRODUCT_MANAGER_ROLE_PACK_ID,
@@ -249,9 +250,17 @@ describe('Phase 1 通用核心闸门', () => {
     for (const view of views) {
       expect(view.configSnapshotHash).toBe(runtime.configSnapshotHash);
       expect(view.rolePack.mode).toBe('full');
-      // 可选能力没装：两端都只是不可用，不该把整个战役判成降级只读
+      // 能力插件的可用性是本机的事，不该把整个战役判成降级只读
       expect(view.rolePack.reason).toBeNull();
     }
-    expect(views[0].enabledCapabilityIds).toEqual(views[1].enabledCapabilityIds);
+
+    // 两端拿到的能力集合逐字相同，差异只落在 mode 上
+    expect(views[0].capabilities.map((item) => item.id)).toEqual(
+      views[1].capabilities.map((item) => item.id),
+    );
+    // analytics-case 是产品岗的可选依赖，装上了就自动生效；手机端没有表格读入，只读
+    expect(views[0].enabledCapabilityIds).toContain(ANALYTICS_CASE_CAPABILITY_ID);
+    expect(views[1].enabledCapabilityIds).not.toContain(ANALYTICS_CASE_CAPABILITY_ID);
+    expect(views[1].readOnlyCapabilityIds).toEqual([ANALYTICS_CASE_CAPABILITY_ID]);
   });
 });

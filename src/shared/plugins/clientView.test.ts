@@ -25,14 +25,21 @@ const ROLE_PACK_VERSION = softwareEngineeringRolePack.manifest.version;
 const REPO_ID = sourceRepositoryCapabilityPlugin.manifest.id;
 const REPO_VERSION = sourceRepositoryCapabilityPlugin.manifest.version;
 
-const ANALYTICS: InstalledPlugin = {
-  id: 'analytics-case',
+/**
+ * artifact 版本协商用的反例插件，刻意取一个不会发布的 ID 与 artifact type。
+ *
+ * 这里原本用的是 `analytics-case`。它一旦真被实现，本机清单里就会出现同 ID
+ * 的真插件，下面几条按 schemaVersion 2 写的断言会和真插件的版本打架——和本文件
+ * 「本机完全没有该插件时区分出未安装」那条用例记下的是同一个坑。
+ */
+const PIVOT_LAB: InstalledPlugin = {
+  id: 'pivot-lab',
   version: '1.0.0',
   type: 'capability',
-  displayName: 'Analytics Case',
-  description: '表格数据案例分析',
+  displayName: 'Pivot Lab',
+  description: '虚构的透视表能力，只用于 artifact schema 协商测试',
   runtime: { desktop: 'full', mobile: 'full' },
-  artifactSchemas: { 'tabular-dataset': 2 },
+  artifactSchemas: { 'pivot-table': 2 },
   interactionSchemas: {},
   permissions: ['artifact:read'],
 };
@@ -114,10 +121,10 @@ describe('两端共用同一份 descriptor', () => {
     const view = buildClientCapabilityView({
       descriptor: descriptor(),
       platform: 'desktop',
-      installed: [...listBuiltInPlugins(), ANALYTICS],
+      installed: [...listBuiltInPlugins(), PIVOT_LAB],
     });
 
-    expect(capabilityMode(view, ANALYTICS.id)).toBe('unsupported');
+    expect(capabilityMode(view, PIVOT_LAB.id)).toBe('unsupported');
   });
 });
 
@@ -205,22 +212,22 @@ describe('降级不修改 Campaign binding', () => {
 });
 
 describe('未知 artifact schema 只读', () => {
-  const withAnalytics = descriptor({
+  const withPivotLab = descriptor({
     capabilities: [
       { id: REPO_ID, version: REPO_VERSION, enabled: true },
-      { id: ANALYTICS.id, version: ANALYTICS.version, enabled: true },
+      { id: PIVOT_LAB.id, version: PIVOT_LAB.version, enabled: true },
     ],
   });
-  const installed = [...listBuiltInPlugins(), ANALYTICS];
+  const installed = [...listBuiltInPlugins(), PIVOT_LAB];
 
   it('本机已知且版本不高于本机时才允许解析', () => {
     const view = buildClientCapabilityView({
-      descriptor: withAnalytics,
+      descriptor: withPivotLab,
       platform: 'desktop',
       installed,
       artifacts: [
-        { capabilityId: ANALYTICS.id, artifactType: 'tabular-dataset', schemaVersion: 1 },
-        { capabilityId: ANALYTICS.id, artifactType: 'tabular-dataset', schemaVersion: 2 },
+        { capabilityId: PIVOT_LAB.id, artifactType: 'pivot-table', schemaVersion: 1 },
+        { capabilityId: PIVOT_LAB.id, artifactType: 'pivot-table', schemaVersion: 2 },
       ],
     });
 
@@ -231,11 +238,11 @@ describe('未知 artifact schema 只读', () => {
 
   it('更高的 schema 版本降级为只读，不尝试解析', () => {
     const view = buildClientCapabilityView({
-      descriptor: withAnalytics,
+      descriptor: withPivotLab,
       platform: 'desktop',
       installed,
       artifacts: [
-        { capabilityId: ANALYTICS.id, artifactType: 'tabular-dataset', schemaVersion: 3 },
+        { capabilityId: PIVOT_LAB.id, artifactType: 'pivot-table', schemaVersion: 3 },
       ],
     });
 
@@ -247,8 +254,8 @@ describe('未知 artifact schema 只读', () => {
     expect(view.degraded).toBe(true);
     expect(
       canParseArtifact(view, {
-        capabilityId: ANALYTICS.id,
-        artifactType: 'tabular-dataset',
+        capabilityId: PIVOT_LAB.id,
+        artifactType: 'pivot-table',
         schemaVersion: 3,
       }),
     ).toBe(false);
@@ -256,11 +263,11 @@ describe('未知 artifact schema 只读', () => {
 
   it('本机完全不认识的 artifact type 同样只读', () => {
     const view = buildClientCapabilityView({
-      descriptor: withAnalytics,
+      descriptor: withPivotLab,
       platform: 'desktop',
       installed,
       artifacts: [
-        { capabilityId: ANALYTICS.id, artifactType: 'slide-deck', schemaVersion: 1 },
+        { capabilityId: PIVOT_LAB.id, artifactType: 'slide-deck', schemaVersion: 1 },
       ],
     });
 
@@ -274,12 +281,12 @@ describe('未知 artifact schema 只读', () => {
   it('固定版本不可用时不读本机其它版本声明的 schema', () => {
     const view = buildClientCapabilityView({
       descriptor: descriptor({
-        capabilities: [{ id: ANALYTICS.id, version: '2.0.0', enabled: true }],
+        capabilities: [{ id: PIVOT_LAB.id, version: '2.0.0', enabled: true }],
       }),
       platform: 'desktop',
       installed,
       artifacts: [
-        { capabilityId: ANALYTICS.id, artifactType: 'tabular-dataset', schemaVersion: 1 },
+        { capabilityId: PIVOT_LAB.id, artifactType: 'pivot-table', schemaVersion: 1 },
       ],
     });
 

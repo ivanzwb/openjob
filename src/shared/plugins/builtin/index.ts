@@ -9,6 +9,7 @@
  */
 
 import type { CapabilityPlugin, PluginManifest, RolePack } from '../types';
+import { analyticsCaseCapabilityPlugin } from './analyticsCase';
 import { productManagerRolePack } from './productManager';
 import { rolePlayCapabilityPlugin } from './rolePlay';
 import { salesCustomerSuccessRolePack } from './salesCustomerSuccess';
@@ -24,6 +25,7 @@ export const BUILT_IN_ROLE_PACKS: readonly RolePack[] = [
 export const BUILT_IN_CAPABILITY_PLUGINS: readonly CapabilityPlugin[] = [
   sourceRepositoryCapabilityPlugin,
   rolePlayCapabilityPlugin,
+  analyticsCaseCapabilityPlugin,
 ];
 
 export const BUILT_IN_PLUGIN_MANIFESTS: readonly PluginManifest[] = [
