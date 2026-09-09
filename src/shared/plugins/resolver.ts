@@ -6,6 +6,10 @@ import {
   validatePluginManifest,
   validateRolePack,
 } from './contracts';
+import {
+  validateInteractionResultSchema,
+  validateInteractionSchema,
+} from './interactions/schema';
 import { compareExactSemVer, type BuiltInPluginRegistry, type RegisteredPlugin } from './registry';
 import type {
   ArtifactParserDefinition,
@@ -596,6 +600,7 @@ class RegistrationCollector implements CapabilityRegistry {
     private readonly owner: string,
     private readonly permissions: ReadonlySet<string>,
     private readonly artifactSchemas: Readonly<Record<string, number>> = {},
+    private readonly interactionSchemas: Readonly<Record<string, number>> = {},
     private readonly shared?: RegistrationCollector,
   ) {}
 
@@ -604,6 +609,7 @@ class RegistrationCollector implements CapabilityRegistry {
       owner,
       new Set(manifest.permissions),
       manifest.artifactSchemas ?? {},
+      manifest.interactionSchemas ?? {},
       this,
     );
   }
@@ -640,6 +646,20 @@ class RegistrationCollector implements CapabilityRegistry {
       )
     ) {
       throw new Error(`交互类型运行能力不合法：${interaction.type}`);
+    }
+    // 与 artifact parser 同构：Manifest 必须先声明版本，本机才能只读 Manifest 判断兼容性。
+    if (this.interactionSchemas[interaction.type] !== interaction.schemaVersion) {
+      throw new Error(`交互类型未匹配 Manifest schema：${interaction.type}`);
+    }
+    const issues = [
+      ...validateInteractionSchema(interaction.inputSchema),
+      ...validateInteractionResultSchema(interaction.resultSchema, interaction.inputSchema),
+    ];
+    if (issues.length > 0) {
+      throw new Error(
+        `交互 schema 不合法：${interaction.type}\n` +
+          issues.map((item) => `${item.path}: ${item.message}`).join('\n'),
+      );
     }
   }
 

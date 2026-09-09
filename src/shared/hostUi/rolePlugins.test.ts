@@ -18,6 +18,10 @@ import type { RoleProfileDraft } from './rolePlugins';
 
 const installed = listBuiltInPlugins();
 const rolePackOptions = listPluginOptions(installed, 'role-pack');
+/** 同岗位包一样按性质推导，避免每加一个能力插件就要回来补清单。 */
+const installedCapabilityIds = installed
+  .filter((plugin) => plugin.type === 'capability')
+  .map((plugin) => plugin.id);
 
 describe('listPluginOptions', () => {
   /**
@@ -37,9 +41,10 @@ describe('listPluginOptions', () => {
     const names = rolePackOptions.map((option) => option.displayName);
     expect(names).toEqual([...names].sort());
 
-    expect(listPluginOptions(installed, 'capability').map((option) => option.id)).toEqual([
-      SOURCE_REPOSITORY_CAPABILITY_ID,
-    ]);
+    expect(listPluginOptions(installed, 'capability').map((option) => option.id).sort()).toEqual(
+      [...installedCapabilityIds].sort(),
+    );
+    expect(installedCapabilityIds).toContain(SOURCE_REPOSITORY_CAPABILITY_ID);
     expect(listPluginOptions(installed, 'industry-pack')).toEqual([]);
   });
 });
@@ -204,16 +209,18 @@ describe('buildCapabilityRows', () => {
       installed,
     });
 
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({
+    // 只针对 descriptor 真的启用了的那条断言；本机还装着别的能力插件，
+    // 它们没进这场备考，状态本就不该是「可用」。
+    const row = rows.find((item) => item.id === SOURCE_REPOSITORY_CAPABILITY_ID);
+    expect(row).toMatchObject({
       id: SOURCE_REPOSITORY_CAPABILITY_ID,
       enabledInCampaign: true,
       disabledReason: null,
       localMode: 'full',
       installedLocally: true,
     });
-    expect(rows[0]!.version).toBeTruthy();
-    expect(rows[0]!.displayName).not.toBe(rows[0]!.id);
+    expect(row!.version).toBeTruthy();
+    expect(row!.displayName).not.toBe(row!.id);
   });
 
   /** 同一份 descriptor 在手机上是只读的：降级由 client view 说了算，不由界面猜 */
@@ -224,8 +231,9 @@ describe('buildCapabilityRows', () => {
       installed,
     });
 
-    expect(rows[0]).toMatchObject({ localMode: 'view-only', enabledInCampaign: true });
-    expect(rows[0]!.localDetail).toBeTruthy();
+    const row = rows.find((item) => item.id === SOURCE_REPOSITORY_CAPABILITY_ID);
+    expect(row).toMatchObject({ localMode: 'view-only', enabledInCampaign: true });
+    expect(row!.localDetail).toBeTruthy();
   });
 
   it('本机装了但这场备考没启用的插件也要列出来，否则用户没有入口把它加进来', () => {
@@ -235,13 +243,15 @@ describe('buildCapabilityRows', () => {
       installed,
     });
 
-    expect(rows.map((row) => row.id)).toEqual([SOURCE_REPOSITORY_CAPABILITY_ID]);
-    expect(rows[0]).toMatchObject({
-      enabledInCampaign: false,
-      version: null,
-      localMode: null,
-      installedLocally: true,
-    });
+    expect([...rows.map((row) => row.id)].sort()).toEqual([...installedCapabilityIds].sort());
+    for (const row of rows) {
+      expect(row).toMatchObject({
+        enabledInCampaign: false,
+        version: null,
+        localMode: null,
+        installedLocally: true,
+      });
+    }
   });
 
   it('descriptor 记着但本机没装的插件同样要显示——那正是最该被看见的降级', () => {

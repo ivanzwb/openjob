@@ -33,6 +33,7 @@ const ANALYTICS: InstalledPlugin = {
   description: '表格数据案例分析',
   runtime: { desktop: 'full', mobile: 'full' },
   artifactSchemas: { 'tabular-dataset': 2 },
+  interactionSchemas: {},
   permissions: ['artifact:read'],
 };
 
@@ -158,7 +159,9 @@ describe('降级不修改 Campaign binding', () => {
   it('本机完全没有该插件时区分出未安装', () => {
     const view = buildClientCapabilityView({
       descriptor: descriptor({
-        capabilities: [{ id: 'role-play', version: '1.0.0', enabled: true }],
+        // 用一个不会发布的虚构 ID：拿真实的待实现插件当反例，
+        // 等它真被实现出来（role-play 就是这么失效的）这个用例会莫名转红。
+        capabilities: [{ id: 'never-shipped-capability', version: '1.0.0', enabled: true }],
       }),
       platform: 'desktop',
       installed: listBuiltInPlugins(),

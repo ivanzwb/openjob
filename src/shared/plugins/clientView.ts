@@ -24,7 +24,8 @@ export type ClientDegradationReason =
   | 'pinned-version-unavailable'
   | 'platform-view-only'
   | 'platform-unsupported'
-  | 'artifact-schema-unknown';
+  | 'artifact-schema-unknown'
+  | 'interaction-schema-unknown';
 
 /** 本机安装的插件摘要，由 Manifest 投影而来，不包含可执行内容。 */
 export interface InstalledPlugin {
@@ -36,6 +37,7 @@ export interface InstalledPlugin {
   /** Role/Industry Pack 允许不声明运行能力，此时按 full 处理。 */
   runtime: PluginRuntimeAvailability | null;
   artifactSchemas: Record<string, number>;
+  interactionSchemas: Record<string, number>;
   permissions: PluginPermission[];
 }
 
@@ -96,6 +98,7 @@ const DEGRADATION_DETAILS: Record<ClientDegradationReason, string> = {
   'platform-view-only': '当前设备只支持查看，需在桌面端执行',
   'platform-unsupported': '当前设备不支持该能力',
   'artifact-schema-unknown': '本机不认识该 artifact 的 schema 版本，只保留同步与查看',
+  'interaction-schema-unknown': '本机不认识该交互的 schema 版本，只保留同步与查看',
 };
 
 interface InstalledIndex {
@@ -129,6 +132,7 @@ export function toInstalledPlugin(manifest: PluginManifest): InstalledPlugin {
     description: manifest.description,
     runtime: manifest.runtime ? { ...manifest.runtime } : null,
     artifactSchemas: { ...(manifest.artifactSchemas ?? {}) },
+    interactionSchemas: { ...(manifest.interactionSchemas ?? {}) },
     permissions: [...manifest.permissions],
   };
 }

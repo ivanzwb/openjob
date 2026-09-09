@@ -119,7 +119,11 @@ function ungatedFormatIds(): string[] {
 function resolveWithoutRolePlay(): ReturnType<DeterministicRuntimeResolver['resolve']> {
   const registry = new BuiltInPluginRegistry();
   BUILT_IN_ROLE_PACKS.forEach((pack) => registry.register(pack));
-  BUILT_IN_CAPABILITY_PLUGINS.forEach((plugin) => registry.registerCapability(plugin));
+  // 明确把 role-play 排除掉。本用例考的是「插件缺席时如何降级」，
+  // 原先靠「仓库里还没实现 role-play」这个前提成立，T19 把它实现出来后前提就失效了。
+  BUILT_IN_CAPABILITY_PLUGINS.filter(
+    (plugin) => plugin.manifest.id !== SALES_ROLE_PLAY_CAPABILITY_ID,
+  ).forEach((plugin) => registry.registerCapability(plugin));
   return new DeterministicRuntimeResolver(registry).resolve({
     coreVersion: '1.0.0',
     schemaVersion: 23,
@@ -229,6 +233,26 @@ describe('sales & customer success role pack goldens', () => {
       expect(stage.formatIds[0]).toBe(SALES_CUSTOMER_SUCCESS_FORMAT_IDS.customerRolePlay);
       expect(stage.formatIds).toContain(SALES_CUSTOMER_SUCCESS_FORMAT_IDS.behavioral);
     }
+  });
+
+  it('装了 role-play 时对话题型所依赖的能力被启用', () => {
+    const registry = new BuiltInPluginRegistry();
+    BUILT_IN_ROLE_PACKS.forEach((pack) => registry.register(pack));
+    BUILT_IN_CAPABILITY_PLUGINS.forEach((plugin) => registry.registerCapability(plugin));
+    const resolved = new DeterministicRuntimeResolver(registry).resolve({
+      coreVersion: '1.0.0',
+      schemaVersion: 23,
+      rolePackId: SALES_CUSTOMER_SUCCESS_ROLE_PACK_ID,
+      capabilityIds: [],
+    });
+
+    expect(resolved.ok).toBe(true);
+    if (!resolved.ok) return;
+
+    const ref = resolved.descriptor.capabilities.find(
+      (item) => item.id === SALES_ROLE_PLAY_CAPABILITY_ID,
+    );
+    expect(ref?.enabled).toBe(true);
   });
 
   it('没装 role-play 时行为面仍然完整跑得通，且解析不失败', () => {

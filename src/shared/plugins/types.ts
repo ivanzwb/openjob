@@ -5,6 +5,7 @@ import type {
   PluginType,
   RuntimeAvailability,
 } from '../enums';
+import type { InteractionResultSchema, InteractionSchema } from './interactions/schema';
 import type { PluginPermission } from './permissions';
 
 export type ClientPlatform = 'desktop' | 'mobile';
@@ -42,6 +43,13 @@ export interface PluginManifest {
   runtime?: PluginRuntimeAvailability;
   /** artifact type → schema version。 */
   artifactSchemas?: Record<string, number>;
+  /**
+   * interaction type → schema version。
+   *
+   * 与 artifactSchemas 同构：本机只读 Manifest 就能判断认不认识某个交互版本，
+   * 不必执行插件的 register()。
+   */
+  interactionSchemas?: Record<string, number>;
   dependencies?: PluginDependency[];
 }
 
@@ -192,12 +200,18 @@ export interface CampaignRuntimeDescriptor {
 }
 
 /**
- * T19 会为 JSON Schema 增加可执行的宿主渲染器；T01 只冻结跨端声明。
+ * 宿主渲染的交互声明。
+ *
+ * inputSchema / resultSchema 用 Core 拥有的封闭字段协议（见 ./interactions/schema），
+ * 不是任意 JSON Schema：任意 schema 无法保证宿主渲染得出来，会逼出「插件自带组件」
+ * 的逃逸口。插件只声明结构，宿主负责渲染，两者之间不传组件。
  */
 export interface HostRenderedInteraction {
   type: string;
   schemaVersion: number;
   availability: Record<ClientPlatform, RuntimeAvailability>;
+  inputSchema: InteractionSchema;
+  resultSchema: InteractionResultSchema;
 }
 
 export interface ScopedToolDefinition {

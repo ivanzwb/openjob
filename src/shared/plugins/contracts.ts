@@ -200,6 +200,25 @@ export function validatePluginManifest(manifest: PluginManifest): PluginContract
     }
   });
 
+  Object.entries(manifest.interactionSchemas ?? {}).forEach(([interactionType, version]) => {
+    if (!isStablePluginId(interactionType)) {
+      issue(
+        issues,
+        `manifest.interactionSchemas.${interactionType}`,
+        'invalid-id',
+        'interaction type 不合法',
+      );
+    }
+    if (!Number.isInteger(version) || version < 1) {
+      issue(
+        issues,
+        `manifest.interactionSchemas.${interactionType}`,
+        'invalid-value',
+        'interaction schema 版本必须是正整数',
+      );
+    }
+  });
+
   return issues;
 }
 
