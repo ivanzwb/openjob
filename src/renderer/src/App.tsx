@@ -12,9 +12,15 @@ import { Resumes } from './pages/Resumes';
 import { invoke, onEvent } from './ipc';
 import { bumpDataVersion } from './ipc/dataVersion';
 import { useJobProgress } from './ipc/useJobProgress';
+import { useCapabilityNav } from './ipc/useCapabilityNav';
 import { useBackgroundErrorToast } from './ipc/errorToast';
+import { nextVisibleTab } from '@shared/hostUi';
+import { SOURCE_REPOSITORY_CAPABILITY_ID } from '@shared/plugins/builtin/sourceRepository';
 
 type Tab = 'overview' | 'campaigns' | 'resumes' | 'design' | 'repos' | 'scripts' | 'settings';
+
+/** 页签被能力门控藏起来时的落脚点：备考是这个应用的主线，回到它总是说得通 */
+const FALLBACK_TAB: Tab = 'campaigns';
 
 const TABS: Array<{ key: Tab; label: string }> = [
   { key: 'overview', label: '总览' },
@@ -116,6 +122,14 @@ export default function App(): React.JSX.Element {
   // 任务与流式请求可能在用户已经切走的页面上失败，提示统一由这里弹出来
   useBackgroundErrorToast();
 
+  // 源码页是 source-repository 能力插件的宿主界面，没有任何 Campaign 启用它时不该出现
+  const reposEnabled = useCapabilityNav(SOURCE_REPOSITORY_CAPABILITY_ID);
+  const isTabVisible = (key: Tab): boolean => key !== 'repos' || reposEnabled;
+  // 门控是异步算出来的，用户可能正停在被藏起来的页签上：渲染期同步换页，
+  // 免得看到一个没有选中项的导航栏和一片空白
+  const activeTab = nextVisibleTab(tab, isTabVisible, FALLBACK_TAB);
+  if (activeTab !== tab) setTab(activeTab);
+
   useEffect(() => {
     void invoke('app:getVersion', undefined).then(setVersion);
   }, []);
@@ -141,13 +155,13 @@ export default function App(): React.JSX.Element {
             <UpdateBadge onOpenSettings={() => selectTab('settings')} />
           </div>
           <nav className="app-region-no-drag ml-4 flex gap-1">
-            {TABS.map(({ key, label }) => (
+            {TABS.filter(({ key }) => isTabVisible(key)).map(({ key, label }) => (
               <button
                 key={key}
                 type="button"
                 onClick={() => selectTab(key)}
                 className={`rounded px-3 py-1 text-sm ${
-                  tab === key
+                  activeTab === key
                     ? 'bg-[var(--color-surface)] text-[var(--color-fg)]'
                     : 'text-[var(--color-muted)] hover:text-[var(--color-fg)]'
                 }`}
@@ -170,7 +184,7 @@ export default function App(): React.JSX.Element {
 
         <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
           {mountedTabs.has('overview') && (
-            <TabPanel active={tab === 'overview'} className="overflow-y-auto">
+            <TabPanel active={activeTab === 'overview'} className="overflow-y-auto">
               <Overview
                 onOpenCampaign={(id, nodeId) => {
                   setView({ kind: 'detail', id, focusNodeId: nodeId, focusKey: Date.now() });
@@ -185,30 +199,31 @@ export default function App(): React.JSX.Element {
             </TabPanel>
           )}
           {mountedTabs.has('resumes') && (
-            <TabPanel active={tab === 'resumes'} className="overflow-hidden">
+            <TabPanel active={activeTab === 'resumes'} className="overflow-hidden">
               <Resumes />
             </TabPanel>
           )}
           {mountedTabs.has('campaigns') && (
-            <CampaignsPanel active={tab === 'campaigns'} view={view} setView={setView} />
+            <CampaignsPanel active={activeTab === 'campaigns'} view={view} setView={setView} />
           )}
           {mountedTabs.has('design') && (
-            <TabPanel active={tab === 'design'} className="overflow-y-auto">
+            <TabPanel active={activeTab === 'design'} className="overflow-y-auto">
               <DesignPractice />
             </TabPanel>
           )}
-          {mountedTabs.has('repos') && (
-            <TabPanel active={tab === 'repos'} className="overflow-hidden">
+          {/* 能力被关掉之后连挂载也撤掉：留着的话仓库索引仍在后台跑，用户却没有入口停它 */}
+          {mountedTabs.has('repos') && isTabVisible('repos') && (
+            <TabPanel active={activeTab === 'repos'} className="overflow-hidden">
               <Repos />
             </TabPanel>
           )}
           {mountedTabs.has('scripts') && (
-            <TabPanel active={tab === 'scripts'} className="overflow-hidden">
+            <TabPanel active={activeTab === 'scripts'} className="overflow-hidden">
               <Scripts />
             </TabPanel>
           )}
           {mountedTabs.has('settings') && (
-            <TabPanel active={tab === 'settings'} className="overflow-y-auto">
+            <TabPanel active={activeTab === 'settings'} className="overflow-y-auto">
               <Settings />
             </TabPanel>
           )}

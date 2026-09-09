@@ -16,6 +16,7 @@ import { effectiveInterviewLanguage } from '@shared/design/prompts';
 import type { MockInterviewKind, MockInterviewLanguage } from '@shared/design/prompts';
 import { normalizeDisplayText } from '@shared/lib/markdownDisplay';
 import { MarkdownContent } from '../components/MarkdownContent';
+import { PracticeRunner } from '../components/PracticeRunner';
 import { VoiceInputButton } from '../components/VoiceInputButton';
 import { PageShell } from '../components/PageShell';
 import { invoke } from '../ipc';
@@ -45,7 +46,21 @@ const ANSWER_PLACEHOLDER: Record<MockInterviewKind, Record<MockInterviewLanguage
   },
 };
 
+/**
+ * 两条链路的分工。
+ *
+ * `practice:*` 是通用协议：题型、追问轮数、评分维度全部由岗位包声明，评分逐维度带量规
+ * 锚点和作答引文。`design:*` 是它出现之前的那条链路，只有一个 1-5 的总分，题型写死在
+ * 核心里。计划要求旧通道再可用一个发布周期，所以这里不是替换而是并存——已经存了题目和
+ * 作答的用户切回「经典模拟」还能接着做完，不会因为升级一次就丢掉半道题。
+ */
+const PRACTICE_MODES: Array<{ value: 'practice' | 'legacy'; label: string; hint: string }> = [
+  { value: 'practice', label: '通用练习', hint: '按岗位包的题型出题，逐维度量规评分' },
+  { value: 'legacy', label: '经典模拟（旧版）', hint: '核心内置题型，单项总分与推荐答案' },
+];
+
 export function DesignPractice(): React.JSX.Element {
+  const [mode, setMode] = useState<'practice' | 'legacy'>('practice');
   const [campaigns, setCampaigns] = useState<CampaignSummary[]>([]);
   const [campaignId, setCampaignId] = useState('');
   const [interviewType, setInterviewType] = useState<MockInterviewType>('mixed');
@@ -214,6 +229,24 @@ export function DesignPractice(): React.JSX.Element {
         </p>
       </header>
 
+      <nav className="flex flex-wrap items-end gap-1 border-b border-[var(--color-border)]">
+        {PRACTICE_MODES.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            title={option.hint}
+            onClick={() => setMode(option.value)}
+            className={`-mb-px border-b-2 px-4 py-2 text-sm transition-colors ${
+              mode === option.value
+                ? 'border-[var(--color-accent)] text-[var(--color-fg)]'
+                : 'border-transparent text-[var(--color-muted)] hover:text-[var(--color-fg)]'
+            }`}
+          >
+            {option.label}
+          </button>
+        ))}
+      </nav>
+
       <div className="grid gap-3 lg:grid-cols-3">
         <label className="space-y-1">
           <span className="text-xs text-[var(--color-muted)]">关联 Campaign</span>
@@ -239,28 +272,31 @@ export function DesignPractice(): React.JSX.Element {
             )}
           </select>
         </label>
-        <label className="space-y-1">
-          <span className="text-xs text-[var(--color-muted)]">题型</span>
-          <select
-            value={interviewType}
-            onChange={(e) => {
-              setInterviewType(e.target.value as MockInterviewType);
-              setDesignCase(null);
-              setResult(null);
-              setAnswer('');
-              setRecommendedAnswer('');
-            }}
-            className="w-full rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm"
-          >
-            {MOCK_INTERVIEW_TYPE_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-          {typeHint && <p className="text-[10px] text-[var(--color-muted)]">{typeHint}</p>}
-        </label>
-        {interviewType === 'selfIntro' && (
+        {/* 题型与语言只属于旧链路：通用练习的题型由岗位包声明，选项在 PracticeRunner 里 */}
+        {mode === 'legacy' && (
+          <label className="space-y-1">
+            <span className="text-xs text-[var(--color-muted)]">题型</span>
+            <select
+              value={interviewType}
+              onChange={(e) => {
+                setInterviewType(e.target.value as MockInterviewType);
+                setDesignCase(null);
+                setResult(null);
+                setAnswer('');
+                setRecommendedAnswer('');
+              }}
+              className="w-full rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm"
+            >
+              {MOCK_INTERVIEW_TYPE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            {typeHint && <p className="text-[10px] text-[var(--color-muted)]">{typeHint}</p>}
+          </label>
+        )}
+        {mode === 'legacy' && interviewType === 'selfIntro' && (
           <label className="space-y-1">
             <span className="text-xs text-[var(--color-muted)]">面试语言</span>
             <select
@@ -284,23 +320,27 @@ export function DesignPractice(): React.JSX.Element {
         )}
       </div>
 
-      <div>
-        <button
-          type="button"
-          disabled={!campaignId || loading}
-          onClick={() => start(Boolean(designCase))}
-          className="rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm text-white disabled:opacity-40"
-        >
-          {caseTask.running ? '出题中…' : designCase ? '重新出题' : '开始模拟'}
-        </button>
-        <p className="mt-2 text-xs text-[var(--color-muted)]">
-          已生成的题目会自动保存；再次进入会直接显示保存题，只有点击「重新出题」才会生成新题。你的作答也会自动缓存。
-        </p>
-      </div>
+      {mode === 'practice' && campaignId && <PracticeRunner campaignId={campaignId} />}
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {mode === 'legacy' && (
+        <div>
+          <button
+            type="button"
+            disabled={!campaignId || loading}
+            onClick={() => start(Boolean(designCase))}
+            className="rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm text-white disabled:opacity-40"
+          >
+            {caseTask.running ? '出题中…' : designCase ? '重新出题' : '开始模拟'}
+          </button>
+          <p className="mt-2 text-xs text-[var(--color-muted)]">
+            已生成的题目会自动保存；再次进入会直接显示保存题，只有点击「重新出题」才会生成新题。你的作答也会自动缓存。
+          </p>
+        </div>
+      )}
 
-      {designCase && (
+      {mode === 'legacy' && error && <p className="text-sm text-red-400">{error}</p>}
+
+      {mode === 'legacy' && designCase && (
         <section className="space-y-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
           <div>
             <div className="flex flex-wrap items-center gap-2">
@@ -454,7 +494,7 @@ export function DesignPractice(): React.JSX.Element {
         </section>
       )}
 
-      {elaborationMd !== null && (
+      {mode === 'legacy' && elaborationMd !== null && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-4 sm:items-center">
           <div className="max-h-[80vh] w-full max-w-lg overflow-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
             <div className="mb-3 flex items-center justify-between">
@@ -468,7 +508,7 @@ export function DesignPractice(): React.JSX.Element {
         </div>
       )}
 
-      {!designCase && !loading && campaigns.length > 0 && (
+      {mode === 'legacy' && !designCase && !loading && campaigns.length > 0 && (
         <p className="text-sm text-[var(--color-muted)]">
           选择 Campaign 和题型后点击「开始模拟」。建议在备考中完成 JD 诊断、关联简历并生成公司情报，题目会更贴近真实面试。
         </p>

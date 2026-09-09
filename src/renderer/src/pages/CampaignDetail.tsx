@@ -14,6 +14,8 @@ import { AnnotationDigest } from '../components/AnnotationDigest';
 import { AnnotationTools } from '../components/AnnotationTools';
 import { CompanyIntelCard } from '../components/CompanyIntelCard';
 import { EdgeEditor } from '../components/EdgeEditor';
+import { EvidenceReviewPanel } from '../components/EvidenceReviewPanel';
+import { RolePluginPanel } from '../components/RolePluginPanel';
 import { StudyPlanCalendarPopover } from '../components/StudyPlanCalendarPopover';
 import { collectSubtreeIds } from '@shared/knowledgeTree';
 import { nodeIdsForPlanFilter, nodeIdsForTreeFilter } from '@shared/planFilter';
@@ -67,7 +69,7 @@ export function CampaignDetail({
   const [reports, setReports] = useState<InterviewReportView[]>([]);
   const [showReports, setShowReports] = useState(false);
   const [annotations, setAnnotations] = useState<AnnotationView[]>([]);
-  const [pageTab, setPageTab] = useState<'intel' | 'study' | 'materials'>('intel');
+  const [pageTab, setPageTab] = useState<'intel' | 'study' | 'materials' | 'role'>('intel');
   const [calendarFilterDate, setCalendarFilterDate] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<NodeStatus | 'all'>('all');
   const [markFilter, setMarkFilter] = useState<'all' | 'bookmarked' | 'marked' | 'last'>('all');
@@ -552,6 +554,7 @@ export function CampaignDetail({
                   label: '资料与标记',
                   badge: markCount + bookmarkCount > 0 ? markCount + bookmarkCount : undefined,
                 },
+                { id: 'role' as const, label: '岗位与证据' },
               ] as const
             ).map((tab) => (
               <button
@@ -1104,6 +1107,13 @@ export function CampaignDetail({
                 </ul>
               </section>
             )}
+          </div>
+        )}
+
+        {pageTab === 'role' && (
+          <div className="h-full space-y-4 overflow-y-auto pr-1">
+            <RolePluginPanel campaignId={id} />
+            <EvidenceReviewPanel campaignId={id} />
           </div>
         )}
       </div>
