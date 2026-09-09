@@ -1,7 +1,14 @@
 import * as Crypto from 'expo-crypto';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import type { CoverageType, NodeKind } from '@shared/enums';
-import type { ExpandNodeResult, JdDiagnosisResult } from '@shared/diagnosis/prompts';
+import type { ResumeParsed } from '@shared/entities';
+import {
+  crossAnalyzeUser,
+  type CrossAnalyzeResult,
+  type ExpandNodeResult,
+  type JdDiagnosisResult,
+} from '@shared/diagnosis/prompts';
+import { computePriority } from '@shared/priority';
 import {
   EXPAND_DEPTH_LIMIT_MESSAGE,
   canExpandNode,
@@ -14,7 +21,7 @@ import {
   uncoveredRequirementsMessage,
 } from '@shared/diagnosis/coverage';
 import { completeJson } from '../llm/json';
-import { getCampaign } from './campaignLocal';
+import { getCampaign, getResume } from './campaignLocal';
 import {
   applyHistoricalPrior,
   clearCampaignNodes,
@@ -78,6 +85,84 @@ export async function diagnoseFromJd(db: SQLiteDatabase, campaignId: string): Pr
     (priorBoosted > 0 ? `，${priorBoosted} 个考点已应用历史真题先验` : '') +
     uncoveredRequirementsMessage(uncovered)
   );
+}
+
+/**
+ * 关联简历：绑定 + 交叉分析，更新考点的覆盖类型。
+ *
+ * 与桌面端 diagnoseAttachResume 同义。绑定单独先落库，因为它本身就有用——出题和参考
+ * 答案立刻能结合履历；交叉分析是在此之上把考点重新分成必深挖/短板/雷区/加分项。所以
+ * 后半段失败时保留绑定，用户重试一次分析即可，而不是连绑定一起回退。
+ */
+export async function diagnoseAttachResume(
+  db: SQLiteDatabase,
+  campaignId: string,
+  resumeId: string,
+): Promise<string> {
+  const campaign = getCampaign(db, campaignId);
+  const resume = getResume(db, resumeId);
+
+  let parsed = resume.parsed;
+  if (!parsed) {
+    parsed = await completeJson<ResumeParsed>('outline', 'diagnosis.resume', resume.rawText);
+    const identity = await getDeviceIdentity(db);
+    writingAs(db, identity.deviceId, () => {
+      db.runSync(`UPDATE resume SET parsed = ? WHERE id = ?`, JSON.stringify(parsed), resumeId);
+    });
+  }
+
+  const identity = await getDeviceIdentity(db);
+  writingAs(db, identity.deviceId, () => {
+    updateCampaignFields(db, { id: campaignId, resumeId });
+  });
+
+  const nodes = db.getAllSync<{
+    id: string;
+    name: string;
+    exam_prob: number;
+    mastery: number;
+    est_minutes: number;
+  }>(
+    `SELECT id, name, exam_prob, mastery, est_minutes FROM knowledge_node WHERE campaign_id = ?`,
+    campaignId,
+  );
+  if (nodes.length === 0) throw new Error('请先生成考点清单（运行 JD 诊断）');
+
+  const cross = await completeJson<CrossAnalyzeResult>(
+    'outline',
+    'diagnosis.crossAnalyze',
+    crossAnalyzeUser(
+      campaign.jdParsed ?? { roleTitle: campaign.roleTitle, requirements: [], seniority: null },
+      parsed,
+      nodes.map((n) => n.name),
+    ),
+  );
+
+  const byName = new Map(nodes.map((n) => [n.name, n]));
+  let updated = 0;
+  writingAs(db, identity.deviceId, () => {
+    for (const update of cross.updates ?? []) {
+      const node = byName.get(update.nodeName);
+      if (!node) continue;
+      const { score } = computePriority({
+        id: node.id,
+        coverageType: update.coverageType,
+        examProb: node.exam_prob,
+        mastery: node.mastery,
+        estMinutes: node.est_minutes,
+      });
+      db.runSync(
+        `UPDATE knowledge_node SET coverage_type = ?, priority_score = ? WHERE id = ?`,
+        update.coverageType,
+        score,
+        node.id,
+      );
+      updated++;
+    }
+    refreshAllPriorities(db, campaignId);
+  });
+
+  return `已更新 ${updated} 个考点的覆盖类型`;
 }
 
 export async function diagnoseFetchIntel(db: SQLiteDatabase, campaignId: string): Promise<string> {

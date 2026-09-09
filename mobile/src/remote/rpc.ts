@@ -119,3 +119,20 @@ export function jobMessageFromEvents(events: SyncRpcResponse['events']): string 
   const { message, error } = jobResultFromEvents(events);
   return error ?? message;
 }
+
+/**
+ * 跑一个桌面端长任务并把失败当失败。
+ *
+ * 长任务的错误是走事件流回来的，不是 HTTP 状态码：invokeRemote 只要拿到 200 就算成功，
+ * 于是 job:progress 里的 error 会被当成一句普通进度文案显示出来，界面提示「已完成」而
+ * 实际什么都没做。这里统一把它抛出去。
+ */
+export async function runDesktopJob<C extends string, P>(
+  channel: C,
+  payload: P,
+): Promise<string> {
+  const { events } = await invokeRemote<C, P, { jobId: string }>(channel, payload);
+  const { message, error } = jobResultFromEvents(events);
+  if (error) throw new Error(error);
+  return message;
+}

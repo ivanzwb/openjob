@@ -6,7 +6,9 @@ import type { NodeStatus } from '@shared/enums';
 import { collectSubtreeIds } from '@shared/knowledgeTree';
 import { nodeIdsForPlanFilter, nodeIdsForTreeFilter } from '@shared/planFilter';
 import { CompanyIntelCard } from '../components/CompanyIntelCard';
+import { DebriefPanel } from '../components/DebriefPanel';
 import { KeepAlivePanel } from '../components/KeepAlivePanel';
+import { ResumeAttachPanel } from '../components/ResumeAttachPanel';
 import { KnowledgeTree, type NodePatch } from '../components/KnowledgeTree';
 import { NodeFollowUpPanel } from '../components/NodeFollowUpPanel';
 import { NodeStudyPanel } from '../components/NodeStudyPanel';
@@ -554,6 +556,15 @@ function CampaignDetailView({
         </Text>
       )}
 
+      <View style={sectionStyle(theme)}>
+        <ResumeAttachPanel campaignId={id} onDone={afterWrite} />
+      </View>
+
+      {/* 复盘放在考点树上面：面完就录是这功能唯一有意义的时刻，不该让用户先滚过整棵树 */}
+      <View style={sectionStyle(theme)}>
+        <DebriefPanel campaignId={id} onDone={afterWrite} />
+      </View>
+
       <Text style={{ color: theme.muted, fontSize: 12 }}>点击考点学习；日历可筛选当日排期</Text>
 
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -816,6 +827,7 @@ export function CampaignsScreen({ route }: CampaignsProps): React.JSX.Element {
 }
 
 const inputStyle = (theme: Palette) => ({ color: theme.text, borderWidth: 1, borderColor: theme.border, borderRadius: 8, padding: 10 });
+
 const btnStyle = (theme: Palette) => ({ backgroundColor: theme.accent, padding: 12, borderRadius: 8, alignItems: 'center' as const });
 const cardStyle = (theme: Palette) => ({ borderWidth: 1, borderColor: theme.border, borderRadius: 8, padding: 12, backgroundColor: theme.surface });
 const sectionStyle = (theme: Palette) => ({ borderWidth: 1, borderColor: theme.border, borderRadius: 8, padding: 12, backgroundColor: theme.surface, gap: 8 });

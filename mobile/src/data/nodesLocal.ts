@@ -10,6 +10,7 @@ import {
 } from '@shared/diagnosis/tree';
 import type { GeneratedNode } from '@shared/diagnosis/prompts';
 import { computePriority } from '@shared/priority';
+import { boostedExamProb } from '@shared/diagnosis/reportIngest';
 import { getDeviceIdentity } from '../sync/identity';
 import { writingAs } from '../sync/triggers';
 import { getKnowledgeNode } from './campaignLocal';
@@ -320,7 +321,6 @@ export function applyHistoricalPrior(
     nodeNames.set(node.name, Math.max(nodeNames.get(node.name) ?? 0, w));
   }
 
-  const BASE_PROB_BOOST = 0.08;
   let boosted = 0;
   const campaignNodes = db.getAllSync<{
     id: string;
@@ -334,7 +334,7 @@ export function applyHistoricalPrior(
   for (const row of campaignNodes) {
     const weight = nodeNames.get(row.name);
     if (!weight) continue;
-    const nextProb = Math.min(1, row.exam_prob + BASE_PROB_BOOST * weight);
+    const nextProb = boostedExamProb(row.exam_prob, weight);
     if (nextProb === row.exam_prob) continue;
     const { score } = computePriority({
       id: row.id,
