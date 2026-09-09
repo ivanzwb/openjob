@@ -13,6 +13,10 @@ import {
   validateInteractionResultValue,
   type InteractionResultValue,
 } from '../../shared/plugins/interactions/schema';
+import {
+  isInteractionTerminalStatus,
+  type InteractionSessionStatus,
+} from '../../shared/plugins/interactions/session';
 import type { PluginPermission } from '../../shared/plugins/permissions';
 import type { HostRenderedInteraction } from '../../shared/plugins/types';
 import {
@@ -40,32 +44,11 @@ export interface RolePlayTurn {
   at: number;
 }
 
-export type RolePlayStatus =
-  /** 等候选人作答。 */
-  | 'awaiting-candidate'
-  /** 已收到作答，等客户台词。 */
-  | 'awaiting-customer'
-  /** 正常结束。 */
-  | 'completed'
-  /** 到达时限。 */
-  | 'timeout'
-  /** 用户主动中止。 */
-  | 'cancelled'
-  /** 客户台词生成连续失败。 */
-  | 'failed'
-  /** 必需权限被撤销。 */
-  | 'permission-revoked';
-
-const TERMINAL_STATUSES: readonly RolePlayStatus[] = [
-  'completed',
-  'timeout',
-  'cancelled',
-  'failed',
-  'permission-revoked',
-];
+/** 生命周期词汇由协议层拥有，两端与 IPC 契约共用同一套取值。 */
+export type RolePlayStatus = InteractionSessionStatus;
 
 export function isTerminalStatus(status: RolePlayStatus): boolean {
-  return TERMINAL_STATUSES.includes(status);
+  return isInteractionTerminalStatus(status);
 }
 
 export interface RolePlayState {

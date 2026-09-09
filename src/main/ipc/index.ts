@@ -57,6 +57,7 @@ import {
   listInstalledPlugins,
   setCampaignRoleProfile,
 } from '../plugins/runtime';
+import { getRolePlaySessionService } from '../plugins/rolePlaySession';
 import { generateExplanation, generateFallbackScript, getExplanation, updateExplanation, elaborateExplanationSelection, rewriteExplanationSelection } from '../explain';
 import { startJob } from '../jobs';
 import { cancelStream, startChat, testTier } from '../llm';
@@ -345,6 +346,12 @@ export function registerIpcHandlers(): void {
   handle('practice:evaluate', (input) => getPracticeService().evaluate(input));
   handle('practice:listAttempts', (query) => listPracticeAttempts(query));
   handle('practice:listScores', ({ attemptId }) => listPracticeScores(attemptId));
+
+  handle('interaction:startRolePlay', (input) => getRolePlaySessionService().start(input));
+  handle('interaction:submitRolePlayTurn', (input) =>
+    getRolePlaySessionService().submitTurn(input),
+  );
+  handle('interaction:endRolePlay', (input) => getRolePlaySessionService().end(input));
 
   handle('repo:gitStatus', () => getGitStatus());
   handle('repo:list', () => listRepos());

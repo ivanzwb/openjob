@@ -17,6 +17,8 @@ import type { MockInterviewKind, MockInterviewLanguage } from '@shared/design/pr
 import { normalizeDisplayText } from '@shared/lib/markdownDisplay';
 import { MarkdownContent } from '../components/MarkdownContent';
 import { PracticeRunner } from '../components/PracticeRunner';
+import { RolePlayRunner } from '../components/RolePlayRunner';
+import { ROLE_PLAY_CAPABILITY_ID } from '@shared/plugins/builtin/rolePlay';
 import { VoiceInputButton } from '../components/VoiceInputButton';
 import { PageShell } from '../components/PageShell';
 import { invoke } from '../ipc';
@@ -54,13 +56,23 @@ const ANSWER_PLACEHOLDER: Record<MockInterviewKind, Record<MockInterviewLanguage
  * 核心里。计划要求旧通道再可用一个发布周期，所以这里不是替换而是并存——已经存了题目和
  * 作答的用户切回「经典模拟」还能接着做完，不会因为升级一次就丢掉半道题。
  */
-const PRACTICE_MODES: Array<{ value: 'practice' | 'legacy'; label: string; hint: string }> = [
+type PracticeMode = 'practice' | 'roleplay' | 'legacy';
+
+const PRACTICE_MODES: Array<{ value: PracticeMode; label: string; hint: string }> = [
   { value: 'practice', label: '通用练习', hint: '按岗位包的题型出题，逐维度量规评分' },
+  { value: 'roleplay', label: '客户对话', hint: '由模型扮演客户的角色扮演对练' },
   { value: 'legacy', label: '经典模拟（旧版）', hint: '核心内置题型，单项总分与推荐答案' },
 ];
 
 export function DesignPractice(): React.JSX.Element {
-  const [mode, setMode] = useState<'practice' | 'legacy'>('practice');
+  const [mode, setMode] = useState<PracticeMode>('practice');
+  // 没启用 role-play 的岗位不显示这个页签：留着只会让用户点进去吃一个报错。
+  // 连同它属于哪场备考一起存，换 Campaign 时上一场的结论自动作废——
+  // 否则就得在 effect 里同步清一次状态，那会引起级联渲染
+  const [rolePlayState, setRolePlayState] = useState<{
+    campaignId: string;
+    enabled: boolean;
+  } | null>(null);
   const [campaigns, setCampaigns] = useState<CampaignSummary[]>([]);
   const [campaignId, setCampaignId] = useState('');
   const [interviewType, setInterviewType] = useState<MockInterviewType>('mixed');
@@ -124,6 +136,24 @@ export function DesignPractice(): React.JSX.Element {
   useTaskResult<{ elaborationMd: string }>(elaborateKey, (res) => {
     setElaborationMd(res.elaborationMd);
   });
+
+  // 页签可见性只看 descriptor：能力有没有启用是解析结果说了算，界面不猜。
+  // 连同它属于哪场备考一起存，换 Campaign 时上一场的结论自动作废，
+  // 不必在 effect 里同步清一次状态（那会引起级联渲染）
+  useEffect(() => {
+    if (!campaignId) return;
+    void invoke('campaign:getRuntimeDescriptor', { campaignId })
+      .then((view) =>
+        setRolePlayState({
+          campaignId,
+          enabled:
+            view?.descriptor.capabilities.some(
+              (item) => item.id === ROLE_PLAY_CAPABILITY_ID && item.enabled,
+            ) ?? false,
+        }),
+      )
+      .catch(() => setRolePlayState({ campaignId, enabled: false }));
+  }, [campaignId]);
 
   useEffect(() => {
     if (!designCase || !campaignId) return;
@@ -230,7 +260,11 @@ export function DesignPractice(): React.JSX.Element {
       </header>
 
       <nav className="flex flex-wrap items-end gap-1 border-b border-[var(--color-border)]">
-        {PRACTICE_MODES.map((option) => (
+        {PRACTICE_MODES.filter(
+          (option) =>
+            option.value !== 'roleplay' ||
+            (rolePlayState?.campaignId === campaignId && rolePlayState.enabled),
+        ).map((option) => (
           <button
             key={option.value}
             type="button"
@@ -321,6 +355,8 @@ export function DesignPractice(): React.JSX.Element {
       </div>
 
       {mode === 'practice' && campaignId && <PracticeRunner campaignId={campaignId} />}
+
+      {mode === 'roleplay' && campaignId && <RolePlayRunner campaignId={campaignId} />}
 
       {mode === 'legacy' && (
         <div>

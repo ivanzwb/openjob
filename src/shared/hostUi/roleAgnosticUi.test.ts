@@ -102,9 +102,19 @@ describe('渲染进程只消费 descriptor', () => {
   it('不从内置插件里 import 岗位包，能力插件的 ID 常量除外', () => {
     const imports = /from\s+['"]([^'"]*plugins\/builtin\/[^'"]*)['"]/g;
 
+    // 按插件类型推导可放行的目录，而不是写死 sourceRepository 一个路径。
+    // 规则本身允许「任何能力插件的 ID 常量」，写死一个路径会让第二个能力插件
+    // 撞上一条与注释自相矛盾的断言——role-play 就是这么撞上的。
+    const allowedDirs = listBuiltInPlugins()
+      .filter((plugin) => plugin.type === 'capability')
+      .map((plugin) => plugin.id.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase()));
+    expect(allowedDirs.length).toBeGreaterThan(1);
+
     expect(
       offenders((text) =>
-        [...text.matchAll(imports)].some(([, path]) => !path.endsWith('/sourceRepository')),
+        [...text.matchAll(imports)].some(
+          ([, path]) => !allowedDirs.some((dir) => path.endsWith(`/${dir}`)),
+        ),
       ),
     ).toEqual([]);
   });
@@ -142,9 +152,15 @@ describe('渲染进程只消费 descriptor', () => {
 
   /** ID 漂移一次，门控就会静默失效成「永远不可用」，而界面上只是少了一个入口 */
   it('能力 ID 走共享常量，不在界面里重抄一遍字面量', () => {
-    const literal = `'${SOURCE_REPOSITORY_CAPABILITY_ID}'`;
+    // 逐个能力插件检查，新增插件自动纳入
+    for (const plugin of listBuiltInPlugins().filter((item) => item.type === 'capability')) {
+      expect(
+        offenders((text) => text.includes(`'${plugin.id}'`) || text.includes(`"${plugin.id}"`)),
+        `${plugin.id} 的 ID 被写成了字面量`,
+      ).toEqual([]);
+    }
 
-    expect(offenders((text) => text.includes(literal))).toEqual([]);
+    expect(offenders((text) => text.includes(`'${SOURCE_REPOSITORY_CAPABILITY_ID}'`))).toEqual([]);
     expect(
       offenders((text) => text.includes('SOURCE_REPOSITORY_CAPABILITY_ID')).length,
     ).toBeGreaterThan(0);

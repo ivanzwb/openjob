@@ -38,6 +38,28 @@ export {
   type InteractionTranscriptField,
 } from './schema';
 
+export type {
+  EndRolePlayRequest,
+  RolePlayFieldValues,
+  RolePlayPersonaFactView,
+  RolePlayRejectionView,
+  RolePlaySessionView,
+  RolePlayTurnView,
+  StartRolePlayRequest,
+  SubmitRolePlayTurnRequest,
+} from './sessionView';
+
+export {
+  INTERACTION_ACTIVE_STATUSES,
+  INTERACTION_SESSION_STATUSES,
+  INTERACTION_TERMINAL_LABELS,
+  INTERACTION_TERMINAL_STATUSES,
+  isInteractionTerminalStatus,
+  type InteractionActiveStatus,
+  type InteractionSessionStatus,
+  type InteractionTerminalStatus,
+} from './session';
+
 export {
   MICROPHONE_PERMISSION,
   buildInteractionHostView,

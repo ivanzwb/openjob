@@ -59,6 +59,12 @@ import type {
   InstalledPlugin,
 } from './plugins/clientView';
 import type { CampaignRuntimeDescriptor, ClientPlatform } from './plugins/types';
+import type {
+  EndRolePlayRequest,
+  RolePlaySessionView,
+  StartRolePlayRequest,
+  SubmitRolePlayTurnRequest,
+} from './plugins/interactions/sessionView';
 import type { EvidenceProposal, EvidenceScope } from './evidence/types';
 import type {
   PracticeAttempt,
@@ -1226,6 +1232,19 @@ export interface IpcInvokeMap {
   /** 单条练习记录的逐维度分数、量规锚点与原回答引用 */
   'practice:listScores': { req: { attemptId: string }; res: PracticeDimensionScore[] };
 
+  /**
+   * 宿主渲染交互：客户对话模拟。
+   *
+   * 三个通道都把角色状态快照带进带出，主进程不留会话状态。因此刷新渲染进程、
+   * 重启应用都不影响续练，也不需要为交互会话新增一张表。
+   */
+  'interaction:startRolePlay': { req: StartRolePlayRequest; res: RolePlaySessionView };
+  'interaction:submitRolePlayTurn': {
+    req: SubmitRolePlayTurnRequest;
+    res: RolePlaySessionView;
+  };
+  'interaction:endRolePlay': { req: EndRolePlayRequest; res: RolePlaySessionView };
+
   'repo:gitStatus': { req: void; res: GitStatus };
   'repo:list': { req: void; res: Repo[] };
   'repo:get': { req: { id: string }; res: Repo };
@@ -1465,6 +1484,9 @@ export const IPC_INVOKE_CHANNELS = [
   'practice:evaluate',
   'practice:listAttempts',
   'practice:listScores',
+  'interaction:startRolePlay',
+  'interaction:submitRolePlayTurn',
+  'interaction:endRolePlay',
   'repo:gitStatus',
   'repo:list',
   'repo:get',
