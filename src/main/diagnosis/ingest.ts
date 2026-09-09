@@ -11,8 +11,17 @@ import {
   rowToNode,
 } from '../campaign/repository';
 import { computePriority } from './priority';
-import { boostExamProbByNodeName, CREDIBILITY_WEIGHT } from './prior';
+import { boostExamProbByNodeName } from './prior';
 import { type ReportMatchResult } from '@shared/diagnosis/prompts';
+import {
+  BLIND_SPOT_DOMAIN_DEFAULTS,
+  BLIND_SPOT_DOMAIN_NAME,
+  BLIND_SPOT_POINT_DEFAULTS,
+  CREDIBILITY_WEIGHT,
+  boostedExamProb,
+  corroborate,
+  decideQuestionOutcome,
+} from '@shared/diagnosis/reportIngest';
 
 function ensureBlindSpotDomain(campaignId: string): string {
   const db = getDb();
@@ -22,7 +31,7 @@ function ensureBlindSpotDomain(campaignId: string): string {
     .where(
       and(
         eq(schema.knowledgeNode.campaignId, campaignId),
-        eq(schema.knowledgeNode.name, '真题盲区'),
+        eq(schema.knowledgeNode.name, BLIND_SPOT_DOMAIN_NAME),
       ),
     )
     .get();
@@ -34,12 +43,8 @@ function ensureBlindSpotDomain(campaignId: string): string {
     id,
     campaignId,
     parentId: null,
-    name: '真题盲区',
-    kind: 'domain' as const,
-    coverageType: 'landmine' as const,
-    examProb: 0.9,
-    difficulty: 4,
-    estMinutes: 20,
+    name: BLIND_SPOT_DOMAIN_NAME,
+    ...BLIND_SPOT_DOMAIN_DEFAULTS,
     examForms: ['concept' as const],
     mastery: 0,
     masterySource: 'self' as const,
@@ -62,11 +67,7 @@ function createBlindSpotNode(campaignId: string, parentId: string, name: string)
     campaignId,
     parentId,
     name: name.trim(),
-    kind: 'point' as const,
-    coverageType: 'landmine' as const,
-    examProb: 0.85,
-    difficulty: 4,
-    estMinutes: 25,
+    ...BLIND_SPOT_POINT_DEFAULTS,
     examForms: ['concept' as const],
     mastery: 0,
     masterySource: 'self' as const,
@@ -99,26 +100,19 @@ async function matchQuestions(
 }
 
 /**
- * 多源交叉验证：数一数这个考点被几个**独立**来源提到过。
+ * 取出提到过这个考点的所有面经，交给共享层做多源交叉验证。
  *
- * 面经质量分布极差，洗稿和层层转载很常见。单一来源提到的考点标为存疑、
- * 只给折扣权重；多个独立来源都提到才给足权重。自己复盘是一手经历，永远算实证。
+ * 判定规则（判重口径、折扣系数、复盘永远算实证）在 @shared/diagnosis/reportIngest，
+ * 手机端录复盘走的是同一份，这里只负责取数。
  */
-function corroboration(
-  nodeId: string,
-  sourceType: ReportSourceType,
-): { sources: number; factor: number; verified: boolean } {
-  if (sourceType === 'selfDebrief') {
-    return { sources: 1, factor: 1, verified: true };
-  }
-
+function corroborationFor(nodeId: string) {
   const db = getDb();
   const questions = db
     .select()
     .from(schema.interviewQuestion)
     .where(eq(schema.interviewQuestion.matchedNodeId, nodeId))
     .all();
-  if (questions.length === 0) return { sources: 0, factor: 0.5, verified: false };
+  if (questions.length === 0) return corroborate([]);
 
   const reports = db
     .select()
@@ -131,17 +125,7 @@ function corroboration(
     )
     .all();
 
-  // 同一篇原文被重复摄入不算多源，按原文前缀去重
-  const distinct = new Set(
-    reports.map((r) => `${r.sourceType}|${r.rawText.slice(0, 120)}`),
-  );
-  const sources = distinct.size;
-
-  if (reports.some((r) => r.sourceType === 'selfDebrief')) {
-    return { sources, factor: 1, verified: true };
-  }
-  if (sources >= 2) return { sources, factor: 1, verified: true };
-  return { sources, factor: 0.5, verified: false };
+  return corroborate(reports.map((r) => ({ sourceType: r.sourceType, rawText: r.rawText })));
 }
 
 function boostNode(nodeId: string, credibilityWeight: number, factor: number): void {
@@ -153,8 +137,7 @@ function boostNode(nodeId: string, credibilityWeight: number, factor: number): v
     .get();
   if (!row) return;
 
-  const boost = 0.08 * credibilityWeight * factor;
-  const nextProb = Math.min(1, row.examProb + boost);
+  const nextProb = boostedExamProb(row.examProb, credibilityWeight, factor);
   const node = rowToNode({ ...row, examProb: nextProb });
   const { score } = computePriority(node);
   db.update(schema.knowledgeNode)
@@ -223,12 +206,15 @@ export async function ingestInterviewReport(
 
   for (let i = 0; i < extracted.questions.length; i++) {
     const q = extracted.questions[i]!;
-    const match = matches.find((m) => m.questionIndex === i);
-    let matchedNode = match?.nodeName ? (nodeByName.get(match.nodeName) ?? null) : null;
+    const outcome = decideQuestionOutcome(
+      matches.find((m) => m.questionIndex === i),
+      nodeByName,
+    );
+    let matchedNode = outcome.kind === 'matched' ? (nodeByName.get(outcome.nodeName) ?? null) : null;
 
-    if (!matchedNode && match?.suggestedName) {
+    if (outcome.kind === 'newBlindSpot') {
       const parentId = ensureBlindSpotDomain(campaignId);
-      const newId = createBlindSpotNode(campaignId, parentId, match.suggestedName);
+      const newId = createBlindSpotNode(campaignId, parentId, outcome.suggestedName);
       matchedNode =
         db.select().from(schema.knowledgeNode).where(eq(schema.knowledgeNode.id, newId)).get() ??
         null;
@@ -248,7 +234,7 @@ export async function ingestInterviewReport(
         questionText: q,
         roundNo: null,
         matchedNodeId: matchedNode?.id ?? null,
-        matchConfidence: match?.confidence ?? null,
+        matchConfidence: outcome.confidence,
         isBlindSpot,
         createdAt: now,
       })
@@ -256,7 +242,7 @@ export async function ingestInterviewReport(
 
     if (matchedNode) {
       // 先落库本题再算交叉验证，这样当前这一篇也计入来源计数
-      const { factor, verified } = corroboration(matchedNode.id, sourceType);
+      const { factor, verified } = corroborationFor(matchedNode.id);
       if (verified) corroboratedCount++;
       else unverifiedCount++;
 

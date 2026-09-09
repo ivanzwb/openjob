@@ -1,19 +1,8 @@
 import { eq, sql } from 'drizzle-orm';
+import { boostedExamProb } from '@shared/diagnosis/reportIngest';
 import { getDb, schema } from '../db';
 import { rowToNode } from '../campaign/repository';
 import { computePriority } from './priority';
-
-/** 各面经来源的可信度权重，影响考察概率修正幅度 */
-export const CREDIBILITY_WEIGHT: Record<
-  (typeof schema.interviewReport.$inferSelect)['sourceType'],
-  number
-> = {
-  selfDebrief: 1,
-  pasted: 0.8,
-  web: 0.5,
-};
-
-const BASE_PROB_BOOST = 0.08;
 
 /**
  * 按节点名跨 Campaign 提升考察概率。
@@ -25,7 +14,6 @@ export function boostExamProbByNodeName(
   opts?: { excludeCampaignId?: string; onlyCompany?: string },
 ): number {
   const db = getDb();
-  const boost = BASE_PROB_BOOST * credibilityWeight;
   const normalized = nodeName.trim().toLowerCase();
   if (!normalized) return 0;
 
@@ -48,7 +36,7 @@ export function boostExamProbByNodeName(
   let updated = 0;
   for (const row of rows) {
     if (row.name.trim().toLowerCase() !== normalized) continue;
-    const nextProb = Math.min(1, row.examProb + boost);
+    const nextProb = boostedExamProb(row.examProb, credibilityWeight);
     const node = rowToNode({ ...row, examProb: nextProb });
     const { score } = computePriority(node);
     db.update(schema.knowledgeNode)
@@ -102,8 +90,7 @@ export function applyHistoricalPrior(campaignId: string, company: string): numbe
   for (const row of campaignNodes) {
     const weight = nodeNames.get(row.name);
     if (!weight) continue;
-    const boost = BASE_PROB_BOOST * weight;
-    const nextProb = Math.min(1, row.examProb + boost);
+    const nextProb = boostedExamProb(row.examProb, weight);
     if (nextProb === row.examProb) continue;
     const node = rowToNode({ ...row, examProb: nextProb });
     const { score } = computePriority(node);
