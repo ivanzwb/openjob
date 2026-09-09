@@ -6,8 +6,7 @@
  * 不重新展开依赖，也不写回 Campaign binding。
  */
 import type { PluginType, RuntimeAvailability } from '../enums';
-import { softwareEngineeringRolePack } from './builtin/softwareEngineering';
-import { sourceRepositoryCapabilityPlugin } from './builtin/sourceRepository';
+import { BUILT_IN_PLUGIN_MANIFESTS } from './builtin';
 import type { PluginPermission } from './permissions';
 import type {
   CampaignRuntimeDescriptor,
@@ -135,10 +134,7 @@ export function toInstalledPlugin(manifest: PluginManifest): InstalledPlugin {
 }
 
 /** Phase 0 的插件全部随应用发布，安装清单即内置清单。 */
-export const BUILT_IN_PLUGIN_MANIFESTS: readonly PluginManifest[] = [
-  softwareEngineeringRolePack.manifest,
-  sourceRepositoryCapabilityPlugin.manifest,
-];
+export { BUILT_IN_PLUGIN_MANIFESTS };
 
 export function listBuiltInPlugins(): InstalledPlugin[] {
   return BUILT_IN_PLUGIN_MANIFESTS.map(toInstalledPlugin).sort(

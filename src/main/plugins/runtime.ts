@@ -14,8 +14,10 @@ import type {
   ClientCapabilityViewRequest,
   SetRoleProfileInput,
 } from '@shared/ipc';
-import { softwareEngineeringRolePack } from '@shared/plugins/builtin/softwareEngineering';
-import { sourceRepositoryCapabilityPlugin } from '@shared/plugins/builtin/sourceRepository';
+import {
+  BUILT_IN_CAPABILITY_PLUGINS,
+  BUILT_IN_ROLE_PACKS,
+} from '@shared/plugins/builtin';
 import {
   buildClientCapabilityView,
   listBuiltInPlugins,
@@ -64,8 +66,8 @@ interface RoleProfileRow {
 
 function createRegistry(): BuiltInPluginRegistry {
   const registry = new BuiltInPluginRegistry();
-  registry.register(softwareEngineeringRolePack);
-  registry.registerCapability(sourceRepositoryCapabilityPlugin);
+  BUILT_IN_ROLE_PACKS.forEach((pack) => registry.register(pack));
+  BUILT_IN_CAPABILITY_PLUGINS.forEach((plugin) => registry.registerCapability(plugin));
   return registry;
 }
 

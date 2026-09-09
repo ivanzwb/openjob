@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  BUILT_IN_PLUGIN_MANIFESTS,
   buildClientCapabilityView,
   canParseArtifact,
   capabilityMode,
@@ -60,10 +61,19 @@ function deepFreeze<T>(value: T): T {
 
 describe('本机安装清单', () => {
   it('由内置 Manifest 投影，按 ID 稳定排序', () => {
-    expect(listBuiltInPlugins().map((plugin) => `${plugin.id}@${plugin.version}`)).toEqual([
-      `${ROLE_PACK_ID}@${ROLE_PACK_VERSION}`,
-      `${REPO_ID}@${REPO_VERSION}`,
-    ]);
+    const listed = listBuiltInPlugins();
+    const ids = listed.map((plugin) => plugin.id);
+
+    // 断言「投影 + 按 ID 排序」这两条性质，而不是逐个枚举：
+    // 每新增一个内置插件都要回来改一次枚举，这条用例迟早被当成噪音顺手改掉
+    expect(ids).toEqual([...ids].sort());
+    expect(listed).toHaveLength(BUILT_IN_PLUGIN_MANIFESTS.length);
+    expect(listed.map((plugin) => `${plugin.id}@${plugin.version}`)).toEqual(
+      expect.arrayContaining([
+        `${ROLE_PACK_ID}@${ROLE_PACK_VERSION}`,
+        `${REPO_ID}@${REPO_VERSION}`,
+      ]),
+    );
   });
 
   it('岗位包不携带运行能力声明，能力插件必须携带', () => {

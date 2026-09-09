@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { listBuiltInPlugins } from '../plugins/clientView';
+import { PRODUCT_MANAGER_ROLE_PACK_ID } from '../plugins/builtin/productManager';
 import { SOFTWARE_ENGINEERING_ROLE_PACK_ID } from '../plugins/builtin/softwareEngineering';
 import { SOURCE_REPOSITORY_CAPABILITY_ID } from '../plugins/builtin/sourceRepository';
 import { buildCapabilityView, buildDescriptor, buildRuntimeView, CAMPAIGN_ID } from './__fixtures__/runtime';
@@ -22,6 +23,7 @@ const rolePackOptions = listPluginOptions(installed, 'role-pack');
 describe('listPluginOptions', () => {
   it('按类型筛出可选插件，界面不需要认识任何一个具体岗位包', () => {
     expect(rolePackOptions.map((option) => option.id)).toEqual([
+      PRODUCT_MANAGER_ROLE_PACK_ID,
       SOFTWARE_ENGINEERING_ROLE_PACK_ID,
     ]);
     expect(listPluginOptions(installed, 'capability').map((option) => option.id)).toEqual([
@@ -47,11 +49,13 @@ describe('draftFromRuntime', () => {
 
   /** 留空会让确认按钮永远点不动，用户也就没有办法把 descriptor 建起来 */
   it('没有 descriptor 时退回本机第一个岗位包，而不是留空', () => {
+    // 断言「第一个」而不是某个具体岗位包：新增内置岗位包不该让这条用例需要改写
     expect(draftFromRuntime(null, rolePackOptions)).toMatchObject({
-      rolePackId: SOFTWARE_ENGINEERING_ROLE_PACK_ID,
+      rolePackId: rolePackOptions[0]?.id,
       level: '',
       capabilityIds: [],
     });
+    expect(rolePackOptions.length).toBeGreaterThan(1);
   });
 
   it('一个岗位包都没装时给空值，交给界面显示为不可提交', () => {

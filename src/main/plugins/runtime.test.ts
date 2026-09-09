@@ -176,11 +176,12 @@ describe('setCampaignRoleProfile', () => {
       rolePackId: ROLE_PACK_ID,
     });
 
+    // 刻意用一个不会被实现的 ID：换成计划中的岗位包，等它发布这条用例就会静默失效
     expect(() =>
       setCampaignRoleProfile(raw, {
         campaignId: 'c1',
         roleFamily: 'product',
-        rolePackId: 'product-manager',
+        rolePackId: 'not-installed-role-pack',
       }),
     ).toThrow(/plugin-not-found/);
 

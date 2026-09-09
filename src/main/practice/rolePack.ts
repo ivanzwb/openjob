@@ -10,15 +10,10 @@
 import type { Database } from 'better-sqlite3';
 import type { ExamForm } from '@shared/enums';
 import { PracticeError } from '@shared/practice';
-import {
-  LEGACY_EXAM_FORM_TO_FORMAT_ID,
-  softwareEngineeringRolePack,
-} from '@shared/plugins/builtin/softwareEngineering';
+import { BUILT_IN_ROLE_PACKS } from '@shared/plugins/builtin';
+import { LEGACY_EXAM_FORM_TO_FORMAT_ID } from '@shared/plugins/builtin/softwareEngineering';
 import type { CampaignRuntimeDescriptor, RolePack } from '@shared/plugins/types';
 import { getCampaignRuntime } from '../plugins/runtime';
-
-/** Phase 0 的岗位包随应用发布，清单即内置清单。 */
-const BUILT_IN_ROLE_PACKS: readonly RolePack[] = [softwareEngineeringRolePack];
 
 /**
  * formatId → 旧 ExamForm 的反向映射。
