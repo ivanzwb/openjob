@@ -40,8 +40,9 @@ async function loadModules() {
     const builtin = await server.ssrLoadModule('src/shared/plugins/builtin/index.ts');
     const rolePacks = await server.ssrLoadModule('src/shared/plugins/rolePacks/index.ts');
     const replay = await server.ssrLoadModule('src/shared/plugins/package/replay.ts');
+    const transfer = await server.ssrLoadModule('src/shared/plugins/package/rolePackTransfer.ts');
     const bundle = await server.ssrLoadModule('src/main/plugins/bundle.ts');
-    return { builtin, rolePacks, replay, bundle };
+    return { builtin, rolePacks, replay, transfer, bundle };
   } finally {
     await server.close();
   }
@@ -92,7 +93,7 @@ function resolveSigningKey() {
 }
 
 async function main() {
-  const { rolePacks, bundle } = await loadModules();
+  const { rolePacks, transfer, bundle } = await loadModules();
   const key = resolveSigningKey();
 
   /**
@@ -102,16 +103,11 @@ async function main() {
    * （`src/main/repo/tools.ts` 等），声明与实现必须同一版本发布。真打出来也装不上——
    * `builtInPluginKeys()` 把内置的 id@version 占住了，安装会以 reserved-id 被拒。
    */
-  const packages = rolePacks.DISTRIBUTED_ROLE_PACKS.map((pack) => {
-    const { manifest, ...rest } = pack;
-    return {
-      manifest,
-      files: {
-        'manifest.json': JSON.stringify(manifest),
-        'pack.json': JSON.stringify(rest),
-      },
-    };
-  });
+  // 拆分走 rolePackTransfer：手机端收包也用这一处，「岗位包怎么变成包内文件」只有一份定义
+  const packages = rolePacks.DISTRIBUTED_ROLE_PACKS.map((pack) => ({
+    manifest: pack.manifest,
+    files: transfer.rolePackToPackageFiles(pack),
+  }));
 
   rmSync(OUT_DIR, { recursive: true, force: true });
   mkdirSync(OUT_DIR, { recursive: true });

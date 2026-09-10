@@ -92,6 +92,18 @@ import 它；`capabilityIsolation.test.ts` 里的静态关卡盯着这条边界�
 - `findRolePack` 改成查已安装并优雅降级，不再抛 `PracticeError`。
 - 客户端能力视图不再默认填桌面内置清单，必须显式传入本机安装集合。
 
+手机端不安装插件包，这条是设计而不是缺口：它验不了 Ed25519（expo-crypto 只有摘要），
+而能力插件的工具实现全在桌面主进程里，装了也没有可执行的东西。它拿岗位包的唯一途径是向
+已配对的桌面端要一份数据（`plugin:getRolePack`），那台桌面在安装时已经验过签名，LAN 通道
+自身带 HMAC 与版本闸门。所以信任链是「相信自己配对的那台桌面」，不是「相信这份 JSON」，
+收下之前仍然按 P01 的包格式校验一遍结构，并核对 id@version 与 descriptor 固定的那一对相符
+（`shared/plugins/package/rolePackTransfer.ts`）。取回的数据落在设备本地表 `role_pack_cache`，
+不进同步表——和 `repo.local_path` 同类，它是设备属性。
+
+「外置能力一律 view-only」是 `clientView` 里的一条硬上限，不看包自己声明的 `runtime.mobile`：
+那是包作者填的一句话，信了它，手机上就会出现一个按下去什么都不会发生的执行入口，排程还会把
+它算成本机能做的事。岗位包不受这条限制，它是纯数据。
+
 ## 8. 会被改动的关卡测试
 
 这些测试以「内置 3 岗位 + 3 能力」这个闭集合为前提，外置后需要重写判据：

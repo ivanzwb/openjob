@@ -61,6 +61,39 @@ describe('宿主渲染决策', () => {
     expect(view.requiredResultFieldIds).toEqual([]);
   });
 
+  /**
+   * `availability` 是包作者自己填的。外置能力把自己写成手机端 full，界面就会在手机上渲染
+   * 出一个交完没有下一步的表单——工具实现全在桌面宿主里。
+   */
+  it('外置能力声明成手机端 full 也只读，桌面端不受影响', () => {
+    const interaction = bothPlatforms('full');
+
+    expect(
+      buildInteractionHostView(input({ interaction, platform: 'mobile', externalPlugin: true })),
+    ).toMatchObject({
+      renderable: false,
+      mode: 'view-only',
+      reason: 'external-capability-desktop-only',
+      fields: [],
+    });
+    expect(
+      buildInteractionHostView(input({ interaction, platform: 'desktop', externalPlugin: true }))
+        .renderable,
+    ).toBe(true);
+  });
+
+  it('外置能力声明成 unsupported 时保留 unsupported，不被上限抬成只读', () => {
+    expect(
+      buildInteractionHostView(
+        input({
+          interaction: bothPlatforms('unsupported'),
+          platform: 'mobile',
+          externalPlugin: true,
+        }),
+      ).reason,
+    ).toBe('platform-unsupported');
+  });
+
   it('降级判断按严重程度排序，先命中的即为最终原因', () => {
     // 同时满足「未启用」「未安装」时，报未启用
     expect(

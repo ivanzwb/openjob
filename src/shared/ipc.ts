@@ -59,7 +59,7 @@ import type {
   InstalledPlugin,
 } from './plugins/clientView';
 import type { PluginType } from './enums';
-import type { CampaignRuntimeDescriptor, ClientPlatform } from './plugins/types';
+import type { CampaignRuntimeDescriptor, ClientPlatform, RolePack } from './plugins/types';
 import type {
   EndRolePlayRequest,
   RolePlaySessionView,
@@ -1146,6 +1146,14 @@ export interface IpcInvokeMap {
     res: PluginInstallResult | null;
   };
   'plugin:uninstall': { req: { id: string; version: string }; res: { removed: boolean } };
+  /**
+   * 按精确版本取一份已安装的岗位包数据，没装返回 null。
+   *
+   * 存在的理由是手机端：它不安装插件包，岗位包只能从已配对的桌面端要一份过来
+   * （见 `shared/plugins/package/rolePackTransfer.ts`）。岗位包是纯数据，传的东西
+   * 不会在任何一端执行。
+   */
+  'plugin:getRolePack': { req: { id: string; version: string }; res: RolePack | null };
 
   'campaign:list': { req: void; res: CampaignSummary[] };
   'campaign:getOverview': { req: void; res: CampaignOverview };
@@ -1445,6 +1453,7 @@ export const IPC_INVOKE_CHANNELS = [
   'plugin:inventory',
   'plugin:install',
   'plugin:uninstall',
+  'plugin:getRolePack',
   'campaign:list',
   'campaign:getOverview',
   'campaign:compare',

@@ -135,6 +135,12 @@ const PLANNER_CONTRIBUTIONS: readonly PlannerContribution[] = [readCodeContribut
  *
  * 平台可用性只在 clientView 一处算，排程不自己读 Manifest——两处各判一次时，
  * 「本机能做什么」迟早会漂移。
+ *
+ * `installed` 只给内置清单，不是偷懒：排程只读下面那一行 capability 状态，而贡献者
+ * 声明的能力一律是随应用发布的内置能力（工具实现在宿主里，见 `PLANNER_CONTRIBUTIONS`）。
+ * 岗位包装没装在这里不影响判定——上面那行 rolePackIds 已经按 descriptor 判过是不是该
+ * 排这个任务了。要是哪天有人在这里读 `view.rolePack` 或 `view.degraded`，得先把本机
+ * 安装集合真的传进来：那两个字段在这份输入下永远是「岗位包没装」。
  */
 function capabilityStatus(
   runtime: CampaignRuntimeDescriptor,

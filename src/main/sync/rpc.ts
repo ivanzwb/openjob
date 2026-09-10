@@ -14,6 +14,7 @@ import {
 } from '../campaign/repository';
 import { getRawDb } from '../db';
 import {
+  findInstalledRolePack,
   getCampaignRuntime,
   getClientCapabilityView,
   listInstalledPlugins,
@@ -108,6 +109,11 @@ type RpcHandler = (payload: unknown) => Promise<unknown> | unknown;
  */
 const RPC_HANDLERS: Partial<Record<IpcInvokeChannel, RpcHandler>> = {
   'plugin:listInstalled': () => listInstalledPlugins(),
+  // 手机端不装插件包，岗位包只能从这台桌面要一份数据回去（见 rolePackTransfer.ts）
+  'plugin:getRolePack': (p) => {
+    const { id, version } = p as IpcReq<'plugin:getRolePack'>;
+    return findInstalledRolePack(id, version);
+  },
   // 手机端只取 descriptor 和本机视图，插件依赖解析始终留在桌面 resolver 一处
   'campaign:getRuntimeDescriptor': (p) =>
     getCampaignRuntime(getRawDb(), (p as IpcReq<'campaign:getRuntimeDescriptor'>).campaignId),

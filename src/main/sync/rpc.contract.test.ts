@@ -15,6 +15,8 @@ const ROOT = join(__dirname, '..', '..', '..');
 /** T08 交付的运行时通道，手机端必须能调用 */
 const RUNTIME_CHANNELS = [
   'plugin:listInstalled',
+  // 岗位包移出基础包之后，手机端只能从配对的桌面取数据，漏登记这条它一个岗位包都拿不到
+  'plugin:getRolePack',
   'campaign:getRuntimeDescriptor',
   'campaign:setRoleProfile',
   'campaign:getClientCapabilityView',

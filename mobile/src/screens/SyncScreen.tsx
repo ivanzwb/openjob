@@ -7,12 +7,18 @@ import { backupReasonLabel } from '@shared/sync';
 import {
   createManualBackup,
   deleteBackupFile,
+  getRawDb,
   listBackups,
   pairDesktop,
   restoreFromBackup,
   unpairDesktop,
   type BackupInfo,
 } from '../db';
+import {
+  fetchMissingRolePacks,
+  rolePackDelivery,
+  type RolePackDeliveryRow,
+} from '../data/rolePackLocal';
 import { useApp, type VersionMismatch } from '../context/AppContext';
 import { SyncVersionMismatchError } from '../sync/client';
 import { runTask } from '../context/RemoteTaskContext';
@@ -386,9 +392,104 @@ export function SyncScreen(): React.JSX.Element {
         </View>
       )}
 
+      {peerLabel && <RolePackCard theme={theme} syncStatus={syncStatus} />}
+
       {/* 更新与配对无关，放在最后一张卡：这里是手机端唯一的设置类页面 */}
       <AppUpdateCard />
     </ScrollView>
+  );
+}
+
+/**
+ * 岗位包在本机的下发状态。
+ *
+ * 手机端不安装插件包，所以这里没有「安装」按钮，只有「从桌面取回」：桌面端装了哪几个包
+ * 是那台机器的事，手机拿的是它已经验过签名的那份数据（见 data/rolePackLocal.ts）。
+ * 每轮同步会自动补，这个按钮是给「桌面刚装好，不想等下一轮」用的。
+ */
+function RolePackCard({
+  theme,
+  syncStatus,
+}: {
+  theme: ReturnType<typeof useTheme>;
+  syncStatus: string;
+}): React.JSX.Element | null {
+  // 同步状态一变就重读，和上面的快照列表同一套做法
+  const [readAt, setReadAt] = useState<string | null>(null);
+  const [rows, setRows] = useState<RolePackDeliveryRow[]>([]);
+  if (readAt !== syncStatus) {
+    setReadAt(syncStatus);
+    setRows(rolePackDelivery(getRawDb()));
+  }
+
+  if (rows.length === 0) return null;
+  const missing = rows.filter((row) => !row.present);
+
+  const fetchNow = (): void => {
+    void runTask('rolePack:fetch', '取回岗位包', async () => {
+      const outcome = await fetchMissingRolePacks(getRawDb());
+      if (outcome.failed.length > 0) {
+        throw new Error(outcome.failed.map((item) => `${item.id}：${item.detail}`).join('\n'));
+      }
+      return `已取回 ${outcome.fetched.length} 个岗位包`;
+    })
+      .then(() => setRows(rolePackDelivery(getRawDb())))
+      .catch(() => setRows(rolePackDelivery(getRawDb())));
+  };
+
+  return (
+    <View style={{ gap: 8 }}>
+      <Text style={{ color: theme.text, fontSize: 12, fontWeight: '600' }}>岗位包</Text>
+      <Text style={{ color: theme.muted, fontSize: 10, lineHeight: 15 }}>
+        岗位包决定面试考什么、怎么评分，由桌面端安装，数据随同步取到手机上。
+        {'\n'}能力插件（源码、角色扮演等）一律只在桌面端执行，手机端只能查看结果。
+      </Text>
+      {rows.map((row) => (
+        <View
+          key={`${row.id}@${row.version}`}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 8,
+            borderWidth: 1,
+            borderColor: theme.border,
+            borderRadius: 8,
+            padding: 10,
+            backgroundColor: theme.surface,
+          }}
+        >
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={{ color: theme.text, fontSize: 12 }} numberOfLines={1}>
+              {row.displayName ?? row.id}
+            </Text>
+            <Text style={{ color: theme.muted, fontSize: 10, marginTop: 2 }}>
+              {row.version} · {row.present ? '数据已在本机' : '待从桌面取回'}
+            </Text>
+          </View>
+          <Ionicons
+            name={row.present ? 'checkmark-circle' : 'cloud-download-outline'}
+            size={16}
+            color={row.present ? theme.accent : theme.muted}
+          />
+        </View>
+      ))}
+      {missing.length > 0 && (
+        <Pressable
+          onPress={fetchNow}
+          style={{
+            borderWidth: 1,
+            borderColor: theme.border,
+            borderRadius: 6,
+            paddingVertical: 8,
+            alignItems: 'center',
+          }}
+        >
+          <Text style={{ color: theme.accent, fontSize: 11 }}>
+            立即取回（{missing.length}）
+          </Text>
+        </Pressable>
+      )}
+    </View>
   );
 }
 

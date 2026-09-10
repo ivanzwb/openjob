@@ -52,6 +52,7 @@ import {
 import { generateDesignCase, submitDesignAnswer, updateDesignCaseAnswers, generateRecommendedAnswer, elaborateDesignAnswer } from '../design';
 import { dbHealth, getRawDb } from '../db';
 import {
+  findInstalledRolePack,
   getCampaignRuntime,
   getClientCapabilityView,
   listInstalledPlugins,
@@ -191,6 +192,7 @@ export function registerIpcHandlers(): void {
 
   handle('plugin:listInstalled', () => listInstalledPlugins());
   handle('plugin:inventory', () => pluginInventoryView());
+  handle('plugin:getRolePack', ({ id, version }) => findInstalledRolePack(id, version));
   handle('plugin:install', async ({ trustUnknownSigner, overwrite }) => {
     // 弹框放在主进程：渲染层不传路径，也就没有「渲染层指定任意文件让主进程去读」这条路
     const { canceled, filePaths } = await dialog.showOpenDialog({

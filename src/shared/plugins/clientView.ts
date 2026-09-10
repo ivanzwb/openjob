@@ -23,6 +23,8 @@ export type ClientDegradationReason =
   | 'plugin-not-installed'
   | 'pinned-version-unavailable'
   | 'platform-view-only'
+  /** 外置能力插件在手机端一律只读，不看它自己声明成什么。 */
+  | 'external-capability-desktop-only'
   | 'platform-unsupported'
   | 'artifact-schema-unknown'
   | 'interaction-schema-unknown';
@@ -96,6 +98,7 @@ const DEGRADATION_DETAILS: Record<ClientDegradationReason, string> = {
   'plugin-not-installed': '本机未安装该插件，只能查看历史结果',
   'pinned-version-unavailable': '本机没有 Campaign 固定的插件版本，只能查看历史结果',
   'platform-view-only': '当前设备只支持查看，需在桌面端执行',
+  'external-capability-desktop-only': '单独安装的能力插件只能在桌面端执行，手机端只能查看',
   'platform-unsupported': '当前设备不支持该能力',
   'artifact-schema-unknown': '本机不认识该 artifact 的 schema 版本，只保留同步与查看',
   'interaction-schema-unknown': '本机不认识该交互的 schema 版本，只保留同步与查看',
@@ -165,6 +168,46 @@ function degradedStatus(
   return { id, version, installed, mode, reason, detail };
 }
 
+/**
+ * 随应用发布的 `id@version`。
+ *
+ * 外置包不允许占用这些键（见 `main/plugins/inventory.ts` 的 reservedKeys），所以
+ * 「不在这个集合里」就等价于「这个包是用户自己装进来的」。
+ */
+const BUILT_IN_KEYS = new Set(
+  BUILT_IN_PLUGIN_MANIFESTS.map((manifest) => exactKey(manifest.id, manifest.version)),
+);
+
+/**
+ * 本机对某个已安装插件的运行能力，外加降级原因。
+ *
+ * 手机端对外置**能力插件**有一条硬上限：不管它自己声明成什么，最高只到 view-only。
+ * `runtime.mobile` 是包作者填的一句声明，而能力插件贡献的只是声明，工具的真实实现全在
+ * 宿主里（见 `package/contract.ts` 开头）——手机端一行插件代码都不装载，也没有那些工具。
+ * 信了这句声明，界面就会在手机上摆出一个按下去什么都不会发生的执行入口，排程还会把它
+ * 算进「本机能做的事」。
+ *
+ * 岗位包不在此列：它是纯数据，手机端拿到就能用，这正是 P10 要把它下发过去的理由。
+ */
+function localAvailability(
+  plugin: InstalledPlugin,
+  platform: ClientPlatform,
+): { mode: ClientCapabilityMode; reason: ClientDegradationReason | null } {
+  const declared = plugin.runtime?.[platform] ?? 'full';
+  const externalCapability =
+    plugin.type === 'capability' && !BUILT_IN_KEYS.has(exactKey(plugin.id, plugin.version));
+
+  if (declared === 'full') {
+    return platform === 'mobile' && externalCapability
+      ? { mode: 'view-only', reason: 'external-capability-desktop-only' }
+      : { mode: 'full', reason: null };
+  }
+  return {
+    mode: declared,
+    reason: declared === 'view-only' ? 'platform-view-only' : 'platform-unsupported',
+  };
+}
+
 function pluginStatus(
   id: string,
   version: string | null,
@@ -196,17 +239,11 @@ function pluginStatus(
     );
   }
 
-  const availability = exact.runtime?.[platform] ?? 'full';
-  if (availability === 'full') {
+  const local = localAvailability(exact, platform);
+  if (local.reason === null) {
     return { id, version, installed: true, mode: 'full', reason: null, detail: null };
   }
-  return degradedStatus(
-    id,
-    version,
-    true,
-    availability,
-    availability === 'view-only' ? 'platform-view-only' : 'platform-unsupported',
-  );
+  return degradedStatus(id, version, true, local.mode, local.reason);
 }
 
 function artifactView(

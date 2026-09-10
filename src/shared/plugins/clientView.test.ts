@@ -129,6 +129,61 @@ describe('两端共用同一份 descriptor', () => {
     expect(desktop.degraded).toBe(false);
   });
 
+  /**
+   * `runtime.mobile` 是包作者自己填的一句声明，而工具实现全在桌面宿主里。信了它，
+   * 手机上就会出现一个按下去什么都不会发生的执行入口。PIVOT_LAB 正好声明了
+   * `mobile: 'full'`，拿它当反例。
+   */
+  it('外置能力插件在手机端一律只读，不看它自己声明成什么', () => {
+    const withPivotLab = descriptor({
+      capabilities: [{ id: PIVOT_LAB.id, version: PIVOT_LAB.version, enabled: true }],
+    });
+    const input = { descriptor: withPivotLab, installed: [...installedHere(), PIVOT_LAB] };
+
+    expect(PIVOT_LAB.runtime?.mobile).toBe('full');
+    expect(capabilityMode(buildClientCapabilityView({ ...input, platform: 'desktop' }), PIVOT_LAB.id)).toBe(
+      'full',
+    );
+
+    const mobile = buildClientCapabilityView({ ...input, platform: 'mobile' });
+    expect(mobile.capabilities[0]).toMatchObject({
+      installed: true,
+      mode: 'view-only',
+      reason: 'external-capability-desktop-only',
+    });
+    expect(mobile.readOnlyCapabilityIds).toEqual([PIVOT_LAB.id]);
+  });
+
+  it('外置能力声明成 unsupported 时保留 unsupported，不被上限抬成只读', () => {
+    const blocked: InstalledPlugin = {
+      ...PIVOT_LAB,
+      runtime: { desktop: 'full', mobile: 'unsupported' },
+    };
+    const view = buildClientCapabilityView({
+      descriptor: descriptor({
+        capabilities: [{ id: blocked.id, version: blocked.version, enabled: true }],
+      }),
+      platform: 'mobile',
+      installed: [...installedHere(), blocked],
+    });
+
+    expect(view.capabilities[0]).toMatchObject({
+      mode: 'unsupported',
+      reason: 'platform-unsupported',
+    });
+  });
+
+  /** 岗位包是纯数据，手机端拿到就能用——这正是 P10 要把它下发过去的理由 */
+  it('外置岗位包在手机端照样是 full，只读上限只管能力插件', () => {
+    const view = buildClientCapabilityView({
+      descriptor: descriptor(),
+      platform: 'mobile',
+      installed: installedHere(),
+    });
+
+    expect(view.rolePack).toMatchObject({ installed: true, mode: 'full', reason: null });
+  });
+
   it('descriptor 中不存在的能力一律按不可用处理，不按 ID 猜测', () => {
     const view = buildClientCapabilityView({
       descriptor: descriptor(),

@@ -86,6 +86,13 @@ export interface InteractionHostViewInput {
   capabilityEnabled: boolean;
   /** 本机是否安装了提供该交互的插件。 */
   pluginInstalled: boolean;
+  /**
+   * 提供该交互的插件是不是用户单独装的外置能力插件。
+   *
+   * 与 `clientView` 里那条上限是同一件事：外置能力在手机端最高只到 view-only，不看它在
+   * `availability` 里把自己写成什么。默认 false——随应用发布的能力按自己的声明判定。
+   */
+  externalPlugin?: boolean;
   /** 本机安装版本声明的该交互类型版本；不认识为 null。 */
   knownSchemaVersion: number | null;
   /** 本机已授予的权限。 */
@@ -97,6 +104,7 @@ const INTERACTION_DEGRADATION_DETAILS: Record<ClientDegradationReason, string> =
   'plugin-not-installed': '本机未安装该交互所属插件，只能查看历史结果',
   'pinned-version-unavailable': '本机没有 Campaign 固定的插件版本，只能查看历史结果',
   'platform-view-only': '当前设备只支持查看该交互，需在桌面端进行',
+  'external-capability-desktop-only': '单独安装的能力插件只能在桌面端进行该交互',
   'platform-unsupported': '当前设备不支持该交互',
   'artifact-schema-unknown': '本机不认识该 artifact 的 schema 版本，只保留同步与查看',
   'interaction-schema-unknown': '本机不认识该交互的 schema 版本，只保留同步与查看',
@@ -161,6 +169,11 @@ export function buildInteractionHostView(input: InteractionHostViewInput): Inter
   const availability = interaction.availability[platform];
   if (availability === 'unsupported') return degraded(input, 'unsupported', 'platform-unsupported');
   if (availability === 'view-only') return degraded(input, 'view-only', 'platform-view-only');
+  // 声明成 full 的外置能力在手机端照样只读。手机不加载插件代码，工具实现也全在桌面宿主里，
+  // 让它渲染出来等于给一个交完就没有下一步的表单。
+  if (platform === 'mobile' && input.externalPlugin === true) {
+    return degraded(input, 'view-only', 'external-capability-desktop-only');
+  }
 
   // 对端可能来自更新的版本：声明版本高于本机认识的版本就不渲染。
   if (input.knownSchemaVersion === null || interaction.schemaVersion > input.knownSchemaVersion) {
