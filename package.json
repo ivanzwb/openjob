@@ -13,6 +13,8 @@
     "icons": "node scripts/generate-icons.mjs",
     "smoke:grammars": "node scripts/sync-grammars.mjs && node scripts/smoke-treesitter.mjs",
     "smoke:app": "node scripts/smoke-app.mjs",
+    "pack:plugins": "node scripts/pack-plugins.mjs",
+    "verify:plugins": "node scripts/pack-plugins.mjs && node scripts/verify-plugin-bundles.mjs dist-plugins",
     "dev": "node scripts/generate-icons.mjs && electron-vite dev",
     "build": "npm run typecheck && electron-vite build",
     "prepackage": "npm run sync:grammars && npm run icons && node scripts/ensure-nsis-cache.mjs",

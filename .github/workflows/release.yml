@@ -40,6 +40,54 @@ jobs:
           gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "${TAG#v}" --notes "" \
             || gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
 
+  # 插件包与基础包分开发布：插件是纯数据，不需要 electron-builder，也不该跟着三个平台各打一遍。
+  # 单独一个 job 还让「插件包坏了」和「安装包坏了」互不牵连。
+  package-plugins:
+    name: Package plugins
+    needs: prepare-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Pack and sign plugin bundles
+        env:
+          # 没配这个 secret 时脚本用临时密钥并警告：产物能装，但用户要手动确认来源
+          OPENJOB_PLUGIN_PRIVATE_KEY: ${{ secrets.OPENJOB_PLUGIN_PRIVATE_KEY }}
+        run: node scripts/pack-plugins.mjs
+
+      # 产出的包若验签不过，用户看到的会是「内容与签名不符」——一条指向「有人改了包」的
+      # 线索，而真实原因是发布流程自己出的错。在这里拦住。
+      - name: Verify bundles are installable
+        run: node scripts/verify-plugin-bundles.mjs dist-plugins
+
+      - name: Upload plugin bundles
+        uses: actions/upload-artifact@v4
+        with:
+          name: openjob-plugins
+          path: dist-plugins/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Attach plugin bundles to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: gh release upload "$TAG" dist-plugins/* --repo "$GITHUB_REPOSITORY" --clobber
+
   package:
     name: Package (${{ matrix.os }})
     needs: prepare-release

@@ -1,6 +1,9 @@
 node_modules/
 out/
 dist/
+# 打包产物：dist-plugins 由 scripts/pack-plugins.mjs 生成随 release 分发；
+# dist-rc*/ 等手工产物含 360MB 级 app.asar，通配一次性挡住，避免 git add -A 误入库
+dist-*/
 export/
 build/.toolchain/
 .vite/

@@ -8,6 +8,26 @@
 import type { CapabilityPlugin, PluginManifest } from '../types';
 import type { PluginPackageContributions } from './contract';
 
+/**
+ * 反向操作：录一遍 register() 推给 registry 的东西，得到可随包发布的 contributions。
+ *
+ * 打包侧（scripts/pack-plugins.mjs）用它把内置能力插件的声明录出来。与 toCapabilityPlugin
+ * 放在同一个文件，是因为两者必须严格互逆——分开放，改了一个忘了另一个不会有任何提示。
+ */
+export function recordContributions(plugin: CapabilityPlugin): PluginPackageContributions {
+  const contributions: Required<PluginPackageContributions> = {
+    tools: [],
+    artifactParsers: [],
+    interactions: [],
+  };
+  plugin.register({
+    registerTool: (tool) => contributions.tools.push(tool),
+    registerArtifactParser: (parser) => contributions.artifactParsers.push(parser),
+    registerInteractionType: (interaction) => contributions.interactions.push(interaction),
+  });
+  return contributions;
+}
+
 export function toCapabilityPlugin(
   manifest: PluginManifest,
   contributions: PluginPackageContributions,
