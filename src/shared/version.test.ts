@@ -99,8 +99,11 @@ describe('双端发布版本配置', () => {
 
     expect(mobile.version).toBe(root.version);
     expect(appConfig.expo.version).toBe(root.version);
+    // versionCode 只取数值主干：预发布后缀（1.0.0-rc.1）没法编码进整数，
+    // 而版本串本身必须带后缀一致，否则 rc 包会被当成正式包互相同步
+    const core = root.version.split(/[-+]/)[0]!;
     expect(appConfig.expo.android.versionCode).toBe(
-      Number(root.version.split('.').map((part) => part.padStart(2, '0')).join('')),
+      Number(core.split('.').map((part) => part.padStart(2, '0')).join('')),
     );
   });
 });

@@ -13,10 +13,13 @@ const repoRoot = join(mobileRoot, '..');
 
 function parseVersion(raw) {
   const trimmed = raw.trim().replace(/^v/i, '');
-  const m = /^(\d+)\.(\d+)\.(\d+)$/.exec(trimmed);
+  // 预发布后缀（1.0.0-rc.1）要原样保留：两端同步要求完整版本串完全相同
+  // （src/shared/version.ts isSyncCompatible），截成 1.0.0 会让 rc 包与正式包互相写数据。
+  // versionCode 只能是整数，按数值主干取，因此同一主干的多个 rc 共用一个 code。
+  const m = /^(\d+)\.(\d+)\.(\d+)(?:[-+].+)?$/.exec(trimmed);
   if (!m) return null;
   return {
-    version: m.slice(1).join('.'),
+    version: trimmed,
     versionCode: Number(m[1]) * 10000 + Number(m[2]) * 100 + Number(m[3]),
   };
 }
