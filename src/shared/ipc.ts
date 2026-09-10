@@ -1140,9 +1140,10 @@ export interface IpcInvokeMap {
   'plugin:listInstalled': { req: void; res: InstalledPlugin[] };
   /** 外置插件的装载结果，含装不上的包与原因 */
   'plugin:inventory': { req: void; res: PluginInventoryView };
+  /** 主进程弹文件选择框，渲染层不传路径。返回 null 表示用户取消。 */
   'plugin:install': {
-    req: { path: string; trustUnknownSigner?: boolean; overwrite?: boolean };
-    res: PluginInstallResult;
+    req: { trustUnknownSigner?: boolean; overwrite?: boolean };
+    res: PluginInstallResult | null;
   };
   'plugin:uninstall': { req: { id: string; version: string }; res: { removed: boolean } };
 

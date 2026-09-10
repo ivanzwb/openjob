@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, dialog } from 'electron';
 import { getConfig, deleteSecret, hasSecret, setSecret, updateConfig } from '../config';
 import { getCampaignOverview } from '../campaign/overview';
 import { compareCampaigns } from '../campaign/compare';
@@ -191,9 +191,19 @@ export function registerIpcHandlers(): void {
 
   handle('plugin:listInstalled', () => listInstalledPlugins());
   handle('plugin:inventory', () => pluginInventoryView());
-  handle('plugin:install', ({ path, trustUnknownSigner, overwrite }) =>
-    installPluginFromFile(path, { trustUnknownSigner, overwrite }),
-  );
+  handle('plugin:install', async ({ trustUnknownSigner, overwrite }) => {
+    // 弹框放在主进程：渲染层不传路径，也就没有「渲染层指定任意文件让主进程去读」这条路
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      title: '安装插件包',
+      properties: ['openFile'],
+      filters: [
+        { name: '插件包', extensions: ['json', 'gz'] },
+        { name: '所有文件', extensions: ['*'] },
+      ],
+    });
+    if (canceled || filePaths.length === 0) return null;
+    return installPluginFromFile(filePaths[0]!, { trustUnknownSigner, overwrite });
+  });
   handle('plugin:uninstall', ({ id, version }) => uninstallPlugin(id, version));
 
   handle('campaign:list', () => listCampaigns());

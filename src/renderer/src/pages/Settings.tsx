@@ -7,6 +7,7 @@ import { invoke } from '../ipc';
 import { runTask, useTask, useTaskResult } from '../ipc/taskStore';
 import { SecretField } from '../components/SecretField';
 import { SearchQualityPanel } from '../components/SearchQualityPanel';
+import { PluginsPanel } from '../components/PluginsPanel';
 import { UpdatePanel } from '../components/UpdatePanel';
 import { SyncPanel } from '../components/SyncPanel';
 import { PageShell } from '../components/PageShell';
@@ -428,6 +429,8 @@ const updateEmbedding = (patch: Partial<AppConfig['llm']['embedding']>): void =>
           </button>
         </div>
       </section>
+
+      <PluginsPanel />
 
       <UpdatePanel value={config.update} onChange={updateUpdater} />
 
