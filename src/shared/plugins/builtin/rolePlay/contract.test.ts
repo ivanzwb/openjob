@@ -9,7 +9,7 @@ import {
 import { BuiltInPluginRegistry } from '../../registry';
 import { DeterministicRuntimeResolver } from '../../resolver';
 import type { CapabilityRegistry, HostRenderedInteraction } from '../../types';
-import { DISTRIBUTED_ROLE_PACKS } from '../../rolePacks';
+import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
 import { BUILT_IN_CAPABILITY_PLUGINS } from '..';
 import {
   CUSTOMER_CONVERSATION_INTERACTION,
@@ -19,7 +19,7 @@ import {
   customerConversationInteraction,
   rolePlayCapabilityPlugin,
 } from '.';
-import { SALES_CUSTOMER_SUCCESS_ROLE_PACK_ID } from '../../rolePacks/salesCustomerSuccess';
+import { SALES_CUSTOMER_SUCCESS_ROLE_PACK_ID } from '@plugins/salesCustomerSuccess';
 
 function collectRegistered(): HostRenderedInteraction[] {
   const interactions: HostRenderedInteraction[] = [];

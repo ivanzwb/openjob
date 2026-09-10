@@ -12,7 +12,7 @@ import {
   toInstalledPlugin,
 } from '../../plugins/clientView';
 import type { ClientCapabilityView } from '../../plugins/clientView';
-import { softwareEngineeringRolePack } from '../../plugins/rolePacks/softwareEngineering';
+import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
 import { sourceRepositoryCapabilityPlugin } from '../../plugins/builtin/sourceRepository';
 import { BuiltInPluginRegistry } from '../../plugins/registry';
 import { DeterministicRuntimeResolver } from '../../plugins/resolver';

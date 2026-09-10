@@ -17,7 +17,7 @@ vi.mock('../paths', () => ({
 }));
 
 import { BUILT_IN_CAPABILITY_PLUGINS } from '@shared/plugins/builtin';
-import { DISTRIBUTED_ROLE_PACKS } from '@shared/plugins/rolePacks';
+import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
 import {
   PACKAGE_MANIFEST_FILE,
   PACKAGE_PACK_FILE,

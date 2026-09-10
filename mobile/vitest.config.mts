@@ -16,9 +16,12 @@ import { resolve } from 'node:path';
  */
 export default defineConfig({
   resolve: {
-    alias: {
-      '@shared': resolve(import.meta.dirname, '../src/shared'),
-    },
+    // 数组形式的理由见桌面端 vitest.config.ts：`@plugins` 得精确匹配
+    alias: [
+      { find: '@shared', replacement: resolve(import.meta.dirname, '../src/shared') },
+      { find: /^@plugins$/, replacement: resolve(import.meta.dirname, '../plugins/index.ts') },
+      { find: /^@plugins\//, replacement: `${resolve(import.meta.dirname, '../plugins')}/` },
+    ],
   },
   test: {
     environment: 'node',

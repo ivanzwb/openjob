@@ -27,9 +27,16 @@ async function loadModules() {
     configFile: false,
     root: ROOT,
     logLevel: 'warn',
-    // 只需要 @shared 这一条别名；不复用 electron.vite.config.ts 是因为它是多目标配置，
-    // 在这里加载会把 main/renderer 的插件链一起拖进来
-    resolve: { alias: { '@shared': resolve(ROOT, 'src/shared') } },
+    // 只需要 @shared / @plugins 这两条别名；不复用 electron.vite.config.ts 是因为它是
+    // 多目标配置，在这里加载会把 main/renderer 的插件链一起拖进来。
+    // 数组形式的理由见 vitest.config.ts：`@plugins` 要精确匹配。
+    resolve: {
+      alias: [
+        { find: '@shared', replacement: resolve(ROOT, 'src/shared') },
+        { find: /^@plugins$/, replacement: resolve(ROOT, 'plugins/index.ts') },
+        { find: /^@plugins\//, replacement: `${resolve(ROOT, 'plugins')}/` },
+      ],
+    },
     server: { middlewareMode: true },
     // 没有这两项，vite 会去扫根目录的 src/renderer/index.html 并对整个前端做依赖预构建，
     // 只为读几个纯数据模块
@@ -38,7 +45,7 @@ async function loadModules() {
   });
   try {
     const builtin = await server.ssrLoadModule('src/shared/plugins/builtin/index.ts');
-    const rolePacks = await server.ssrLoadModule('src/shared/plugins/rolePacks/index.ts');
+    const rolePacks = await server.ssrLoadModule('plugins/index.ts');
     const replay = await server.ssrLoadModule('src/shared/plugins/package/replay.ts');
     const transfer = await server.ssrLoadModule('src/shared/plugins/package/rolePackTransfer.ts');
     const bundle = await server.ssrLoadModule('src/main/plugins/bundle.ts');

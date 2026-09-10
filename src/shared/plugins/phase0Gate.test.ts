@@ -18,7 +18,7 @@ import {
 } from '../planner/contributions';
 import { composePrompt } from '../prompts/composer';
 import { formatIdForLegacyExamForm } from './legacyRoleData';
-import { softwareEngineeringRolePack } from './rolePacks/softwareEngineering';
+import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
 import { SOURCE_REPOSITORY_CAPABILITY_ID } from './builtin/sourceRepository';
 import { buildClientCapabilityView, capabilityMode, listBuiltInPlugins } from './clientView';
 import {

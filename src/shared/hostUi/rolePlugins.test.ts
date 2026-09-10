@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { installedWith } from '../plugins/__fixtures__/installed';
-import { DISTRIBUTED_ROLE_PACKS } from '../plugins/rolePacks';
-import { SOFTWARE_ENGINEERING_ROLE_PACK_ID } from '../plugins/rolePacks/softwareEngineering';
+import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
+import { SOFTWARE_ENGINEERING_ROLE_PACK_ID } from '@plugins/softwareEngineering';
 import { SOURCE_REPOSITORY_CAPABILITY_ID } from '../plugins/builtin/sourceRepository';
 import { buildCapabilityView, buildDescriptor, buildRuntimeView, CAMPAIGN_ID } from './__fixtures__/runtime';
 import {

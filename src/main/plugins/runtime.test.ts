@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { Database } from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { softwareEngineeringRolePack } from '@shared/plugins/rolePacks/softwareEngineering';
+import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
 import { sourceRepositoryCapabilityPlugin } from '@shared/plugins/builtin/sourceRepository';
 import { listBuiltInPlugins } from '@shared/plugins/clientView';
 import {

@@ -6,7 +6,7 @@
  * 一种真实的坏包。
  */
 import { describe, expect, it } from 'vitest';
-import { DISTRIBUTED_ROLE_PACKS } from '../rolePacks';
+import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
 import { BUILT_IN_CAPABILITY_PLUGINS } from '../builtin';
 import type {
   ArtifactParserDefinition,

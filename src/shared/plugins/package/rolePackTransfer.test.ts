@@ -8,7 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import { PACKAGE_MANIFEST_FILE, PACKAGE_PACK_FILE, validatePluginPackage } from './contract';
 import { parseTransferredRolePack, rolePackToPackageFiles } from './rolePackTransfer';
-import { DISTRIBUTED_ROLE_PACKS } from '../rolePacks';
+import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
 import type { RolePack } from '../types';
 
 const PACK = DISTRIBUTED_ROLE_PACKS[0]!;

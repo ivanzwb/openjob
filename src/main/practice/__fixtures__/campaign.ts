@@ -8,7 +8,7 @@
 
 import type { Database } from 'better-sqlite3';
 import { SOFTWARE_ENGINEERING_FORMAT_IDS } from '@shared/plugins/legacyRoleData';
-import { softwareEngineeringRolePack } from '@shared/plugins/rolePacks/softwareEngineering';
+import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
 import { newLegacyDb } from '../../db/__fixtures__/legacyDb';
 import { installRolePacks } from '../../plugins/__fixtures__/installedPlugins';
 import { setCampaignRoleProfile } from '../../plugins/runtime';

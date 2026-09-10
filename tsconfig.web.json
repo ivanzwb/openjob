@@ -17,9 +17,13 @@
     "verbatimModuleSyntax": true,
     "paths": {
       "@shared/*": ["./src/shared/*"],
-      "@renderer/*": ["./src/renderer/src/*"]
+      "@renderer/*": ["./src/renderer/src/*"],
+      "@plugins": ["./plugins/index.ts"],
+      "@plugins/*": ["./plugins/*"]
     }
   },
+  // plugins/ 不进 include：岗位包是单独发布的数据，渲染进程不该编译它。
+  // 别名仍然登记，因为 src/shared 下的测试夹具会 import 它（见 hostUi/__fixtures__）。
   "include": ["src/renderer/src/**/*", "src/shared/**/*", "src/preload/index.d.ts"],
   "exclude": ["src/shared/**/*.test.ts"]
 }

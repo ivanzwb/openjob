@@ -10,14 +10,19 @@ import { resolve } from 'node:path';
  */
 export default defineConfig({
   resolve: {
-    alias: {
-      '@shared': resolve(__dirname, 'src/shared'),
-      '@main': resolve(__dirname, 'src/main'),
-    },
+    // 数组形式而不是对象：`@plugins` 要精确匹配，对象形式的键按前缀匹配，
+    // `@plugins/softwareEngineering` 会被拼成 `plugins/index.ts/softwareEngineering`
+    alias: [
+      { find: '@shared', replacement: resolve(__dirname, 'src/shared') },
+      { find: '@main', replacement: resolve(__dirname, 'src/main') },
+      { find: /^@plugins$/, replacement: resolve(__dirname, 'plugins/index.ts') },
+      { find: /^@plugins\//, replacement: `${resolve(__dirname, 'plugins')}/` },
+    ],
   },
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts'],
+    // plugins/ 下的岗位包自带契约与黄金用例，它们跟着包一起走，不在 src 里
+    include: ['src/**/*.test.ts', 'plugins/**/*.test.ts'],
     // 迁移自 scripts/smoke-sync-merge.ts 的合并引擎用例在这里
     exclude: ['node_modules', 'dist', 'out', 'src/renderer/**'],
   },

@@ -9,7 +9,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { DISTRIBUTED_ROLE_PACKS } from '@shared/plugins/rolePacks';
+import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
 import {
   PACKAGE_CONTRIBUTIONS_FILE,
   PACKAGE_MANIFEST_FILE,

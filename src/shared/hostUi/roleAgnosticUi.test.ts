@@ -18,8 +18,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { listBuiltInPlugins } from '../plugins/clientView';
-import { DISTRIBUTED_ROLE_PACKS } from '../plugins/rolePacks';
-import { softwareEngineeringRolePack } from '../plugins/rolePacks/softwareEngineering';
+import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
+import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
 import { SOURCE_REPOSITORY_CAPABILITY_ID } from '../plugins/builtin/sourceRepository';
 
 const RENDERER_DIR = join(__dirname, '..', '..', 'renderer', 'src');

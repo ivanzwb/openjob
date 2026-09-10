@@ -18,15 +18,15 @@ import {
 } from '../planner/contributions';
 import { composePrompt } from '../prompts/composer';
 import type { PromptSlot } from '../prompts/registry';
-import { DISTRIBUTED_ROLE_PACKS } from './rolePacks';
+import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
 import { BUILT_IN_CAPABILITY_PLUGINS } from './builtin';
 import { ANALYTICS_CASE_CAPABILITY_ID } from './builtin/analyticsCase';
 import {
   PRODUCT_MANAGER_FORMAT_IDS,
   PRODUCT_MANAGER_ROLE_PACK_ID,
   productManagerRolePack,
-} from './rolePacks/productManager';
-import { softwareEngineeringRolePack } from './rolePacks/softwareEngineering';
+} from '@plugins/productManager';
+import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
 import { SOURCE_REPOSITORY_CAPABILITY_ID } from './builtin/sourceRepository';
 import { buildClientCapabilityView } from './clientView';
 import { installedWith } from './__fixtures__/installed';

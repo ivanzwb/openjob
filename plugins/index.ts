@@ -8,7 +8,7 @@
  * 与之对应，运行时的岗位包一律来自 `userData/plugins` 的安装清单，见
  * `src/main/plugins/runtime.ts` 的 `findInstalledRolePack`。
  */
-import type { RolePack } from '../types';
+import type { RolePack } from '@shared/plugins/types';
 import { productManagerRolePack } from './productManager';
 import { salesCustomerSuccessRolePack } from './salesCustomerSuccess';
 import { softwareEngineeringRolePack } from './softwareEngineering';

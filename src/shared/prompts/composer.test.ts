@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { SOFTWARE_ENGINEERING_FORMAT_IDS } from '../plugins/legacyRoleData';
-import { softwareEngineeringRolePack } from '../plugins/rolePacks/softwareEngineering';
+import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
 import type { PromptFragmentSet, ResolvedCapabilityRef, RolePack } from '../plugins/types';
 import {
   PROMPT_LAYER_ORDER,

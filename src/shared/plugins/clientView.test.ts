@@ -17,7 +17,7 @@ import {
   type InstalledPlugin,
 } from './clientView';
 import { installedWith } from './__fixtures__/installed';
-import { softwareEngineeringRolePack } from './rolePacks/softwareEngineering';
+import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
 import { sourceRepositoryCapabilityPlugin } from './builtin/sourceRepository';
 import type { CampaignRuntimeDescriptor } from './types';
 

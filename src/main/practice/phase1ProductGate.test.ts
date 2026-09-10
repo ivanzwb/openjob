@@ -17,7 +17,7 @@ import {
   PRODUCT_MANAGER_FORMAT_IDS,
   PRODUCT_MANAGER_ROLE_PACK_ID,
   productManagerRolePack,
-} from '@shared/plugins/rolePacks/productManager';
+} from '@plugins/productManager';
 import {
   PHASE1_CAMPAIGN,
   PHASE1_ENGINEERING_MARKERS,

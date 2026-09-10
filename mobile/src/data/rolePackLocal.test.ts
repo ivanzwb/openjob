@@ -9,7 +9,7 @@ import { DatabaseSync } from 'node:sqlite';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildClientCapabilityView, listBuiltInPlugins } from '@shared/plugins/clientView';
-import { DISTRIBUTED_ROLE_PACKS } from '@shared/plugins/rolePacks';
+import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
 import type { CampaignRuntimeDescriptor, RolePack } from '@shared/plugins/types';
 import { MIGRATIONS } from '../db/migrations/bundle';
 import { ensureCriticalSchema } from '../db/schemaEnsure';

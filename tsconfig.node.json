@@ -17,13 +17,16 @@
     "verbatimModuleSyntax": true,
     "paths": {
       "@shared/*": ["./src/shared/*"],
-      "@main/*": ["./src/main/*"]
+      "@main/*": ["./src/main/*"],
+      "@plugins": ["./plugins/index.ts"],
+      "@plugins/*": ["./plugins/*"]
     }
   },
   "include": [
     "src/main/**/*",
     "src/preload/**/*",
     "src/shared/**/*",
+    "plugins/**/*",
     "electron.vite.config.ts",
     "drizzle.config.ts"
   ]

@@ -14,9 +14,9 @@ import type {
   CampaignRuntimeDescriptor,
   CapabilityRegistry,
 } from '../../types';
-import { DISTRIBUTED_ROLE_PACKS } from '../../rolePacks';
+import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
 import { BUILT_IN_CAPABILITY_PLUGINS } from '..';
-import { PRODUCT_MANAGER_ROLE_PACK_ID, productManagerRolePack } from '../../rolePacks/productManager';
+import { PRODUCT_MANAGER_ROLE_PACK_ID, productManagerRolePack } from '@plugins/productManager';
 import {
   ANALYTICS_CASE_CAPABILITY_ID,
   ANALYTICS_CASE_CAPABILITY_VERSION,

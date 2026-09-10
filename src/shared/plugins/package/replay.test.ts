@@ -7,7 +7,7 @@
  * 一台走内置一台走外置，descriptor 却不同，同步层会当成配置漂移。
  */
 import { describe, expect, it } from 'vitest';
-import { DISTRIBUTED_ROLE_PACKS } from '../rolePacks';
+import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
 import { BUILT_IN_CAPABILITY_PLUGINS } from '../builtin';
 import { BuiltInPluginRegistry } from '../registry';
 import { DeterministicRuntimeResolver } from '../resolver';

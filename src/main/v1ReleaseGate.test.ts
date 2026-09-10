@@ -20,10 +20,10 @@ import { ANALYTICS_CASE_CAPABILITY_ID } from '@shared/plugins/builtin/analyticsC
 import {
   PRODUCT_MANAGER_OPTIONAL_CAPABILITY_IDS,
   PRODUCT_MANAGER_ROLE_PACK_ID,
-} from '@shared/plugins/rolePacks/productManager';
+} from '@plugins/productManager';
 import { ROLE_PLAY_CAPABILITY_ID } from '@shared/plugins/builtin/rolePlay';
-import { SALES_CUSTOMER_SUCCESS_ROLE_PACK_ID } from '@shared/plugins/rolePacks/salesCustomerSuccess';
-import { softwareEngineeringRolePack } from '@shared/plugins/rolePacks/softwareEngineering';
+import { SALES_CUSTOMER_SUCCESS_ROLE_PACK_ID } from '@plugins/salesCustomerSuccess';
+import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
 import { SOURCE_REPOSITORY_CAPABILITY_ID } from '@shared/plugins/builtin/sourceRepository';
 import type { CampaignRuntimeDescriptor } from '@shared/plugins/types';
 import { buildClientCapabilityView } from '@shared/plugins/clientView';

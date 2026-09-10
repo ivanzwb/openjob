@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { Database } from 'better-sqlite3';
-import { softwareEngineeringRolePack } from '@shared/plugins/rolePacks/softwareEngineering';
+import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
 import { newLegacyDb } from '../db/__fixtures__/legacyDb';
 import { installRolePacks } from '../plugins/__fixtures__/installedPlugins';
 import { setCampaignRoleProfile } from '../plugins/runtime';

@@ -7,7 +7,7 @@
  * 走 `setExternalPlugins` 而不是往注册表里塞：装载路径与真实安装完全一致，唯一省掉的是
  * 磁盘扫描——扫描本身由 `inventory.test.ts` 用真实临时目录覆盖。
  */
-import { DISTRIBUTED_ROLE_PACKS } from '@shared/plugins/rolePacks';
+import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
 import type { RolePack } from '@shared/plugins/types';
 import type { PluginInventoryEntry } from '../inventory';
 import { setExternalPlugins } from '../runtime';

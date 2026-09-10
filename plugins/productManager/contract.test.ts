@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { composePrompt } from '../../../prompts/composer';
-import type { PromptEvidence, PromptRuntimeSnapshot } from '../../../prompts/composer';
-import { isRegisteredPrompt } from '../../../prompts/registry';
-import { validateRolePack } from '../../contracts';
-import type { PromptSlot } from '../../../prompts/registry';
+import { composePrompt } from '@shared/prompts/composer';
+import type { PromptEvidence, PromptRuntimeSnapshot } from '@shared/prompts/composer';
+import { isRegisteredPrompt } from '@shared/prompts/registry';
+import { validateRolePack } from '@shared/plugins/contracts';
+import type { PromptSlot } from '@shared/prompts/registry';
 import {
   PRODUCT_MANAGER_FORMAT_IDS,
   PRODUCT_MANAGER_OPTIONAL_CAPABILITY_IDS,

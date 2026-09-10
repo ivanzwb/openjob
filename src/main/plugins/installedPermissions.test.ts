@@ -12,7 +12,7 @@ vi.mock('../db', () => ({
   schema: {},
 }));
 
-import { DISTRIBUTED_ROLE_PACKS } from '@shared/plugins/rolePacks';
+import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
 import { BUILT_IN_CAPABILITY_PLUGINS } from '@shared/plugins/builtin';
 import type { PluginManifest, PluginPermission } from '@shared/plugins';
 import type { RolePack } from '@shared/plugins/types';

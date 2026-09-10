@@ -75,9 +75,11 @@ Campaign 里 pin 的仍然是 `id@version`，缺包时沿用现有 `plugin-not-i
 基础包不带任何岗位包。首次进入时引导用户浏览并安装岗位包。相关缺陷已在
 `a15bbe6` 修掉：新建战役不再被旧数据迁移盖成软件工程岗（详见该提交）。
 
-三个官方岗位包的数据搬到 `src/shared/plugins/rolePacks/`，只有打包脚本和测试会
-import 它；`capabilityIsolation.test.ts` 里的静态关卡盯着这条边界，防止哪天有人图
-省事把岗位数据又编回基础包。`builtin/` 下只剩能力插件，`builtInPluginKeys()` 也因此
+三个官方岗位包的数据搬到仓库顶层 `plugins/`（和 `mobile/` 平级，用 `@plugins` 别名
+引用），只有打包脚本和测试会 import 它；`capabilityIsolation.test.ts` 里的静态关卡盯着
+这条边界，防止哪天有人图省事把岗位数据又编回基础包。放在 `src/` 之外是同一条边界的物理
+形态：`electron.vite.config.ts` 三个目标都不登记 `@plugins`，所以应用代码一旦 import 它，
+构建当场就断——不用等关卡用例。`builtin/` 下只剩能力插件，`builtInPluginKeys()` 也因此
 只占用能力插件的 id@version——否则官方岗位包连自己的版本号都装不进来。
 
 旧数据的读取不能依赖「用户装了岗位包」。`quiz_attempt` 与 `design_case` 行里存着当年

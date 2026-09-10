@@ -11,7 +11,7 @@ import type { CandidateEvidence, JdParsed } from '../entities';
 import type { CandidateEvidenceKind, EvidenceStatus } from '../enums';
 import { validateRolePack } from '../plugins/contracts';
 import { SOFTWARE_ENGINEERING_FORMAT_IDS } from '../plugins/legacyRoleData';
-import { softwareEngineeringRolePack } from '../plugins/rolePacks/softwareEngineering';
+import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
 import { productManagementRolePack } from './__fixtures__/productManagementRolePack';
 import { computeEvidenceRisk, computeStageWeight } from './factors';
 import { diagnoseCompetencies } from './diagnose';

@@ -19,7 +19,7 @@ vi.mock('../db', () => ({
 }));
 
 import { PLUGIN_PERMISSIONS, type PluginPermission } from '@shared/plugins/permissions';
-import { DISTRIBUTED_ROLE_PACKS } from '@shared/plugins/rolePacks';
+import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
 import { BUILT_IN_CAPABILITY_PLUGINS } from '@shared/plugins/builtin';
 import { ANALYTICS_CASE_CAPABILITY_ID } from '@shared/plugins/builtin/analyticsCase';
 import { ROLE_PLAY_CAPABILITY_ID } from '@shared/plugins/builtin/rolePlay';
@@ -171,13 +171,14 @@ const FORBIDDEN_SOURCE_PATTERNS: readonly { pattern: RegExp; reason: string }[] 
 /**
  * 两个根都要扫：能力插件随应用发布，岗位包随 release 单独发布。
  *
- * 岗位包移出基础包不代表这条边界可以松——它们仍然在这个仓库里写、在这里打包，装到用户
- * 机器上的是同一份数据。只扫 builtin 的话，岗位包那三个目录会静静地退出扫描范围，
- * 而这条用例照样全绿。
+ * 岗位包移出基础包（现在住在仓库顶层 plugins/，和 mobile/ 平级）不代表这条边界可以
+ * 松——它们仍然在这个仓库里写、在这里打包，装到用户机器上的是同一份数据。只扫 builtin
+ * 的话，岗位包那三个目录会静静地退出扫描范围，而这条用例照样全绿。
  */
+const REPO_ROOT = join(__dirname, '..', '..', '..');
 const PLUGIN_ROOTS = [
-  join(__dirname, '..', '..', 'shared', 'plugins', 'builtin'),
-  join(__dirname, '..', '..', 'shared', 'plugins', 'rolePacks'),
+  join(REPO_ROOT, 'src', 'shared', 'plugins', 'builtin'),
+  join(REPO_ROOT, 'plugins'),
 ];
 
 /** 插件目录 → 该目录下的非测试源码。 */

@@ -1,15 +1,15 @@
-import { EXAM_FORMS, TASK_KINDS } from '../../../enums';
+import { EXAM_FORMS, TASK_KINDS } from '@shared/enums';
 import {
   formatIdForLegacyExamForm,
   LEGACY_ROLE_PACK_REF,
   SOFTWARE_ENGINEERING_FORMAT_IDS,
-} from '../../legacyRoleData';
+} from '@shared/plugins/legacyRoleData';
 import type {
   InterviewFormatDefinition,
   PromptFragmentSet,
   RolePack,
   RubricAnchors,
-} from '../../types';
+} from '@shared/plugins/types';
 
 /**
  * 岗位包与历史数据共用同一组 id：本包已经被 pin 进旧 Campaign 的 descriptor 与

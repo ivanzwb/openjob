@@ -13,7 +13,7 @@
  * 没装时解析结果里它是 disabled，产品案例仍然要能完整出题、作答和评分。
  */
 
-import type { TaskKind } from '../../../enums';
+import type { TaskKind } from '@shared/enums';
 import type {
   CompetencyTemplate,
   InterviewFormatDefinition,
@@ -23,7 +23,7 @@ import type {
   RubricAnchors,
   RubricDefinition,
   TaskTemplate,
-} from '../../types';
+} from '@shared/plugins/types';
 
 export const PRODUCT_MANAGER_ROLE_PACK_ID = 'product-manager';
 export const PRODUCT_MANAGER_ROLE_PACK_VERSION = '1.0.0';
