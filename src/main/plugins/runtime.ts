@@ -19,11 +19,14 @@ import {
   BUILT_IN_ROLE_PACKS,
 } from '@shared/plugins/builtin';
 import {
+  BUILT_IN_PLUGIN_MANIFESTS,
   buildClientCapabilityView,
   listBuiltInPlugins,
+  toInstalledPlugin,
   type ClientCapabilityView,
   type InstalledPlugin,
 } from '@shared/plugins/clientView';
+import { toCapabilityPlugin } from '@shared/plugins/package/replay';
 import { BuiltInPluginRegistry } from '@shared/plugins/registry';
 import { DeterministicRuntimeResolver } from '@shared/plugins/resolver';
 import type {
@@ -36,6 +39,7 @@ import {
   LEGACY_CORE_VERSION,
   LEGACY_SCHEMA_VERSION,
 } from '../db/backfill/pluginRuntime';
+import { exactKeyOf, type PluginInventoryEntry } from './inventory';
 
 /** 与 backfill 共用同一组常量，回填出来的旧 Campaign 与新写入的 hash 才可比。 */
 export const CORE_VERSION = LEGACY_CORE_VERSION;
@@ -64,17 +68,72 @@ interface RoleProfileRow {
   user_confirmed: number;
 }
 
+/**
+ * 本机装了的外置插件。
+ *
+ * 模块级可变状态是刻意的：扫描要碰文件系统，不能发生在本模块（它被单测直接加载，
+ * 而且刻意不依赖 ../db 与 electron）。启动流程扫完之后调 setExternalPlugins 注入。
+ */
+let externalEntries: readonly PluginInventoryEntry[] = [];
+
+/**
+ * 外置包装配进注册表，走的是与内置完全相同的契约入口。
+ *
+ * 岗位包直接就是数据；能力插件把录下来的声明重放一遍（见 package/replay.ts），
+ * 全程不执行任何外部代码。
+ */
+function registerExternal(registry: BuiltInPluginRegistry, entry: PluginInventoryEntry): void {
+  const { manifest, rolePack, contributions } = entry.package;
+  if (rolePack) {
+    registry.register(rolePack);
+    return;
+  }
+  if (contributions) {
+    registry.registerCapability(toCapabilityPlugin(manifest, contributions));
+    return;
+  }
+  registry.registerIndustryPack(manifest);
+}
+
 function createRegistry(): BuiltInPluginRegistry {
   const registry = new BuiltInPluginRegistry();
   BUILT_IN_ROLE_PACKS.forEach((pack) => registry.register(pack));
   BUILT_IN_CAPABILITY_PLUGINS.forEach((plugin) => registry.registerCapability(plugin));
+  externalEntries.forEach((entry) => registerExternal(registry, entry));
   return registry;
 }
 
-const resolver = new DeterministicRuntimeResolver(createRegistry());
+let resolver = new DeterministicRuntimeResolver(createRegistry());
+
+/** 内置插件占掉的 `id@version`，外置包不允许顶替（理由见 inventory.ts 的 reservedKeys）。 */
+export function builtInPluginKeys(): Set<string> {
+  return new Set(BUILT_IN_PLUGIN_MANIFESTS.map((manifest) => exactKeyOf(manifest.id, manifest.version)));
+}
+
+/**
+ * 替换外置插件集合并重建解析器。
+ *
+ * 整体重建而不是增量往注册表里塞：BuiltInPluginRegistry 不允许同 id@version 覆盖，
+ * 增量注册在「卸载后重装」时必然撞车，而且解析结果会依赖注册顺序。
+ */
+export function setExternalPlugins(entries: readonly PluginInventoryEntry[]): void {
+  externalEntries = [...entries];
+  resolver = new DeterministicRuntimeResolver(createRegistry());
+}
+
+export function listExternalPlugins(): readonly PluginInventoryEntry[] {
+  return externalEntries;
+}
 
 export function listInstalledPlugins(): InstalledPlugin[] {
-  return listBuiltInPlugins();
+  return [
+    ...listBuiltInPlugins(),
+    ...externalEntries.map((entry) => toInstalledPlugin(entry.package.manifest)),
+  ].sort(
+    (left, right) =>
+      (left.id < right.id ? -1 : left.id > right.id ? 1 : 0) ||
+      (left.version < right.version ? -1 : left.version > right.version ? 1 : 0),
+  );
 }
 
 function rowToRoleProfile(row: RoleProfileRow): RoleProfile {
@@ -293,7 +352,9 @@ export function getClientCapabilityView(
   return buildClientCapabilityView({
     descriptor: runtime.descriptor,
     platform: request.platform,
-    installed: request.installed ?? listBuiltInPlugins(),
+    // 调用方没给就用本机真实安装集合。原来兜底到内置清单，在外置插件出现之后就是错的：
+    // 手机端问过来时该由它自己给出本机集合，桌面替它答等于把桌面装的包算到手机头上
+    installed: request.installed ?? listInstalledPlugins(),
     artifacts: request.artifacts,
   });
 }

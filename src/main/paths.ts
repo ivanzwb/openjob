@@ -15,12 +15,19 @@ export function getAppPaths(): AppPaths {
     reposDir: join(userData, 'repos'),
     cacheDir: join(userData, 'cache'),
     backupsDir: join(userData, 'backups'),
+    pluginsDir: join(userData, 'plugins'),
   };
 }
 
 export function ensureDirs(): AppPaths {
   const paths = getAppPaths();
-  for (const dir of [paths.userData, paths.reposDir, paths.cacheDir, paths.backupsDir]) {
+  for (const dir of [
+    paths.userData,
+    paths.reposDir,
+    paths.cacheDir,
+    paths.backupsDir,
+    paths.pluginsDir,
+  ]) {
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   }
   return paths;

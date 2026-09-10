@@ -103,6 +103,8 @@ export interface AppPaths {
   reposDir: string;
   cacheDir: string;
   backupsDir: string;
+  /** 外置插件包的安装位置，每个包一个 `<id>@<version>` 子目录 */
+  pluginsDir: string;
 }
 
 /** 长任务（clone、索引）的进度上报 */

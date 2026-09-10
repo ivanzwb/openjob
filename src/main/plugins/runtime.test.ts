@@ -7,22 +7,49 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { Database } from 'better-sqlite3';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { softwareEngineeringRolePack } from '@shared/plugins/builtin/softwareEngineering';
 import { sourceRepositoryCapabilityPlugin } from '@shared/plugins/builtin/sourceRepository';
 import { listBuiltInPlugins } from '@shared/plugins/clientView';
 import {
+  builtInPluginKeys,
   getCampaignRuntime,
   getClientCapabilityView,
   listInstalledPlugins,
   setCampaignRoleProfile,
+  setExternalPlugins,
 } from './runtime';
+import type { PluginInventoryEntry } from './inventory';
+import type { RolePack } from '@shared/plugins/types';
 import { installSyncTriggers } from '../sync/triggers';
 
 const MIGRATIONS_DIR = join(__dirname, '..', 'db', 'migrations');
 const ROLE_PACK_ID = softwareEngineeringRolePack.manifest.id;
 const ROLE_PACK_VERSION = softwareEngineeringRolePack.manifest.version;
 const REPO_ID = sourceRepositoryCapabilityPlugin.manifest.id;
+const EXTERNAL_ROLE_PACK_ID = 'demo.role';
+
+/**
+ * 一个必然合法的外置岗位包：拿内置包改 id/version。
+ *
+ * 用真实内置包做底子而不是手写夹具，是为了让「外置」成为唯一变量——夹具写歪了会
+ * 把契约问题伪装成装载问题。
+ */
+function externalRolePack(id = EXTERNAL_ROLE_PACK_ID, version = '2.0.0'): RolePack {
+  const source = structuredClone(softwareEngineeringRolePack) as RolePack;
+  return {
+    ...source,
+    manifest: { ...source.manifest, id, version, dependencies: [] },
+  };
+}
+
+function externalEntry(pack: RolePack): PluginInventoryEntry {
+  return {
+    dir: `/tmp/${pack.manifest.id}@${pack.manifest.version}`,
+    trust: 'first-party',
+    package: { manifest: pack.manifest, rolePack: pack },
+  };
+}
 
 /** 与 db/backfill/pluginRuntime.test.ts 相同的 node:sqlite 适配层 */
 function adapt(db: DatabaseSync): Database {
@@ -94,10 +121,111 @@ function bindings(raw: Database): Array<{
 }
 
 describe('listInstalledPlugins', () => {
-  it('返回随应用发布的内置插件，与共享清单一致', () => {
+  afterEach(() => {
+    setExternalPlugins([]);
+  });
+
+  it('没装外置插件时就是内置清单', () => {
     expect(listInstalledPlugins()).toEqual(listBuiltInPlugins());
     expect(listInstalledPlugins().map((plugin) => plugin.id)).toContain(ROLE_PACK_ID);
     expect(listInstalledPlugins().map((plugin) => plugin.id)).toContain(REPO_ID);
+  });
+
+  it('装了外置岗位包之后清单不再等于内置清单', () => {
+    setExternalPlugins([externalEntry(externalRolePack())]);
+
+    const ids = listInstalledPlugins().map((plugin) => plugin.id);
+
+    expect(ids).toContain(EXTERNAL_ROLE_PACK_ID);
+    expect(ids).toContain(ROLE_PACK_ID);
+    expect(listInstalledPlugins()).not.toEqual(listBuiltInPlugins());
+  });
+
+  it('清单按 id、version 稳定排序，与注入顺序无关', () => {
+    const first = externalRolePack('aaa.role');
+    const second = externalRolePack('zzz.role');
+
+    setExternalPlugins([externalEntry(second), externalEntry(first)]);
+    const forward = listInstalledPlugins();
+    setExternalPlugins([externalEntry(first), externalEntry(second)]);
+
+    expect(listInstalledPlugins()).toEqual(forward);
+  });
+
+  it('builtInPluginKeys 覆盖每个内置插件，外置包无法顶替它们', () => {
+    const keys = builtInPluginKeys();
+
+    expect(keys.has(`${ROLE_PACK_ID}@${ROLE_PACK_VERSION}`)).toBe(true);
+    expect(keys.size).toBe(listBuiltInPlugins().length);
+  });
+});
+
+describe('外置岗位包参与解析', () => {
+  let raw: Database;
+
+  beforeEach(() => {
+    raw = freshDb();
+  });
+
+  afterEach(() => {
+    setExternalPlugins([]);
+  });
+
+  it('装载后可以被 Campaign 选中并写出 descriptor', () => {
+    setExternalPlugins([externalEntry(externalRolePack())]);
+
+    const view = setCampaignRoleProfile(
+      raw,
+      { campaignId: 'c1', roleFamily: 'design', rolePackId: EXTERNAL_ROLE_PACK_ID },
+      { now: () => 1234 },
+    );
+
+    expect(view.descriptor.rolePack).toEqual({ id: EXTERNAL_ROLE_PACK_ID, version: '2.0.0' });
+    expect(bindings(raw).map((row) => row.plugin_id)).toContain(EXTERNAL_ROLE_PACK_ID);
+  });
+
+  it('卸载后同一个岗位包解析失败，已写出的 descriptor 不受影响', () => {
+    setExternalPlugins([externalEntry(externalRolePack())]);
+    const before = setCampaignRoleProfile(
+      raw,
+      { campaignId: 'c1', roleFamily: 'design', rolePackId: EXTERNAL_ROLE_PACK_ID },
+      { now: () => 1234 },
+    );
+
+    setExternalPlugins([]);
+
+    expect(() =>
+      setCampaignRoleProfile(
+        raw,
+        { campaignId: 'c1', roleFamily: 'design', rolePackId: EXTERNAL_ROLE_PACK_ID },
+        { now: () => 2345 },
+      ),
+    ).toThrow();
+    // descriptor 是既成事实：插件卸载不该回溯改写已经解析过的运行时
+    expect(getCampaignRuntime(raw, 'c1')?.descriptor).toEqual(before.descriptor);
+  });
+
+  it('外置岗位包与内容相同的内置包解析出同一个 configSnapshotHash', () => {
+    // hash 只看解析出来的配置内容，不看插件从哪儿来；否则同一份岗位包内置和外置
+    // 会算出两个不同的 hash，跨端比对直接失效
+    const clone = structuredClone(softwareEngineeringRolePack) as RolePack;
+    clone.manifest = { ...clone.manifest, id: 'clone.role', version: ROLE_PACK_VERSION };
+    setExternalPlugins([externalEntry(clone)]);
+
+    const builtIn = setCampaignRoleProfile(
+      raw,
+      { campaignId: 'c1', roleFamily: 'software', rolePackId: ROLE_PACK_ID },
+      { now: () => 1 },
+    );
+    const external = setCampaignRoleProfile(
+      raw,
+      { campaignId: 'c1', roleFamily: 'software', rolePackId: 'clone.role' },
+      { now: () => 2 },
+    );
+
+    expect(external.descriptor.competencyBaselineVersion).toBe(
+      builtIn.descriptor.competencyBaselineVersion,
+    );
   });
 });
 

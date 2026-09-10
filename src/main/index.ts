@@ -4,6 +4,7 @@ import { ensureDirs } from './paths';
 import { registerIpcHandlers } from './ipc';
 import { emit } from './ipc/bridge';
 import { closeDb, getDb } from './db';
+import { loadExternalPlugins } from './plugins/bootstrap';
 import { scheduleStartupCheck } from './updater';
 import { startSyncServer } from './sync';
 import { applyAppIcon } from './icon';
@@ -107,6 +108,8 @@ app.whenReady().then(() => {
   ensureDirs();
   // 尽早建库跑迁移，让 schema 问题在启动时暴露而不是首次查询时
   getDb();
+  // 必须在 IPC 之前：渲染层一上来就会问已安装清单，晚一步会拿到只有内置插件的那份
+  loadExternalPlugins();
   registerIpcHandlers();
   startSyncServer();
   createWindow();
