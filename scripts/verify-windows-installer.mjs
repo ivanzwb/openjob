@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -51,10 +51,27 @@ try {
   rmSync(installDir, { recursive: true, force: true });
 }
 
+/**
+ * CI 的 dist/ 是干净的，随便取一个 .exe 都对；本机重复打包时 dist/ 会堆着历史版本，
+ * 取到旧包就成了「验证通过但验的不是这次的产物」。优先按当前 package.json 版本认，
+ * 认不出再退回最新修改时间。
+ */
 function findInstaller(dir) {
   if (!existsSync(dir)) return null;
-  const match = readdirSync(dir).find((name) => name.endsWith('.exe') && !name.startsWith('Uninstall'));
-  return match ? join(dir, match) : null;
+  const candidates = readdirSync(dir).filter(
+    (name) => name.endsWith('.exe') && !name.startsWith('Uninstall'),
+  );
+  if (candidates.length === 0) return null;
+
+  const { version } = JSON.parse(readFileSync(resolve(process.cwd(), 'package.json'), 'utf8'));
+  const current = candidates.find((name) => name.includes(version));
+  if (current) return join(dir, current);
+
+  const newest = candidates
+    .map((name) => ({ name, mtime: statSync(join(dir, name)).mtimeMs }))
+    .sort((a, b) => b.mtime - a.mtime)[0].name;
+  console.log(`[verify-installer] 未找到 ${version} 的安装包，改用最新的 ${newest}`);
+  return join(dir, newest);
 }
 
 function sha256(file) {
