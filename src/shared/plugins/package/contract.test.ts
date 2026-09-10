@@ -192,4 +192,39 @@ describe('插件包格式', () => {
   it('parsePluginPackage 对坏包抛错而不是返回半成品', () => {
     expect(() => parsePluginPackage({ [PACKAGE_MANIFEST_FILE]: '{}' })).toThrow();
   });
+
+  it('pack.json 缺字段时报缺哪个字段，而不是让校验器崩掉', () => {
+    // validateRolePack 是为仓库内岗位包写的，靠 TypeScript 保证字段存在。喂它一份缺字段的
+    // 外部 JSON 会抛 TypeError，于是安装路径变成「崩」而不是「拒装」
+    const manifest = BUILT_IN_ROLE_PACKS[0]!.manifest;
+    const issues = validatePluginPackage({
+      [PACKAGE_MANIFEST_FILE]: JSON.stringify(manifest),
+      [PACKAGE_PACK_FILE]: JSON.stringify({ competencyTemplates: [] }),
+    });
+
+    expect(issues.map((item) => item.path)).toContain('pack.rubrics');
+    expect(issues.map((item) => item.path)).toContain('pack.promptFragments');
+  });
+
+  it('字段类型完全乱来时也只返回问题列表，不抛异常', () => {
+    const manifest = BUILT_IN_ROLE_PACKS[0]!.manifest;
+    const nonsense = Object.fromEntries(
+      ['roleMatchers', 'competencyTemplates', 'interviewStages', 'interviewFormats', 'rubrics', 'taskTemplates', 'promptFragments', 'sourcePolicy'].map(
+        (field) => [field, 'not the right type'],
+      ),
+    );
+
+    expect(() =>
+      validatePluginPackage({
+        [PACKAGE_MANIFEST_FILE]: JSON.stringify(manifest),
+        [PACKAGE_PACK_FILE]: JSON.stringify(nonsense),
+      }),
+    ).not.toThrow();
+    expect(
+      validatePluginPackage({
+        [PACKAGE_MANIFEST_FILE]: JSON.stringify(manifest),
+        [PACKAGE_PACK_FILE]: JSON.stringify(nonsense),
+      }).length,
+    ).toBeGreaterThan(0);
+  });
 });

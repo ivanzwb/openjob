@@ -57,6 +57,8 @@ import {
   listInstalledPlugins,
   setCampaignRoleProfile,
 } from '../plugins/runtime';
+import { pluginInventoryView } from '../plugins/bootstrap';
+import { installPluginFromFile, uninstallPlugin } from '../plugins/install';
 import { getRolePlaySessionService } from '../plugins/rolePlaySession';
 import { generateExplanation, generateFallbackScript, getExplanation, updateExplanation, elaborateExplanationSelection, rewriteExplanationSelection } from '../explain';
 import { startJob } from '../jobs';
@@ -188,6 +190,11 @@ export function registerIpcHandlers(): void {
   handle('db:health', () => dbHealth());
 
   handle('plugin:listInstalled', () => listInstalledPlugins());
+  handle('plugin:inventory', () => pluginInventoryView());
+  handle('plugin:install', ({ path, trustUnknownSigner, overwrite }) =>
+    installPluginFromFile(path, { trustUnknownSigner, overwrite }),
+  );
+  handle('plugin:uninstall', ({ id, version }) => uninstallPlugin(id, version));
 
   handle('campaign:list', () => listCampaigns());
   handle('campaign:getOverview', () => getCampaignOverview());

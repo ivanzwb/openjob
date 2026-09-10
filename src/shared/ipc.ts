@@ -58,6 +58,7 @@ import type {
   ClientCapabilityView,
   InstalledPlugin,
 } from './plugins/clientView';
+import type { PluginType } from './enums';
 import type { CampaignRuntimeDescriptor, ClientPlatform } from './plugins/types';
 import type {
   EndRolePlayRequest,
@@ -96,6 +97,25 @@ export interface UpdateStatus {
   percent?: number;
   message?: string;
 }
+
+/** 外置插件的可信程度。unknown-signer 需要用户显式确认后才装。 */
+export type PluginTrust = 'first-party' | 'unknown-signer' | 'unsigned' | 'tampered';
+
+/** 装上了但没生效的包。缺这份清单，用户只能看到「岗位列表里没有它」。 */
+export interface PluginRejectionView {
+  dir: string;
+  reason: string;
+  detail: string;
+}
+
+export interface PluginInventoryView {
+  installed: Array<{ id: string; version: string; type: PluginType; trust: PluginTrust }>;
+  rejected: PluginRejectionView[];
+}
+
+export type PluginInstallResult =
+  | { ok: true; id: string; version: string; trust: PluginTrust }
+  | { ok: false; code: string; detail: string };
 
 export interface AppPaths {
   userData: string;
@@ -1116,8 +1136,15 @@ export interface IpcInvokeMap {
 
   'db:health': { req: void; res: { ok: boolean; tables: number; path: string } };
 
-  /** 本机随应用发布的插件清单，不代表任一 Campaign 已启用 */
+  /** 本机已安装的插件清单（内置 + 外置），不代表任一 Campaign 已启用 */
   'plugin:listInstalled': { req: void; res: InstalledPlugin[] };
+  /** 外置插件的装载结果，含装不上的包与原因 */
+  'plugin:inventory': { req: void; res: PluginInventoryView };
+  'plugin:install': {
+    req: { path: string; trustUnknownSigner?: boolean; overwrite?: boolean };
+    res: PluginInstallResult;
+  };
+  'plugin:uninstall': { req: { id: string; version: string }; res: { removed: boolean } };
 
   'campaign:list': { req: void; res: CampaignSummary[] };
   'campaign:getOverview': { req: void; res: CampaignOverview };
@@ -1414,6 +1441,9 @@ export const IPC_INVOKE_CHANNELS = [
   'search:clearCache',
   'db:health',
   'plugin:listInstalled',
+  'plugin:inventory',
+  'plugin:install',
+  'plugin:uninstall',
   'campaign:list',
   'campaign:getOverview',
   'campaign:compare',

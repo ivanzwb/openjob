@@ -242,13 +242,59 @@ function validateContributions(
   return contributions;
 }
 
+/** RolePack 里必须存在的字段，与 types.ts 的 RolePack 一一对应。 */
+const ROLE_PACK_ARRAY_FIELDS = [
+  'roleMatchers',
+  'competencyTemplates',
+  'interviewStages',
+  'interviewFormats',
+  'rubrics',
+  'taskTemplates',
+] as const;
+
+const ROLE_PACK_OBJECT_FIELDS = ['promptFragments', 'sourcePolicy'] as const;
+
+function validateRolePackShape(pack: Record<string, unknown>): PluginContractIssue[] {
+  const issues: PluginContractIssue[] = [];
+  for (const field of ROLE_PACK_ARRAY_FIELDS) {
+    if (!Array.isArray(pack[field])) {
+      issue(issues, `pack.${field}`, 'invalid-value', `${field} 必须是数组`);
+    }
+  }
+  for (const field of ROLE_PACK_OBJECT_FIELDS) {
+    const value = pack[field];
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+      issue(issues, `pack.${field}`, 'invalid-value', `${field} 必须是对象`);
+    }
+  }
+  return issues;
+}
+
 /**
  * 校验一个解开的插件包。
  *
  * 只做结构与声明层面的校验，不碰签名（签名要 node:crypto，只能在主进程做，
  * 见 src/main/plugins/package/signature.ts）。
+ *
+ * **对任何输入都返回问题列表，绝不抛异常**：输入是不受信任的外部 JSON，调用方在安装与
+ * 扫描路径上，一次意外抛出的后果是崩溃或半截安装，而不是一条「这个包不合法」。
  */
 export function validatePluginPackage(files: PluginPackageFiles): PluginContractIssue[] {
+  try {
+    return validatePackageInternal(files);
+  } catch (error) {
+    // 兜底：上面的粗粒度检查覆盖了已知的坏形状，这里接住剩下的未知形状
+    return [
+      {
+        path: PACKAGE_MANIFEST_FILE,
+        code: 'invalid-value',
+        message: `校验过程异常，包不可用：${error instanceof Error ? error.message : String(error)}`,
+      },
+    ];
+  }
+}
+
+function validatePackageInternal(files: PluginPackageFiles): PluginContractIssue[] {
   const issues: PluginContractIssue[] = [];
 
   const unexpected = Object.keys(files)
@@ -283,6 +329,14 @@ export function validatePluginPackage(files: PluginPackageFiles): PluginContract
       if (packValue === undefined) break;
       if (typeof packValue !== 'object' || packValue === null || Array.isArray(packValue)) {
         issue(issues, PACKAGE_PACK_FILE, 'invalid-value', 'pack 必须是对象');
+        break;
+      }
+      // 先粗粒度查字段在不在、类型对不对，再交给 validateRolePack。后者是为仓库内的
+      // 岗位包写的，靠 TypeScript 保证字段存在；喂给它一份缺字段的外部 JSON 会抛
+      // TypeError 而不是返回问题列表，安装路径就变成了「崩」而不是「拒装」。
+      const shapeIssues = validateRolePackShape(packValue as Record<string, unknown>);
+      if (shapeIssues.length > 0) {
+        issues.push(...shapeIssues);
         break;
       }
       issues.push(

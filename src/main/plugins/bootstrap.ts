@@ -4,6 +4,7 @@
  * 单独一层是为了让 runtime.ts 保持无副作用、可直接单测：扫盘、找密钥、打日志都在这里，
  * runtime.ts 只接收结果。
  */
+import type { PluginInventoryView } from '@shared/ipc';
 import { getAppPaths } from '../paths';
 import { scanPluginInventory, type PluginInventory } from './inventory';
 import { loadTrustedPublicKeys } from './package/trustedKeys';
@@ -36,7 +37,24 @@ export function loadExternalPlugins(): PluginInventory {
   return inventory;
 }
 
-/** 最近一次扫描结果，供 UI 展示「装了但没生效」的包（P06/P07）。 */
+/** 最近一次扫描结果。 */
 export function getPluginInventory(): PluginInventory {
   return lastInventory;
+}
+
+/** 渲染层视图：装上了什么、以及装不上的包和原因。 */
+export function pluginInventoryView(): PluginInventoryView {
+  return {
+    installed: lastInventory.entries.map((entry) => ({
+      id: entry.package.manifest.id,
+      version: entry.package.manifest.version,
+      type: entry.package.manifest.type,
+      trust: entry.trust,
+    })),
+    rejected: lastInventory.rejected.map((item) => ({
+      dir: item.dir,
+      reason: item.reason,
+      detail: item.detail,
+    })),
+  };
 }

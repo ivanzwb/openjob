@@ -34,6 +34,8 @@ const EXECUTION_ENTRIES: readonly { pattern: RegExp; reason: string }[] = [
 const LOADER_FILES = [
   join(__dirname, 'inventory.ts'),
   join(__dirname, 'bootstrap.ts'),
+  join(__dirname, 'install.ts'),
+  join(__dirname, 'bundle.ts'),
   join(__dirname, 'runtime.ts'),
   join(__dirname, 'package', 'signature.ts'),
   join(__dirname, 'package', 'trustedKeys.ts'),
