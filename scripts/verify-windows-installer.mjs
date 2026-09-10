@@ -48,7 +48,25 @@ try {
 
   console.log('[verify-installer] Silent install OK:', appExe);
 } finally {
+  killAppsUnder(installDir);
   rmSync(installDir, { recursive: true, force: true });
+}
+
+/**
+ * 结束这次静默安装拉起来的应用。
+ *
+ * NSIS 装完会把应用启动，而 rmSync 只删目录、不管进程。留着它的后果不是「多一个窗口」：
+ * 那是个打包版实例，会一直占着真实的用户数据库，asar 也被锁住，下一次打包在
+ * unlink dist\win-unpacked 时直接报 EBUSY（本机就是这么卡住的）。CI 上每个 job 用完即弃，
+ * 看不出问题，只有本机连着打两次才会撞上。
+ */
+function killAppsUnder(dir) {
+  if (process.platform !== 'win32') return;
+  // 单引号里的反斜杠在 PowerShell 中是字面量，不需要转义；mkdtemp 的路径也不含单引号
+  const command = `Get-Process | Where-Object { $_.Path -like '${dir}\\*' } | ForEach-Object { Stop-Process -Id $_.Id -Force }`;
+  spawnSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', command], {
+    stdio: 'ignore',
+  });
 }
 
 /**
