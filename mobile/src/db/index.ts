@@ -1,7 +1,7 @@
 import * as Crypto from 'expo-crypto';
 import { openDatabaseSync, type SQLiteDatabase } from 'expo-sqlite';
-import type { FieldOverwrite, PairingPayload } from '@shared/sync';
-import { planMerge } from '@shared/syncMerge';
+import type { FieldOverwrite, PairingPayload } from '@core/sync';
+import { planMerge } from '@core/syncMerge';
 import { pendingMigrationIndices, runMigrations, userTableCount } from './migrate';
 import { backfillRowVersions, installSyncTriggers } from '../sync/triggers';
 import { getDeviceIdentity } from '../sync/identity';

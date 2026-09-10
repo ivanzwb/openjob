@@ -1,13 +1,13 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import type { AutoChange } from '@shared/sync';
-import { deviceLocalInsertDefaults } from '../../../src/main/sync/deviceLocalDefaults';
+import type { AutoChange } from '@core/sync';
+import { deviceLocalInsertDefaults } from '../../../desktop/src/main/sync/deviceLocalDefaults';
 import {
   describeMissingParents,
   findMissingParentChanges,
   findMissingParents,
   type FkProbe,
-} from '../../../src/main/sync/fkDiagnostics';
-import { upsertClause } from '../../../src/main/sync/upsert';
+} from '../../../desktop/src/main/sync/fkDiagnostics';
+import { upsertClause } from '../../../desktop/src/main/sync/upsert';
 import { syncTableSpec, syncTableSpecs } from './tables';
 import { writingAs } from './triggers';
 

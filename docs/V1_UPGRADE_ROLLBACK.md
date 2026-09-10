@@ -19,7 +19,7 @@ v1.0 引入三个岗位包（软件工程、产品经理、销售/客户成功�
 | 回填 | 旧 Campaign 补一份「软件工程」岗位画像与运行描述符 | 只写新表与新列 |
 
 旧 Campaign 的既有列在升级后是 **byte 级不变** 的，这一条由
-`src/main/db/phase0Compat.test.ts` 用 `captureContents` 逐字对比守住。
+`desktop/src/main/db/phase0Compat.test.ts` 用 `captureContents` 逐字对比守住。
 
 ### 1.1 迁移是怎么被挑中的
 
@@ -33,12 +33,12 @@ v1.0 引入三个岗位包（软件工程、产品经理、销售/客户成功�
 （`npm run db:bundle`），少打包一条不是「晚一点跑」，而是那条永远不跑、后面
 每一条的下标都错位。
 
-两端清单的完整性由 `src/main/db/migrations.test.ts` 守住：journal 与 `.sql`
+两端清单的完整性由 `desktop/src/main/db/migrations.test.ts` 守住：journal 与 `.sql`
 双向一一对应、`when` 严格递增、`idx` 连续、`bundle.ts` 与 `.sql` 逐字对应。
 
 ### 1.2 回填的幂等与断点
 
-`backfillLegacyCampaignPluginRuntime`（`src/main/db/backfill/pluginRuntime.ts`）
+`backfillLegacyCampaignPluginRuntime`（`desktop/src/main/db/backfill/pluginRuntime.ts`）
 在单个事务里写 profile、binding、descriptor，最后落一条 `migration_checkpoint`。
 
 - 已有 checkpoint 时第二次执行不做任何写入（幂等）；
@@ -65,8 +65,8 @@ v1.0 引入三个岗位包（软件工程、产品经理、销售/客户成功�
 打包版本下，同步要求两端**完整版本号逐字相同**（含 `-beta.1` 这类后缀），
 不是只比大版本：带迁移的发布经常只抬补丁号，beta 与正式版也可能落在不同 schema。
 
-- 判定：`isSyncCompatible`（`src/shared/version.ts`）
-- 闸门：`checkPeerVersion`（`src/main/sync/versionGate.ts`），不通过时返回
+- 判定：`isSyncCompatible`（`core/src/version.ts`）
+- 闸门：`checkPeerVersion`（`desktop/src/main/sync/versionGate.ts`），不通过时返回
   HTTP 409 与 `SYNC_VERSION_MISMATCH`，**在动数据之前**就中断这一轮
 - 开发态（未打包）直接放行：仓库里 `package.json` 与 `mobile/app.json` 的版本号
   平时本来就不同步，照发布态规则拦会让本地调试链路一起断掉
@@ -80,7 +80,7 @@ v1.0 引入三个岗位包（软件工程、产品经理、销售/客户成功�
 
 ### 3.1 数据快照
 
-实现在 `src/main/sync/backup.ts`，用 SQLite 的 `VACUUM INTO` 生成整库副本：
+实现在 `desktop/src/main/sync/backup.ts`，用 SQLite 的 `VACUUM INTO` 生成整库副本：
 
 | 场景 | 入口 | 说明 |
 |---|---|---|
@@ -128,12 +128,12 @@ Drizzle 不会「降级」，只会在缺表缺列上直接失败。回滚必须
 | 验收项 | 守在哪 |
 |---|---|
 | 三个岗位包 golden 通过 | `builtin/{softwareEngineering,productManager,salesCustomerSuccess}/golden.test.ts` |
-| 三个能力插件权限隔离 | `src/main/plugins/capabilityIsolation.test.ts` |
-| 岗位与能力不串味 | `src/main/v1ReleaseGate.test.ts` 的隔离矩阵 |
-| 两端 migration 清单一致 | `src/main/db/migrations.test.ts` |
-| 两端 descriptor 一致 | `v1ReleaseGate.test.ts`、`src/shared/plugins/phase1Gate.test.ts` |
+| 三个能力插件权限隔离 | `desktop/src/main/plugins/capabilityIsolation.test.ts` |
+| 岗位与能力不串味 | `desktop/src/main/v1ReleaseGate.test.ts` 的隔离矩阵 |
+| 两端 migration 清单一致 | `desktop/src/main/db/migrations.test.ts` |
+| 两端 descriptor 一致 | `v1ReleaseGate.test.ts`、`core/src/plugins/phase1Gate.test.ts` |
 | 面后复盘跨端往返 | `mobile/src/sync/debriefRoundtrip.test.ts` |
-| 旧 Campaign 可继续使用 | `src/main/db/phase0Compat.test.ts`、`v1ReleaseGate.test.ts` |
+| 旧 Campaign 可继续使用 | `desktop/src/main/db/phase0Compat.test.ts`、`v1ReleaseGate.test.ts` |
 | 同步覆盖插件运行时表 | `v1ReleaseGate.test.ts` |
 
 ---

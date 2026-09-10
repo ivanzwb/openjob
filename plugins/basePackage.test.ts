@@ -6,13 +6,13 @@
  * 而所有用例照样全绿，表现只是「装机就莫名带着三个岗位」。
  *
  * 两条保证互补：
- * - 物理：`electron.vite.config.ts` 的 main/preload/renderer 三个目标都不登记 `@plugins`
- *   别名，应用代码一旦引用，构建当场就断；
+ * - 物理：`desktop/electron.vite.config.ts` 的 main/preload/renderer 三个目标都不登记
+ *   `@plugins` 别名，应用代码一旦引用，构建当场就断；
  * - 静态：这里扫源码，把违规定位到具体文件，而不是留一句「Rollup 解析不了 @plugins」。
  *
- * 别名那条得单独钉住：`tsconfig.node.json` 为了给测试与夹具解析路径必须登记 `@plugins`，
- * 于是 tsc 不会拦住应用代码的引用。构建配置是唯一挡住它的地方，谁「顺手补齐一下别名」
- * 就把这道墙拆了，且当时不会有任何失败。
+ * 别名那条得单独钉住：core 与 desktop 的 tsconfig 为了给测试与夹具解析路径必须登记
+ * `@plugins`，于是 tsc 不会拦住应用代码的引用。构建配置是唯一挡住它的地方，
+ * 谁「顺手补齐一下别名」就把这道墙拆了，且当时不会有任何失败。
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -46,8 +46,12 @@ function appSources(root: string): string[] {
 }
 
 describe('基础包不带岗位包', () => {
-  it('应用源码（桌面端与手机端）没有一处 import 岗位包', () => {
-    const roots = [join(REPO_ROOT, 'src'), join(REPO_ROOT, 'mobile', 'src')];
+  it('应用源码（core、桌面端与手机端）没有一处 import 岗位包', () => {
+    const roots = [
+      join(REPO_ROOT, 'core', 'src'),
+      join(REPO_ROOT, 'desktop', 'src'),
+      join(REPO_ROOT, 'mobile', 'src'),
+    ];
     const scanned = roots.flatMap((root) => appSources(root));
     // 扫不到文件的「全绿」是假绿：目录改名后这条用例会替所有人放行
     expect(scanned.length).toBeGreaterThan(100);
@@ -59,7 +63,10 @@ describe('基础包不带岗位包', () => {
   });
 
   it('构建配置不登记 @plugins 别名，应用代码引用了就构建失败', () => {
-    const config = readFileSync(join(REPO_ROOT, 'electron.vite.config.ts'), 'utf8');
-    expect(config).not.toContain('@plugins');
+    const config = readFileSync(join(REPO_ROOT, 'desktop', 'electron.vite.config.ts'), 'utf8');
+    // 先剥注释：那个文件里有一段注释专门解释「这里为什么不登记 @plugins」，
+    // 直接搜字符串会被自己的说明文档绊倒
+    const code = config.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+    expect(code).not.toContain('@plugins');
   });
 });

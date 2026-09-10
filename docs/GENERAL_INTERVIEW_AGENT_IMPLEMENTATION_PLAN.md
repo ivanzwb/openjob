@@ -44,7 +44,7 @@
 
 1. 一个任务对应一个主要 PR；确需拆分时使用 `Txx-a`、`Txx-b`。
 2. 公共接口只有一个 Owner。其他任务只能消费，不得复制或定义同义类型。
-3. `src/shared` 先于桌面端和手机端实现。
+3. `core/src` 先于桌面端和手机端实现。
 4. 数据库变更必须同时覆盖桌面 migration、手机 migration bundle 和同步清单。
 5. 旧枚举、旧表、旧 IPC 至少保留一个发布周期。
 6. Phase Gate 未通过，不得开启下一阶段对 Core 的侵入式改造。
@@ -114,7 +114,7 @@ flowchart LR
 建议新增：
 
 ```text
-src/shared/plugins/
+core/src/plugins/
 ├── types.ts
 ├── permissions.ts
 ├── contracts.ts
@@ -209,21 +209,21 @@ interface HostRenderedInteraction {
 
 ### 6.1 IPC
 
-修改 `src/shared/ipc.ts` 时，同一 PR 必须同步更新：
+修改 `core/src/ipc.ts` 时，同一 PR 必须同步更新：
 
-- `src/main/ipc/index.ts`；
-- `src/preload/index.ts`；
-- `src/main/sync/rpc.ts` 中允许手机调用的 RPC；
-- `src/shared/ipcContract.test.ts`。
+- `desktop/src/main/ipc/index.ts`；
+- `desktop/src/preload/index.ts`；
+- `desktop/src/main/sync/rpc.ts` 中允许手机调用的 RPC；
+- `core/src/ipcContract.test.ts`。
 
 ### 6.2 数据库与同步
 
 新增同步实体时，同一 PR 必须同步更新：
 
-- `src/main/db/schema.ts`；
-- `src/main/db/migrations/`；
+- `desktop/src/main/db/schema.ts`；
+- `desktop/src/main/db/migrations/`；
 - `mobile/src/db/migrations/` 与 `bundle.ts`；
-- `src/main/sync/tables.ts`；
+- `desktop/src/main/sync/tables.ts`；
 - 桌面和手机 FK/apply/migrate 测试。
 
 下一条 migration 编号由 T03 唯一分配。其他任务不得创建 migration。
@@ -252,12 +252,12 @@ interface HostRenderedInteraction {
 
 **Owned files**
 
-- `src/shared/plugins/types.ts`
-- `src/shared/plugins/permissions.ts`
-- `src/shared/plugins/contracts.ts`
-- `src/shared/plugins/index.ts`
-- `src/shared/enums.ts`
-- `src/shared/index.ts`
+- `core/src/plugins/types.ts`
+- `core/src/plugins/permissions.ts`
+- `core/src/plugins/contracts.ts`
+- `core/src/plugins/index.ts`
+- `core/src/enums.ts`
+- `core/src/index.ts`
 
 **Depends on**：无  
 **Blocks**：T02—T08
@@ -290,9 +290,9 @@ interface HostRenderedInteraction {
 
 **Owned files**
 
-- `src/shared/plugins/registry.ts`
-- `src/shared/plugins/resolver.ts`
-- `src/shared/plugins/resolver.test.ts`
+- `core/src/plugins/registry.ts`
+- `core/src/plugins/resolver.ts`
+- `core/src/plugins/resolver.test.ts`
 
 **Depends on**：T01  
 **Blocks**：T06、T07、T08
@@ -337,12 +337,12 @@ type RuntimeResolveErrorCode =
 
 **Owned files**
 
-- `src/main/db/schema.ts`
-- `src/main/db/migrations/`
+- `desktop/src/main/db/schema.ts`
+- `desktop/src/main/db/migrations/`
 - `mobile/src/db/migrations/`
 - `mobile/src/db/migrations/bundle.ts`
-- `src/main/sync/tables.ts`
-- `src/main/db/backfill/`
+- `desktop/src/main/sync/tables.ts`
+- `desktop/src/main/db/backfill/`
 - `mobile/app.json`
 
 **Depends on**：T01  
@@ -383,7 +383,7 @@ RoleProfile
 
 **Owned files**
 
-- `src/shared/plugins/builtin/softwareEngineering/`
+- `core/src/plugins/builtin/softwareEngineering/`
 
 **Depends on**：T01  
 **Blocks**：T09
@@ -415,11 +415,11 @@ export const softwareEngineeringRolePack: RolePack;
 
 **Owned files**
 
-- `src/shared/plugins/builtin/sourceRepository/`
-- `src/main/llm/toolPolicy.ts`
-- `src/main/llm/tools.ts`
-- `src/main/repo/tools.ts`
-- `src/main/plugins/permissionGateway.ts`
+- `core/src/plugins/builtin/sourceRepository/`
+- `desktop/src/main/llm/toolPolicy.ts`
+- `desktop/src/main/llm/tools.ts`
+- `desktop/src/main/repo/tools.ts`
+- `desktop/src/main/plugins/permissionGateway.ts`
 
 **Depends on**：T01  
 **Blocks**：T09
@@ -450,11 +450,11 @@ authorize({
 
 **Owned files**
 
-- `src/shared/prompts/composer.ts`
-- `src/shared/prompts/registry.ts`
-- `src/shared/prompts/grounding.ts`
-- `src/main/llm/json.ts`
-- `src/main/ab/promptRun.ts`
+- `core/src/prompts/composer.ts`
+- `core/src/prompts/registry.ts`
+- `core/src/prompts/grounding.ts`
+- `desktop/src/main/llm/json.ts`
+- `desktop/src/main/ab/promptRun.ts`
 
 **Depends on**：T02  
 **Blocks**：T09、T12
@@ -482,8 +482,8 @@ composePrompt(input: PromptCompositionInput): ComposedPrompt;
 
 **Owned files**
 
-- `src/shared/planner/contributions.ts`
-- `src/main/plan/schedule.ts`
+- `core/src/planner/contributions.ts`
+- `desktop/src/main/plan/schedule.ts`
 - `mobile/src/data/planLocal.ts`
 
 **Depends on**：T02、T04、T05  
@@ -513,11 +513,11 @@ collectPlannerContributions(
 
 **Owned files**
 
-- `src/shared/ipc.ts`
-- `src/main/ipc/index.ts`
-- `src/preload/index.ts`
-- `src/main/sync/rpc.ts`
-- `src/shared/plugins/clientView.ts`
+- `core/src/ipc.ts`
+- `desktop/src/main/ipc/index.ts`
+- `desktop/src/preload/index.ts`
+- `desktop/src/main/sync/rpc.ts`
+- `core/src/plugins/clientView.ts`
 
 **Depends on**：T02、T03  
 **Blocks**：T09、T15、T16
@@ -544,8 +544,8 @@ collectPlannerContributions(
 
 **Owned files**
 
-- `src/shared/plugins/__fixtures__/`
-- `src/shared/plugins/*.test.ts`
+- `core/src/plugins/__fixtures__/`
+- `core/src/plugins/*.test.ts`
 - Phase 0 新增回归测试
 
 **Depends on**：T03—T08  
@@ -572,8 +572,8 @@ collectPlannerContributions(
 
 **Owned files**
 
-- `src/shared/evidence/`
-- `src/main/evidence/`
+- `core/src/evidence/`
+- `desktop/src/main/evidence/`
 - 对应 schema/entity 适配层
 
 **Depends on**：T09  
@@ -606,9 +606,9 @@ interface EvidenceService {
 
 **Owned files**
 
-- `src/shared/competency/`
-- `src/main/diagnosis/`
-- `src/shared/priority.ts`
+- `core/src/competency/`
+- `desktop/src/main/diagnosis/`
+- `core/src/priority.ts`
 
 **Depends on**：T09、T10  
 **Blocks**：T14、T17
@@ -638,9 +638,9 @@ diagnoseCompetencies(input: {
 
 **Owned files**
 
-- `src/shared/practice/`
-- `src/main/practice/`
-- `src/main/quiz/` 与 `src/main/design/` 适配层
+- `core/src/practice/`
+- `desktop/src/main/practice/`
+- `desktop/src/main/quiz/` 与 `desktop/src/main/design/` 适配层
 
 **Depends on**：T06、T09  
 **Blocks**：T14、T17
@@ -670,8 +670,8 @@ interface PracticeProtocol {
 
 **Owned files**
 
-- `src/shared/story/`
-- `src/main/story/`
+- `core/src/story/`
+- `desktop/src/main/story/`
 - SpeechSnippet source adapter
 
 **Depends on**：T10  
@@ -702,7 +702,7 @@ interface StoryService {
 
 **Owned files**
 
-- `src/shared/plugins/builtin/productManager/`
+- `core/src/plugins/builtin/productManager/`
 
 **Depends on**：T11、T12  
 **Blocks**：T17、T20
@@ -732,9 +732,9 @@ interface StoryService {
 
 **Owned files**
 
-- `src/renderer/src/pages/CampaignDetail.tsx`
-- `src/renderer/src/pages/DesignPractice.tsx`
-- `src/renderer/src/App.tsx`
+- `desktop/src/renderer/src/pages/CampaignDetail.tsx`
+- `desktop/src/renderer/src/pages/DesignPractice.tsx`
+- `desktop/src/renderer/src/App.tsx`
 - 新增宿主 UI 组件
 
 **Depends on**：T08、T10、T12  
@@ -806,7 +806,7 @@ interface StoryService {
 
 **Owned files**
 
-- `src/shared/plugins/builtin/salesCustomerSuccess/`
+- `core/src/plugins/builtin/salesCustomerSuccess/`
 
 **Depends on**：T17  
 **Blocks**：T20
@@ -832,10 +832,10 @@ interface StoryService {
 
 **Owned files**
 
-- `src/shared/plugins/interactions/`
-- `src/main/plugins/interactionRuntime.ts`
+- `core/src/plugins/interactions/`
+- `desktop/src/main/plugins/interactionRuntime.ts`
 - 桌面/手机 Host renderer
-- `src/shared/plugins/builtin/rolePlay/`
+- `core/src/plugins/builtin/rolePlay/`
 
 **Depends on**：T17  
 **Blocks**：T20
@@ -867,7 +867,7 @@ interface HostRenderedInteraction {
 
 **Owned files**
 
-- `src/shared/plugins/builtin/analyticsCase/`
+- `core/src/plugins/builtin/analyticsCase/`
 - 集成测试与发布文档
 - v1.0 migration/sync fixture
 

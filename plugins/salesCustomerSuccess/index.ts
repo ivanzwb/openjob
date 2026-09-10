@@ -16,7 +16,7 @@
  * 差在能不能问出真实痛点、能不能把价值说到对方的衡量标准上，与实现细节无关。
  */
 
-import type { TaskKind } from '@shared/enums';
+import type { TaskKind } from '@core/enums';
 import type {
   CompetencyTemplate,
   InterviewFormatDefinition,
@@ -26,7 +26,7 @@ import type {
   RubricAnchors,
   RubricDefinition,
   TaskTemplate,
-} from '@shared/plugins/types';
+} from '@core/plugins/types';
 
 export const SALES_CUSTOMER_SUCCESS_ROLE_PACK_ID = 'sales-customer-success';
 export const SALES_CUSTOMER_SUCCESS_ROLE_PACK_VERSION = '1.0.0';

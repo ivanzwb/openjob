@@ -11,7 +11,7 @@ import {
   type GestureResponderEvent,
   type PanResponderGestureState,
 } from 'react-native';
-import type { Annotation } from '@shared/entities';
+import type { Annotation } from '@core/entities';
 import { DEFAULT_HIGHLIGHT_COLOR, HIGHLIGHT_COLORS } from '../lib/annotationMarks';
 import type { ActionModalMode } from '../lib/explanationSelectionState';
 import { useTheme } from '../theme';

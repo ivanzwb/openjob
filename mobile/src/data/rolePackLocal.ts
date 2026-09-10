@@ -12,9 +12,9 @@
  * 这份缓存不进同步表，理由与 repo.local_path 相同：它是设备属性，不是备考数据。
  */
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { listBuiltInPlugins, toInstalledPlugin, type InstalledPlugin } from '@shared/plugins/clientView';
-import { parseTransferredRolePack } from '@shared/plugins/package/rolePackTransfer';
-import type { ResolvedPluginRef, RolePack } from '@shared/plugins/types';
+import { listBuiltInPlugins, toInstalledPlugin, type InstalledPlugin } from '@core/plugins/clientView';
+import { parseTransferredRolePack } from '@core/plugins/package/rolePackTransfer';
+import type { ResolvedPluginRef, RolePack } from '@core/plugins/types';
 import { invokeRemote } from '../remote/rpc';
 
 export interface RolePackRef {

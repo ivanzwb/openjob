@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import type { CompanyIntel } from '@shared/entities';
+import type { CompanyIntel } from '@core/entities';
 import { MarkdownPreview } from './MarkdownPreview';
 import { useTheme } from '../theme';
 

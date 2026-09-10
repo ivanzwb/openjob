@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import type { TaskView } from '@shared/ipc';
+import type { TaskView } from '@core/ipc';
 import { StudyPlanCalendar, todayLocal } from './StudyPlanCalendar';
 import { getRawDb } from '../db';
 import { getTodayPlan, listPlanDates } from '../data/queries';

@@ -1,25 +1,25 @@
 import * as Crypto from 'expo-crypto';
 import type { SQLiteDatabase } from 'expo-sqlite';
-import type { CoverageType, NodeKind } from '@shared/enums';
-import type { ResumeParsed } from '@shared/entities';
+import type { CoverageType, NodeKind } from '@core/enums';
+import type { ResumeParsed } from '@core/entities';
 import {
   crossAnalyzeUser,
   type CrossAnalyzeResult,
   type ExpandNodeResult,
   type JdDiagnosisResult,
-} from '@shared/diagnosis/prompts';
-import { computePriority } from '@shared/priority';
+} from '@core/diagnosis/prompts';
+import { computePriority } from '@core/priority';
 import {
   EXPAND_DEPTH_LIMIT_MESSAGE,
   canExpandNode,
   findCrossLevelDuplicate,
   findSameLevelDuplicate,
   flattenGeneratedTree,
-} from '@shared/diagnosis/tree';
+} from '@core/diagnosis/tree';
 import {
   findUncoveredRequirements,
   uncoveredRequirementsMessage,
-} from '@shared/diagnosis/coverage';
+} from '@core/diagnosis/coverage';
 import { completeJson } from '../llm/json';
 import { getCampaign, getResume } from './campaignLocal';
 import {

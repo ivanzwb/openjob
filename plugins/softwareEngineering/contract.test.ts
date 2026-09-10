@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { PROMPT_REGISTRY } from '@shared/prompts/registry';
-import { validateRolePack } from '@shared/plugins/contracts';
+import { PROMPT_REGISTRY } from '@core/prompts/registry';
+import { validateRolePack } from '@core/plugins/contracts';
 import {
   SOFTWARE_ENGINEERING_PROMPT_REFS,
   softwareEngineeringRolePack,

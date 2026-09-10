@@ -10,12 +10,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   LEGACY_CAMPAIGN_SCOPE_KIND,
   REQUIRES_DESKTOP_REASON,
-} from '@shared/planner/contributions';
+} from '@core/planner/contributions';
 import {
   CROSS_CLIENT_PLAN,
   crossClientLegacyPlan,
   type LegacyPlanDay,
-} from '@shared/planner/__fixtures__/legacyPlan';
+} from '@core/planner/__fixtures__/legacyPlan';
 import { MIGRATIONS } from '../db/migrations/bundle';
 
 const ids = vi.hoisted(() => ({ next: 0 }));

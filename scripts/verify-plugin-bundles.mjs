@@ -18,15 +18,15 @@ const server = await createServer({
   configFile: false,
   root: ROOT,
   logLevel: 'error',
-  resolve: { alias: { '@shared': resolve(ROOT, 'src/shared') } },
+  resolve: { alias: { '@core': resolve(ROOT, 'core/src') } },
   server: { middlewareMode: true },
   appType: 'custom',
   optimizeDeps: { noDiscovery: true },
 });
 
 try {
-  const contract = await server.ssrLoadModule('src/shared/plugins/package/contract.ts');
-  const signature = await server.ssrLoadModule('src/main/plugins/package/signature.ts');
+  const contract = await server.ssrLoadModule('core/src/plugins/package/contract.ts');
+  const signature = await server.ssrLoadModule('desktop/src/main/plugins/package/signature.ts');
   const index = JSON.parse(readFileSync(join(DIR, 'index.json'), 'utf8'));
 
   let failed = 0;

@@ -1,8 +1,8 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import type { Campaign, KnowledgeNode, Resume } from '@shared/entities';
-import type { CoverageType, ExamForm, MasterySource, NodeKind, NodeStatus } from '@shared/enums';
-import { buildExplainResumeContext } from '@shared/prompts/candidateContext';
-import type { ResumeRelevanceQuery } from '@shared/resume/relevance';
+import type { Campaign, KnowledgeNode, Resume } from '@core/entities';
+import type { CoverageType, ExamForm, MasterySource, NodeKind, NodeStatus } from '@core/enums';
+import { buildExplainResumeContext } from '@core/prompts/candidateContext';
+import type { ResumeRelevanceQuery } from '@core/resume/relevance';
 import { loadCampaignResumeForPrompt } from './resumeProfileLocal';
 
 type NodeRow = {

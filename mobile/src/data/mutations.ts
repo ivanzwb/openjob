@@ -1,8 +1,8 @@
 import * as Crypto from 'expo-crypto';
 import type { SQLiteDatabase } from 'expo-sqlite';
-import type { TaskView } from '@shared/ipc';
-import type { ExplanationTier } from '@shared/enums';
-import type { FollowUpSummaryUpdate } from '@shared/llm/followUpContext';
+import type { TaskView } from '@core/ipc';
+import type { ExplanationTier } from '@core/enums';
+import type { FollowUpSummaryUpdate } from '@core/llm/followUpContext';
 import { getDeviceIdentity } from '../sync/identity';
 import { writingAs } from '../sync/triggers';
 import { nextMessageTimestamp, repoQaSessionId, type RepoQaMessage } from './repoQaThread';
@@ -395,7 +395,7 @@ export async function saveSpeechFromDesign(
 
 /**
  * 新建备考。resumeId 缺省时绑最新母版（移动端新建不选目标岗位、也没有派生版
- * 可选，规则见 @shared/resume/campaignBinding：无派生版 → 最新母版），保证
+ * 可选，规则见 @core/resume/campaignBinding：无派生版 → 最新母版），保证
  * 出题/参考答案的 prompt 里有候选人履历。
  */
 export async function createCampaign(

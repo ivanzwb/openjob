@@ -1,4 +1,4 @@
-import type { SyncRpcRequest, SyncRpcResponse } from '@shared/sync';
+import type { SyncRpcRequest, SyncRpcResponse } from '@core/sync';
 import { signRequest } from '../sync/client';
 import { getCurrentVersion } from '../lib/appVersion';
 

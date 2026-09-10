@@ -1,4 +1,4 @@
-import type { LlmRole, LlmTier } from '@shared/enums';
+import type { LlmRole, LlmTier } from '@core/enums';
 import { getMobileConfig, getMobileSecret } from '../config/settings';
 
 export interface ResolvedLlm {

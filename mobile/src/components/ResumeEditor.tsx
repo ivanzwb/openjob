@@ -8,14 +8,14 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import type { ResumeDocument, ResumeSectionKey } from '@shared/resume/document';
+import type { ResumeDocument, ResumeSectionKey } from '@core/resume/document';
 import {
   RESUME_SECTION_CATALOG,
   catalogHintForKey,
   documentToMarkdown,
   parseMarkdownToDocument,
-} from '@shared/resume/document';
-import { parsePreviewStyle, serializePreviewStyle, type ResumePreviewStyle } from '@shared/resume/previewStyle';
+} from '@core/resume/document';
+import { parsePreviewStyle, serializePreviewStyle, type ResumePreviewStyle } from '@core/resume/previewStyle';
 import { getRawDb } from '../db';
 import { updateResumeEntry, type ResumeEntry } from '../data/resumeLocal';
 import { polishResume, structureResume } from '../data/resumeAi';

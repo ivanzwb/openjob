@@ -664,7 +664,7 @@ interface SearchConfig {
 
 **单包 + electron-vite**，用 path alias 做类型共享。
 
-> 初版设计写的是 pnpm workspace 三包（`main` / `renderer` / `shared`）。改为单包的理由：electron-vite 是 Electron + Vite 的标准工具，默认就把 main、preload、renderer 三个构建目标统一编排；拆成 workspace 后这套编排要自己接，还要处理 shared 包的构建与 watch，对单人项目是纯粹的复杂度。类型共享靠 `@shared/*` alias 一样能拿到，「渲染进程不碰 Node API」靠 preload 白名单 + eslint 规则强制，比包边界更可靠。
+> 初版设计写的是 pnpm workspace 三包（`main` / `renderer` / `shared`）。改为单包的理由：electron-vite 是 Electron + Vite 的标准工具，默认就把 main、preload、renderer 三个构建目标统一编排；拆成 workspace 后这套编排要自己接，还要处理 shared 包的构建与 watch，对单人项目是纯粹的复杂度。类型共享靠 `@core/*` alias 一样能拿到，「渲染进程不碰 Node API」靠 preload 白名单 + eslint 规则强制，比包边界更可靠。
 
 ```
 openJob/
@@ -740,7 +740,7 @@ openJob/
             └── ipc/                # 类型安全的 IPC 客户端封装
 ```
 
-手机端（`mobile/`，Expo + React Native + expo-sqlite）与桌面端共享 `src/shared/` 类型，作为局域网同步的另一个对端。配对并全量同步后，手机可**离线独立运行** LLM 链路（诊断、讲解、考我、模拟面试、读源码与仓库 Agent），不依赖桌面 RPC 代理；克隆与 tree-sitter 索引仍在桌面端完成，索引后的 `repo_file` 快照同步到手机。
+手机端（`mobile/`，Expo + React Native + expo-sqlite）与桌面端共享 `core/src/` 类型，作为局域网同步的另一个对端。配对并全量同步后，手机可**离线独立运行** LLM 链路（诊断、讲解、考我、模拟面试、读源码与仓库 Agent），不依赖桌面 RPC 代理；克隆与 tree-sitter 索引仍在桌面端完成，索引后的 `repo_file` 快照同步到手机。
 
 ```
 mobile/
@@ -763,9 +763,9 @@ mobile/
 
 **安全基线**：渲染进程开启 `contextIsolation`、关闭 `nodeIntegration`，仅通过 preload 暴露白名单 IPC 方法。这既是 Electron 安全规范，也强制了「UI 不碰 IO」的分层。
 
-**分层强制**：eslint `no-restricted-imports` 禁止 `src/renderer` 引入 `node:*`、`electron` 主进程模块及 `src/main/**`；`src/shared` 只允许纯类型与常量，不含任何运行时 IO。
+**分层强制**：eslint `no-restricted-imports` 禁止 `desktop/src/renderer` 引入 `node:*`、`electron` 主进程模块及 `desktop/src/main/**`；`core/src` 只允许纯类型与常量，不含任何运行时 IO。
 
-**`src/shared` 里不许摸宿主全局**：这条比「不含 IO」更容易破。`src/shared` 同时被 Electron 主进程、渲染进程和 React Native 加载，三个运行时的全局面并不一样——Node 有 `globalThis.crypto.randomUUID()`，Hermes 没有（RN 里生成 UUID 得走 `expo-crypto`）。`flattenGeneratedTree` 曾经直接调这个全局，桌面端一路正常，手机端一点「JD 诊断」就抛 `Cannot read property 'randomUUID' of undefined`；更糟的是它在清空旧考点之后才炸，用户看到的是考点清单凭空消失。所以共享模块需要宿主能力时一律**由调用方注入**，且做成必填参数而非带默认值的可选参数：给了默认值就等于给回退留门，类型检查也就不再逼调用方交代能力从哪来。
+**`core/src` 里不许摸宿主全局**：这条比「不含 IO」更容易破。`core/src` 同时被 Electron 主进程、渲染进程和 React Native 加载，三个运行时的全局面并不一样——Node 有 `globalThis.crypto.randomUUID()`，Hermes 没有（RN 里生成 UUID 得走 `expo-crypto`）。`flattenGeneratedTree` 曾经直接调这个全局，桌面端一路正常，手机端一点「JD 诊断」就抛 `Cannot read property 'randomUUID' of undefined`；更糟的是它在清空旧考点之后才炸，用户看到的是考点清单凭空消失。所以共享模块需要宿主能力时一律**由调用方注入**，且做成必填参数而非带默认值的可选参数：给了默认值就等于给回退留门，类型检查也就不再逼调用方交代能力从哪来。
 
 ### 5.7 桌面 ↔ 手机同步
 
@@ -838,7 +838,7 @@ mobile/
 
 **迁移清单本身有两条硬规则**，两条都栽过：
 
-1. **`meta/_journal.json` 的 `when` 必须严格递增。** Drizzle 不按序号补齐迁移，它取日志里 `created_at` 的最大值当水位，只跑 `when` 更大的那些。所以一条 `when` 比前面小的迁移，会在所有「已经升过头」的库上被**永久跳过**——不报错、不重试，那张表就是永远建不出来，而全新安装一切正常，本地根本复现不了。`0013_prompt_run` 真的这么丢过一次（手填的时间戳里混进一个 drizzle-kit 真实生成的，恰好偏小）。已经发出去的库只能靠一条 `CREATE TABLE IF NOT EXISTS` 的补建迁移捞回来，改原来那条的 `when` 对它们没用。`src/main/db/migrations.test.ts` 守这条。
+1. **`meta/_journal.json` 的 `when` 必须严格递增。** Drizzle 不按序号补齐迁移，它取日志里 `created_at` 的最大值当水位，只跑 `when` 更大的那些。所以一条 `when` 比前面小的迁移，会在所有「已经升过头」的库上被**永久跳过**——不报错、不重试，那张表就是永远建不出来，而全新安装一切正常，本地根本复现不了。`0013_prompt_run` 真的这么丢过一次（手填的时间戳里混进一个 drizzle-kit 真实生成的，恰好偏小）。已经发出去的库只能靠一条 `CREATE TABLE IF NOT EXISTS` 的补建迁移捞回来，改原来那条的 `when` 对它们没用。`desktop/src/main/db/migrations.test.ts` 守这条。
 2. **一条迁移一个事务。** 桌面端由 Drizzle 保证（整批 `BEGIN`/`COMMIT`），手机端要显式 `withTransactionSync()`——SQLite 的 DDL 本来就是事务性的，不包只是漏了。这对「建新表-搬数据-删旧表-改名」那种重建尤其要命：不包事务时在删表和改名之间断掉，留下的是一个没有目标表、数据全在 `__new_*` 里的库，而手机端的容错重放会先把建表当成「已存在」跳过、再撞上 `no such table`，这个错不在白名单里，于是每次启动都挂在同一行，应用彻底打不开。
 
 **保留策略三条规则叠加，都不是「全局留最近 N 份」**。判定逻辑 `selectStaleBackups()` 放在 `shared/sync.ts` 两端共用（删文件各自用自己的 API），另有 50MB 空间下限。
@@ -869,7 +869,7 @@ mobile/
 
 ### 6.1 全部数据表与同步范围
 
-一共 32 张表。「同步」一列以 `src/main/sync/tables.ts` 里的 `SYNCED_TABLES` 为准——那是代码里的唯一事实来源，触发器和变更集的列名都从 Drizzle schema 反射得到，不在别处重复写一遍（重复写就一定会有一天忘了改，那个字段会静默地永远同步不过去）。
+一共 32 张表。「同步」一列以 `desktop/src/main/sync/tables.ts` 里的 `SYNCED_TABLES` 为准——那是代码里的唯一事实来源，触发器和变更集的列名都从 Drizzle schema 反射得到，不在别处重复写一遍（重复写就一定会有一天忘了改，那个字段会静默地永远同步不过去）。
 
 **Campaign 与输入**
 
@@ -1190,7 +1190,7 @@ tool_call(
 
 而 Python 在桌面分发上有实打实的阻碍：PyInstaller 打包体积 200–500MB；tree-sitter 原生扩展与 BLAS 常收集不全需手写 hook；冷启动数秒；**打出的 exe 被 Windows Defender 误报概率高**（对分发是致命的）；FastAPI 作为子进程需处理端口冲突、进程残留、优雅退出；自动更新无成熟方案。
 
-换成 TS 栈后的额外红利：主进程与渲染进程共享同一份类型定义（`src/shared`），单人开发不必在两套类型系统间手工同步。
+换成 TS 栈后的额外红利：主进程与渲染进程共享同一份类型定义（`core/src`），单人开发不必在两套类型系统间手工同步。
 
 唯一损失是将来若要跑本地 embedding 模型 Python 更方便，但 embedding 走 API 或 `transformers.js` 均可解决。
 
@@ -1223,7 +1223,7 @@ tool_call(
 
 ### 阶段 0 — 底座
 
-- 单包 electron-vite 骨架：`src/main` / `src/preload` / `src/renderer` / `src/shared`，分层由 eslint 规则约束
+- 单包 electron-vite 骨架：`desktop/src/main` / `desktop/src/preload` / `desktop/src/renderer` / `core/src`，分层由 eslint 规则约束
 - Electron 主进程 + Vite React 渲染进程，`contextIsolation` + preload 白名单
 - 类型安全的 IPC 层（含流式 event 通道）
 - 配置与密钥：`config.json` + `safeStorage`，Settings 页可填 provider 与 API Key

@@ -1060,7 +1060,7 @@ Backfill 必须可重复执行并记录 checkpoint。低于最小兼容版本的
 
 ### 16.1 Shared 优先
 
-岗位定义、题型协议、Rubric 和 Prompt Slot 必须先进入 `src/shared`，然后由桌面端和手机端共同使用。
+岗位定义、题型协议、Rubric 和 Prompt Slot 必须先进入 `core/src`，然后由桌面端和手机端共同使用。
 
 禁止：
 
@@ -1073,16 +1073,16 @@ Backfill 必须可重复执行并记录 checkpoint。低于最小兼容版本的
 
 | 代码区域 | 改造方向 |
 |---|---|
-| `src/shared/enums.ts` | 保留旧枚举，新增 registry ID 与通用协议类型 |
-| `src/shared/entities.ts` | 新增 RoleProfile、CandidateEvidence、Competency、Story、PracticeAttempt |
-| `src/shared/diagnosis/prompts.ts` | 从固定技能树改为岗位包提供能力模板 |
-| `src/shared/design/prompts.ts` | 将题型和 Rubric 从硬编码常量迁出 |
-| `src/shared/prompts/explain.ts` | 根据能力类别选择讲解结构，不再固定“代码/实例” |
-| `src/shared/prompts/registry.ts` | 记录插件来源、版本和 Prompt Slot |
-| `src/main/plan/schedule.ts` | `readCode` 改为岗位包声明的可选任务 |
-| `src/shared/config.ts` | 搜索来源、可信度和时效支持岗位包覆盖 |
-| `src/main/db/schema.ts` | 增量新增插件、证据、能力、故事和练习实体 |
-| `src/shared/ipc.ts` | 新增插件查询、能力协商和通用 Practice contract |
+| `core/src/enums.ts` | 保留旧枚举，新增 registry ID 与通用协议类型 |
+| `core/src/entities.ts` | 新增 RoleProfile、CandidateEvidence、Competency、Story、PracticeAttempt |
+| `core/src/diagnosis/prompts.ts` | 从固定技能树改为岗位包提供能力模板 |
+| `core/src/design/prompts.ts` | 将题型和 Rubric 从硬编码常量迁出 |
+| `core/src/prompts/explain.ts` | 根据能力类别选择讲解结构，不再固定“代码/实例” |
+| `core/src/prompts/registry.ts` | 记录插件来源、版本和 Prompt Slot |
+| `desktop/src/main/plan/schedule.ts` | `readCode` 改为岗位包声明的可选任务 |
+| `core/src/config.ts` | 搜索来源、可信度和时效支持岗位包覆盖 |
+| `desktop/src/main/db/schema.ts` | 增量新增插件、证据、能力、故事和练习实体 |
+| `core/src/ipc.ts` | 新增插件查询、能力协商和通用 Practice contract |
 | 桌面/手机 Campaign UI | 增加岗位、级别、行业和插件确认 |
 | 手机端复盘 | 补齐面经摄入与面后复盘闭环 |
 
@@ -1152,7 +1152,7 @@ Backfill 必须可重复执行并记录 checkpoint。低于最小兼容版本的
 - 插件不可绕过事实规则；
 - 桌面和手机能够正确展示能力可用性。
 
-v1.0 的隔离由两层共同保证，守在 `src/main/plugins/capabilityIsolation.test.ts`：
+v1.0 的隔离由两层共同保证，守在 `desktop/src/main/plugins/capabilityIsolation.test.ts`：
 运行期上限来自 Manifest 声明的权限（按内置清单推导，越界请求在读 Campaign 状态
 之前就被拒），静态一层则直接扫描插件源码，确认里面没有数据库、文件系统、模型
 SDK 与环境变量的入口——网关只能拦经过它的请求，拦不住一个自己 import 了驱动的

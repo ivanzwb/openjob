@@ -4,7 +4,7 @@ import {
   type ResumeJsonCompleter,
   type ResumePolishRequest,
   type ResumeStructureOutcome,
-} from '@shared/resume/aiEdit';
+} from '@core/resume/aiEdit';
 import { completeJson } from '../llm/json';
 
 const complete: ResumeJsonCompleter = (promptId, user) =>

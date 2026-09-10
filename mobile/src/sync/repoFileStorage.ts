@@ -1,6 +1,6 @@
 import { Paths } from 'expo-file-system';
 import type { SQLiteDatabase } from 'expo-sqlite';
-import type { AutoChange } from '@shared/sync';
+import type { AutoChange } from '@core/sync';
 import { partitionRepoFileChanges, REPO_FILE_TABLE } from './repoFilePartition';
 
 export { partitionRepoFileChanges, REPO_FILE_TABLE };

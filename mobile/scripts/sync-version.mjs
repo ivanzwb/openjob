@@ -1,7 +1,7 @@
-// 从 GitHub tag 或根 package.json 同步 expo 版本号。
+// 从 GitHub tag 或 desktop/package.json 同步 expo 版本号。
 // 用法（在 mobile/ 目录下）: node scripts/sync-version.mjs
 //
-// 优先 GITHUB_REF_NAME（v0.3.0 / 0.3.0），否则读仓库根 package.json。
+// 优先 GITHUB_REF_NAME（v0.3.0 / 0.3.0），否则读 desktop/package.json（桌面端版本是唯一来源）。
 // 写入 package.json version、app.json expo.version、android.versionCode
 // （major*10000 + minor*100 + patch）
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -14,7 +14,7 @@ const repoRoot = join(mobileRoot, '..');
 function parseVersion(raw) {
   const trimmed = raw.trim().replace(/^v/i, '');
   // 预发布后缀（1.0.0-rc.1）要原样保留：两端同步要求完整版本串完全相同
-  // （src/shared/version.ts isSyncCompatible），截成 1.0.0 会让 rc 包与正式包互相写数据。
+  // （core/src/version.ts isSyncCompatible），截成 1.0.0 会让 rc 包与正式包互相写数据。
   // versionCode 只能是整数，按数值主干取，因此同一主干的多个 rc 共用一个 code。
   const m = /^(\d+)\.(\d+)\.(\d+)(?:[-+].+)?$/.exec(trimmed);
   if (!m) return null;
@@ -29,18 +29,23 @@ let parsed = parseVersion(ref);
 
 if (!parsed) {
   try {
-    const rootPkg = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8'));
-    parsed = parseVersion(String(rootPkg.version ?? ''));
+    // 版本号的唯一来源是 desktop/package.json；工作区根那份不带 version
+    const desktopPkg = JSON.parse(
+      readFileSync(join(repoRoot, 'desktop', 'package.json'), 'utf8'),
+    );
+    parsed = parseVersion(String(desktopPkg.version ?? ''));
     if (parsed) {
-      console.log(`GITHUB_REF_NAME=${ref || '(空)'}，改从根 package.json 同步 ${parsed.version}`);
+      console.log(
+        `GITHUB_REF_NAME=${ref || '(空)'}，改从 desktop/package.json 同步 ${parsed.version}`,
+      );
     }
   } catch {
-    // 根 package.json 读失败时下面统一处理
+    // desktop/package.json 读失败时下面统一处理
   }
 }
 
 if (!parsed) {
-  const msg = `无法从 GITHUB_REF_NAME=${ref} 或根 package.json 解析出版本号`;
+  const msg = `无法从 GITHUB_REF_NAME=${ref} 或 desktop/package.json 解析出版本号`;
   if (process.env.GITHUB_REF_TYPE === 'tag') {
     console.error(`::error::${msg}`);
     process.exit(1);

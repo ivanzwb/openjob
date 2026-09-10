@@ -1,6 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { DEFAULT_CONFIG, mergeAppConfig, type AppConfig } from '@shared/config';
+import { DEFAULT_CONFIG, mergeAppConfig, type AppConfig } from '@core/config';
 
 const SETTING_ID = 'default';
 const SECRET_PREFIX = 'openjob.secret.';

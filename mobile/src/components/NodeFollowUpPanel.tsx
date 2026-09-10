@@ -1,10 +1,10 @@
 import { useCallback, useState } from 'react';
 import { Alert, Pressable, Text, TextInput, View } from 'react-native';
-import type { ExplanationTier } from '@shared/enums';
+import type { ExplanationTier } from '@core/enums';
 import {
   buildFollowUpSummaryPrompt,
   compactFollowUpContext,
-} from '@shared/llm/followUpContext';
+} from '@core/llm/followUpContext';
 import { completeChat } from '../llm/chat';
 import {
   clearTaskError,

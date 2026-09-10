@@ -2,7 +2,7 @@ import { Modal, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import * as Print from 'expo-print';
-import type { SpeechSnippetView } from '@shared/ipc';
+import type { SpeechSnippetView } from '@core/ipc';
 import { runTask, useTaskState } from '../context/RemoteTaskContext';
 import { markdownToDisplayHtml } from '../lib/markdownDisplay';
 import { useTheme } from '../theme';

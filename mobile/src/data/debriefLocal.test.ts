@@ -6,7 +6,7 @@
  * 1. 复盘必须能同步回桌面端。落库靠 writingAs 记 oplog，漏了这层包裹一切照常——
  *    界面显示「已记录」，题目也在手机上看得到，只是桌面端永远收不到。用户第二天
  *    在电脑上复习，图谱里没有任何真题回流的痕迹。
- * 2. 概率修正的幅度必须与桌面端一致。判定取自 @shared/diagnosis/reportIngest，
+ * 2. 概率修正的幅度必须与桌面端一致。判定取自 @core/diagnosis/reportIngest，
  *    这里验的是手机端确实按那份规则在改库，而不是自己又算了一套。
  *
  * 用 node:sqlite 跑真迁移而不是伪造 db：管道里十几条语句涉及外键、触发器和
@@ -16,7 +16,7 @@ import { DatabaseSync } from 'node:sqlite';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MIGRATIONS } from '../db/migrations/bundle';
-import { CREDIBILITY_WEIGHT, boostedExamProb } from '@shared/diagnosis/reportIngest';
+import { CREDIBILITY_WEIGHT, boostedExamProb } from '@core/diagnosis/reportIngest';
 
 const DEVICE_ID = 'phone-1';
 

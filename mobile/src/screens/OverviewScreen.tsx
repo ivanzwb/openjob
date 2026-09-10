@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
-import type { CampaignOverview } from '@shared/ipc';
+import type { CampaignOverview } from '@core/ipc';
 import { getRawDb } from '../db';
 import { getCampaignOverview } from '../data/queries';
 import { useLocalDataReload } from '../hooks/useLocalDataReload';

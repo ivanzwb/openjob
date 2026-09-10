@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "types": ["vite/client"],
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "paths": {
+      "@core/*": ["../core/src/*"],
+      "@renderer/*": ["./src/renderer/src/*"]
+    }
+  },
+  // 渲染进程够不到岗位包：这里连 @plugins 别名都不登记，写了就编不过
+  "include": ["src/renderer/src/**/*", "src/preload/index.d.ts"]
+}

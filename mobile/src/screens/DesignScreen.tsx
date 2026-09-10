@@ -5,16 +5,16 @@ import type {
   DesignCaseResult,
   DesignSubmitResult,
   MockInterviewType,
-} from '@shared/ipc';
+} from '@core/ipc';
 import {
   MOCK_INTERVIEW_CONSTRAINTS_LABEL,
   MOCK_INTERVIEW_LANGUAGE_LABELS,
   MOCK_INTERVIEW_LANGUAGE_OPTIONS,
   MOCK_INTERVIEW_TYPE_LABELS,
   MOCK_INTERVIEW_TYPE_OPTIONS,
-} from '@shared/ipc';
-import { effectiveInterviewLanguage } from '@shared/design/prompts';
-import type { MockInterviewKind, MockInterviewLanguage } from '@shared/design/prompts';
+} from '@core/ipc';
+import { effectiveInterviewLanguage } from '@core/design/prompts';
+import type { MockInterviewKind, MockInterviewLanguage } from '@core/design/prompts';
 import { getRawDb } from '../db';
 import { listCampaigns } from '../data/queries';
 import {

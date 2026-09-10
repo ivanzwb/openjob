@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Image, Modal, Pressable, Text, TextInput, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import type { ResumeSection } from '@shared/resume/document';
-import type { FieldSpec, SectionEntry, SectionField } from '@shared/resume/sectionModel';
+import type { ResumeSection } from '@core/resume/document';
+import type { FieldSpec, SectionEntry, SectionField } from '@core/resume/sectionModel';
 import {
   createEmptyEntry,
   fieldSpecFor,
@@ -20,7 +20,7 @@ import {
   serializeFieldsSection,
   splitEducationRole,
   toMonthInputValue,
-} from '@shared/resume/sectionModel';
+} from '@core/resume/sectionModel';
 import { IconButton, type IconName } from './IconButton';
 import { useTaskState, useTaskResult } from '../context/RemoteTaskContext';
 import { useTheme, type Palette } from '../theme';

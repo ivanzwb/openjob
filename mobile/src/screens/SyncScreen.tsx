@@ -2,8 +2,8 @@ import { useRef, useState } from 'react';
 import { Alert, Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import type { PairingPayload } from '@shared/sync';
-import { backupReasonLabel } from '@shared/sync';
+import type { PairingPayload } from '@core/sync';
+import { backupReasonLabel } from '@core/sync';
 import {
   createManualBackup,
   deleteBackupFile,

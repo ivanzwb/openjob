@@ -1,18 +1,18 @@
 import * as Crypto from 'expo-crypto';
 import type { SQLiteDatabase } from 'expo-sqlite';
-import type { QuizAttempt } from '@shared/entities';
+import type { QuizAttempt } from '@core/entities';
 import type {
   QuizAnswerResult,
   QuizDraftResult,
   QuizQuestionResult,
   QuizSubmitResult,
   QuizUpdateDraftInput,
-} from '@shared/ipc';
-import { normalizeDisplayText } from '@shared/lib/markdownDisplay';
-import { applyMasterySignal, masteryToStatus } from '@shared/practice';
+} from '@core/ipc';
+import { normalizeDisplayText } from '@core/lib/markdownDisplay';
+import { applyMasterySignal, masteryToStatus } from '@core/practice';
 import { getMobileConfig } from '../config/settings';
 import { completeJson } from '../llm/json';
-import { computePriority } from '@shared/priority';
+import { computePriority } from '@core/priority';
 import {
   loadQuizPromptContext,
   quizAnswerUserMessage,

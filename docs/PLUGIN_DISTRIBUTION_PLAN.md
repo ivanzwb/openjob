@@ -7,15 +7,15 @@ v1.0 把内核插件化了，但三个岗位包和三个能力插件仍然编译
 
 | 事实 | 位置 | 对外置插件的影响 |
 |------|------|------------------|
-| 已安装清单 ≡ 内置清单 | `src/main/plugins/runtime.ts` `listInstalledPlugins()` | 没有「已安装」这个独立概念 |
-| 注册表只在模块加载时被内置数组填充 | `src/shared/plugins/builtin/index.ts` | 没有从磁盘动态注册的入口 |
-| `userData` 下没有插件目录 | `src/main/paths.ts` `getAppPaths()` | 装到哪里都还没定 |
-| 能力插件必须提供可执行 `register()` | `src/shared/plugins/contracts.ts`；resolver 在解析时真的调用它 | **无法做成纯 JSON**，外置就等于加载外部代码 |
-| 权限契约由内置数组推导 | `src/main/plugins/permissionGateway.ts` `BUILT_IN_PERMISSION_CONTRACTS` | 未登记的 id 一律 `permission-undeclared`，外置插件直接被拒 |
-| 隔离的第二层是**扫描仓库内插件源码** | `src/main/plugins/capabilityIsolation.test.ts` | 外部产物没有源码树可扫，这层保障失效 |
-| 练习路径缺包直接抛错 | `src/main/practice/rolePack.ts` `findRolePack` → `PracticeError` | 外置之后「缺包」是常态，不能抛 |
-| 手机端没有 resolver | `src/main/sync/rpc.contract.test.ts` 明确禁止 | 手机端无法自己解析依赖，只能消费下发结果 |
-| 手机端能力视图默认填桌面内置清单 | `src/main/plugins/runtime.ts` | 两端安装集合一旦不同就会误报 |
+| 已安装清单 ≡ 内置清单 | `desktop/src/main/plugins/runtime.ts` `listInstalledPlugins()` | 没有「已安装」这个独立概念 |
+| 注册表只在模块加载时被内置数组填充 | `core/src/plugins/builtin/index.ts` | 没有从磁盘动态注册的入口 |
+| `userData` 下没有插件目录 | `desktop/src/main/paths.ts` `getAppPaths()` | 装到哪里都还没定 |
+| 能力插件必须提供可执行 `register()` | `core/src/plugins/contracts.ts`；resolver 在解析时真的调用它 | **无法做成纯 JSON**，外置就等于加载外部代码 |
+| 权限契约由内置数组推导 | `desktop/src/main/plugins/permissionGateway.ts` `BUILT_IN_PERMISSION_CONTRACTS` | 未登记的 id 一律 `permission-undeclared`，外置插件直接被拒 |
+| 隔离的第二层是**扫描仓库内插件源码** | `desktop/src/main/plugins/capabilityIsolation.test.ts` | 外部产物没有源码树可扫，这层保障失效 |
+| 练习路径缺包直接抛错 | `desktop/src/main/practice/rolePack.ts` `findRolePack` → `PracticeError` | 外置之后「缺包」是常态，不能抛 |
+| 手机端没有 resolver | `desktop/src/main/sync/rpc.contract.test.ts` 明确禁止 | 手机端无法自己解析依赖，只能消费下发结果 |
+| 手机端能力视图默认填桌面内置清单 | `desktop/src/main/plugins/runtime.ts` | 两端安装集合一旦不同就会误报 |
 
 岗位包（`RolePack`）本身是**纯数据**——匹配器、能力项、阶段、题型、量规、任务模板、
 提示词片段、源码策略，manifest 还强制 `permissions: []`。能力插件才是代码。这个差别
@@ -43,7 +43,7 @@ v1.0 把内核插件化了，但三个岗位包和三个能力插件仍然编译
 `CapabilityRegistry` 的三个注册方法（`registerTool` / `registerArtifactParser` /
 `registerInteractionType`）接受的全是可序列化结构，工具的**真实实现留在宿主里**——
 `builtin/sourceRepository/index.ts` 自己的注释就写着「declaration only」，实现在
-`src/main/repo/tools.ts`。也就是说插件从来只贡献声明，`register()` 唯一的作用是把这些
+`desktop/src/main/repo/tools.ts`。也就是说插件从来只贡献声明，`register()` 唯一的作用是把这些
 声明推给 registry。
 
 那么把「推的动作」录成 `contributions.json` 随包发布，装载时重放一遍（`package/replay.ts`），

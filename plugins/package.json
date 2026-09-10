@@ -1,0 +1,14 @@
+{
+  "name": "@openjob/plugins",
+  "version": "0.0.0",
+  "description": "随 release 单独分发的官方岗位包（纯数据，不进基础包）",
+  "private": true,
+  "type": "module",
+  "//": "npm 版本号恒为 0.0.0 且无意义：真正的发布版本写在每个岗位包自己的 manifest 里（software-engineering@1.0.0 等），由 scripts/pack-plugins.mjs 打成签名包。",
+  "dependencies": {
+    "@openjob/core": "workspace:*"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
+}

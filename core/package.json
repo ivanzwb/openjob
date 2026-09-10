@@ -1,0 +1,12 @@
+{
+  "name": "@openjob/core",
+  "version": "0.0.0",
+  "description": "桌面端与手机端共用的领域逻辑：类型、枚举、合并引擎、Prompt 装配、插件契约",
+  "private": true,
+  "type": "module",
+  "//": "runtime 依赖必须保持为空——core 同时被 electron-vite 和 Metro 编译，任何 Node 或原生依赖都会在其中一端炸掉。空 dependencies 就是这条约束的执行方式：pnpm 严格的 node_modules 下，core 里 import better-sqlite3 连解析都过不了。",
+  "dependencies": {},
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
+}

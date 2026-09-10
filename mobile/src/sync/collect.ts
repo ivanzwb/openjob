@@ -1,5 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import type { ChangeSet, RowSnapshot, Tombstone } from '@shared/sync';
+import type { ChangeSet, RowSnapshot, Tombstone } from '@core/sync';
 import { syncTableSpec, syncTableSpecs } from './tables';
 
 interface OplogRow {

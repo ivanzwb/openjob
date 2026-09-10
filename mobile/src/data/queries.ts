@@ -10,16 +10,16 @@ import type {
   TaskView,
   SessionSummary,
   SessionMessageView,
-} from '@shared/ipc';
-import type { Repo as RepoEntity } from '@shared/entities';
-import type { EdgeRelation } from '@shared/enums';
-import { sortNodesByStudyOrder } from '@shared/campaign/studyOrder';
+} from '@core/ipc';
+import type { Repo as RepoEntity } from '@core/entities';
+import type { EdgeRelation } from '@core/enums';
+import { sortNodesByStudyOrder } from '@core/campaign/studyOrder';
 import type { FollowUpMessage } from './mutations';
 import { repoQaSessionId, type RepoQaMessage } from './repoQaThread';
 import type {
   FollowUpStoredMessage,
   FollowUpSummaryState,
-} from '@shared/llm/followUpContext';
+} from '@core/llm/followUpContext';
 
 function todayLocal(): string {
   const d = new Date();

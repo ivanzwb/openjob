@@ -6,8 +6,8 @@ import type {
   DesignGenerateAnswerResult,
   DesignSubmitResult,
   MockInterviewType,
-} from '@shared/ipc';
-import type { ExamForm } from '@shared/enums';
+} from '@core/ipc';
+import type { ExamForm } from '@core/enums';
 import {
   answerUserHintForType,
   caseUserHintForType,
@@ -18,13 +18,13 @@ import {
   type DesignScoreGenerated,
   type MockInterviewKind,
   type MockInterviewLanguage,
-} from '@shared/design/prompts';
-import { normalizeDisplayText } from '@shared/lib/markdownDisplay';
-import { buildCandidateContext } from '@shared/prompts/candidateContext';
+} from '@core/design/prompts';
+import { normalizeDisplayText } from '@core/lib/markdownDisplay';
+import { buildCandidateContext } from '@core/prompts/candidateContext';
 import {
   resumeExperienceBlock,
   resumeFactsBlockForSelfIntro,
-} from '@shared/resume/experienceTimeline';
+} from '@core/resume/experienceTimeline';
 import { completeJson } from '../llm/json';
 import { getCampaign } from './campaignLocal';
 import {
@@ -35,7 +35,7 @@ import {
 import {
   relevantResumeExperienceBlock,
   type ResumeRelevanceQuery,
-} from '@shared/resume/relevance';
+} from '@core/resume/relevance';
 import { getDeviceIdentity } from '../sync/identity';
 import { writingAs } from '../sync/triggers';
 

@@ -6,15 +6,15 @@
  * 文字、回桌面端再摄入」的折中——抽题、建盲区、抬概率全部本地跑完，写进同步表，桌面端
  * 下次同步就能看到同一份结果。
  *
- * 判定规则一律取自 @shared/diagnosis/reportIngest，与桌面端 src/main/diagnosis/ingest.ts
+ * 判定规则一律取自 @core/diagnosis/reportIngest，与桌面端 src/main/diagnosis/ingest.ts
  * 共用一份：可信度权重、概率抬升幅度、多源交叉验证的判重口径、盲区节点的固定字段。
  * 这几个数一旦两端各写一套，同一场备考在手机和电脑上就会排出不同的复习顺序，而且不报错。
  */
 
 import * as Crypto from 'expo-crypto';
 import type { SQLiteDatabase } from 'expo-sqlite';
-import type { CoverageType, ReportSourceType } from '@shared/enums';
-import type { ReportMatchResult } from '@shared/diagnosis/prompts';
+import type { CoverageType, ReportSourceType } from '@core/enums';
+import type { ReportMatchResult } from '@core/diagnosis/prompts';
 import {
   BLIND_SPOT_DOMAIN_DEFAULTS,
   BLIND_SPOT_DOMAIN_NAME,
@@ -24,8 +24,8 @@ import {
   corroborate,
   decideQuestionOutcome,
   type CorroborationSource,
-} from '@shared/diagnosis/reportIngest';
-import { computePriority } from '@shared/priority';
+} from '@core/diagnosis/reportIngest';
+import { computePriority } from '@core/priority';
 import { completeJson } from '../llm/json';
 import { getCampaign } from './campaignLocal';
 import { insertNodes, refreshAllPriorities } from './nodesLocal';

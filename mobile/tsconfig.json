@@ -3,7 +3,7 @@
   "compilerOptions": {
     "strict": true,
     "paths": {
-      "@shared/*": ["../src/shared/*"],
+      "@core/*": ["../core/src/*"],
       "@plugins": ["../plugins/index.ts"],
       "@plugins/*": ["../plugins/*"],
       "drizzle-orm": ["./node_modules/drizzle-orm"],
@@ -12,6 +12,6 @@
       "whisper.rn/index": ["./node_modules/whisper.rn/lib/typescript/index.d.ts"]
     }
   },
-  "include": ["**/*.ts", "**/*.mts", "**/*.tsx", "../src/shared/**/*.ts"],
-  "exclude": ["../src/shared/**/*.test.ts"]
+  "include": ["**/*.ts", "**/*.mts", "**/*.tsx", "../core/src/**/*.ts"],
+  "exclude": ["../core/src/**/*.test.ts"]
 }

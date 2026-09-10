@@ -1,5 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import type { Repo } from '@shared/entities';
+import type { Repo } from '@core/entities';
 
 function rowToRepo(row: {
   id: string;

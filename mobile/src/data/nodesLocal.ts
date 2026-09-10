@@ -1,16 +1,16 @@
 import * as Crypto from 'expo-crypto';
 import type { SQLiteDatabase } from 'expo-sqlite';
-import type { JdParsed } from '@shared/entities';
-import type { CoverageType, EdgeRelation, NodeKind, NodeStatus } from '@shared/enums';
-import type { KnowledgeNodeInsert } from '@shared/diagnosis/tree';
+import type { JdParsed } from '@core/entities';
+import type { CoverageType, EdgeRelation, NodeKind, NodeStatus } from '@core/enums';
+import type { KnowledgeNodeInsert } from '@core/diagnosis/tree';
 import {
   EXPAND_DEPTH_LIMIT_MESSAGE,
   canExpandNode,
   flattenGeneratedTree,
-} from '@shared/diagnosis/tree';
-import type { GeneratedNode } from '@shared/diagnosis/prompts';
-import { computePriority } from '@shared/priority';
-import { boostedExamProb } from '@shared/diagnosis/reportIngest';
+} from '@core/diagnosis/tree';
+import type { GeneratedNode } from '@core/diagnosis/prompts';
+import { computePriority } from '@core/priority';
+import { boostedExamProb } from '@core/diagnosis/reportIngest';
 import { getDeviceIdentity } from '../sync/identity';
 import { writingAs } from '../sync/triggers';
 import { getKnowledgeNode } from './campaignLocal';

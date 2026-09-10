@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { composePrompt } from '@shared/prompts/composer';
-import { resolvePracticeFormat } from '@shared/practice';
-import { BuiltInPluginRegistry } from '@shared/plugins/registry';
-import { DeterministicRuntimeResolver } from '@shared/plugins/resolver';
+import { composePrompt } from '@core/prompts/composer';
+import { resolvePracticeFormat } from '@core/practice';
+import { BuiltInPluginRegistry } from '@core/plugins/registry';
+import { DeterministicRuntimeResolver } from '@core/plugins/resolver';
 import { softwareEngineeringRolePack } from '../softwareEngineering';
-import { ANALYTICS_CASE_CAPABILITY_VERSION } from '@shared/plugins/builtin/analyticsCase';
-import { BUILT_IN_CAPABILITY_PLUGINS } from '@shared/plugins/builtin';
+import { ANALYTICS_CASE_CAPABILITY_VERSION } from '@core/plugins/builtin/analyticsCase';
+import { BUILT_IN_CAPABILITY_PLUGINS } from '@core/plugins/builtin';
 import { DISTRIBUTED_ROLE_PACKS } from '..';
 import {
   PRODUCT_MANAGER_FORMAT_IDS,

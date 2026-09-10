@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { findNodeHandle, Pressable, Text, TextInput, View } from 'react-native';
 import type { ScrollView } from 'react-native';
-import type { CoverageType, NodeKind, NodeStatus } from '@shared/enums';
-import type { KnowledgeNodeView } from '@shared/ipc';
-import { canExpandNode } from '@shared/diagnosis/tree';
-import { groupNodesByParent } from '@shared/knowledgeTree';
+import type { CoverageType, NodeKind, NodeStatus } from '@core/enums';
+import type { KnowledgeNodeView } from '@core/ipc';
+import { canExpandNode } from '@core/diagnosis/tree';
+import { groupNodesByParent } from '@core/knowledgeTree';
 import { useTheme } from '../theme';
 
 const KIND_LABEL: Record<NodeKind, string> = {

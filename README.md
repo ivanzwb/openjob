@@ -134,7 +134,7 @@ export ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-b
 
 ```bash
 pnpm install
-node node_modules/electron/install.js   # 首次若 electron/dist 不存在
+node desktop/node_modules/electron/install.js   # 首次若 electron/dist 不存在
 pnpm dev
 ```
 
@@ -157,7 +157,7 @@ npm start
 |------|------|
 | `pnpm dev` | 桌面开发模式 |
 | `pnpm build` | 桌面生产构建 |
-| `pnpm dist` | 打安装包（`dist/OpenJob-Setup-*.exe` 等） |
+| `pnpm dist` | 打安装包（`desktop/dist/OpenJob-Setup-*.exe` 等） |
 | `pnpm ci` | 类型检查 + lint + smoke + build |
 | `pnpm db:generate` | 生成 Drizzle 迁移 |
 
@@ -178,18 +178,30 @@ npm start
 
 ## 项目结构
 
+按包拆开，边界靠物理隔离而不只靠 lint 规则：
+
 ```
 openJob/
-├── src/
-│   ├── main/          # Electron 主进程（DB、LLM、同步、Agent）
-│   ├── renderer/      # React UI
-│   ├── preload/       # IPC 白名单桥接
-│   └── shared/        # 双端共享类型与协议
-├── mobile/            # Expo 手机端
-├── docs/DESIGN.md     # 产品与架构设计（主文档）
-├── scripts/           # 构建、图标、NSIS 工具链等
-└── electron-builder.yml
+├── core/              # @openjob/core — 双端共享的类型与协议
+│   └── src/           #   零运行时依赖（package.json 的 dependencies 是空的）
+├── desktop/           # @openjob/desktop — Electron 桌面端
+│   ├── src/main/      #   主进程（DB、LLM、同步、Agent）
+│   ├── src/preload/   #   IPC 白名单桥接
+│   ├── src/renderer/  #   React UI
+│   ├── scripts/       #   构建、图标、NSIS 工具链等桌面专用脚本
+│   └── electron-builder.yml
+├── plugins/           # @openjob/plugins — 岗位包，不进基础包
+├── mobile/            # Expo 手机端（独立 npm 装依赖，不在 pnpm workspace 里）
+├── scripts/           # 跨包脚本（打插件包、数据诊断等）
+└── docs/DESIGN.md     # 产品与架构设计（主文档）
 ```
+
+几条约束值得单独记一下，破了会以很难懂的方式炸：
+
+- **core 的 `dependencies` 必须保持为空。** 它同时被 Electron 和 Metro 编译，装了 Node 专属依赖就只在桌面端能跑。pnpm 的严格 node_modules 让这条从「约定」变成「装不上」。
+- **`@plugins` 别名故意没登记在 `desktop/electron.vite.config.ts` 里**，应用代码一旦 import 岗位包，构建当场失败。`plugins/basePackage.test.ts` 另外静态扫一遍源码树兜底。
+- **版本号的唯一来源是 `desktop/package.json`**，工作区根那份不带 `version`。手机端由 `mobile/scripts/sync-version.mjs` 同步，`core/src/version.test.ts` 盯住两端一致。
+- **`@types/*` 要提升到根 node_modules**（见 `.npmrc`）。第三方包自带的 `.d.ts` 引用 `react` 这类裸模块时，是从它在 `.pnpm` 里的位置往上找，只躺在 `desktop/node_modules` 的 `@types/react` 它看不见。
 
 ## 配置与密钥
 

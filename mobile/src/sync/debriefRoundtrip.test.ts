@@ -13,21 +13,21 @@
 import { DatabaseSync } from 'node:sqlite';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { BLIND_SPOT_DOMAIN_NAME } from '@shared/diagnosis/reportIngest';
+import { BLIND_SPOT_DOMAIN_NAME } from '@core/diagnosis/reportIngest';
 import {
   PHASE1_CAMPAIGN,
   PHASE1_DEBRIEF_MATCHED_NODE_ID,
   PHASE1_DEBRIEF_TEXT,
   PHASE1_NODES,
-} from '@shared/plugins/__fixtures__/phase1Campaign';
-import { planMerge } from '@shared/syncMerge';
+} from '@core/plugins/__fixtures__/phase1Campaign';
+import { planMerge } from '@core/syncMerge';
 import { MIGRATIONS } from '../db/migrations/bundle';
 // 桌面侧一律用真实实现：这条用例的全部价值就在于两端不是同一份代码
-import { newLegacyDb } from '../../../src/main/db/__fixtures__/legacyDb';
-import { applyAutoChanges } from '../../../src/main/sync/apply';
-import { collectChangeSet as collectDesktopChangeSet } from '../../../src/main/sync/collect';
-import { buildMergeContext } from '../../../src/main/sync/labels';
-import { installSyncTriggers as installDesktopTriggers } from '../../../src/main/sync/triggers';
+import { newLegacyDb } from '../../../desktop/src/main/db/__fixtures__/legacyDb';
+import { applyAutoChanges } from '../../../desktop/src/main/sync/apply';
+import { collectChangeSet as collectDesktopChangeSet } from '../../../desktop/src/main/sync/collect';
+import { buildMergeContext } from '../../../desktop/src/main/sync/labels';
+import { installSyncTriggers as installDesktopTriggers } from '../../../desktop/src/main/sync/triggers';
 import type { Database } from 'better-sqlite3';
 
 const PHONE_ID = 'phone-1';

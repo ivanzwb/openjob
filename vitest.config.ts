@@ -1,29 +1,18 @@
 import { defineConfig } from 'vitest/config';
-import { resolve } from 'node:path';
 
 /**
- * 桌面端单元测试配置。
+ * 工作区测试入口：一次跑遍 core / desktop / plugins 三个包。
  *
- * 被测对象是 src/shared 与 src/main 的纯逻辑模块（合并引擎、IPC 契约、
- * LLM 降档、同步加密等），运行在 Node 环境，不启动 Electron。
- * 路径别名与 tsconfig.node.json / electron.vite.config 保持一致。
+ * 每个包自己那份 vitest.config.ts 管别名与 include，这里只负责编排。
+ * 单进程跑三个包（而不是 `pnpm -r test` 分三次起 vitest）有两个好处：
+ * 跨包的静态关卡（如 plugins/basePackage.test.ts 扫 core 与 desktop 的源码）
+ * 在同一次运行里就能验完，失败报告也是一份。
+ *
+ * mobile 不在其中：它是独立安装的 npm 包，自带 vitest.config.mts，
+ * 在 mobile/ 目录里跑。
  */
 export default defineConfig({
-  resolve: {
-    // 数组形式而不是对象：`@plugins` 要精确匹配，对象形式的键按前缀匹配，
-    // `@plugins/softwareEngineering` 会被拼成 `plugins/index.ts/softwareEngineering`
-    alias: [
-      { find: '@shared', replacement: resolve(__dirname, 'src/shared') },
-      { find: '@main', replacement: resolve(__dirname, 'src/main') },
-      { find: /^@plugins$/, replacement: resolve(__dirname, 'plugins/index.ts') },
-      { find: /^@plugins\//, replacement: `${resolve(__dirname, 'plugins')}/` },
-    ],
-  },
   test: {
-    environment: 'node',
-    // plugins/ 下的岗位包自带契约与黄金用例，它们跟着包一起走，不在 src 里
-    include: ['src/**/*.test.ts', 'plugins/**/*.test.ts'],
-    // 迁移自 scripts/smoke-sync-merge.ts 的合并引擎用例在这里
-    exclude: ['node_modules', 'dist', 'out', 'src/renderer/**'],
+    projects: ['core', 'desktop', 'plugins'],
   },
 });

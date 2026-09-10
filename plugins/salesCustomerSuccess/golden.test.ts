@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { resolvePracticeFormat } from '@shared/practice';
-import { composePrompt } from '@shared/prompts/composer';
-import { BuiltInPluginRegistry } from '@shared/plugins/registry';
-import { DeterministicRuntimeResolver } from '@shared/plugins/resolver';
-import { BUILT_IN_CAPABILITY_PLUGINS } from '@shared/plugins/builtin';
+import { resolvePracticeFormat } from '@core/practice';
+import { composePrompt } from '@core/prompts/composer';
+import { BuiltInPluginRegistry } from '@core/plugins/registry';
+import { DeterministicRuntimeResolver } from '@core/plugins/resolver';
+import { BUILT_IN_CAPABILITY_PLUGINS } from '@core/plugins/builtin';
 import { DISTRIBUTED_ROLE_PACKS } from '..';
 import { productManagerRolePack } from '../productManager';
 import { softwareEngineeringRolePack } from '../softwareEngineering';

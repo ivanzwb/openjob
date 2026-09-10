@@ -169,23 +169,27 @@ jobs:
 
       - name: Repair NSIS toolchain cache
         if: matrix.os == 'windows-2022'
+        working-directory: desktop
         run: node scripts/ensure-nsis-cache.mjs
 
       # Electron 43 起 npm 包不再带 postinstall（package.json 的 scripts 已移除），
       # pnpm install / pnpm rebuild 都不会自动解出二进制；electron-builder.yml 的
       # electronDist: node_modules/electron/dist 依赖它存在。手动跑一次 install.js
-      # 下载并解压（幂等，已存在则跳过）
+      # 下载并解压（幂等，已存在则跳过）。electron 是 desktop 的 devDependency，
+      # pnpm 只在 desktop/node_modules 下建软链，所以得在 desktop 里跑
       - name: Provision Electron binary
+        working-directory: desktop
         run: node node_modules/electron/install.js
 
-      # 从 tag 同步版本号：防止 tag 与 package.json 版本不一致时，安装包被发布到错误的 release
-      # （例如打 v0.2.1 tag 但 package.json 仍是 0.2.0，electron-builder 会按版本挂到 v0.2.0）。
+      # 从 tag 同步版本号：防止 tag 与版本号不一致时，安装包被发布到错误的 release
+      # （例如打 v0.2.1 tag 但版本仍是 0.2.0，electron-builder 会按版本挂到 v0.2.0）。
+      # 版本号的唯一来源是 desktop/package.json（工作区根的 package.json 没有 version）。
       # 同时用 mobile/scripts/sync-version.mjs 同步手机端（mobile/package.json + app.json +
-      # versionCode），否则 src/shared/version.test.ts 的双端版本一致性检查会失败。
+      # versionCode），否则 core/src/version.test.ts 的双端版本一致性检查会失败。
       - name: Sync version from tag
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          node -e "const { readFileSync, writeFileSync } = require('node:fs'); const p = JSON.parse(readFileSync('package.json', 'utf8')); const v = process.env.GITHUB_REF_NAME.replace(/^v/, ''); if (p.version !== v) { p.version = v; writeFileSync('package.json', JSON.stringify(p, null, 2) + '\n'); console.log('version synced to ' + v); } else { console.log('version already ' + v); }"
+          node -e "const { readFileSync, writeFileSync } = require('node:fs'); const f = 'desktop/package.json'; const p = JSON.parse(readFileSync(f, 'utf8')); const v = process.env.GITHUB_REF_NAME.replace(/^v/, ''); if (p.version !== v) { p.version = v; writeFileSync(f, JSON.stringify(p, null, 2) + '\n'); console.log('version synced to ' + v); } else { console.log('version already ' + v); }"
           cd mobile && node scripts/sync-version.mjs
 
       - name: Typecheck
@@ -193,15 +197,20 @@ jobs:
 
       # 显式传 --publish always（pnpm run dist -- args 会在脚本后多插一个 -- 导致参数丢失，
       # 且 electron-builder v27 起 CI 隐式发布将被移除，显式声明更稳健）
+      # 这几步都在 desktop 里跑：脚本按 process.cwd() 找 dist/、package.json 和
+      # node_modules/.bin/electron-builder，electron-builder.yml 的相对路径同理
       - name: Package installers
+        working-directory: desktop
         run: pnpm run build && node scripts/run-electron-builder.mjs --publish always
 
       - name: Verify Windows installer
         if: matrix.os == 'windows-2022'
+        working-directory: desktop
         run: node scripts/verify-windows-installer.mjs
 
       - name: Verify macOS app signature
         if: matrix.os == 'macos-latest'
+        working-directory: desktop
         run: node scripts/verify-mac-app.mjs
 
       - name: Upload artifacts
@@ -209,12 +218,12 @@ jobs:
         with:
           name: openjob-${{ matrix.artifact }}
           path: |
-            dist/*.exe
-            dist/*.dmg
-            dist/*.AppImage
-            dist/*.deb
-            dist/*.yml
-            dist/*.blockmap
-            dist/*.zip
+            desktop/dist/*.exe
+            desktop/dist/*.dmg
+            desktop/dist/*.AppImage
+            desktop/dist/*.deb
+            desktop/dist/*.yml
+            desktop/dist/*.blockmap
+            desktop/dist/*.zip
           if-no-files-found: error
           retention-days: 30

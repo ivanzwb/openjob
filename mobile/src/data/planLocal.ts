@@ -1,9 +1,9 @@
 import * as Crypto from 'expo-crypto';
 import type { SQLiteDatabase } from 'expo-sqlite';
-import type { DateOnly } from '@shared/entities';
-import type { PlanGenerateResult } from '@shared/ipc';
-import type { TaskKind } from '@shared/enums';
-import { sortNodesByStudyOrder } from '@shared/campaign/studyOrder';
+import type { DateOnly } from '@core/entities';
+import type { PlanGenerateResult } from '@core/ipc';
+import type { TaskKind } from '@core/enums';
+import { sortNodesByStudyOrder } from '@core/campaign/studyOrder';
 import {
   LEGACY_CAMPAIGN_SCOPE_KIND,
   collectPlannerContributions,
@@ -11,8 +11,8 @@ import {
   pluginTaskClientView,
   type PlannedTaskClientView,
   type PlannerRepo,
-} from '@shared/planner/contributions';
-import type { CampaignRuntimeDescriptor, ResolvedPluginRef } from '@shared/plugins/types';
+} from '@core/planner/contributions';
+import type { CampaignRuntimeDescriptor, ResolvedPluginRef } from '@core/plugins/types';
 import { getCampaign } from './campaignLocal';
 import { updateCampaignFields } from './nodesLocal';
 import { getDeviceIdentity } from '../sync/identity';

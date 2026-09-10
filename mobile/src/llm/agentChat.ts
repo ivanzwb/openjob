@@ -1,7 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import type { Citation, Repo } from '@shared/entities';
-import { normalizeChatMessages, type ChatMessage } from '@shared/llm/messages';
-import { CODE_FENCE_RULE } from '@shared/prompts/format';
+import type { Citation, Repo } from '@core/entities';
+import { normalizeChatMessages, type ChatMessage } from '@core/llm/messages';
+import { CODE_FENCE_RULE } from '@core/prompts/format';
 import { searchWeb } from '../search';
 import { resolveLlmRole } from './resolve';
 import { CODE_REPO_TOOL_DEFS, runCodeRepoTool } from '../data/repoTools';

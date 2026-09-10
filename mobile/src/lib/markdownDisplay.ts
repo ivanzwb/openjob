@@ -1,14 +1,14 @@
-import type { Annotation } from '@shared/entities';
-import { normalizeDisplayText } from '@shared/lib/markdownDisplay';
+import type { Annotation } from '@core/entities';
+import { normalizeDisplayText } from '@core/lib/markdownDisplay';
 import {
   isMarkdownTableDivider,
   isMarkdownTableRow,
   normalizeTableRows,
   parseMarkdownLine,
   splitMarkdownTableCells,
-} from '@shared/lib/markdownSegments';
-import { parseInlineMarkdown, type InlineToken } from '@shared/lib/markdownInline';
-import { findUnfencedCodeRunEnd } from '@shared/lib/unfencedCode';
+} from '@core/lib/markdownSegments';
+import { parseInlineMarkdown, type InlineToken } from '@core/lib/markdownInline';
+import { findUnfencedCodeRunEnd } from '@core/lib/unfencedCode';
 
 export { normalizeDisplayText };
 

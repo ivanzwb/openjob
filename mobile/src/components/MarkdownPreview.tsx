@@ -7,9 +7,9 @@ import {
   parseMarkdownLine,
   parseMarkdownTextSegments,
   type MarkdownLine,
-} from '@shared/lib/markdownSegments';
-import { parseInlineMarkdown } from '@shared/lib/markdownInline';
-import { compactArtificialBlankLines } from '@shared/lib/codeDisplay';
+} from '@core/lib/markdownSegments';
+import { parseInlineMarkdown } from '@core/lib/markdownInline';
+import { compactArtificialBlankLines } from '@core/lib/codeDisplay';
 import { useTheme } from '../theme';
 
 const TABLE_CELL_MIN_WIDTH = 88;

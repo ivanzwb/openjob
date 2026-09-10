@@ -1,10 +1,10 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
-import type { CampaignSummary, KnowledgeNodeView, TaskView } from '@shared/ipc';
-import type { NodeStatus } from '@shared/enums';
-import { collectSubtreeIds } from '@shared/knowledgeTree';
-import { nodeIdsForPlanFilter, nodeIdsForTreeFilter } from '@shared/planFilter';
+import type { CampaignSummary, KnowledgeNodeView, TaskView } from '@core/ipc';
+import type { NodeStatus } from '@core/enums';
+import { collectSubtreeIds } from '@core/knowledgeTree';
+import { nodeIdsForPlanFilter, nodeIdsForTreeFilter } from '@core/planFilter';
 import { CompanyIntelCard } from '../components/CompanyIntelCard';
 import { DebriefPanel } from '../components/DebriefPanel';
 import { KeepAlivePanel } from '../components/KeepAlivePanel';

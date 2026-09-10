@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import type { SpeechSnippetView } from '@shared/ipc';
+import type { SpeechSnippetView } from '@core/ipc';
 import { getRawDb } from '../db';
 import { listSpeechSnippets } from '../data/queries';
 import { deleteSpeech, updateSpeech } from '../data/mutations';
