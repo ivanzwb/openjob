@@ -4,6 +4,7 @@ import type { DateOnly } from '@shared/entities';
 import type { PlanGenerateResult, TaskView, TodayCampaignOption, TodayPlan } from '@shared/ipc';
 import type { TaskKind } from '@shared/enums';
 import {
+  LEGACY_CAMPAIGN_SCOPE_KIND,
   collectPlannerContributions,
   legacyRuntimeDescriptor,
   type PlannerRepo,
@@ -52,15 +53,37 @@ function conservativeEst(minutes: number): number {
   return Math.max(10, Math.ceil(minutes * 0.75));
 }
 
-/** 取当前激活的 revision；旧 Campaign 回填之前继续走工程岗位包默认值 */
-function loadRuntimeDescriptor(campaignId: string): CampaignRuntimeDescriptor {
+/** 是否属于插件化迁移那一刻就已存在的那批 Campaign（凭据由 0027 打上） */
+function isLegacyScopedCampaign(campaignId: string): boolean {
+  return (
+    getDb()
+      .select({ id: schema.migrationCheckpoint.id })
+      .from(schema.migrationCheckpoint)
+      .where(
+        and(
+          eq(schema.migrationCheckpoint.campaignId, campaignId),
+          eq(schema.migrationCheckpoint.kind, LEGACY_CAMPAIGN_SCOPE_KIND),
+        ),
+      )
+      .get() !== undefined
+  );
+}
+
+/**
+ * 取当前激活的 revision。
+ *
+ * 没有 descriptor 的两种情况必须分开：插件化之前就存在的旧 Campaign（带
+ * `LEGACY_CAMPAIGN_SCOPE_KIND` 凭据）在回填完成前继续走工程岗位包默认值，排程
+ * 结果不跳变；而新建的、还没选岗位的战役返回 null，不排任何插件任务。
+ */
+function loadRuntimeDescriptor(campaignId: string): CampaignRuntimeDescriptor | null {
   const row = getDb()
     .select()
     .from(schema.campaignRuntimeDescriptor)
     .where(eq(schema.campaignRuntimeDescriptor.campaignId, campaignId))
     .orderBy(desc(schema.campaignRuntimeDescriptor.revision))
     .get();
-  if (!row) return legacyRuntimeDescriptor(campaignId);
+  if (!row) return isLegacyScopedCampaign(campaignId) ? legacyRuntimeDescriptor(campaignId) : null;
 
   return {
     campaignId,

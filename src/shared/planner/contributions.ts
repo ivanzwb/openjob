@@ -190,10 +190,18 @@ function activeClientView(
   };
 }
 
+/**
+ * `runtime` 为 null 表示这个 Campaign 还没选岗位，因此没有任何插件贡献。
+ *
+ * 不能拿工程岗兜底：那会让「还没选岗位」和「选了工程岗」排出同一份计划，用户看到
+ * 一堆源码任务，却在岗位表单里看不出是谁决定的。
+ */
 export function collectPlannerContributions(
-  runtime: CampaignRuntimeDescriptor,
+  runtime: CampaignRuntimeDescriptor | null,
   context: PlannerContext,
 ): PlannedTask[] {
+  if (!runtime) return [];
+
   const tasks: PlannedTask[] = [];
   let usedMinutes = context.usedMinutes;
 
@@ -220,10 +228,12 @@ export function collectPlannerContributions(
  * 计划生成之后 UI 只拿得到 task 行，降级提示需要按当前 descriptor 重新判定。
  */
 export function pluginTaskClientView(
-  runtime: CampaignRuntimeDescriptor,
+  runtime: CampaignRuntimeDescriptor | null,
   taskKind: TaskKind,
   platform: ClientPlatform,
 ): PlannedTaskClientView | null {
+  if (!runtime) return null;
+
   for (const contribution of PLANNER_CONTRIBUTIONS) {
     if (!contribution.taskKinds.includes(taskKind)) continue;
     const client = activeClientView(runtime, contribution, platform);
@@ -234,10 +244,19 @@ export function pluginTaskClientView(
 }
 
 /**
- * 尚未回填 descriptor 的 Campaign 继续按工程岗位包执行。
+ * 「插件化迁移那一刻就已存在」的 Campaign 凭据，写在 migration_checkpoint.kind 上。
+ *
+ * 两端和迁移 SQL 共用这一个字面量：桌面 0027_legacy_campaign_scope 与手机
+ * 0025_legacy_campaign_scope 负责打标，两端排程再据此判断该不该走工程岗兜底。
+ * 只按 role_profile_id IS NULL 判断是不够的——新建战役同样是 NULL。
+ */
+export const LEGACY_CAMPAIGN_SCOPE_KIND = 'generic-interview-v1:legacy';
+
+/**
+ * 带上述凭据、但 descriptor 还没回填出来的旧 Campaign 继续按工程岗位包执行。
  *
  * 字段与 `src/main/db/backfill/pluginRuntime.ts` 的回填默认值一致，使回填前后的
- * 排程结果不发生跳变。
+ * 排程结果不发生跳变。没有凭据的战役不走这里，见 `collectPlannerContributions`。
  */
 export function legacyRuntimeDescriptor(campaignId: string): CampaignRuntimeDescriptor {
   const coreVersion = '1.0.0';

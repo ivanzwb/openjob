@@ -5,6 +5,7 @@ import type { PlanGenerateResult } from '@shared/ipc';
 import type { TaskKind } from '@shared/enums';
 import { sortNodesByStudyOrder } from '@shared/campaign/studyOrder';
 import {
+  LEGACY_CAMPAIGN_SCOPE_KIND,
   collectPlannerContributions,
   legacyRuntimeDescriptor,
   pluginTaskClientView,
@@ -53,11 +54,27 @@ function conservativeEst(minutes: number): number {
   return Math.max(10, Math.ceil(minutes * 0.75));
 }
 
-/** 取当前激活的 revision；桌面还没回填时继续走工程岗位包默认值 */
+/** 是否属于插件化迁移那一刻就已存在的那批 Campaign（凭据由 0025 打上） */
+function isLegacyScopedCampaign(db: SQLiteDatabase, campaignId: string): boolean {
+  const row = db.getFirstSync<{ id: string }>(
+    `SELECT id FROM migration_checkpoint WHERE campaign_id = ? AND kind = ?`,
+    campaignId,
+    LEGACY_CAMPAIGN_SCOPE_KIND,
+  );
+  return row !== null && row !== undefined;
+}
+
+/**
+ * 取当前激活的 revision，判定与桌面 `src/main/plan/schedule.ts` 同一套。
+ *
+ * 没有 descriptor 的两种情况必须分开：插件化之前就存在的旧 Campaign（带
+ * `LEGACY_CAMPAIGN_SCOPE_KIND` 凭据）在桌面回填并同步过来之前继续走工程岗位包
+ * 默认值，两端排程结果不跳变；新建的、还没选岗位的战役返回 null，不排插件任务。
+ */
 function loadRuntimeDescriptor(
   db: SQLiteDatabase,
   campaignId: string,
-): CampaignRuntimeDescriptor {
+): CampaignRuntimeDescriptor | null {
   const row = db.getFirstSync<{
     core_version: string;
     role_pack: string;
@@ -72,7 +89,9 @@ function loadRuntimeDescriptor(
      FROM campaign_runtime_descriptor WHERE campaign_id = ? ORDER BY revision DESC LIMIT 1`,
     campaignId,
   );
-  if (!row) return legacyRuntimeDescriptor(campaignId);
+  if (!row) {
+    return isLegacyScopedCampaign(db, campaignId) ? legacyRuntimeDescriptor(campaignId) : null;
+  }
 
   return {
     campaignId,

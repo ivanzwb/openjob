@@ -230,6 +230,37 @@ describe('collectPlannerContributions', () => {
   });
 });
 
+/**
+ * `null` 表示这个 Campaign 还没选岗位。
+ *
+ * 之前这种情况一律拿工程岗兜底，导致「没选岗位」和「选了工程岗」排出同一份计划：
+ * 用户新建战役就看到一堆源码任务，而岗位表单里空着，看不出是谁决定的。
+ */
+describe('还没选岗位的 Campaign', () => {
+  it('不排任何插件任务', () => {
+    const days = legacyPlan({
+      today: CROSS_CLIENT_PLAN.today,
+      interviewDate: CROSS_CLIENT_PLAN.interviewDate,
+      dailyMinutes: CROSS_CLIENT_PLAN.dailyMinutes,
+      nodes: CROSS_CLIENT_PLAN.nodes.map((node) => ({ ...node })),
+      defaultRepoId: CROSS_CLIENT_PLAN.readyRepoId,
+    });
+
+    for (const day of days) {
+      expect(
+        collectPlannerContributions(null, contextFor(day, days.length, CROSS_CLIENT_PLAN.dailyMinutes)),
+        `第 ${day.dayIndex} 天`,
+      ).toEqual([]);
+    }
+  });
+
+  it('已落库任务也拿不到插件降级状态', () => {
+    for (const platform of ['desktop', 'mobile'] as const) {
+      expect(pluginTaskClientView(null, 'readCode', platform)).toBeNull();
+    }
+  });
+});
+
 describe('pluginTaskClientView', () => {
   it('已落库的 readCode 在手机上标记需桌面完成', () => {
     expect(pluginTaskClientView(descriptor(), 'readCode', 'mobile')).toEqual({

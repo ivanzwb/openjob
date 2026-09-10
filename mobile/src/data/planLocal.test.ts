@@ -7,7 +7,10 @@
 import { DatabaseSync } from 'node:sqlite';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { REQUIRES_DESKTOP_REASON } from '@shared/planner/contributions';
+import {
+  LEGACY_CAMPAIGN_SCOPE_KIND,
+  REQUIRES_DESKTOP_REASON,
+} from '@shared/planner/contributions';
 import {
   CROSS_CLIENT_PLAN,
   crossClientLegacyPlan,
@@ -70,7 +73,11 @@ function freshDb(): SQLiteDatabase {
 
 const ENABLED_CAPABILITIES = [{ id: 'source-repository', version: '1.0.0', enabled: true }];
 
-function seed(raw: SQLiteDatabase, capabilities: unknown[] | null): void {
+function seed(
+  raw: SQLiteDatabase,
+  capabilities: unknown[] | null,
+  options: { legacyScoped?: boolean } = {},
+): void {
   raw.runSync(
     `INSERT INTO campaign (id, company, role_title, jd_raw, status, created_at, updated_at)
      VALUES (?, 'ACME', '后端工程师', 'jd', 'planning', 1, 1)`,
@@ -101,6 +108,17 @@ function seed(raw: SQLiteDatabase, capabilities: unknown[] | null): void {
       repo.url,
       `/tmp/${repo.id}`,
       repo.status,
+    );
+  }
+
+  // 插件化迁移那一刻就存在的旧战役才有这个凭据；新建战役没有，因此不走工程岗兜底
+  if (options.legacyScoped) {
+    raw.runSync(
+      `INSERT INTO migration_checkpoint (id, campaign_id, kind, completed_at)
+       VALUES (?, ?, ?, 1)`,
+      `${LEGACY_CAMPAIGN_SCOPE_KIND}:${CROSS_CLIENT_PLAN.campaignId}`,
+      CROSS_CLIENT_PLAN.campaignId,
+      LEGACY_CAMPAIGN_SCOPE_KIND,
     );
   }
 
@@ -227,8 +245,8 @@ describe('手机端 generatePlan', () => {
     );
   });
 
-  it('descriptor 还没同步过来时继续按工程岗位包排源码任务', async () => {
-    seed(raw, null);
+  it('旧 Campaign 的 descriptor 还没同步过来时继续按工程岗位包排源码任务', async () => {
+    seed(raw, null, { legacyScoped: true });
 
     await generatePlan(
       raw,
@@ -238,6 +256,25 @@ describe('手机端 generatePlan', () => {
     );
 
     expect(readTasks(raw)).toEqual(expectedTasks(crossClientLegacyPlan()));
+  });
+
+  /**
+   * 与上一条成对，判定与桌面 src/main/plan/schedule.test.ts 的同名用例一致：
+   * 两者都没有 descriptor，差别只在有没有旧数据凭据。
+   */
+  it('还没选岗位的新 Campaign 不排源码任务，其余任务照排', async () => {
+    seed(raw, null);
+
+    await generatePlan(
+      raw,
+      CROSS_CLIENT_PLAN.campaignId,
+      CROSS_CLIENT_PLAN.interviewDate,
+      CROSS_CLIENT_PLAN.dailyMinutes,
+    );
+
+    expect(readTasks(raw)).toEqual(
+      expectedTasks(crossClientLegacyPlan()).filter((task) => task.kind !== 'readCode'),
+    );
   });
 });
 

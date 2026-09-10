@@ -1,4 +1,5 @@
 import type { Database } from 'better-sqlite3';
+import { LEGACY_CAMPAIGN_SCOPE_KIND } from '@shared/planner/contributions';
 import { hashRuntimeConfig } from '@shared/plugins/resolver';
 import type { CampaignRuntimeDescriptor, ResolvedPluginRef } from '@shared/plugins/types';
 
@@ -12,7 +13,6 @@ export const PLUGIN_RUNTIME_BACKFILL_KIND = 'generic-interview-v1';
 
 interface LegacyCampaign {
   id: string;
-  created_at: number;
 }
 
 export interface PluginRuntimeBackfillFailure {
@@ -38,8 +38,12 @@ function stableId(kind: string, campaignId: string, suffix = ''): string {
 /**
  * 为旧 Campaign 建立首个插件 revision。
  *
+ * 只处理带 `LEGACY_CAMPAIGN_SCOPE_KIND` 凭据的 Campaign——也就是插件化迁移那一刻
+ * 就已经存在的那批。新建战役不在其中，它们停在「还没选岗位」的状态等用户自己挑，
+ * 不会被冒充成工程岗。
+ *
  * 每个 Campaign 独立事务：任何一步失败都不会留下 profile/binding/descriptor，
- * 也不会设置 role_profile_id；下次启动仍会选中并重试。
+ * 也不会设置 role_profile_id；凭据还在，下次启动仍会选中并重试。
  */
 export function backfillLegacyCampaignPluginRuntime(
   raw: Database,
@@ -47,8 +51,10 @@ export function backfillLegacyCampaignPluginRuntime(
 ): PluginRuntimeBackfillReport {
   const rows = raw
     .prepare(
-      `SELECT c.id, c.created_at
+      `SELECT c.id
        FROM campaign c
+       JOIN migration_checkpoint legacy
+         ON legacy.campaign_id = c.id AND legacy.kind = ?
        WHERE c.role_profile_id IS NULL
          AND NOT EXISTS (
            SELECT 1 FROM migration_checkpoint m
@@ -56,7 +62,7 @@ export function backfillLegacyCampaignPluginRuntime(
          )
        ORDER BY c.id`,
     )
-    .all(PLUGIN_RUNTIME_BACKFILL_KIND) as LegacyCampaign[];
+    .all(LEGACY_CAMPAIGN_SCOPE_KIND, PLUGIN_RUNTIME_BACKFILL_KIND) as LegacyCampaign[];
 
   const report: PluginRuntimeBackfillReport = { completed: 0, failures: [] };
   const migrateOne = raw.transaction((campaign: LegacyCampaign) => {

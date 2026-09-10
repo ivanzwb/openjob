@@ -13,6 +13,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
+import { LEGACY_CAMPAIGN_SCOPE_KIND } from '@shared/planner/contributions';
 
 const MIGRATIONS_DIR = join(__dirname, 'migrations');
 
@@ -242,6 +243,59 @@ describe('plugin runtime persistence migration', () => {
       .all()
       .find((column) => (column as { name: string }).name === 'role_profile_id');
     expect(roleProfileColumn).toBeDefined();
+    db.close();
+  });
+});
+
+describe('legacy campaign scope migration', () => {
+  const MOBILE_LEGACY_SCOPE = join(
+    process.cwd(),
+    'mobile',
+    'src',
+    'db',
+    'migrations',
+    '0025_legacy_campaign_scope.sql',
+  );
+
+  it('两端与共享常量用同一个 kind 字面量', () => {
+    // 常量改了、SQL 没改的话，回填会一条也选不中，而且不会报错——只会静默不干活
+    for (const [name, sql] of [
+      ['desktop', sqlOf('0027_legacy_campaign_scope')],
+      ['mobile', readFileSync(MOBILE_LEGACY_SCOPE, 'utf8')],
+    ] as const) {
+      expect(sql, name).toContain(`'${LEGACY_CAMPAIGN_SCOPE_KIND}'`);
+    }
+  });
+
+  it('只标记迁移那一刻还没有岗位意图的 Campaign', () => {
+    const db = new DatabaseSync(':memory:');
+    const entries = journal();
+    const cutoff = entries.findIndex((entry) => entry.tag === '0027_legacy_campaign_scope');
+    expect(cutoff).toBeGreaterThan(0);
+    entries.slice(0, cutoff).forEach((entry) => applySql(db, sqlOf(entry.tag)));
+
+    const insertCampaign = `INSERT INTO campaign (
+         id, company, role_title, jd_raw, status, created_at, updated_at
+       ) VALUES (?, 'ACME', 'Engineer', 'JD', 'planning', 1, 1)`;
+    db.prepare(insertCampaign).run('legacy');
+    db.prepare(insertCampaign).run('profiled');
+    db.prepare(
+      `INSERT INTO role_profile (
+         id, role_family, role_pack_id, level, industry_pack_id, location,
+         interview_language, confidence, user_confirmed
+       ) VALUES ('rp', 'product', 'product-manager', NULL, NULL, NULL, 'zh', 1, 1)`,
+    ).run();
+    db.prepare(`UPDATE campaign SET role_profile_id = 'rp' WHERE id = 'profiled'`).run();
+
+    applySql(db, sqlOf('0027_legacy_campaign_scope'));
+
+    expect(
+      db
+        .prepare(
+          `SELECT campaign_id FROM migration_checkpoint WHERE kind = ? ORDER BY campaign_id`,
+        )
+        .all(LEGACY_CAMPAIGN_SCOPE_KIND),
+    ).toEqual([{ campaign_id: 'legacy' }]);
     db.close();
   });
 });

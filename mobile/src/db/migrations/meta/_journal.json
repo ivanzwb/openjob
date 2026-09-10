@@ -176,6 +176,13 @@
       "when": 1787610000000,
       "tag": "0024_story",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1787620000000,
+      "tag": "0025_legacy_campaign_scope",
+      "breakpoints": true
     }
   ]
 }
