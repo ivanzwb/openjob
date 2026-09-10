@@ -75,6 +75,16 @@ Campaign 里 pin 的仍然是 `id@version`，缺包时沿用现有 `plugin-not-i
 基础包不带任何岗位包。首次进入时引导用户浏览并安装岗位包。相关缺陷已在
 `a15bbe6` 修掉：新建战役不再被旧数据迁移盖成软件工程岗（详见该提交）。
 
+三个官方岗位包的数据搬到 `src/shared/plugins/rolePacks/`，只有打包脚本和测试会
+import 它；`capabilityIsolation.test.ts` 里的静态关卡盯着这条边界，防止哪天有人图
+省事把岗位数据又编回基础包。`builtin/` 下只剩能力插件，`builtInPluginKeys()` 也因此
+只占用能力插件的 id@version——否则官方岗位包连自己的版本号都装不进来。
+
+旧数据的读取不能依赖「用户装了岗位包」。`quiz_attempt` 与 `design_case` 行里存着当年
+软件工程包的题型和量规 ID，而一台只装了产品岗的机器照样要能翻历史。这些映射被冻结成
+`legacyRoleData.ts` 里的快照，历史投影、计划贡献与 `pluginRuntime` 回填都读同一份常量：
+既让缺包时历史仍然可读，也让老战役的 `configSnapshotHash` 保持不变。
+
 ## 7. 手机端
 
 - 岗位包是纯数据，随同步下发到手机，练习路径因此能在手机上正常跑。

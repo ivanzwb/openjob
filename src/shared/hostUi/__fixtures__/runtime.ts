@@ -6,9 +6,13 @@
  * 自动展开这件事就永远测不到——而它正是能力勾选回校要处理的那种情况。
  */
 
-import { buildClientCapabilityView, listBuiltInPlugins } from '../../plugins/clientView';
+import {
+  buildClientCapabilityView,
+  listBuiltInPlugins,
+  toInstalledPlugin,
+} from '../../plugins/clientView';
 import type { ClientCapabilityView } from '../../plugins/clientView';
-import { softwareEngineeringRolePack } from '../../plugins/builtin/softwareEngineering';
+import { softwareEngineeringRolePack } from '../../plugins/rolePacks/softwareEngineering';
 import { sourceRepositoryCapabilityPlugin } from '../../plugins/builtin/sourceRepository';
 import { BuiltInPluginRegistry } from '../../plugins/registry';
 import { DeterministicRuntimeResolver } from '../../plugins/resolver';
@@ -69,6 +73,11 @@ export function buildCapabilityView(
   return buildClientCapabilityView({
     descriptor,
     platform,
-    installed: listBuiltInPlugins(),
+    // 岗位包不随应用发布，本机安装集合要显式带上它——只给内置清单就等于在测
+    // 「用户还没装岗位包」，而这些用例问的是装好之后界面怎么渲染
+    installed: [
+      ...listBuiltInPlugins(),
+      toInstalledPlugin(softwareEngineeringRolePack.manifest),
+    ],
   });
 }

@@ -7,11 +7,10 @@
  */
 
 import type { Database } from 'better-sqlite3';
-import {
-  SOFTWARE_ENGINEERING_FORMAT_IDS,
-  softwareEngineeringRolePack,
-} from '@shared/plugins/builtin/softwareEngineering';
+import { SOFTWARE_ENGINEERING_FORMAT_IDS } from '@shared/plugins/legacyRoleData';
+import { softwareEngineeringRolePack } from '@shared/plugins/rolePacks/softwareEngineering';
 import { newLegacyDb } from '../../db/__fixtures__/legacyDb';
+import { installRolePacks } from '../../plugins/__fixtures__/installedPlugins';
 import { setCampaignRoleProfile } from '../../plugins/runtime';
 
 export const CAMPAIGN_ID = 'c-acme';
@@ -27,6 +26,8 @@ export interface PracticeFixtureOptions {
 }
 
 export function newPracticeDb(options: PracticeFixtureOptions = {}): Database {
+  // 岗位包不再随应用发布，绑定岗位之前必须先「装上」，否则解析直接 plugin-not-found
+  installRolePacks();
   const raw = newLegacyDb();
 
   raw

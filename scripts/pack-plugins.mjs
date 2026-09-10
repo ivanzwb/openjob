@@ -38,9 +38,10 @@ async function loadModules() {
   });
   try {
     const builtin = await server.ssrLoadModule('src/shared/plugins/builtin/index.ts');
+    const rolePacks = await server.ssrLoadModule('src/shared/plugins/rolePacks/index.ts');
     const replay = await server.ssrLoadModule('src/shared/plugins/package/replay.ts');
     const bundle = await server.ssrLoadModule('src/main/plugins/bundle.ts');
-    return { builtin, replay, bundle };
+    return { builtin, rolePacks, replay, bundle };
   } finally {
     await server.close();
   }
@@ -91,22 +92,26 @@ function resolveSigningKey() {
 }
 
 async function main() {
-  const { builtin, replay, bundle } = await loadModules();
+  const { rolePacks, bundle } = await loadModules();
   const key = resolveSigningKey();
 
-  const packages = [
-    ...builtin.BUILT_IN_ROLE_PACKS.map((pack) => {
-      const { manifest, ...rest } = pack;
-      return { manifest, files: { 'manifest.json': JSON.stringify(manifest), 'pack.json': JSON.stringify(rest) } };
-    }),
-    ...builtin.BUILT_IN_CAPABILITY_PLUGINS.map((plugin) => ({
-      manifest: plugin.manifest,
+  /**
+   * 只打岗位包。
+   *
+   * 能力插件不单独分发：它们声明的工具、解析器与交互类型的实现都在宿主里
+   * （`src/main/repo/tools.ts` 等），声明与实现必须同一版本发布。真打出来也装不上——
+   * `builtInPluginKeys()` 把内置的 id@version 占住了，安装会以 reserved-id 被拒。
+   */
+  const packages = rolePacks.DISTRIBUTED_ROLE_PACKS.map((pack) => {
+    const { manifest, ...rest } = pack;
+    return {
+      manifest,
       files: {
-        'manifest.json': JSON.stringify(plugin.manifest),
-        'contributions.json': JSON.stringify(replay.recordContributions(plugin)),
+        'manifest.json': JSON.stringify(manifest),
+        'pack.json': JSON.stringify(rest),
       },
-    })),
-  ];
+    };
+  });
 
   rmSync(OUT_DIR, { recursive: true, force: true });
   mkdirSync(OUT_DIR, { recursive: true });

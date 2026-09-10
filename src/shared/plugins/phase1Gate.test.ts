@@ -18,16 +18,18 @@ import {
 } from '../planner/contributions';
 import { composePrompt } from '../prompts/composer';
 import type { PromptSlot } from '../prompts/registry';
-import { BUILT_IN_CAPABILITY_PLUGINS, BUILT_IN_ROLE_PACKS } from './builtin';
+import { DISTRIBUTED_ROLE_PACKS } from './rolePacks';
+import { BUILT_IN_CAPABILITY_PLUGINS } from './builtin';
 import { ANALYTICS_CASE_CAPABILITY_ID } from './builtin/analyticsCase';
 import {
   PRODUCT_MANAGER_FORMAT_IDS,
   PRODUCT_MANAGER_ROLE_PACK_ID,
   productManagerRolePack,
-} from './builtin/productManager';
-import { softwareEngineeringRolePack } from './builtin/softwareEngineering';
+} from './rolePacks/productManager';
+import { softwareEngineeringRolePack } from './rolePacks/softwareEngineering';
 import { SOURCE_REPOSITORY_CAPABILITY_ID } from './builtin/sourceRepository';
-import { buildClientCapabilityView, listBuiltInPlugins } from './clientView';
+import { buildClientCapabilityView } from './clientView';
+import { installedWith } from './__fixtures__/installed';
 import { BuiltInPluginRegistry } from './registry';
 import { DeterministicRuntimeResolver } from './resolver';
 import { PHASE0_CAMPAIGN, PHASE0_REPOS } from './__fixtures__/phase0Campaign';
@@ -47,7 +49,7 @@ const PM_FORMAT_IDS = Object.values(PRODUCT_MANAGER_FORMAT_IDS);
  */
 function phase1Runtime(): CampaignRuntimeDescriptor {
   const registry = new BuiltInPluginRegistry();
-  BUILT_IN_ROLE_PACKS.forEach((pack) => registry.register(pack));
+  DISTRIBUTED_ROLE_PACKS.forEach((pack) => registry.register(pack));
   BUILT_IN_CAPABILITY_PLUGINS.forEach((plugin) => registry.registerCapability(plugin));
 
   const resolved = new DeterministicRuntimeResolver(registry).resolve({
@@ -243,7 +245,7 @@ describe('Phase 1 通用核心闸门', () => {
       buildClientCapabilityView({
         descriptor: runtime,
         platform,
-        installed: listBuiltInPlugins(),
+        installed: installedWith(productManagerRolePack),
       }),
     );
 

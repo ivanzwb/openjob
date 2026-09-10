@@ -1,4 +1,9 @@
-import { EXAM_FORMS, TASK_KINDS, type ExamForm } from '../../../enums';
+import { EXAM_FORMS, TASK_KINDS } from '../../../enums';
+import {
+  formatIdForLegacyExamForm,
+  LEGACY_ROLE_PACK_REF,
+  SOFTWARE_ENGINEERING_FORMAT_IDS,
+} from '../../legacyRoleData';
 import type {
   InterviewFormatDefinition,
   PromptFragmentSet,
@@ -6,30 +11,13 @@ import type {
   RubricAnchors,
 } from '../../types';
 
-export const SOFTWARE_ENGINEERING_ROLE_PACK_ID = 'software-engineering';
-export const SOFTWARE_ENGINEERING_ROLE_PACK_VERSION = '1.0.0';
-
-export const SOFTWARE_ENGINEERING_FORMAT_IDS = {
-  knowledge: 'se.technical-knowledge',
-  coding: 'se.coding',
-  systemDesign: 'se.system-design',
-  projectDeepDive: 'se.project-technical-deep-dive',
-} as const;
-
 /**
- * Compatibility bridge for persisted KnowledgeNode.examForms.
- * Keep this exhaustive: legacy values remain readable for at least one release cycle.
+ * 岗位包与历史数据共用同一组 id：本包已经被 pin 进旧 Campaign 的 descriptor 与
+ * quiz/design 投影，两处各写一份迟早会分叉，而分叉的表现是旧记录换了套量规。
+ * 定义留在宿主的 legacyRoleData（基础包不带岗位包，宿主读旧数据时也得认得这些 id）。
  */
-export const LEGACY_EXAM_FORM_TO_FORMAT_ID = {
-  concept: SOFTWARE_ENGINEERING_FORMAT_IDS.knowledge,
-  coding: SOFTWARE_ENGINEERING_FORMAT_IDS.coding,
-  design: SOFTWARE_ENGINEERING_FORMAT_IDS.systemDesign,
-  scenario: SOFTWARE_ENGINEERING_FORMAT_IDS.projectDeepDive,
-} as const satisfies Record<ExamForm, string>;
-
-export function formatIdForLegacyExamForm(examForm: ExamForm): string {
-  return LEGACY_EXAM_FORM_TO_FORMAT_ID[examForm];
-}
+export const SOFTWARE_ENGINEERING_ROLE_PACK_ID = LEGACY_ROLE_PACK_REF.id;
+export const SOFTWARE_ENGINEERING_ROLE_PACK_VERSION = LEGACY_ROLE_PACK_REF.version;
 
 /**
  * References into PROMPT_REGISTRY. Values are keys, never copied prompt bodies.

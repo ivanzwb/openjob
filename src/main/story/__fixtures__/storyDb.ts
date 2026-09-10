@@ -7,8 +7,9 @@
  */
 
 import type { Database } from 'better-sqlite3';
-import { softwareEngineeringRolePack } from '@shared/plugins/builtin/softwareEngineering';
+import { softwareEngineeringRolePack } from '@shared/plugins/rolePacks/softwareEngineering';
 import { newLegacyDb } from '../../db/__fixtures__/legacyDb';
+import { installRolePacks } from '../../plugins/__fixtures__/installedPlugins';
 import { setCampaignRoleProfile } from '../../plugins/runtime';
 
 export const CAMPAIGN_ID = 'c-acme';
@@ -86,6 +87,8 @@ function insertCampaign(raw: Database, id: string, company: string): void {
 }
 
 export function newStoryDb(): Database {
+  // 岗位包由用户自己装，夹具得先把它装上，否则绑定岗位那一步就 plugin-not-found
+  installRolePacks();
   const raw = newLegacyDb();
 
   raw

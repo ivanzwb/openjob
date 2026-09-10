@@ -19,7 +19,8 @@ vi.mock('../db', () => ({
 }));
 
 import { PLUGIN_PERMISSIONS, type PluginPermission } from '@shared/plugins/permissions';
-import { BUILT_IN_CAPABILITY_PLUGINS, BUILT_IN_ROLE_PACKS } from '@shared/plugins/builtin';
+import { DISTRIBUTED_ROLE_PACKS } from '@shared/plugins/rolePacks';
+import { BUILT_IN_CAPABILITY_PLUGINS } from '@shared/plugins/builtin';
 import { ANALYTICS_CASE_CAPABILITY_ID } from '@shared/plugins/builtin/analyticsCase';
 import { ROLE_PLAY_CAPABILITY_ID } from '@shared/plugins/builtin/rolePlay';
 import { SOURCE_REPOSITORY_CAPABILITY_ID } from '@shared/plugins/builtin/sourceRepository';
@@ -89,7 +90,7 @@ describe('权限契约来自内置清单', () => {
 
   it('岗位包不申请任何权限', () => {
     // 岗位包只声明题目与量规；一旦它能申请权限，「岗位包不碰执行」这条边界就没了
-    for (const pack of BUILT_IN_ROLE_PACKS) {
+    for (const pack of DISTRIBUTED_ROLE_PACKS) {
       expect(pack.manifest.permissions, pack.manifest.id).toEqual([]);
     }
   });
@@ -167,30 +168,42 @@ const FORBIDDEN_SOURCE_PATTERNS: readonly { pattern: RegExp; reason: string }[] 
   { pattern: /from '.*\/main\//, reason: '主进程内部模块' },
 ];
 
-const BUILT_IN_ROOT = join(__dirname, '..', '..', 'shared', 'plugins', 'builtin');
+/**
+ * 两个根都要扫：能力插件随应用发布，岗位包随 release 单独发布。
+ *
+ * 岗位包移出基础包不代表这条边界可以松——它们仍然在这个仓库里写、在这里打包，装到用户
+ * 机器上的是同一份数据。只扫 builtin 的话，岗位包那三个目录会静静地退出扫描范围，
+ * 而这条用例照样全绿。
+ */
+const PLUGIN_ROOTS = [
+  join(__dirname, '..', '..', 'shared', 'plugins', 'builtin'),
+  join(__dirname, '..', '..', 'shared', 'plugins', 'rolePacks'),
+];
 
 /** 插件目录 → 该目录下的非测试源码。 */
 function pluginSourcesByDirectory(): Map<string, string[]> {
   const byDirectory = new Map<string, string[]>();
-  for (const directory of readdirSync(BUILT_IN_ROOT, { withFileTypes: true })) {
-    if (!directory.isDirectory()) continue;
-    const files = readdirSync(join(BUILT_IN_ROOT, directory.name), {
-      recursive: true,
-      encoding: 'utf8',
-    })
-      .filter((entry) => entry.endsWith('.ts') && !entry.endsWith('.test.ts'))
-      .map((entry) => join(BUILT_IN_ROOT, directory.name, entry));
-    byDirectory.set(directory.name, files);
+  for (const root of PLUGIN_ROOTS) {
+    for (const directory of readdirSync(root, { withFileTypes: true })) {
+      if (!directory.isDirectory()) continue;
+      const files = readdirSync(join(root, directory.name), {
+        recursive: true,
+        encoding: 'utf8',
+      })
+        .filter((entry) => entry.endsWith('.ts') && !entry.endsWith('.test.ts'))
+        .map((entry) => join(root, directory.name, entry));
+      byDirectory.set(directory.name, files);
+    }
   }
   return byDirectory;
 }
 
 describe('插件够不到宿主资源', () => {
-  it('内置插件源码里没有数据库、文件系统、模型 SDK 或环境变量的入口', () => {
+  it('插件源码里没有数据库、文件系统、模型 SDK 或环境变量的入口', () => {
     const byDirectory = pluginSourcesByDirectory();
     // 扫描范围要覆盖到每一个内置插件：漏掉哪个目录，这条用例就在替它放行
     expect(byDirectory.size).toBeGreaterThanOrEqual(
-      BUILT_IN_ROLE_PACKS.length + BUILT_IN_CAPABILITY_PLUGINS.length,
+      DISTRIBUTED_ROLE_PACKS.length + BUILT_IN_CAPABILITY_PLUGINS.length,
     );
     for (const [directory, files] of byDirectory) {
       expect(files.length, `${directory} 没有扫到源码`).toBeGreaterThan(0);

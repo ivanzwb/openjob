@@ -39,7 +39,7 @@ import {
   type PracticeTurnInput,
 } from '@shared/practice';
 import { toPromptEvidenceList } from '@shared/evidence/promptEvidence';
-import { formatIdForLegacyExamForm } from '@shared/plugins/builtin/softwareEngineering';
+import { formatIdForLegacyExamForm } from '@shared/plugins/legacyRoleData';
 import { composePrompt, type ComposedPrompt, type PromptEvidence } from '@shared/prompts/composer';
 import type { RolePack } from '@shared/plugins/types';
 import { listConfirmedEvidence } from '../evidence/repository';

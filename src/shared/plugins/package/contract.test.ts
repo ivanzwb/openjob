@@ -6,7 +6,8 @@
  * 一种真实的坏包。
  */
 import { describe, expect, it } from 'vitest';
-import { BUILT_IN_CAPABILITY_PLUGINS, BUILT_IN_ROLE_PACKS } from '../builtin';
+import { DISTRIBUTED_ROLE_PACKS } from '../rolePacks';
+import { BUILT_IN_CAPABILITY_PLUGINS } from '../builtin';
 import type {
   ArtifactParserDefinition,
   CapabilityPlugin,
@@ -59,9 +60,9 @@ function paths(files: PluginPackageFiles): string[] {
 
 describe('插件包格式', () => {
   it('每个内置岗位包序列化成外置包后都合法，且解析回来一字不差', () => {
-    expect(BUILT_IN_ROLE_PACKS.length).toBeGreaterThan(0);
+    expect(DISTRIBUTED_ROLE_PACKS.length).toBeGreaterThan(0);
 
-    for (const pack of BUILT_IN_ROLE_PACKS) {
+    for (const pack of DISTRIBUTED_ROLE_PACKS) {
       const files = rolePackFiles(pack);
       expect(validatePluginPackage(files), pack.manifest.id).toEqual([]);
       // JSON 往返之后必须与内置对象完全相等，否则外置包和内置包的行为会有暗差
@@ -82,7 +83,7 @@ describe('插件包格式', () => {
   });
 
   it('包里出现白名单外的文件一律拒装', () => {
-    const pack = BUILT_IN_ROLE_PACKS[0]!;
+    const pack = DISTRIBUTED_ROLE_PACKS[0]!;
 
     // 白名单而不是黑名单：夹带可执行载荷的唯一入口就是「包里多一个文件」
     for (const name of ['plugin.mjs', 'index.js', 'postinstall.sh', 'nested/evil.json']) {
@@ -91,7 +92,7 @@ describe('插件包格式', () => {
   });
 
   it('签名文件不算未知文件', () => {
-    const files = { ...rolePackFiles(BUILT_IN_ROLE_PACKS[0]!), [PACKAGE_SIGNATURE_FILE]: '{}' };
+    const files = { ...rolePackFiles(DISTRIBUTED_ROLE_PACKS[0]!), [PACKAGE_SIGNATURE_FILE]: '{}' };
 
     expect(validatePluginPackage(files)).toEqual([]);
   });
@@ -102,7 +103,7 @@ describe('插件包格式', () => {
   });
 
   it('岗位包缺 pack.json 或带了 contributions.json 都不合法', () => {
-    const pack = BUILT_IN_ROLE_PACKS[0]!;
+    const pack = DISTRIBUTED_ROLE_PACKS[0]!;
     const { [PACKAGE_PACK_FILE]: _pack, ...withoutPack } = rolePackFiles(pack);
 
     expect(paths(withoutPack)).toContain(PACKAGE_PACK_FILE);
@@ -174,7 +175,7 @@ describe('插件包格式', () => {
   });
 
   it('岗位包数据本身不合法时按 RolePack 契约报错，而不是放过', () => {
-    const pack = BUILT_IN_ROLE_PACKS[0]!;
+    const pack = DISTRIBUTED_ROLE_PACKS[0]!;
     const { manifest, ...rest } = pack;
     const broken = structuredClone(rest) as Omit<RolePack, 'manifest'>;
     // 权重和不为 1 是岗位包最容易写错的地方，必须由外置路径同样拦住
@@ -196,7 +197,7 @@ describe('插件包格式', () => {
   it('pack.json 缺字段时报缺哪个字段，而不是让校验器崩掉', () => {
     // validateRolePack 是为仓库内岗位包写的，靠 TypeScript 保证字段存在。喂它一份缺字段的
     // 外部 JSON 会抛 TypeError，于是安装路径变成「崩」而不是「拒装」
-    const manifest = BUILT_IN_ROLE_PACKS[0]!.manifest;
+    const manifest = DISTRIBUTED_ROLE_PACKS[0]!.manifest;
     const issues = validatePluginPackage({
       [PACKAGE_MANIFEST_FILE]: JSON.stringify(manifest),
       [PACKAGE_PACK_FILE]: JSON.stringify({ competencyTemplates: [] }),
@@ -207,7 +208,7 @@ describe('插件包格式', () => {
   });
 
   it('字段类型完全乱来时也只返回问题列表，不抛异常', () => {
-    const manifest = BUILT_IN_ROLE_PACKS[0]!.manifest;
+    const manifest = DISTRIBUTED_ROLE_PACKS[0]!.manifest;
     const nonsense = Object.fromEntries(
       ['roleMatchers', 'competencyTemplates', 'interviewStages', 'interviewFormats', 'rubrics', 'taskTemplates', 'promptFragments', 'sourcePolicy'].map(
         (field) => [field, 'not the right type'],

@@ -9,7 +9,8 @@ import {
 import { BuiltInPluginRegistry } from '../../registry';
 import { DeterministicRuntimeResolver } from '../../resolver';
 import type { CapabilityRegistry, HostRenderedInteraction } from '../../types';
-import { BUILT_IN_CAPABILITY_PLUGINS, BUILT_IN_ROLE_PACKS } from '..';
+import { DISTRIBUTED_ROLE_PACKS } from '../../rolePacks';
+import { BUILT_IN_CAPABILITY_PLUGINS } from '..';
 import {
   CUSTOMER_CONVERSATION_INTERACTION,
   CUSTOMER_CONVERSATION_SCHEMA_VERSION,
@@ -18,7 +19,7 @@ import {
   customerConversationInteraction,
   rolePlayCapabilityPlugin,
 } from '.';
-import { SALES_CUSTOMER_SUCCESS_ROLE_PACK_ID } from '../salesCustomerSuccess';
+import { SALES_CUSTOMER_SUCCESS_ROLE_PACK_ID } from '../../rolePacks/salesCustomerSuccess';
 
 function collectRegistered(): HostRenderedInteraction[] {
   const interactions: HostRenderedInteraction[] = [];
@@ -125,7 +126,7 @@ describe('注册期校验', () => {
       ...rolePlayCapabilityPlugin,
       manifest: { ...rolePlayCapabilityPlugin.manifest, interactionSchemas: {} },
     });
-    BUILT_IN_ROLE_PACKS.forEach((pack) => registry.register(pack));
+    DISTRIBUTED_ROLE_PACKS.forEach((pack) => registry.register(pack));
 
     const resolved = new DeterministicRuntimeResolver(registry).resolve({
       coreVersion: '1.0.0',
@@ -139,7 +140,7 @@ describe('注册期校验', () => {
 
   it('内置清单里的 role-play 能正常解析进 descriptor', () => {
     const registry = new BuiltInPluginRegistry();
-    BUILT_IN_ROLE_PACKS.forEach((pack) => registry.register(pack));
+    DISTRIBUTED_ROLE_PACKS.forEach((pack) => registry.register(pack));
     BUILT_IN_CAPABILITY_PLUGINS.forEach((plugin) => registry.registerCapability(plugin));
 
     const resolved = new DeterministicRuntimeResolver(registry).resolve({

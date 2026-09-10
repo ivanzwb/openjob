@@ -18,9 +18,8 @@ import type {
 import type { ExamForm } from '@shared/enums';
 import {
   LEGACY_EXAM_FORM_TO_FORMAT_ID,
-  softwareEngineeringRolePack,
-} from '@shared/plugins/builtin/softwareEngineering';
-import type { RolePack } from '@shared/plugins/types';
+  LEGACY_FORMAT_TO_RUBRIC_ID,
+} from '@shared/plugins/legacyRoleData';
 import { listPracticeAttemptRows, listScores, rowToPracticeAttempt } from './repository';
 
 const DEFAULT_LIMIT = 50;
@@ -45,8 +44,15 @@ interface DesignRow {
   updated_at: number;
 }
 
-function rubricIdForFormat(rolePack: RolePack, formatId: string): string {
-  return rolePack.interviewFormats.find((item) => item.id === formatId)?.rubricId ?? '';
+/**
+ * 只读投影的量规锚点取 legacyRoleData 里的快照，不查本机装了哪个岗位包。
+ *
+ * 这两类记录都是插件化之前的软件工程数据，量规在当年就定死了。改成现查已安装岗位包，
+ * 同一条历史记录会因为「装了/卸了/换了版本」显示成不同的量规——历史不该随本机装了什么
+ * 而变。缺包只影响「能不能照原样再练一次」，不影响「当时按什么评的」。
+ */
+function legacyRubricId(formatId: string): string {
+  return LEGACY_FORMAT_TO_RUBRIC_ID[formatId] ?? '';
 }
 
 function isExamForm(value: string): value is ExamForm {
@@ -59,7 +65,6 @@ function isExamForm(value: string): value is ExamForm {
  */
 function projectQuizAttempts(
   raw: Database,
-  rolePack: RolePack,
   campaignId: string,
   nodeId?: string | null,
 ): PracticeAttempt[] {
@@ -76,7 +81,7 @@ function projectQuizAttempts(
   ) as QuizRow[];
 
   const formatId = LEGACY_EXAM_FORM_TO_FORMAT_ID.concept;
-  const rubricId = rubricIdForFormat(rolePack, formatId);
+  const rubricId = legacyRubricId(formatId);
 
   return rows.map((row) => ({
     id: row.id,
@@ -107,7 +112,6 @@ function projectQuizAttempts(
  */
 function projectDesignCases(
   raw: Database,
-  rolePack: RolePack,
   campaignId: string,
 ): PracticeAttempt[] {
   const rows = raw
@@ -129,7 +133,7 @@ function projectDesignCases(
       campaignId,
       nodeId: null,
       formatId,
-      rubricId: rubricIdForFormat(rolePack, formatId),
+      rubricId: legacyRubricId(formatId),
       competencyIds: [],
       questionMd: [`# ${row.title}`, row.scenario_md].join('\n\n'),
       answerMd: row.user_answer_md ?? '',
@@ -166,7 +170,6 @@ function projectPracticeAttempts(
 export function listPracticeHistory(
   raw: Database,
   query: PracticeAttemptQuery,
-  rolePack: RolePack = softwareEngineeringRolePack,
 ): PracticeAttempt[] {
   const sources = new Set(query.sources ?? ['practice', 'quiz', 'design']);
   const scopedToNode = query.nodeId !== undefined && query.nodeId !== null;
@@ -176,10 +179,10 @@ export function listPracticeHistory(
     merged.push(...projectPracticeAttempts(raw, query.campaignId, query.nodeId));
   }
   if (sources.has('quiz')) {
-    merged.push(...projectQuizAttempts(raw, rolePack, query.campaignId, query.nodeId));
+    merged.push(...projectQuizAttempts(raw, query.campaignId, query.nodeId));
   }
   if (sources.has('design') && !scopedToNode) {
-    merged.push(...projectDesignCases(raw, rolePack, query.campaignId));
+    merged.push(...projectDesignCases(raw, query.campaignId));
   }
 
   merged.sort((left, right) => right.createdAt - left.createdAt);

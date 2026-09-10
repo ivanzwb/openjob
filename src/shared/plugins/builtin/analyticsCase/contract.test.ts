@@ -14,8 +14,9 @@ import type {
   CampaignRuntimeDescriptor,
   CapabilityRegistry,
 } from '../../types';
-import { BUILT_IN_CAPABILITY_PLUGINS, BUILT_IN_ROLE_PACKS } from '..';
-import { PRODUCT_MANAGER_ROLE_PACK_ID, productManagerRolePack } from '../productManager';
+import { DISTRIBUTED_ROLE_PACKS } from '../../rolePacks';
+import { BUILT_IN_CAPABILITY_PLUGINS } from '..';
+import { PRODUCT_MANAGER_ROLE_PACK_ID, productManagerRolePack } from '../../rolePacks/productManager';
 import {
   ANALYTICS_CASE_CAPABILITY_ID,
   ANALYTICS_CASE_CAPABILITY_VERSION,
@@ -48,7 +49,7 @@ function collectRegistered(): ArtifactParserDefinition[] {
 
 function resolveProductManager(): ReturnType<DeterministicRuntimeResolver['resolve']> {
   const registry = new BuiltInPluginRegistry();
-  BUILT_IN_ROLE_PACKS.forEach((pack) => registry.register(pack));
+  DISTRIBUTED_ROLE_PACKS.forEach((pack) => registry.register(pack));
   BUILT_IN_CAPABILITY_PLUGINS.forEach((plugin) => registry.registerCapability(plugin));
   return new DeterministicRuntimeResolver(registry).resolve({
     coreVersion: '1.0.0',

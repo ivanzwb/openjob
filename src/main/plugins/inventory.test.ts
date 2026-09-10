@@ -9,7 +9,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { BUILT_IN_ROLE_PACKS } from '@shared/plugins/builtin';
+import { DISTRIBUTED_ROLE_PACKS } from '@shared/plugins/rolePacks';
 import {
   PACKAGE_CONTRIBUTIONS_FILE,
   PACKAGE_MANIFEST_FILE,
@@ -35,7 +35,7 @@ afterEach(() => {
 
 /** 把一个内置岗位包改个 id 落成外置包，得到一个必然合法的样本。 */
 function externalRolePack(id: string, version = '2.0.0'): RolePack {
-  const source = structuredClone(BUILT_IN_ROLE_PACKS[0]!) as RolePack;
+  const source = structuredClone(DISTRIBUTED_ROLE_PACKS[0]!) as RolePack;
   return { ...source, manifest: { ...source.manifest, id, version } };
 }
 
@@ -193,7 +193,7 @@ describe('scanPluginInventory', () => {
   });
 
   it('撞上内置插件的 id@version 时拒装', () => {
-    const builtIn = BUILT_IN_ROLE_PACKS[0]!.manifest;
+    const builtIn = DISTRIBUTED_ROLE_PACKS[0]!.manifest;
     const pack = externalRolePack(builtIn.id, builtIn.version);
     writePackage(exactKeyOf(builtIn.id, builtIn.version), rolePackFiles(pack));
 

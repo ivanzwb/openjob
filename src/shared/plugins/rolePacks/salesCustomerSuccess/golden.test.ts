@@ -3,7 +3,8 @@ import { resolvePracticeFormat } from '../../../practice';
 import { composePrompt } from '../../../prompts/composer';
 import { BuiltInPluginRegistry } from '../../registry';
 import { DeterministicRuntimeResolver } from '../../resolver';
-import { BUILT_IN_CAPABILITY_PLUGINS, BUILT_IN_ROLE_PACKS } from '../index';
+import { BUILT_IN_CAPABILITY_PLUGINS } from '../../builtin';
+import { DISTRIBUTED_ROLE_PACKS } from '..';
 import { productManagerRolePack } from '../productManager';
 import { softwareEngineeringRolePack } from '../softwareEngineering';
 import {
@@ -118,7 +119,7 @@ function ungatedFormatIds(): string[] {
 
 function resolveWithoutRolePlay(): ReturnType<DeterministicRuntimeResolver['resolve']> {
   const registry = new BuiltInPluginRegistry();
-  BUILT_IN_ROLE_PACKS.forEach((pack) => registry.register(pack));
+  DISTRIBUTED_ROLE_PACKS.forEach((pack) => registry.register(pack));
   // 明确把 role-play 排除掉。本用例考的是「插件缺席时如何降级」，
   // 原先靠「仓库里还没实现 role-play」这个前提成立，T19 把它实现出来后前提就失效了。
   BUILT_IN_CAPABILITY_PLUGINS.filter(
@@ -237,7 +238,7 @@ describe('sales & customer success role pack goldens', () => {
 
   it('装了 role-play 时对话题型所依赖的能力被启用', () => {
     const registry = new BuiltInPluginRegistry();
-    BUILT_IN_ROLE_PACKS.forEach((pack) => registry.register(pack));
+    DISTRIBUTED_ROLE_PACKS.forEach((pack) => registry.register(pack));
     BUILT_IN_CAPABILITY_PLUGINS.forEach((plugin) => registry.registerCapability(plugin));
     const resolved = new DeterministicRuntimeResolver(registry).resolve({
       coreVersion: '1.0.0',

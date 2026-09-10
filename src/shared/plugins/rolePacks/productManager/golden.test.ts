@@ -4,8 +4,9 @@ import { resolvePracticeFormat } from '../../../practice';
 import { BuiltInPluginRegistry } from '../../registry';
 import { DeterministicRuntimeResolver } from '../../resolver';
 import { softwareEngineeringRolePack } from '../softwareEngineering';
-import { ANALYTICS_CASE_CAPABILITY_VERSION } from '../analyticsCase';
-import { BUILT_IN_CAPABILITY_PLUGINS, BUILT_IN_ROLE_PACKS } from '../index';
+import { ANALYTICS_CASE_CAPABILITY_VERSION } from '../../builtin/analyticsCase';
+import { BUILT_IN_CAPABILITY_PLUGINS } from '../../builtin';
+import { DISTRIBUTED_ROLE_PACKS } from '..';
 import {
   PRODUCT_MANAGER_FORMAT_IDS,
   PRODUCT_MANAGER_OPTIONAL_CAPABILITY_IDS,
@@ -83,7 +84,7 @@ function resolveWith(
   capabilityPlugins: readonly (typeof BUILT_IN_CAPABILITY_PLUGINS)[number][],
 ): ReturnType<DeterministicRuntimeResolver['resolve']> {
   const registry = new BuiltInPluginRegistry();
-  BUILT_IN_ROLE_PACKS.forEach((pack) => registry.register(pack));
+  DISTRIBUTED_ROLE_PACKS.forEach((pack) => registry.register(pack));
   capabilityPlugins.forEach((plugin) => registry.registerCapability(plugin));
   return new DeterministicRuntimeResolver(registry).resolve({
     coreVersion: '1.0.0',

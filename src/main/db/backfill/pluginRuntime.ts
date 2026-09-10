@@ -1,10 +1,13 @@
 import type { Database } from 'better-sqlite3';
 import { LEGACY_CAMPAIGN_SCOPE_KIND } from '@shared/planner/contributions';
+import { LEGACY_ROLE_PACK_REF } from '@shared/plugins/legacyRoleData';
 import { hashRuntimeConfig } from '@shared/plugins/resolver';
 import type { CampaignRuntimeDescriptor, ResolvedPluginRef } from '@shared/plugins/types';
 
-export const LEGACY_ROLE_PACK_ID = 'software-engineering';
-export const LEGACY_ROLE_PACK_VERSION = '1.0.0';
+// 回填、兜底描述符与旧数据投影共用同一个引用：三处各写一份字面量时，改错一处的表现是
+// 旧战役的 config_snapshot_hash 跳变，而 hash 对不上会被当成「配置被人动过」
+export const LEGACY_ROLE_PACK_ID = LEGACY_ROLE_PACK_REF.id;
+export const LEGACY_ROLE_PACK_VERSION = LEGACY_ROLE_PACK_REF.version;
 export const LEGACY_REPOSITORY_CAPABILITY_ID = 'source-repository';
 export const LEGACY_REPOSITORY_CAPABILITY_VERSION = '1.0.0';
 export const LEGACY_CORE_VERSION = '1.0.0';

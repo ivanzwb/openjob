@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { Database } from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { softwareEngineeringRolePack } from '@shared/plugins/builtin/softwareEngineering';
+import { softwareEngineeringRolePack } from '@shared/plugins/rolePacks/softwareEngineering';
 import { sourceRepositoryCapabilityPlugin } from '@shared/plugins/builtin/sourceRepository';
 import { listBuiltInPlugins } from '@shared/plugins/clientView';
 import {
@@ -19,6 +19,7 @@ import {
   setCampaignRoleProfile,
   setExternalPlugins,
 } from './runtime';
+import { installRolePacks, installedRolePackEntry } from './__fixtures__/installedPlugins';
 import type { PluginInventoryEntry } from './inventory';
 import type { RolePack } from '@shared/plugins/types';
 import { installSyncTriggers } from '../sync/triggers';
@@ -125,10 +126,11 @@ describe('listInstalledPlugins', () => {
     setExternalPlugins([]);
   });
 
-  it('没装外置插件时就是内置清单', () => {
+  it('什么都没装时清单里只有内置能力插件，没有任何岗位包', () => {
     expect(listInstalledPlugins()).toEqual(listBuiltInPlugins());
-    expect(listInstalledPlugins().map((plugin) => plugin.id)).toContain(ROLE_PACK_ID);
     expect(listInstalledPlugins().map((plugin) => plugin.id)).toContain(REPO_ID);
+    // 基础包岗位中立：出厂状态下练习链路就该是「还没选岗位」，而不是默认工程岗
+    expect(listInstalledPlugins().map((plugin) => plugin.id)).not.toContain(ROLE_PACK_ID);
   });
 
   it('装了外置岗位包之后清单不再等于内置清单', () => {
@@ -137,7 +139,6 @@ describe('listInstalledPlugins', () => {
     const ids = listInstalledPlugins().map((plugin) => plugin.id);
 
     expect(ids).toContain(EXTERNAL_ROLE_PACK_ID);
-    expect(ids).toContain(ROLE_PACK_ID);
     expect(listInstalledPlugins()).not.toEqual(listBuiltInPlugins());
   });
 
@@ -155,8 +156,15 @@ describe('listInstalledPlugins', () => {
   it('builtInPluginKeys 覆盖每个内置插件，外置包无法顶替它们', () => {
     const keys = builtInPluginKeys();
 
-    expect(keys.has(`${ROLE_PACK_ID}@${ROLE_PACK_VERSION}`)).toBe(true);
+    expect(keys.has(`${REPO_ID}@${sourceRepositoryCapabilityPlugin.manifest.version}`)).toBe(true);
     expect(keys.size).toBe(listBuiltInPlugins().length);
+  });
+
+  it('岗位包的 id@version 不被占用，官方包才装得进来', () => {
+    // 官方岗位包正是以 software-engineering@1.0.0 这个 id@version 分发的。占住它的后果不是
+    // 报错，而是用户从 release 下载的岗位包一律以 reserved-id 被拒——而拒绝理由指向
+    // 「与随应用发布的插件冲突」，而基础包里根本没有这个插件
+    expect(builtInPluginKeys().has(`${ROLE_PACK_ID}@${ROLE_PACK_VERSION}`)).toBe(false);
   });
 });
 
@@ -205,26 +213,29 @@ describe('外置岗位包参与解析', () => {
     expect(getCampaignRuntime(raw, 'c1')?.descriptor).toEqual(before.descriptor);
   });
 
-  it('外置岗位包与内容相同的内置包解析出同一个 configSnapshotHash', () => {
-    // hash 只看解析出来的配置内容，不看插件从哪儿来；否则同一份岗位包内置和外置
-    // 会算出两个不同的 hash，跨端比对直接失效
+  it('内容相同、id 不同的两个岗位包解析出同一个能力基线', () => {
+    // 基线只看解析出来的配置内容，不看包是从哪个目录装进来的；否则同一份岗位包换个
+    // 分发渠道就会算出另一份基线，跨端比对直接失效
     const clone = structuredClone(softwareEngineeringRolePack) as RolePack;
     clone.manifest = { ...clone.manifest, id: 'clone.role', version: ROLE_PACK_VERSION };
-    setExternalPlugins([externalEntry(clone)]);
+    setExternalPlugins([
+      installedRolePackEntry(softwareEngineeringRolePack),
+      externalEntry(clone),
+    ]);
 
-    const builtIn = setCampaignRoleProfile(
+    const official = setCampaignRoleProfile(
       raw,
       { campaignId: 'c1', roleFamily: 'software', rolePackId: ROLE_PACK_ID },
       { now: () => 1 },
     );
-    const external = setCampaignRoleProfile(
+    const cloned = setCampaignRoleProfile(
       raw,
       { campaignId: 'c1', roleFamily: 'software', rolePackId: 'clone.role' },
       { now: () => 2 },
     );
 
-    expect(external.descriptor.competencyBaselineVersion).toBe(
-      builtIn.descriptor.competencyBaselineVersion,
+    expect(cloned.descriptor.competencyBaselineVersion).toBe(
+      official.descriptor.competencyBaselineVersion,
     );
   });
 });
@@ -234,6 +245,12 @@ describe('setCampaignRoleProfile', () => {
 
   beforeEach(() => {
     raw = freshDb();
+    // 岗位包由用户安装：不装的话这一组用例全部停在 plugin-not-found，测不到写入路径
+    installRolePacks();
+  });
+
+  afterEach(() => {
+    setExternalPlugins([]);
   });
 
   it('首次写入 profile、binding 与 descriptor，并展开岗位包的可选依赖', () => {
@@ -335,6 +352,7 @@ describe('getClientCapabilityView', () => {
 
   beforeEach(() => {
     raw = freshDb();
+    installRolePacks();
     setCampaignRoleProfile(raw, {
       campaignId: 'c1',
       roleFamily: 'software',
@@ -347,6 +365,10 @@ describe('getClientCapabilityView', () => {
       )
       .run();
     installSyncTriggers(raw, 'test-device');
+  });
+
+  afterEach(() => {
+    setExternalPlugins([]);
   });
 
   it('两端消费同一份 descriptor，本机降级不回写绑定', () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { listBuiltInPlugins } from '../plugins/clientView';
-import { SOFTWARE_ENGINEERING_ROLE_PACK_ID } from '../plugins/builtin/softwareEngineering';
+import { installedWith } from '../plugins/__fixtures__/installed';
+import { DISTRIBUTED_ROLE_PACKS } from '../plugins/rolePacks';
+import { SOFTWARE_ENGINEERING_ROLE_PACK_ID } from '../plugins/rolePacks/softwareEngineering';
 import { SOURCE_REPOSITORY_CAPABILITY_ID } from '../plugins/builtin/sourceRepository';
 import { buildCapabilityView, buildDescriptor, buildRuntimeView, CAMPAIGN_ID } from './__fixtures__/runtime';
 import {
@@ -16,7 +17,8 @@ import {
 } from './rolePlugins';
 import type { RoleProfileDraft } from './rolePlugins';
 
-const installed = listBuiltInPlugins();
+/** 岗位包由用户安装，这里模拟一台把三个官方包都装上的机器 */
+const installed = installedWith(...DISTRIBUTED_ROLE_PACKS);
 const rolePackOptions = listPluginOptions(installed, 'role-pack');
 /** 同岗位包一样按性质推导，避免每加一个能力插件就要回来补清单。 */
 const installedCapabilityIds = installed

@@ -16,7 +16,8 @@ import {
   toInstalledPlugin,
   type InstalledPlugin,
 } from './clientView';
-import { softwareEngineeringRolePack } from './builtin/softwareEngineering';
+import { installedWith } from './__fixtures__/installed';
+import { softwareEngineeringRolePack } from './rolePacks/softwareEngineering';
 import { sourceRepositoryCapabilityPlugin } from './builtin/sourceRepository';
 import type { CampaignRuntimeDescriptor } from './types';
 
@@ -24,6 +25,14 @@ const ROLE_PACK_ID = softwareEngineeringRolePack.manifest.id;
 const ROLE_PACK_VERSION = softwareEngineeringRolePack.manifest.version;
 const REPO_ID = sourceRepositoryCapabilityPlugin.manifest.id;
 const REPO_VERSION = sourceRepositoryCapabilityPlugin.manifest.version;
+
+/**
+ * 本机装了工程岗位包时的安装集合。
+ *
+ * 下面的 descriptor pin 的就是这个包，不显式装上的话每条用例都会先撞上
+ * `plugin-not-installed`——那测的是空安装态，不是这里要测的降级判定。
+ */
+const installedHere = (): InstalledPlugin[] => installedWith(softwareEngineeringRolePack);
 
 /**
  * artifact 版本协商用的反例插件，刻意取一个不会发布的 ID 与 artifact type。
@@ -77,11 +86,14 @@ describe('本机安装清单', () => {
     expect(ids).toEqual([...ids].sort());
     expect(listed).toHaveLength(BUILT_IN_PLUGIN_MANIFESTS.length);
     expect(listed.map((plugin) => `${plugin.id}@${plugin.version}`)).toEqual(
-      expect.arrayContaining([
-        `${ROLE_PACK_ID}@${ROLE_PACK_VERSION}`,
-        `${REPO_ID}@${REPO_VERSION}`,
-      ]),
+      expect.arrayContaining([`${REPO_ID}@${REPO_VERSION}`]),
     );
+  });
+
+  it('内置清单里没有岗位包：基础包岗位中立', () => {
+    // 反过来写才守得住：只断言「能力插件都在」，某天有人把岗位包塞回内置数组也照样绿
+    expect(listBuiltInPlugins().filter((plugin) => plugin.type === 'role-pack')).toEqual([]);
+    expect(listBuiltInPlugins().map((plugin) => plugin.id)).not.toContain(ROLE_PACK_ID);
   });
 
   it('岗位包不携带运行能力声明，能力插件必须携带', () => {
@@ -101,7 +113,7 @@ describe('两端共用同一份 descriptor', () => {
   });
 
   it('桌面与手机得到相同的 hash 与能力集合，只有 mode 不同', () => {
-    const input = { descriptor: descriptor(), installed: listBuiltInPlugins() };
+    const input = { descriptor: descriptor(), installed: installedHere() };
     const desktop = buildClientCapabilityView({ ...input, platform: 'desktop' });
     const mobile = buildClientCapabilityView({ ...input, platform: 'mobile' });
 
@@ -121,7 +133,7 @@ describe('两端共用同一份 descriptor', () => {
     const view = buildClientCapabilityView({
       descriptor: descriptor(),
       platform: 'desktop',
-      installed: [...listBuiltInPlugins(), PIVOT_LAB],
+      installed: [...installedHere(), PIVOT_LAB],
     });
 
     expect(capabilityMode(view, PIVOT_LAB.id)).toBe('unsupported');
@@ -131,7 +143,7 @@ describe('两端共用同一份 descriptor', () => {
 describe('降级不修改 Campaign binding', () => {
   it('输入 descriptor 与安装清单在计算后逐字未变', () => {
     const frozen = deepFreeze(descriptor());
-    const installed = deepFreeze(listBuiltInPlugins());
+    const installed = deepFreeze(installedHere());
     const before = JSON.stringify(frozen);
 
     const view = buildClientCapabilityView({
@@ -151,7 +163,7 @@ describe('降级不修改 Campaign binding', () => {
         capabilities: [{ id: REPO_ID, version: '9.9.9', enabled: true }],
       }),
       platform: 'desktop',
-      installed: listBuiltInPlugins(),
+      installed: installedHere(),
     });
 
     expect(view.capabilities[0]).toMatchObject({
@@ -171,7 +183,7 @@ describe('降级不修改 Campaign binding', () => {
         capabilities: [{ id: 'never-shipped-capability', version: '1.0.0', enabled: true }],
       }),
       platform: 'desktop',
-      installed: listBuiltInPlugins(),
+      installed: installedHere(),
     });
 
     expect(view.capabilities[0]).toMatchObject({
@@ -188,7 +200,7 @@ describe('降级不修改 Campaign binding', () => {
         ],
       }),
       platform: 'desktop',
-      installed: listBuiltInPlugins(),
+      installed: installedHere(),
     });
 
     expect(view.capabilities[0]).toMatchObject({
@@ -203,7 +215,7 @@ describe('降级不修改 Campaign binding', () => {
     const view = buildClientCapabilityView({
       descriptor: descriptor({ rolePack: { id: ROLE_PACK_ID, version: '0.9.0' } }),
       platform: 'desktop',
-      installed: listBuiltInPlugins(),
+      installed: installedHere(),
     });
 
     expect(view.rolePack.mode).toBe('view-only');
@@ -218,7 +230,7 @@ describe('未知 artifact schema 只读', () => {
       { id: PIVOT_LAB.id, version: PIVOT_LAB.version, enabled: true },
     ],
   });
-  const installed = [...listBuiltInPlugins(), PIVOT_LAB];
+  const installed = [...installedHere(), PIVOT_LAB];
 
   it('本机已知且版本不高于本机时才允许解析', () => {
     const view = buildClientCapabilityView({

@@ -17,7 +17,7 @@ import {
   PRODUCT_MANAGER_FORMAT_IDS,
   PRODUCT_MANAGER_ROLE_PACK_ID,
   productManagerRolePack,
-} from '@shared/plugins/builtin/productManager';
+} from '@shared/plugins/rolePacks/productManager';
 import {
   PHASE1_CAMPAIGN,
   PHASE1_ENGINEERING_MARKERS,
@@ -25,6 +25,7 @@ import {
 } from '@shared/plugins/__fixtures__/phase1Campaign';
 import type { ComposedPrompt } from '@shared/prompts/composer';
 import { newLegacyDb } from '../db/__fixtures__/legacyDb';
+import { installRolePacks } from '../plugins/__fixtures__/installedPlugins';
 import { setCampaignRoleProfile } from '../plugins/runtime';
 import { createPracticeService, type PracticeService } from './service';
 
@@ -72,6 +73,8 @@ interface Harness {
  * 组合器里的岗位包版本与 descriptor 逐字一致，手写的假绑定过不了那一关。
  */
 function newProductPracticeDb(): Database {
+  // 岗位包由用户安装，绑定之前先装上
+  installRolePacks();
   const raw = newLegacyDb();
 
   raw

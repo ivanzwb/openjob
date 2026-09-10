@@ -7,8 +7,9 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { Database } from 'better-sqlite3';
-import { softwareEngineeringRolePack } from '@shared/plugins/builtin/softwareEngineering';
+import { softwareEngineeringRolePack } from '@shared/plugins/rolePacks/softwareEngineering';
 import { newLegacyDb } from '../db/__fixtures__/legacyDb';
+import { installRolePacks } from '../plugins/__fixtures__/installedPlugins';
 import { setCampaignRoleProfile } from '../plugins/runtime';
 import { diagnoseCampaignCompetencies } from './competency';
 
@@ -24,6 +25,8 @@ const JD_PARSED = {
 };
 
 function newDb(options: { jdParsed?: unknown } = {}): Database {
+  // 岗位包由用户安装，绑定之前先装上
+  installRolePacks();
   const raw = newLegacyDb();
   raw
     .prepare(

@@ -10,10 +10,9 @@
 import type { Database } from 'better-sqlite3';
 import type { ExamForm } from '@shared/enums';
 import { PracticeError } from '@shared/practice';
-import { BUILT_IN_ROLE_PACKS } from '@shared/plugins/builtin';
-import { LEGACY_EXAM_FORM_TO_FORMAT_ID } from '@shared/plugins/builtin/softwareEngineering';
+import { LEGACY_EXAM_FORM_TO_FORMAT_ID } from '@shared/plugins/legacyRoleData';
 import type { CampaignRuntimeDescriptor, RolePack } from '@shared/plugins/types';
-import { getCampaignRuntime } from '../plugins/runtime';
+import { findInstalledRolePack, getCampaignRuntime } from '../plugins/runtime';
 
 /**
  * formatId → 旧 ExamForm 的反向映射。
@@ -40,12 +39,14 @@ export interface CampaignPracticeRuntime {
   interviewLanguage: string;
 }
 
+/**
+ * 岗位包一律来自本机安装清单：基础包不带任何岗位包，用户装了哪几个就只有哪几个。
+ *
+ * 「缺包」因此是常态而不是异常——用户可以卸载，也可以只装新版本。缺包的处理见
+ * `resolveCampaignPracticeRuntime`：出题这条链路停下，读历史那条链路不受影响。
+ */
 export function findRolePack(id: string, version: string): RolePack | null {
-  return (
-    BUILT_IN_ROLE_PACKS.find(
-      (pack) => pack.manifest.id === id && pack.manifest.version === version,
-    ) ?? null
-  );
+  return findInstalledRolePack(id, version);
 }
 
 export function resolveCampaignPracticeRuntime(

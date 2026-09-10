@@ -11,11 +11,12 @@ import { describe, expect, it } from 'vitest';
 import {
   SALES_CUSTOMER_SUCCESS_FORMAT_IDS,
   SALES_CUSTOMER_SUCCESS_ROLE_PACK_ID,
-} from '@shared/plugins/builtin/salesCustomerSuccess';
-import { SOFTWARE_ENGINEERING_ROLE_PACK_ID } from '@shared/plugins/builtin/softwareEngineering';
+} from '@shared/plugins/rolePacks/salesCustomerSuccess';
+import { SOFTWARE_ENGINEERING_ROLE_PACK_ID } from '@shared/plugins/rolePacks/softwareEngineering';
 import { ROLE_PLAY_SCENARIOS } from '@shared/plugins/builtin/rolePlay';
 import type { ComposedPrompt } from '@shared/prompts/composer';
 import { newLegacyDb } from '../db/__fixtures__/legacyDb';
+import { installRolePacks } from './__fixtures__/installedPlugins';
 import { setCampaignRoleProfile } from './runtime';
 import { restoreRolePlayState } from './interactionRuntime';
 import {
@@ -41,6 +42,8 @@ interface Harness {
 }
 
 function newSalesDb(rolePackId: string = SALES_CUSTOMER_SUCCESS_ROLE_PACK_ID): Database {
+  // 岗位包由用户安装，绑定之前先装上
+  installRolePacks();
   const raw = newLegacyDb();
 
   raw

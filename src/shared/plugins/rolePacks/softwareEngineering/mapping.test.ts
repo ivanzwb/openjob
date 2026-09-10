@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { EXAM_FORMS, TASK_KINDS } from '../../../enums';
-import {
-  LEGACY_EXAM_FORM_TO_FORMAT_ID,
-  SOFTWARE_ENGINEERING_FORMAT_IDS,
-  formatIdForLegacyExamForm,
-  softwareEngineeringRolePack,
-} from './index';
+import { LEGACY_EXAM_FORM_TO_FORMAT_ID, SOFTWARE_ENGINEERING_FORMAT_IDS, formatIdForLegacyExamForm } from '../../legacyRoleData';
+import { softwareEngineeringRolePack } from './index';
 
 describe('software engineering legacy mappings', () => {
   it('maps every legacy ExamForm to one stable interview format', () => {

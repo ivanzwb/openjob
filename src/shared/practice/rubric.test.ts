@@ -7,7 +7,7 @@
  * 「编造的引文必须被挡下来」。
  */
 import { describe, expect, it } from 'vitest';
-import { softwareEngineeringRolePack } from '../plugins/builtin/softwareEngineering';
+import { softwareEngineeringRolePack } from '../plugins/rolePacks/softwareEngineering';
 import type { RolePack } from '../plugins/types';
 import { ANSWER_MD, NO_THRESHOLD_RUBRIC, TEST_RUBRIC } from './__fixtures__/rubric';
 import {

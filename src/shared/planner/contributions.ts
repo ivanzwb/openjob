@@ -6,10 +6,7 @@
  * PlannerContext 必须得到逐条相同的 PlannedTask。
  */
 import type { RuntimeAvailability, TaskKind } from '../enums';
-import {
-  SOFTWARE_ENGINEERING_ROLE_PACK_ID,
-  softwareEngineeringRolePack,
-} from '../plugins/builtin/softwareEngineering';
+import { LEGACY_ROLE_PACK_REF } from '../plugins/legacyRoleData';
 import {
   SOURCE_REPOSITORY_CAPABILITY_ID,
   sourceRepositoryCapabilityPlugin,
@@ -21,12 +18,7 @@ import {
   type ClientPluginStatus,
 } from '../plugins/clientView';
 import { hashRuntimeConfig } from '../plugins/resolver';
-import type {
-  CampaignRuntimeDescriptor,
-  ClientPlatform,
-  RolePack,
-  TaskTemplate,
-} from '../plugins/types';
+import type { CampaignRuntimeDescriptor, ClientPlatform } from '../plugins/types';
 
 /** 本机跑不动时给用户的提示。内置能力插件的桌面端都是 full，降级只会发生在手机。 */
 export const REQUIRES_DESKTOP_REASON = '需桌面完成';
@@ -95,23 +87,17 @@ const AVAILABILITY_RANK: Record<RuntimeAvailability, number> = {
   full: 2,
 };
 
-function requireTaskTemplate(
-  pack: RolePack,
-  taskKind: TaskKind,
-  capabilityId: string,
-): TaskTemplate {
-  const template = pack.taskTemplates.find(
-    (item) => item.taskKind === taskKind && item.capabilityId === capabilityId,
-  );
-  if (!template) throw new Error(`岗位包 ${pack.manifest.id} 缺少任务模板：${taskKind}`);
-  return template;
-}
-
-const READ_CODE_TEMPLATE = requireTaskTemplate(
-  softwareEngineeringRolePack,
-  'readCode',
-  SOURCE_REPOSITORY_CAPABILITY_ID,
-);
+/**
+ * 读源码任务的时长。
+ *
+ * 原来是从软件工程岗位包的 `se.read-code` 模板里现取；岗位包移出基础包之后排程不能再
+ * 依赖某个包装没装——它两端都要跑，而手机端连插件目录都没有。这个数字是那个模板当时的
+ * 取值快照，改它会让同一份计划在新旧版本之间排出不同的分钟数。
+ *
+ * 真正该做的是让排程按 descriptor 里的岗位包读模板，但那需要把岗位包数据也下发到排程
+    10| * 这一层；在那之前，这里保持与历史一致，而不是假装可配置。
+ */
+const READ_CODE_MINUTES = 25;
 
 /** 有多个已索引仓库时按 (url, id) 取第一个，保证两端选到同一个仓库。 */
 function defaultRepo(repos: readonly PlannerRepo[]): PlannerRepo | null {
@@ -126,7 +112,8 @@ function defaultRepo(repos: readonly PlannerRepo[]): PlannerRepo | null {
 const readCodeContribution: PlannerContribution = {
   id: 'source-repository.read-code',
   capabilityId: SOURCE_REPOSITORY_CAPABILITY_ID,
-  rolePackIds: [SOFTWARE_ENGINEERING_ROLE_PACK_ID],
+  // 只有软件工程岗排读源码任务：其它岗位包即使启用了同一个能力也不排（见 rolePackIds 注释）
+  rolePackIds: [LEGACY_ROLE_PACK_REF.id],
   taskKinds: ['readCode'],
   // 克隆、索引和更新只有桌面能做，手机只能读已同步的快照
   minimumAvailability: 'full',
@@ -135,7 +122,7 @@ const readCodeContribution: PlannerContribution = {
     if (context.dayIndex % 2 !== 1) return [];
     const repo = defaultRepo(context.repos);
     if (!repo) return [];
-    const estMinutes = READ_CODE_TEMPLATE.defaultMinutes;
+    const estMinutes = READ_CODE_MINUTES;
     if (context.usedMinutes + estMinutes > context.budgetMinutes) return [];
     return [{ kind: 'readCode', nodeId: null, repoId: repo.id, estMinutes }];
   },
@@ -261,10 +248,7 @@ export const LEGACY_CAMPAIGN_SCOPE_KIND = 'generic-interview-v1:legacy';
 export function legacyRuntimeDescriptor(campaignId: string): CampaignRuntimeDescriptor {
   const coreVersion = '1.0.0';
   const schemaVersion = 23;
-  const rolePack = {
-    id: SOFTWARE_ENGINEERING_ROLE_PACK_ID,
-    version: softwareEngineeringRolePack.manifest.version,
-  };
+  const rolePack = { ...LEGACY_ROLE_PACK_REF };
   const capabilities: CampaignRuntimeDescriptor['capabilities'] = [
     {
       id: SOURCE_REPOSITORY_CAPABILITY_ID,

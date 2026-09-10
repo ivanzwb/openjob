@@ -16,7 +16,8 @@ vi.mock('../paths', () => ({
   getAppPaths: () => paths,
 }));
 
-import { BUILT_IN_ROLE_PACKS } from '@shared/plugins/builtin';
+import { BUILT_IN_CAPABILITY_PLUGINS } from '@shared/plugins/builtin';
+import { DISTRIBUTED_ROLE_PACKS } from '@shared/plugins/rolePacks';
 import {
   PACKAGE_MANIFEST_FILE,
   PACKAGE_PACK_FILE,
@@ -57,7 +58,7 @@ afterEach(() => {
 });
 
 function rolePackFiles(id = 'demo.role', version = '2.0.0'): PluginPackageFiles {
-  const source = structuredClone(BUILT_IN_ROLE_PACKS[0]!) as RolePack;
+  const source = structuredClone(DISTRIBUTED_ROLE_PACKS[0]!) as RolePack;
   const { manifest, ...rest } = source;
   return {
     [PACKAGE_MANIFEST_FILE]: JSON.stringify({ ...manifest, id, version, dependencies: [] }),
@@ -169,11 +170,18 @@ describe('installPluginBundle', () => {
     expect(installedDirs()).toEqual([]);
   });
 
-  it('与内置插件同 id@version 的包拒装', () => {
-    const builtIn = BUILT_IN_ROLE_PACKS[0]!.manifest;
+  it('与内置能力插件同 id@version 的包拒装', () => {
+    const builtIn = BUILT_IN_CAPABILITY_PLUGINS[0]!.manifest;
     const files = rolePackFiles(builtIn.id, builtIn.version);
 
     expect(installPluginBundle(bundle(files))).toMatchObject({ code: 'reserved-id' });
+  });
+
+  it('官方岗位包的 id@version 不被内置清单占用', () => {
+    const pack = DISTRIBUTED_ROLE_PACKS[0]!.manifest;
+    const files = rolePackFiles(pack.id, pack.version);
+
+    expect(installPluginBundle(bundle(files))).toMatchObject({ ok: true });
   });
 
   it('重复安装默认拒绝，overwrite 才覆盖', () => {

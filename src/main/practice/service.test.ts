@@ -9,7 +9,7 @@
 import type { Database } from 'better-sqlite3';
 import { describe, expect, it } from 'vitest';
 import { PracticeError } from '@shared/practice';
-import { softwareEngineeringRolePack } from '@shared/plugins/builtin/softwareEngineering';
+import { softwareEngineeringRolePack } from '@shared/plugins/rolePacks/softwareEngineering';
 import type { ComposedPrompt } from '@shared/prompts/composer';
 import {
   ANSWER_MD,

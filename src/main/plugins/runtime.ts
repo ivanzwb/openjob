@@ -14,10 +14,7 @@ import type {
   ClientCapabilityViewRequest,
   SetRoleProfileInput,
 } from '@shared/ipc';
-import {
-  BUILT_IN_CAPABILITY_PLUGINS,
-  BUILT_IN_ROLE_PACKS,
-} from '@shared/plugins/builtin';
+import { BUILT_IN_CAPABILITY_PLUGINS } from '@shared/plugins/builtin';
 import {
   BUILT_IN_PLUGIN_MANIFESTS,
   buildClientCapabilityView,
@@ -33,6 +30,7 @@ import type {
   CampaignRuntimeDescriptor,
   ResolvedCapabilityRef,
   ResolvedPluginRef,
+  RolePack,
 } from '@shared/plugins/types';
 import type { RoleProfile } from '@shared/entities';
 import {
@@ -102,13 +100,13 @@ function registerExternal(registry: BuiltInPluginRegistry, entry: PluginInventor
 
 function createRegistry(): BuiltInPluginRegistry {
   const registry = new BuiltInPluginRegistry();
-  BUILT_IN_ROLE_PACKS.forEach((pack) => registry.register(pack));
   BUILT_IN_CAPABILITY_PLUGINS.forEach((plugin) => registry.registerCapability(plugin));
   externalEntries.forEach((entry) => registerExternal(registry, entry));
   return registry;
 }
 
-let resolver = new DeterministicRuntimeResolver(createRegistry());
+let registry = createRegistry();
+let resolver = new DeterministicRuntimeResolver(registry);
 
 /** 内置插件占掉的 `id@version`，外置包不允许顶替（理由见 inventory.ts 的 reservedKeys）。 */
 export function builtInPluginKeys(): Set<string> {
@@ -123,7 +121,19 @@ export function builtInPluginKeys(): Set<string> {
  */
 export function setExternalPlugins(entries: readonly PluginInventoryEntry[]): void {
   externalEntries = [...entries];
-  resolver = new DeterministicRuntimeResolver(createRegistry());
+  registry = createRegistry();
+  resolver = new DeterministicRuntimeResolver(registry);
+}
+
+/**
+ * 按精确版本取本机已安装的岗位包，没装返回 null。
+ *
+ * 走注册表而不是自己遍历 externalEntries：注册表是解析用的同一份集合，两处各查一遍时，
+ * 「能选上但练不了」这类分叉会在最难查的地方出现——岗位选好了、descriptor 也写了，
+ * 到出题那一步才说没这个包。
+ */
+export function findInstalledRolePack(id: string, version: string): RolePack | null {
+  return registry.get(id, version);
 }
 
 export function listExternalPlugins(): readonly PluginInventoryEntry[] {

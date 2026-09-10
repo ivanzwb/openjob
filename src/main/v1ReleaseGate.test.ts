@@ -20,15 +20,19 @@ import { ANALYTICS_CASE_CAPABILITY_ID } from '@shared/plugins/builtin/analyticsC
 import {
   PRODUCT_MANAGER_OPTIONAL_CAPABILITY_IDS,
   PRODUCT_MANAGER_ROLE_PACK_ID,
-} from '@shared/plugins/builtin/productManager';
+} from '@shared/plugins/rolePacks/productManager';
 import { ROLE_PLAY_CAPABILITY_ID } from '@shared/plugins/builtin/rolePlay';
-import { SALES_CUSTOMER_SUCCESS_ROLE_PACK_ID } from '@shared/plugins/builtin/salesCustomerSuccess';
-import { softwareEngineeringRolePack } from '@shared/plugins/builtin/softwareEngineering';
+import { SALES_CUSTOMER_SUCCESS_ROLE_PACK_ID } from '@shared/plugins/rolePacks/salesCustomerSuccess';
+import { softwareEngineeringRolePack } from '@shared/plugins/rolePacks/softwareEngineering';
 import { SOURCE_REPOSITORY_CAPABILITY_ID } from '@shared/plugins/builtin/sourceRepository';
-import { listBuiltInPlugins } from '@shared/plugins/clientView';
 import type { CampaignRuntimeDescriptor } from '@shared/plugins/types';
 import { buildClientCapabilityView } from '@shared/plugins/clientView';
-import { getCampaignRuntime, setCampaignRoleProfile } from './plugins/runtime';
+import { installRolePacks } from './plugins/__fixtures__/installedPlugins';
+import {
+  getCampaignRuntime,
+  listInstalledPlugins,
+  setCampaignRoleProfile,
+} from './plugins/runtime';
 import { syncTableSpecs } from './sync/tables';
 
 const MIGRATIONS_DIR = join(__dirname, 'db', 'migrations');
@@ -138,6 +142,8 @@ function enabledIds(descriptor: CampaignRuntimeDescriptor): string[] {
 
 beforeEach(() => {
   raw = freshDb();
+  // 三个岗位包现在是用户自己装的：这条关卡问的是「都装上之后彼此不串味」
+  installRolePacks();
 });
 
 describe('三个岗位包在同一份库上共存', () => {
@@ -183,7 +189,7 @@ describe('能力隔离矩阵', () => {
 
   it('岗位包没声明的能力即使装在本机也不会被启用', () => {
     const descriptor = bindRolePack(ROLE_PACK_CASES[0]);
-    const installed = listBuiltInPlugins().map((plugin) => plugin.id);
+    const installed = listInstalledPlugins().map((plugin) => plugin.id);
 
     // 三个能力插件都随应用发布，所以「没启用」不可能是「没装」
     for (const capabilityId of CAPABILITY_IDS) {
@@ -196,7 +202,7 @@ describe('能力隔离矩阵', () => {
 describe('两端消费同一份 descriptor', () => {
   it.each(ROLE_PACK_CASES)('$label 在桌面与手机上只有 mode 不同', (item) => {
     const descriptor = bindRolePack(item);
-    const input = { descriptor, installed: listBuiltInPlugins() };
+    const input = { descriptor, installed: listInstalledPlugins() };
     const desktop = buildClientCapabilityView({ ...input, platform: 'desktop' });
     const mobile = buildClientCapabilityView({ ...input, platform: 'mobile' });
 

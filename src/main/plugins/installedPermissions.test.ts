@@ -12,7 +12,8 @@ vi.mock('../db', () => ({
   schema: {},
 }));
 
-import { BUILT_IN_CAPABILITY_PLUGINS, BUILT_IN_ROLE_PACKS } from '@shared/plugins/builtin';
+import { DISTRIBUTED_ROLE_PACKS } from '@shared/plugins/rolePacks';
+import { BUILT_IN_CAPABILITY_PLUGINS } from '@shared/plugins/builtin';
 import type { PluginManifest, PluginPermission } from '@shared/plugins';
 import type { RolePack } from '@shared/plugins/types';
 import type { PluginInventoryEntry } from './inventory';
@@ -95,7 +96,7 @@ describe('installedPermissionContracts', () => {
   it('外置岗位包拿不到任何权限', () => {
     // 岗位包 permissions 恒为空，但契约还要按 type 过滤：漏了这层，
     // 以后有人给岗位包塞一个权限就会直接生效
-    const source = structuredClone(BUILT_IN_ROLE_PACKS[0]!) as RolePack;
+    const source = structuredClone(DISTRIBUTED_ROLE_PACKS[0]!) as RolePack;
     const pack: RolePack = {
       ...source,
       manifest: { ...source.manifest, id: 'demo.role', version: '9.0.0', dependencies: [] },

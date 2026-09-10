@@ -18,7 +18,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { listBuiltInPlugins } from '../plugins/clientView';
-import { softwareEngineeringRolePack } from '../plugins/builtin/softwareEngineering';
+import { DISTRIBUTED_ROLE_PACKS } from '../plugins/rolePacks';
+import { softwareEngineeringRolePack } from '../plugins/rolePacks/softwareEngineering';
 import { SOURCE_REPOSITORY_CAPABILITY_ID } from '../plugins/builtin/sourceRepository';
 
 const RENDERER_DIR = join(__dirname, '..', '..', 'renderer', 'src');
@@ -119,10 +120,10 @@ describe('渲染进程只消费 descriptor', () => {
     ).toEqual([]);
   });
 
-  it('不把内置岗位包的 ID 写成字面量', () => {
-    const rolePackIds = listBuiltInPlugins()
-      .filter((plugin) => plugin.type === 'role-pack')
-      .map((plugin) => plugin.id);
+  it('不把官方岗位包的 ID 写成字面量', () => {
+    // 岗位包已经移出基础包，改由用户安装。界面照样不许认得它们的 ID：
+    // 装了哪几个岗位包是本机的事，界面按 descriptor 渲染就行。
+    const rolePackIds = DISTRIBUTED_ROLE_PACKS.map((pack) => pack.manifest.id);
 
     expect(rolePackIds.length).toBeGreaterThan(0);
     for (const id of rolePackIds) {

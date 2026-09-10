@@ -7,7 +7,8 @@
  * 一台走内置一台走外置，descriptor 却不同，同步层会当成配置漂移。
  */
 import { describe, expect, it } from 'vitest';
-import { BUILT_IN_CAPABILITY_PLUGINS, BUILT_IN_ROLE_PACKS } from '../builtin';
+import { DISTRIBUTED_ROLE_PACKS } from '../rolePacks';
+import { BUILT_IN_CAPABILITY_PLUGINS } from '../builtin';
 import { BuiltInPluginRegistry } from '../registry';
 import { DeterministicRuntimeResolver } from '../resolver';
 import type {
@@ -31,7 +32,7 @@ const CORE_VERSION = '1.0.0';
 /** 从插件自己的兼容性声明里取，别写死数字：插件抬了 schema 要求，这个测试不该跟着改。 */
 const SCHEMA_VERSION = Math.max(
   ...[
-    ...BUILT_IN_ROLE_PACKS.map((pack) => pack.manifest),
+    ...DISTRIBUTED_ROLE_PACKS.map((pack) => pack.manifest),
     ...BUILT_IN_CAPABILITY_PLUGINS.map((plugin) => plugin.manifest),
   ].map((manifest) => manifest.compatibility.schema),
 );
@@ -77,7 +78,7 @@ function packagedCapability(plugin: CapabilityPlugin): CapabilityPlugin {
 
 function builtInRegistry(): BuiltInPluginRegistry {
   const registry = new BuiltInPluginRegistry();
-  BUILT_IN_ROLE_PACKS.forEach((pack) => registry.register(pack));
+  DISTRIBUTED_ROLE_PACKS.forEach((pack) => registry.register(pack));
   BUILT_IN_CAPABILITY_PLUGINS.forEach((plugin) => registry.registerCapability(plugin));
   return registry;
 }
@@ -85,7 +86,7 @@ function builtInRegistry(): BuiltInPluginRegistry {
 /** 同样的 id@version，但每个插件都是从包里读出来的。 */
 function packagedRegistry(): BuiltInPluginRegistry {
   const registry = new BuiltInPluginRegistry();
-  BUILT_IN_ROLE_PACKS.forEach((pack) => registry.register(packagedRolePack(pack)));
+  DISTRIBUTED_ROLE_PACKS.forEach((pack) => registry.register(packagedRolePack(pack)));
   BUILT_IN_CAPABILITY_PLUGINS.forEach((plugin) =>
     registry.registerCapability(packagedCapability(plugin)),
   );
@@ -116,7 +117,7 @@ describe('解析结果与内置路径逐条一致', () => {
   const builtIn = new DeterministicRuntimeResolver(builtInRegistry());
   const packaged = new DeterministicRuntimeResolver(packagedRegistry());
 
-  it.each(BUILT_IN_ROLE_PACKS.map((pack) => [pack.manifest.id, pack.manifest.id] as const))(
+  it.each(DISTRIBUTED_ROLE_PACKS.map((pack) => [pack.manifest.id, pack.manifest.id] as const))(
     '%s：两条路径解析出同一份 descriptor',
     (_label, rolePackId) => {
       const input = {
@@ -138,7 +139,7 @@ describe('解析结果与内置路径逐条一致', () => {
     const input = {
       coreVersion: CORE_VERSION,
       schemaVersion: SCHEMA_VERSION,
-      rolePackId: BUILT_IN_ROLE_PACKS[0]!.manifest.id,
+      rolePackId: DISTRIBUTED_ROLE_PACKS[0]!.manifest.id,
       capabilityIds: BUILT_IN_CAPABILITY_PLUGINS.map((plugin) => plugin.manifest.id),
     };
 
@@ -150,7 +151,7 @@ describe('解析结果与内置路径逐条一致', () => {
   });
 
   it('configSnapshotHash 在两条路径上相同', () => {
-    for (const pack of BUILT_IN_ROLE_PACKS) {
+    for (const pack of DISTRIBUTED_ROLE_PACKS) {
       const input = {
         coreVersion: CORE_VERSION,
         schemaVersion: SCHEMA_VERSION,

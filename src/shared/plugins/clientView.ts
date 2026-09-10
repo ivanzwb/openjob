@@ -137,8 +137,15 @@ export function toInstalledPlugin(manifest: PluginManifest): InstalledPlugin {
   };
 }
 
-/** Phase 0 的插件全部随应用发布，安装清单即内置清单。 */
 export { BUILT_IN_PLUGIN_MANIFESTS };
+
+/**
+ * 随应用发布的那部分插件，**不等于本机安装清单**。
+ *
+ * 岗位包由用户单独安装，所以完整清单只有主进程知道（`main/plugins/runtime.ts` 的
+ * `listInstalledPlugins`）。拿这个函数当 `buildClientCapabilityView` 的 `installed`，
+ * 表达的是「一个岗位包都没装」——那会把所有战役判成 view-only。
+ */
 
 export function listBuiltInPlugins(): InstalledPlugin[] {
   return BUILT_IN_PLUGIN_MANIFESTS.map(toInstalledPlugin).sort(
