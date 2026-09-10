@@ -38,11 +38,13 @@ const OPEN_SCOPE: CampaignCapabilityScope = {
   resourceInScope: true,
 };
 
-function realGateway() {
+function realGateway(
+  contracts: ReadonlyMap<string, ReadonlySet<PluginPermission>> = BUILT_IN_PERMISSION_CONTRACTS,
+) {
   const resolve = vi.fn((): CampaignCapabilityScope => OPEN_SCOPE);
   const provider: PermissionScopeProvider = { resolve };
   return {
-    gateway: new DefaultDenyPermissionGateway(provider, BUILT_IN_PERMISSION_CONTRACTS),
+    gateway: new DefaultDenyPermissionGateway(provider, () => contracts),
     resolve,
   };
 }

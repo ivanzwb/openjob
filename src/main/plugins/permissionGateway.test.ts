@@ -30,8 +30,7 @@ function gateway(scope: CampaignCapabilityScope) {
   const resolve = vi.fn(() => scope);
   const provider: PermissionScopeProvider = { resolve };
   return {
-    gateway: new DefaultDenyPermissionGateway(
-      provider,
+    gateway: new DefaultDenyPermissionGateway(provider, () =>
       new Map([['source-repository', new Set(['repository:read' as const])]]),
     ),
     resolve,

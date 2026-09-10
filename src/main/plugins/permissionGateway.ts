@@ -2,6 +2,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import type { PluginPermission } from '@shared/plugins';
 import { BUILT_IN_CAPABILITY_PLUGINS } from '@shared/plugins/builtin';
 import { getDb, schema } from '../db';
+import { listInstalledPlugins } from './runtime';
 
 export interface CapabilityResource {
   kind: 'repository';
@@ -73,13 +74,17 @@ function deny(code: PermissionDenialCode): PermissionDecision {
 }
 
 export class DefaultDenyPermissionGateway implements PermissionGateway {
+  /**
+   * contracts 是取值函数而不是快照：外置插件可以在运行期装上或卸掉，快照会让刚装好的
+   * 能力一直被判成「没声明」，或者更糟——卸掉之后权限还在。
+   */
   constructor(
     private readonly scopes: PermissionScopeProvider,
-    private readonly contracts: CapabilityPermissionContracts,
+    private readonly contracts: () => CapabilityPermissionContracts,
   ) {}
 
   authorize(request: CapabilityRequest): PermissionDecision {
-    const declared = this.contracts.get(request.capabilityId);
+    const declared = this.contracts().get(request.capabilityId);
     if (!declared?.has(request.permission)) return deny('permission-undeclared');
 
     const scope = this.scopes.resolve(request);
@@ -178,9 +183,53 @@ export const BUILT_IN_PERMISSION_CONTRACTS: CapabilityPermissionContracts = new 
   ]),
 );
 
+/**
+ * 按**本机已安装**的能力插件推导契约，内置与外置同一条规则。
+ *
+ * 外置插件凭 manifest 拿权限，是因为装它这件事本身就是用户的授权动作：包必须验签通过，
+ * 非第一方签名还要显式确认，确认界面上列的就是这份权限清单（P06/P07）。网关这一层管的
+ * 是「不许超出声明」和「不许越出本 Campaign 的资源范围」，不是「该不该装」。
+ *
+ * 同一个 id 装了多个版本时取**交集**。契约按 id 索引（不带版本），因为越权必须在读库之前
+ * 就被拒——拿到 descriptor 里 pin 的版本得先查库，那就等于让未授权的调用方也能触发一次
+ * 数据库访问。既然拿不到版本，歧义只能往窄的一边收：少给会表现成一次可见的拒绝，用户
+ * 卸掉旧版本就恢复；多给是不可逆的。
+ */
+export function installedPermissionContracts(): CapabilityPermissionContracts {
+  const contracts = new Map<string, Set<PluginPermission>>();
+  const ambiguous = new Set<string>();
+
+  for (const plugin of listInstalledPlugins()) {
+    if (plugin.type !== 'capability') continue;
+    const declared = new Set(plugin.permissions);
+    const existing = contracts.get(plugin.id);
+    if (!existing) {
+      contracts.set(plugin.id, declared);
+      continue;
+    }
+    for (const permission of existing) {
+      if (!declared.has(permission)) {
+        existing.delete(permission);
+        ambiguous.add(plugin.id);
+      }
+    }
+    for (const permission of declared) {
+      if (!existing.has(permission)) ambiguous.add(plugin.id);
+    }
+  }
+
+  if (ambiguous.size > 0) {
+    console.warn(
+      '以下能力插件装了多个版本且权限声明不一致，已按交集授权：',
+      [...ambiguous].sort(),
+    );
+  }
+  return contracts;
+}
+
 export const permissionGateway: PermissionGateway = new DefaultDenyPermissionGateway(
   new DatabasePermissionScopeProvider(),
-  BUILT_IN_PERMISSION_CONTRACTS,
+  installedPermissionContracts,
 );
 
 export class PermissionDeniedError extends Error {

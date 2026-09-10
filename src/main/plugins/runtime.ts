@@ -84,15 +84,20 @@ let externalEntries: readonly PluginInventoryEntry[] = [];
  */
 function registerExternal(registry: BuiltInPluginRegistry, entry: PluginInventoryEntry): void {
   const { manifest, rolePack, contributions } = entry.package;
-  if (rolePack) {
-    registry.register(rolePack);
-    return;
+  // 按 manifest.type 分派，而不是按哪个字段有值：两者本该一致（格式校验强制 type 与文件
+  // 对应），真不一致时应当明确报错，而不是让 type 与实际注册方式静默分叉
+  switch (manifest.type) {
+    case 'role-pack':
+      if (!rolePack) throw new Error(`岗位包缺少数据：${manifest.id}`);
+      registry.register(rolePack);
+      return;
+    case 'capability':
+      if (!contributions) throw new Error(`能力插件缺少 contributions：${manifest.id}`);
+      registry.registerCapability(toCapabilityPlugin(manifest, contributions));
+      return;
+    default:
+      registry.registerIndustryPack(manifest);
   }
-  if (contributions) {
-    registry.registerCapability(toCapabilityPlugin(manifest, contributions));
-    return;
-  }
-  registry.registerIndustryPack(manifest);
 }
 
 function createRegistry(): BuiltInPluginRegistry {
