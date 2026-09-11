@@ -1,8 +1,5 @@
-import { ChevronDown, ChevronUp } from 'lucide-react';
 import type { ResumeDocument, ResumeSectionKey } from '@shared/resume/document';
 import { catalogHintForKey } from '@shared/resume/document';
-import { moveInList } from '@shared/resume/sectionModel';
-import { IconButton } from './IconButton';
 import { ResumeSectionForm } from './ResumeSectionForm';
 import type { SectionPolishRequest } from './ResumeSectionForm';
 
@@ -57,61 +54,25 @@ export function ResumeDocumentEditor({
             const active = index === activeSectionIndex;
             const filled = Boolean(section.contentMd.trim());
             return (
-              <div
+              <button
                 key={section.key}
-                className={`flex items-center gap-1 rounded-lg px-2 py-1 text-left text-sm transition-colors ${
+                type="button"
+                onClick={() => onActiveSectionChange(index)}
+                className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
                   active
                     ? 'bg-[var(--color-surface)] font-medium text-[var(--color-accent)]'
                     : 'text-[var(--color-muted)] hover:bg-[var(--color-surface)]/80 hover:text-[var(--color-fg)]'
                 }`}
               >
-                <button
-                  type="button"
-                  onClick={() => onActiveSectionChange(index)}
-                  className="flex min-w-0 flex-1 items-center gap-2"
-                >
-                  <span
-                    aria-hidden
-                    title={filled ? '已填写' : '未填写'}
-                    className={`size-1.5 shrink-0 rounded-full ${
-                      filled ? 'bg-[var(--color-accent)]' : 'bg-[var(--color-border)]'
-                    }`}
-                  />
-                  <span className="min-w-0 flex-1 truncate">{section.title}</span>
-                </button>
-                <div className="flex shrink-0 items-center">
-                  <IconButton
-                    icon={ChevronUp}
-                    label="上移模块"
-                    size="sm"
-                    disabled={index === 0}
-                    onClick={() => {
-                      const next = moveInList(document.sections, index, -1);
-                      onDocumentChange({ sections: next });
-                      if (activeSectionIndex === index) {
-                        onActiveSectionChange(index - 1);
-                      } else if (activeSectionIndex === index - 1) {
-                        onActiveSectionChange(index);
-                      }
-                    }}
-                  />
-                  <IconButton
-                    icon={ChevronDown}
-                    label="下移模块"
-                    size="sm"
-                    disabled={index === document.sections.length - 1}
-                    onClick={() => {
-                      const next = moveInList(document.sections, index, 1);
-                      onDocumentChange({ sections: next });
-                      if (activeSectionIndex === index) {
-                        onActiveSectionChange(index + 1);
-                      } else if (activeSectionIndex === index + 1) {
-                        onActiveSectionChange(index);
-                      }
-                    }}
-                  />
-                </div>
-              </div>
+                <span
+                  aria-hidden
+                  title={filled ? '已填写' : '未填写'}
+                  className={`size-1.5 shrink-0 rounded-full ${
+                    filled ? 'bg-[var(--color-accent)]' : 'bg-[var(--color-border)]'
+                  }`}
+                />
+                <span className="min-w-0 flex-1 truncate">{section.title}</span>
+              </button>
             );
           })}
         </div>

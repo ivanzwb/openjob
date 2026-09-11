@@ -15,7 +15,6 @@ import {
   documentToMarkdown,
   parseMarkdownToDocument,
 } from '@shared/resume/document';
-import { moveInList } from '@shared/resume/sectionModel';
 import { parsePreviewStyle, serializePreviewStyle, type ResumePreviewStyle } from '@shared/resume/previewStyle';
 import { getRawDb } from '../db';
 import { updateResumeEntry, type ResumeEntry } from '../data/resumeLocal';
@@ -26,7 +25,6 @@ import { useTheme } from '../theme';
 import { OverflowHintScrollView } from './OverflowHintScrollView';
 import { ResumeSectionForm, type SectionPolish } from './ResumeSectionForm';
 import { ResumePreviewModal } from './ResumePreviewModal';
-import { IconButton } from './IconButton';
 
 /** 手机上边打字边写库太吵，比桌面更钝一些，切后台与退出时补一次 */
 const AUTO_SAVE_DELAY = 1500;
@@ -306,70 +304,36 @@ export function ResumeEditor({
             style={{ flexGrow: 0 }}
             contentContainerStyle={{ gap: 6, paddingVertical: 2 }}
           >
-            {doc.sections.map((section, index) => {
-              const filled = Boolean(section.contentMd.trim());
-              const active = section.key === activeKey;
+            {RESUME_SECTION_CATALOG.map((item) => {
+              const section = doc.sections.find((s) => s.key === item.key);
+              const filled = Boolean(section?.contentMd.trim());
+              const active = item.key === activeKey;
               return (
-                <View
-                  key={section.key}
+                <Pressable
+                  key={item.key}
+                  onPress={() => setActiveKey(item.key)}
                   style={{
                     flexDirection: 'row',
                     alignItems: 'center',
-                    gap: 4,
+                    gap: 6,
                     borderWidth: 1,
                     borderColor: active ? theme.accent : theme.border,
                     backgroundColor: active ? `${theme.accent}22` : theme.surface,
                     borderRadius: 999,
-                    paddingLeft: 12,
-                    paddingRight: 6,
+                    paddingHorizontal: 12,
                     paddingVertical: 6,
                   }}
                 >
-                  <Pressable
-                    onPress={() => setActiveKey(section.key)}
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
-                  >
-                    <View
-                      style={{
-                        width: 6,
-                        height: 6,
-                        borderRadius: 3,
-                        backgroundColor: filled ? theme.success : theme.border,
-                      }}
-                    />
-                    <Text style={{ color: active ? theme.text : theme.muted, fontSize: 12 }}>{section.title}</Text>
-                  </Pressable>
-                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    <IconButton
-                      icon="chevron-up"
-                      label="上移模块"
-                      disabled={index === 0}
-                      onPress={() => {
-                        const next = moveInList(doc.sections, index, -1);
-                        setDoc({ sections: next });
-                        if (activeKey === section.key) {
-                          // Keep the same section active after move
-                        } else if (activeKey === doc.sections[index - 1]?.key) {
-                          setActiveKey(section.key);
-                        }
-                      }}
-                    />
-                    <IconButton
-                      icon="chevron-down"
-                      label="下移模块"
-                      disabled={index === doc.sections.length - 1}
-                      onPress={() => {
-                        const next = moveInList(doc.sections, index, 1);
-                        setDoc({ sections: next });
-                        if (activeKey === section.key) {
-                          // Keep the same section active after move
-                        } else if (activeKey === doc.sections[index + 1]?.key) {
-                          setActiveKey(section.key);
-                        }
-                      }}
-                    />
-                  </View>
-                </View>
+                  <View
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: 3,
+                      backgroundColor: filled ? theme.success : theme.border,
+                    }}
+                  />
+                  <Text style={{ color: active ? theme.text : theme.muted, fontSize: 12 }}>{item.title}</Text>
+                </Pressable>
               );
             })}
           </OverflowHintScrollView>

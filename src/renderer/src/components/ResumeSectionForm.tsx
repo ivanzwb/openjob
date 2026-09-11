@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronUp, Plus, Sparkles, Trash2, Undo2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, GripVertical, Plus, Sparkles, Trash2, Undo2 } from 'lucide-react';
 import type { ResumeSection, ResumeSectionKey } from '@shared/resume/document';
 import { IconButton } from './IconButton';
 import { ResumePhotoField } from './ResumePhotoField';
@@ -21,6 +21,7 @@ import {
   serializeFieldsSection,
   splitEducationRole,
   moveInList,
+  moveListItemTo,
   toMonthInputValue,
 } from '@shared/resume/sectionModel';
 
@@ -467,15 +468,54 @@ function BulletsForm({
     return parsed.length > 0 ? parsed : [''];
   });
 
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
+
   const apply = (next: string[]): void => {
     setItems(next);
     onContentChange(serializeBulletsSection(next));
   };
 
+  const resetDrag = (): void => {
+    setDragIndex(null);
+    setOverIndex(null);
+  };
+
   return (
     <div className="space-y-2">
       {items.map((item, index) => (
-        <div key={index} className="flex items-start gap-2">
+        <div
+          key={index}
+          onDragOver={(e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            setOverIndex(index);
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            if (dragIndex !== null && dragIndex !== index) {
+              apply(moveListItemTo(items, dragIndex, index));
+            }
+            resetDrag();
+          }}
+          className={`flex items-start gap-2 rounded transition-colors ${
+            overIndex === index && dragIndex !== null && dragIndex !== index
+              ? 'ring-1 ring-[var(--color-accent)]'
+              : ''
+          } ${dragIndex === index ? 'opacity-50' : ''}`}
+        >
+          <span
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.effectAllowed = 'move';
+              setDragIndex(index);
+            }}
+            onDragEnd={resetDrag}
+            title="按住拖动可调整顺序"
+            className="mt-2 flex w-4 shrink-0 cursor-grab items-center justify-center text-[var(--color-muted)] active:cursor-grabbing select-none"
+          >
+            <GripVertical size={12} aria-hidden />
+          </span>
           <span className="mt-2 w-4 shrink-0 text-right text-xs text-[var(--color-muted)]">
             {index + 1}
           </span>
@@ -530,6 +570,12 @@ function EntryCard({
   onChange,
   onMove,
   onRemove,
+  isDragging,
+  isDragOver,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
 }: {
   entry: SectionEntry;
   index: number;
@@ -541,15 +587,47 @@ function EntryCard({
   onChange: (patch: Partial<SectionEntry>) => void;
   onMove: (delta: number) => void;
   onRemove: () => void;
+  isDragging: boolean;
+  isDragOver: boolean;
+  onDragStart: () => void;
+  onDragOver: () => void;
+  onDrop: () => void;
+  onDragEnd: () => void;
 }): React.JSX.Element {
   const isCurrent = entry.end.trim() === '至今';
   // 教育经历的 role 是「专业 · 学历」，表单拆两个输入框，落库仍合并
   const edu = labels.splitRole ? splitEducationRole(entry.role) : null;
 
   return (
-    <div className="rounded-lg border border-[var(--color-border)] p-3 space-y-3">
+    <div
+      draggable={false}
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        onDragOver();
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        onDrop();
+      }}
+      className={`rounded-lg border p-3 space-y-3 transition-colors ${
+        isDragOver && !isDragging
+          ? 'border-[var(--color-accent)] ring-1 ring-[var(--color-accent)]'
+          : 'border-[var(--color-border)]'
+      } ${isDragging ? 'opacity-50' : ''}`}
+    >
       <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-[var(--color-muted)]">
+        <span
+          draggable
+          onDragStart={(e) => {
+            e.dataTransfer.effectAllowed = 'move';
+            onDragStart();
+          }}
+          onDragEnd={onDragEnd}
+          title="按住拖动可调整顺序"
+          className="flex cursor-grab items-center gap-1 text-xs font-medium text-[var(--color-muted)] select-none active:cursor-grabbing"
+        >
+          <GripVertical size={13} aria-hidden />
           {labels.title} {index + 1}
         </span>
         <div className="flex items-center gap-0.5">
@@ -699,9 +777,24 @@ function EntriesForm({
     entriesRef.current = entries;
   });
 
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
+
   const apply = (next: SectionEntry[]): void => {
     setEntries(next);
     onContentChange(serializeEntriesSection(next));
+  };
+
+  const resetDrag = (): void => {
+    setDragIndex(null);
+    setOverIndex(null);
+  };
+
+  const handleDrop = (target: number): void => {
+    if (dragIndex !== null && dragIndex !== target) {
+      apply(moveListItemTo(entries, dragIndex, target));
+    }
+    resetDrag();
   };
 
   return (
@@ -727,6 +820,12 @@ function EntriesForm({
           }
           onMove={(delta) => apply(moveInList(entries, index, delta))}
           onRemove={() => apply(entries.filter((_, i) => i !== index))}
+          isDragging={dragIndex === index}
+          isDragOver={overIndex === index}
+          onDragStart={() => setDragIndex(index)}
+          onDragOver={() => setOverIndex(index)}
+          onDrop={() => handleDrop(index)}
+          onDragEnd={resetDrag}
         />
       ))}
 

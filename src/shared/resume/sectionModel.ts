@@ -211,6 +211,16 @@ export function moveInList<T>(list: T[], index: number, delta: number): T[] {
   return next;
 }
 
+/** 把 index 处的条目插到目标位置（其余条目相对顺延），用于拖拽排序 */
+export function moveListItemTo<T>(list: T[], index: number, to: number): T[] {
+  if (index === to || index < 0 || index >= list.length || to < 0 || to >= list.length)
+    return list;
+  const next = [...list];
+  const [item] = next.splice(index, 1);
+  next.splice(to, 0, item);
+  return next;
+}
+
 export function createEmptyEntry(): SectionEntry {
   return { org: '', role: '', start: '', end: '', description: '' };
 }

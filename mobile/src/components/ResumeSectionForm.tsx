@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { Image, Modal, Pressable, Text, TextInput, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, Image, Modal, PanResponder, Pressable, Text, TextInput, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ResumeSection } from '@shared/resume/document';
 import type { FieldSpec, SectionEntry, SectionField } from '@shared/resume/sectionModel';
@@ -10,6 +10,7 @@ import {
   formKindForSection,
   joinEducationRole,
   moveInList,
+  moveListItemTo,
   parseBulletsSection,
   parseEntriesSection,
   parseFieldsSection,
@@ -659,6 +660,163 @@ function FieldsForm({
   );
 }
 
+/** 拖拽过程中用来估算尚未测量行高的兜底值（px） */
+const DRAG_DEFAULT_ROW_H = 96;
+
+/**
+ * 条目级拖拽排序（RN 核心实现，不依赖 gesture-handler/reanimated）。
+ *
+ * 每个条目行挂一个 grip 手柄（reorder-three 图标），按住手柄垂直拖动；
+ * 按已测量行高把手指位移换算成落点索引，松手后调用 move() 落库。
+ * 视觉上：被拖行抬起半透明浮起，目标行描边高亮。
+ */
+function useDragReorder<T>(
+  items: T[],
+  move: (next: T[]) => void,
+  gap: number,
+): {
+  dragIndex: number | null;
+  overIndex: number | null;
+  dragY: Animated.Value;
+  measure: (index: number, height: number) => void;
+  start: (index: number) => void;
+  moveDrag: (from: number, dy: number) => void;
+  end: () => void;
+} {
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
+  const heightsRef = useRef<number[]>([]);
+  const dragY = useRef(new Animated.Value(0)).current;
+  const stateRef = useRef({ dragIndex: null as number | null, overIndex: null as number | null });
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+  const moveRef = useRef(move);
+  moveRef.current = move;
+
+  /** 行 i 顶边的 Y（按已测量高度累加，未测量先用兜底值） */
+  const posOf = useCallback((i: number): number => {
+    let acc = 0;
+    for (let k = 0; k < i; k++) acc += (heightsRef.current[k] ?? DRAG_DEFAULT_ROW_H) + gap;
+    return acc;
+  }, [gap]);
+
+  const measure = useCallback((index: number, height: number) => {
+    heightsRef.current[index] = height;
+  }, []);
+
+  const start = useCallback((index: number) => {
+    stateRef.current.dragIndex = index;
+    stateRef.current.overIndex = index;
+    setDragIndex(index);
+    setOverIndex(index);
+    dragY.setValue(0);
+  }, [dragY]);
+
+  const moveDrag = useCallback(
+    (from: number, dy: number) => {
+      dragY.setValue(dy);
+      const n = itemsRef.current.length;
+      if (n < 2) return;
+      const dragCenter = posOf(from) + (heightsRef.current[from] ?? DRAG_DEFAULT_ROW_H) / 2 + dy;
+      let target = from;
+      if (dy < 0) {
+        for (let j = from - 1; j >= 0; j--) {
+          const mid = posOf(j) + (heightsRef.current[j] ?? DRAG_DEFAULT_ROW_H) / 2;
+          if (dragCenter < mid) target = j;
+          else break;
+        }
+      } else {
+        for (let j = from + 1; j < n; j++) {
+          const mid = posOf(j) + (heightsRef.current[j] ?? DRAG_DEFAULT_ROW_H) / 2;
+          if (dragCenter > mid) target = j;
+          else break;
+        }
+      }
+      stateRef.current.overIndex = target;
+      setOverIndex(target);
+    },
+    [dragY, posOf],
+  );
+
+  const end = useCallback(() => {
+    const { dragIndex: from, overIndex: to } = stateRef.current;
+    stateRef.current.dragIndex = null;
+    stateRef.current.overIndex = null;
+    setDragIndex(null);
+    setOverIndex(null);
+    dragY.setValue(0);
+    if (from === null || to === null || from === to) return;
+    moveRef.current(moveListItemTo(itemsRef.current, from, to));
+  }, [dragY]);
+
+  return { dragIndex, overIndex, dragY, measure, start, moveDrag, end };
+}
+
+/** grip 手柄：按住它进入拖拽（PanResponder 直接在按下时接管，避免和滚动冲突） */
+function DragHandle({
+  index,
+  drag,
+  theme,
+}: {
+  index: number;
+  drag: {
+    start: (index: number) => void;
+    moveDrag: (from: number, dy: number) => void;
+    end: () => void;
+  };
+  theme: Palette;
+}): React.JSX.Element {
+  const { start, moveDrag, end } = drag;
+  const pan = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderGrant: () => start(index),
+        onPanResponderMove: (_evt, g) => moveDrag(index, g.dy),
+        onPanResponderRelease: () => end(),
+        onPanResponderTerminate: () => end(),
+      }),
+    [index, start, moveDrag, end],
+  );
+  return (
+    <View
+      {...pan.panHandlers}
+      hitSlop={8}
+      accessibilityRole="button"
+      accessibilityLabel={`按住拖动第 ${index + 1} 个调整顺序`}
+      style={{ padding: 6, justifyContent: 'center' }}
+    >
+      <Ionicons name="reorder-three" size={20} color={theme.muted} />
+    </View>
+  );
+}
+
+/** 拖拽中的行样式：抬起半透明浮起 + 投影；目标行只用描边色标出（避免整行重排） */
+function dragRowStyle(
+  theme: Palette,
+  dragIndex: number | null,
+  overIndex: number | null,
+  index: number,
+  dragY: Animated.Value,
+) {
+  const isDragging = dragIndex === index;
+  const isTarget = dragIndex !== null && dragIndex !== index && overIndex === index;
+  return [
+    isDragging && {
+      transform: [{ translateY: dragY }],
+      opacity: 0.85,
+      zIndex: 10,
+      elevation: 6,
+      shadowColor: '#000',
+      shadowOpacity: 0.2,
+      shadowRadius: 8,
+      shadowOffset: { width: 0, height: 4 },
+    },
+    isTarget && { borderColor: theme.accent, borderWidth: 2 },
+  ];
+}
+
 function BulletsForm({
   section,
   onContentChange,
@@ -677,20 +835,28 @@ function BulletsForm({
     setItems(next);
     onContentChange(serializeBulletsSection(next));
   };
+  const drag = useDragReorder(items, apply, 8);
 
   return (
     <View style={{ gap: 8 }}>
       {items.map((item, index) => (
         // 手机屏窄，操作按钮压到输入框下面一行，右对齐
-        <View key={index} style={{ gap: 2 }}>
-          <TextInput
-            multiline
-            value={item}
-            onChangeText={(text) => apply(items.map((v, i) => (i === index ? text : v)))}
-            placeholder="一条一句，突出成果与量化数据"
-            placeholderTextColor={theme.muted}
-            style={{ ...INPUT, minHeight: 52, lineHeight: 20, textAlignVertical: 'top' }}
-          />
+        <Animated.View
+          key={index}
+          onLayout={(e) => drag.measure(index, e.nativeEvent.layout.height)}
+          style={[{ gap: 2 }, ...dragRowStyle(theme, drag.dragIndex, drag.overIndex, index, drag.dragY)]}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <DragHandle index={index} drag={drag} theme={theme} />
+            <TextInput
+              multiline
+              value={item}
+              onChangeText={(text) => apply(items.map((v, i) => (i === index ? text : v)))}
+              placeholder="一条一句，突出成果与量化数据"
+              placeholderTextColor={theme.muted}
+              style={{ ...INPUT, minHeight: 52, lineHeight: 20, textAlignVertical: 'top', flex: 1 }}
+            />
+          </View>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <Text style={{ flex: 1, color: theme.muted, fontSize: 11 }}>第 {index + 1} 条</Text>
             <IconButton
@@ -712,7 +878,7 @@ function BulletsForm({
               onPress={() => apply(items.filter((_, i) => i !== index))}
             />
           </View>
-        </View>
+        </Animated.View>
       ))}
       <GhostButton icon="add" label="添加一条" onPress={() => apply([...items, ''])} />
     </View>
@@ -745,6 +911,7 @@ function EntriesForm({
   const patch = (index: number, part: Partial<SectionEntry>): void => {
     apply(entries.map((e, i) => (i === index ? { ...e, ...part } : e)));
   };
+  const drag = useDragReorder(entries, apply, 12);
 
   return (
     <View style={{ gap: 12 }}>
@@ -752,20 +919,27 @@ function EntriesForm({
         const isCurrent = entry.end.trim() === '至今';
         const edu = labels.splitRole ? splitEducationRole(entry.role) : null;
         return (
-          <View
+          <Animated.View
             key={index}
-            style={{
-              borderWidth: 1,
-              borderColor: theme.border,
-              borderRadius: 10,
-              padding: 10,
-              gap: 10,
-            }}
+            onLayout={(e) => drag.measure(index, e.nativeEvent.layout.height)}
+            style={[
+              {
+                borderWidth: 1,
+                borderColor: theme.border,
+                borderRadius: 10,
+                padding: 10,
+                gap: 10,
+              },
+              ...dragRowStyle(theme, drag.dragIndex, drag.overIndex, index, drag.dragY),
+            ]}
           >
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Text style={{ color: theme.muted, fontSize: 11 }}>
-                {labels.title} {index + 1}
-              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <DragHandle index={index} drag={drag} theme={theme} />
+                <Text style={{ color: theme.muted, fontSize: 11 }}>
+                  {labels.title} {index + 1}
+                </Text>
+              </View>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <IconButton
                   icon="chevron-up"
@@ -877,7 +1051,7 @@ function EntriesForm({
                 )
               }
             />
-          </View>
+          </Animated.View>
         );
       })}
       <GhostButton
