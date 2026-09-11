@@ -16,9 +16,7 @@
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
     "paths": {
-      "@core/*": ["../core/src/*"],
-      "@plugins": ["./index.ts"],
-      "@plugins/*": ["./*"]
+      "@core/*": ["../../core/src/*"]
     }
   },
   "include": ["**/*.ts"],

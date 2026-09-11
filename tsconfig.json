@@ -4,6 +4,8 @@
     { "path": "./core" },
     { "path": "./desktop/tsconfig.node.json" },
     { "path": "./desktop/tsconfig.web.json" },
-    { "path": "./plugins" }
+    { "path": "./plugins/productManager" },
+    { "path": "./plugins/salesCustomerSuccess" },
+    { "path": "./plugins/softwareEngineering" }
   ]
 }

@@ -9,7 +9,7 @@ import {
   CORE_CAPABILITIES_PACK_VERSION,
   coreCapabilitiesSuite,
 } from '@core/plugins/capabilitySuite';
-import { DISTRIBUTED_ROLE_PACKS } from '..';
+import { DISTRIBUTED_ROLE_PACKS } from '../../scripts/distributed-role-packs';
 import {
   PRODUCT_MANAGER_FORMAT_IDS,
   PRODUCT_MANAGER_OPTIONAL_CAPABILITY_IDS,

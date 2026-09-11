@@ -12,7 +12,7 @@
  * - 打包脚本从它们录制 contributions，合成能力合编包。
  *
  * **岗位包不在这里**：基础包岗位中立，三个岗位包随 release 单独分发、由用户自己装
- * （见仓库顶层 `plugins/index.ts`）。
+ * （见仓库顶层 `scripts/distributed-role-packs.ts`）。
  */
 
 import type { CapabilityPlugin, PluginManifest } from '../types';

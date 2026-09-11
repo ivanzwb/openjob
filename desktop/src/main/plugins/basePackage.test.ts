@@ -13,12 +13,16 @@
  * 别名那条得单独钉住：core 与 desktop 的 tsconfig 为了给测试与夹具解析路径必须登记
  * `@plugins`，于是 tsc 不会拦住应用代码的引用。构建配置是唯一挡住它的地方，
  * 谁「顺手补齐一下别名」就把这道墙拆了，且当时不会有任何失败。
+ *
+ * 这个关卡住在 `desktop/src/main/plugins/` 而不是仓库根：它守的是桌面端基础包的边界，
+ * 跟旁边 v1ReleaseGate 这类发布关卡同住；`@plugins` 别名指向的发布清单在
+ * `scripts/distributed-role-packs.ts`。
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const REPO_ROOT = join(import.meta.dirname, '..');
+const REPO_ROOT = join(import.meta.dirname, '..', '..', '..', '..');
 
 /** 岗位包的合法消费者：打包脚本、测试，以及只被测试引用的夹具。 */
 function isTestOnly(file: string): boolean {

@@ -18,7 +18,7 @@
     "paths": {
       "@core/*": ["../core/src/*"],
       "@main/*": ["./src/main/*"],
-      "@plugins": ["../plugins/index.ts"],
+      "@plugins": ["../scripts/distributed-role-packs.ts"],
       "@plugins/*": ["../plugins/*"]
     }
   },

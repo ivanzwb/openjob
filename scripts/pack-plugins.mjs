@@ -38,7 +38,7 @@ async function loadModules() {
     resolve: {
       alias: [
         { find: '@core', replacement: resolve(ROOT, 'core/src') },
-        { find: /^@plugins$/, replacement: resolve(ROOT, 'plugins/index.ts') },
+        { find: /^@plugins$/, replacement: resolve(ROOT, 'scripts/distributed-role-packs.ts') },
         { find: /^@plugins\//, replacement: `${resolve(ROOT, 'plugins')}/` },
       ],
     },
@@ -50,7 +50,7 @@ async function loadModules() {
   });
   try {
     const suite = await server.ssrLoadModule('core/src/plugins/capabilitySuite.ts');
-    const rolePacks = await server.ssrLoadModule('plugins/index.ts');
+    const rolePacks = await server.ssrLoadModule('scripts/distributed-role-packs.ts');
     const transfer = await server.ssrLoadModule('core/src/plugins/package/rolePackTransfer.ts');
     const capabilityTransfer = await server.ssrLoadModule(
       'core/src/plugins/package/capabilityTransfer.ts',

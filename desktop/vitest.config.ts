@@ -11,12 +11,12 @@ import { resolve } from 'node:path';
 export default defineConfig({
   resolve: {
     // 数组形式而不是对象：`@plugins` 要精确匹配，对象形式的键按前缀匹配，
-    // `@plugins/softwareEngineering` 会被拼成 `plugins/index.ts/softwareEngineering`
+    // `@plugins/softwareEngineering` 会被拼成 `scripts/distributed-role-packs.ts/softwareEngineering`
     alias: [
       { find: '@core', replacement: resolve(import.meta.dirname, '../core/src') },
       { find: '@main', replacement: resolve(import.meta.dirname, 'src/main') },
       { find: '@renderer', replacement: resolve(import.meta.dirname, 'src/renderer/src') },
-      { find: /^@plugins$/, replacement: resolve(import.meta.dirname, '../plugins/index.ts') },
+      { find: /^@plugins$/, replacement: resolve(import.meta.dirname, '../scripts/distributed-role-packs.ts') },
       { find: /^@plugins\//, replacement: `${resolve(import.meta.dirname, '../plugins')}/` },
     ],
   },

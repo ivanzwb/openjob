@@ -12,6 +12,6 @@
     "@openjob/core": "workspace:*"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p ../../plugins/tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   }
 }

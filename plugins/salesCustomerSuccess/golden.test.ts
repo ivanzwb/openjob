@@ -5,7 +5,7 @@ import { composePrompt } from '@core/prompts/composer';
 import { BuiltInPluginRegistry } from '@core/plugins/registry';
 import { DeterministicRuntimeResolver } from '@core/plugins/resolver';
 import { BUILT_IN_CAPABILITY_PLUGINS } from '@core/plugins/builtin';
-import { DISTRIBUTED_ROLE_PACKS } from '..';
+import { DISTRIBUTED_ROLE_PACKS } from '../../scripts/distributed-role-packs';
 import { productManagerRolePack } from '../productManager';
 import { softwareEngineeringRolePack } from '../softwareEngineering';
 import {

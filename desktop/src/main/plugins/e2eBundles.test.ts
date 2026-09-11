@@ -6,9 +6,13 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync, rmSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type * as nodeCrypto from 'node:crypto';
 
 const keys = vi.hoisted(() => {
-  const { generateKeyPairSync } = require('node:crypto') as typeof import('node:crypto');
+  // vi.hoisted 在静态 import 求值之前执行，块内用不了顶层 import 绑定；
+  // node:crypto 是内建模块，require 是 vitest 对这种场景的标准写法。
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { generateKeyPairSync } = require('node:crypto') as typeof nodeCrypto;
   const { privateKey, publicKey } = generateKeyPairSync('ed25519');
   return {
     privateKey,

@@ -19,7 +19,7 @@ export default defineConfig({
     // 数组形式的理由见桌面端 vitest.config.ts：`@plugins` 得精确匹配
     alias: [
       { find: '@core', replacement: resolve(import.meta.dirname, '../core/src') },
-      { find: /^@plugins$/, replacement: resolve(import.meta.dirname, '../plugins/index.ts') },
+      { find: /^@plugins$/, replacement: resolve(import.meta.dirname, '../scripts/distributed-role-packs.ts') },
       { find: /^@plugins\//, replacement: `${resolve(import.meta.dirname, '../plugins')}/` },
     ],
   },

@@ -3,9 +3,7 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    // DOM 是给少数同时被渲染进程与手机端加载的模块用的（如 inlineMarkers）；
-    // node 类型只有测试要（读源码做静态关卡），运行时代码不许碰 I/O，靠 eslint 拦
-    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "lib": ["ES2023"],
     "types": ["node"],
     "strict": true,
     "noUnusedLocals": true,
@@ -18,10 +16,9 @@
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
     "paths": {
-      "@core/*": ["./src/*"],
-      "@plugins": ["../scripts/distributed-role-packs.ts"],
-      "@plugins/*": ["../plugins/*"]
+      "@core/*": ["../../core/src/*"]
     }
   },
-  "include": ["src/**/*"]
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules"]
 }
