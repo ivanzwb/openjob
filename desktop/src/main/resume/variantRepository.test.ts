@@ -6,7 +6,7 @@
  * 不算「用户改过正文」（那个标记只属于正文/样式/照片被手动动过的情况）。
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import * as schema from '../db/schema';
+import type * as schema from '../db/schema';
 
 type VariantRow = typeof schema.resumeVariant.$inferSelect;
 
