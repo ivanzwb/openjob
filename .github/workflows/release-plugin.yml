@@ -1,0 +1,134 @@
+# OpenJob 单插件独立发布
+#
+# 触发方式：
+#   1. 推送 plugins/<id>@<version> tag（如 plugins/software-engineering@1.1.1）
+#      → 只打这一个插件，挂到同名 GitHub Release
+#   2. workflow_dispatch 手动触发 → 只打 + 校验 + 上传 artifact，不发布（无 tag 概念）
+#
+# 版本来源：插件版本来自源码里的 *_ROLE_PACK_VERSION 常量（plugins/<dir>/package.json
+# 的 version 必须同步）。tag 是发布时对版本的期望值，不是来源：打出来之后拿产物文件名
+# <id>@<version>.openjob.json 与 tag 比对，不一致就拒绝 —— 防止 tag 与源码版本错位，
+# 把错误版本挂到 release 上（历史教训见 release.yml 的 Sync version from tag）。
+#
+# 为什么插件 release 是 prerelease：桌面端（releases/latest/download）和手机端
+# （releases/latest API）都用 GitHub 的「最新非 prerelease release」找应用更新。
+# 插件 release 若建成普通 release，晚于应用 release 发布时会顶掉 latest，让两个更新器
+# 指到没有安装包的页面；prerelease 不进 latest 解析，插件可以随时单独发。
+# 安装包（v* release）内置的打包 job 仍然随应用发版把全部当前插件包带上，作为顺路分发。
+
+name: Release Plugin
+
+on:
+  push:
+    tags:
+      - 'plugins/*'
+  workflow_dispatch:
+    inputs:
+      plugin:
+        description: 要打包的插件 id
+        required: true
+        type: choice
+        options:
+          - software-engineering
+          - product-manager
+          - sales-customer-success
+          - openjob-capabilities
+
+permissions:
+  contents: write # 创建 release 并上传插件包需要
+
+concurrency:
+  group: release-plugin-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package-plugin:
+    name: Pack & release plugin
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve plugin id and version
+        id: resolve
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GITHUB_REF_TYPE: ${{ github.ref_type }}
+          DISPATCH_PLUGIN: ${{ github.event.inputs.plugin }}
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            # tag 形如 plugins/software-engineering@1.1.1
+            PLUGIN="${GITHUB_REF_NAME#plugins/}"
+            ID="${PLUGIN%%@*}"
+            VERSION="${PLUGIN#*@}"
+          else
+            ID="$DISPATCH_PLUGIN"
+            VERSION=""
+          fi
+          echo "plugin_id=$ID"
+          echo "plugin_version=$VERSION"
+          echo "plugin_id=$ID" >> "$GITHUB_OUTPUT"
+          echo "plugin_version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Pack and sign plugin bundle
+        env:
+          # 没配这个 secret 时脚本用临时密钥并警告：产物能装，但用户要手动确认来源
+          OPENJOB_PLUGIN_PRIVATE_KEY: ${{ secrets.OPENJOB_PLUGIN_PRIVATE_KEY }}
+        run: node scripts/pack-plugins.mjs --only "${{ steps.resolve.outputs.plugin_id }}" --out dist-plugins
+
+      # 产物文件名 <id>@<version>.openjob.json 由源码里的 *_ROLE_PACK_VERSION 决定；
+      # tag 里的版本必须与它一致，否则用户拿到的包版本和 release 页展示的对不上
+      - name: Verify tag version matches packed bundle
+        if: github.ref_type == 'tag'
+        env:
+          EXPECTED: "${{ steps.resolve.outputs.plugin_id }}@${{ steps.resolve.outputs.plugin_version }}.openjob.json"
+        run: |
+          BUNDLE="$(basename "$(ls dist-plugins/*.openjob.json | head -n 1)")"
+          echo "bundle=$BUNDLE expected=$EXPECTED"
+          if [ "$BUNDLE" != "$EXPECTED" ]; then
+            echo "::error::tag 版本与源码 *_ROLE_PACK_VERSION 不一致（见 plugins/<dir>/package.json 的同步说明）"
+            exit 1
+          fi
+
+      # 产出的包若验签不过，用户看到的会是「内容与签名不符」——一条指向「有人改了包」的
+      # 线索，而真实原因是发布流程自己出的错。在这里拦住。
+      - name: Verify bundle is installable
+        run: node scripts/verify-plugin-bundles.mjs dist-plugins
+
+      - name: Upload plugin bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openjob-plugin-${{ steps.resolve.outputs.plugin_id }}
+          path: dist-plugins/*
+          if-no-files-found: error
+          retention-days: 30
+
+      # 仅 tag 推送时挂到 release；手动 dispatch 只留 artifact，不发布。
+      # 创建成 prerelease：见文件头注释，防止顶掉应用更新器用的 latest。
+      # 已存在则直接上传（幂等，重跑/补跑不炸），并绕开并发创建 422 的竞态。
+      - name: Publish plugin GitHub Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          TITLE: "${{ steps.resolve.outputs.plugin_id }}@${{ steps.resolve.outputs.plugin_version }}"
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "release $TAG already exists"
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TITLE" --notes "" \
+              --prerelease || gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+          fi
+          gh release upload "$TAG" dist-plugins/* --repo "$GITHUB_REPOSITORY" --clobber

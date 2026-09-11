@@ -6,7 +6,10 @@
  * 的线索。打包与校验必须共用同一段代码。
  *
  * 用法：
- *   node scripts/pack-plugins.mjs [--out dist-plugins]
+ *   node scripts/pack-plugins.mjs [--out dist-plugins] [--only <pluginId>]
+ *
+ * --only 只打指定插件（id 见各插件 manifest / dist-plugins/index.json），用于单插件独立发版；
+ * 缺省打全部。index.json 始终只登记本次实际产出的包。
  *
  * 签名私钥从 OPENJOB_PLUGIN_PRIVATE_KEY 读（PEM，CI 里放 secret）。没配就临时生成一把并
  * 大声警告：产出的包能装，但不是第一方签名，用户装的时候要手动确认来源。
@@ -20,6 +23,8 @@ import { createServer } from 'vite';
 const args = process.argv.slice(2);
 const outIndex = args.indexOf('--out');
 const OUT_DIR = resolve(outIndex === -1 ? 'dist-plugins' : args[outIndex + 1]);
+const onlyIndex = args.indexOf('--only');
+const ONLY = onlyIndex === -1 ? undefined : args[onlyIndex + 1];
 const ROOT = process.cwd();
 
 async function loadModules() {
@@ -115,7 +120,7 @@ async function main() {
    * 合编包用新 id 走与岗位包完全相同的安装链路。
    */
   // 拆分走各 transfer：手机端收岗位包、安装端解析都复用同一份定义
-  const packages = [
+  const allPackages = [
     ...rolePacks.DISTRIBUTED_ROLE_PACKS.map((pack) => ({
       manifest: pack.manifest,
       files: transfer.rolePackToPackageFiles(pack),
@@ -125,6 +130,16 @@ async function main() {
       files: capabilityTransfer.capabilityPluginToPackageFiles(suite.coreCapabilitiesSuite),
     },
   ];
+
+  const packages = ONLY
+    ? allPackages.filter(({ manifest }) => manifest.id === ONLY)
+    : allPackages;
+  if (ONLY && packages.length === 0) {
+    throw new Error(
+      `没有 id 为 ${ONLY} 的插件。可选：${allPackages.map((p) => p.manifest.id).join('、')}`,
+    );
+  }
+  if (ONLY) console.log(`只打 ${ONLY}@${packages[0].manifest.version}`);
 
   rmSync(OUT_DIR, { recursive: true, force: true });
   mkdirSync(OUT_DIR, { recursive: true });

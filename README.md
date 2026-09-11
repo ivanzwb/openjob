@@ -164,6 +164,8 @@ npm start
 ## 安装包与发布
 
 - 推送 `v*` tag 触发 [GitHub Actions](.github/workflows/release.yml) 构建并发布到 GitHub Release。
+- 插件包可单独发布：推送 `plugins/<id>@<version>` tag（如 `plugins/software-engineering@1.1.1`）
+  只打该插件并挂到同名 prerelease，不影响应用升级渠道（`releases/latest` 仍指最新应用版）。
 - Windows 安装包当前**未做 Authenticode 签名**，SmartScreen 可能提示不可信发布者 → 点「更多信息」→「仍要运行」，或右键安装包 → 属性 → 解除锁定。
 - macOS 使用 ad-hoc 签名；首次打开可能提示未识别开发者，可在系统设置中允许。
 
