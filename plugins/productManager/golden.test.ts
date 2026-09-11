@@ -4,8 +4,11 @@ import { resolvePracticeFormat } from '@core/practice';
 import { BuiltInPluginRegistry } from '@core/plugins/registry';
 import { DeterministicRuntimeResolver } from '@core/plugins/resolver';
 import { softwareEngineeringRolePack } from '../softwareEngineering';
-import { ANALYTICS_CASE_CAPABILITY_VERSION } from '@core/plugins/builtin/analyticsCase';
-import { BUILT_IN_CAPABILITY_PLUGINS } from '@core/plugins/builtin';
+import {
+  CORE_CAPABILITIES_PACK_ID,
+  CORE_CAPABILITIES_PACK_VERSION,
+  coreCapabilitiesSuite,
+} from '@core/plugins/capabilitySuite';
 import { DISTRIBUTED_ROLE_PACKS } from '..';
 import {
   PRODUCT_MANAGER_FORMAT_IDS,
@@ -78,10 +81,8 @@ const roleOwnedText = JSON.stringify({
   tasks: productManagerRolePack.taskTemplates,
 }).toLocaleLowerCase();
 
-const OPTIONAL_IDS: readonly string[] = Object.values(PRODUCT_MANAGER_OPTIONAL_CAPABILITY_IDS);
-
 function resolveWith(
-  capabilityPlugins: readonly (typeof BUILT_IN_CAPABILITY_PLUGINS)[number][],
+  capabilityPlugins: readonly (typeof coreCapabilitiesSuite)[],
 ): ReturnType<DeterministicRuntimeResolver['resolve']> {
   const registry = new BuiltInPluginRegistry();
   DISTRIBUTED_ROLE_PACKS.forEach((pack) => registry.register(pack));
@@ -102,9 +103,8 @@ function resolveWith(
  * 这条用例就从「没装也能跑」悄悄变成「装了也能跑」，再也盖不住它本来要盖的路径。
  */
 function resolveWithoutOptionalCapabilities(): ReturnType<DeterministicRuntimeResolver['resolve']> {
-  return resolveWith(
-    BUILT_IN_CAPABILITY_PLUGINS.filter((plugin) => !OPTIONAL_IDS.includes(plugin.manifest.id)),
-  );
+  // 内置清单已清空：可选能力没装 = 本机不注册合编包
+  return resolveWith([]);
 }
 
 describe('product manager role pack goldens', () => {
@@ -271,15 +271,16 @@ describe('product manager role pack goldens', () => {
   });
 
   it('装了 analytics-case 时产品岗自动把它启用', () => {
-    const resolved = resolveWith(BUILT_IN_CAPABILITY_PLUGINS);
+    const resolved = resolveWith([coreCapabilitiesSuite]);
     expect(resolved.ok).toBe(true);
     if (!resolved.ok) return;
 
     const ref = resolved.descriptor.capabilities.find(
-      (item) => item.id === PRODUCT_MANAGER_OPTIONAL_CAPABILITY_IDS.analyticsCase,
+      (item) => item.id === CORE_CAPABILITIES_PACK_ID,
     );
     // 可选依赖装上了就该生效，用户不必再手动勾一次
-    expect(ref).toMatchObject({ enabled: true, version: ANALYTICS_CASE_CAPABILITY_VERSION });
+    // 三个能力并入一个包：产品岗自动启用的是合编包整体
+    expect(ref).toMatchObject({ enabled: true, version: CORE_CAPABILITIES_PACK_VERSION });
 
     // 但它只是加强项：案例题依然不绑能力插件，纯文本路径不受影响
     const { format } = resolvePracticeFormat(

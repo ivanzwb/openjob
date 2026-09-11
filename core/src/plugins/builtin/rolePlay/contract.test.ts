@@ -10,7 +10,7 @@ import { BuiltInPluginRegistry } from '../../registry';
 import { DeterministicRuntimeResolver } from '../../resolver';
 import type { CapabilityRegistry, HostRenderedInteraction } from '../../types';
 import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
-import { BUILT_IN_CAPABILITY_PLUGINS } from '..';
+import { CORE_CAPABILITIES_PACK_ID, coreCapabilitiesSuite } from '../../capabilitySuite';
 import {
   CUSTOMER_CONVERSATION_INTERACTION,
   CUSTOMER_CONVERSATION_SCHEMA_VERSION,
@@ -132,7 +132,7 @@ describe('注册期校验', () => {
       coreVersion: '1.0.0',
       schemaVersion: 23,
       rolePackId: SALES_CUSTOMER_SUCCESS_ROLE_PACK_ID,
-      capabilityIds: [ROLE_PLAY_CAPABILITY_ID],
+      capabilityIds: [CORE_CAPABILITIES_PACK_ID],
     });
 
     expect(resolved.ok).toBe(false);
@@ -141,19 +141,19 @@ describe('注册期校验', () => {
   it('内置清单里的 role-play 能正常解析进 descriptor', () => {
     const registry = new BuiltInPluginRegistry();
     DISTRIBUTED_ROLE_PACKS.forEach((pack) => registry.register(pack));
-    BUILT_IN_CAPABILITY_PLUGINS.forEach((plugin) => registry.registerCapability(plugin));
+    registry.registerCapability(coreCapabilitiesSuite);
 
     const resolved = new DeterministicRuntimeResolver(registry).resolve({
       coreVersion: '1.0.0',
       schemaVersion: 23,
       rolePackId: SALES_CUSTOMER_SUCCESS_ROLE_PACK_ID,
-      capabilityIds: [ROLE_PLAY_CAPABILITY_ID],
+      capabilityIds: [CORE_CAPABILITIES_PACK_ID],
     });
 
     expect(resolved.ok).toBe(true);
     if (!resolved.ok) return;
     const ref = resolved.descriptor.capabilities.find(
-      (item) => item.id === ROLE_PLAY_CAPABILITY_ID,
+      (item) => item.id === CORE_CAPABILITIES_PACK_ID,
     );
     expect(ref?.enabled).toBe(true);
   });

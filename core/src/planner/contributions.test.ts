@@ -22,6 +22,8 @@ import {
   type LegacyPlanDay,
 } from './__fixtures__/legacyPlan';
 import type { CampaignRuntimeDescriptor, ClientPlatform } from '../plugins/types';
+import { installedCapabilitySuiteOnly } from '../plugins/__fixtures__/installed';
+import { CORE_CAPABILITIES_PACK_ID } from '../plugins/capabilitySuite';
 
 const REPOS: PlannerRepo[] = [...CROSS_CLIENT_PLAN.repos];
 
@@ -45,6 +47,7 @@ function contextFor(
     budgetMinutes: dailyBudget(dailyMinutes),
     usedMinutes: day.baseMinutes,
     repos,
+    installed: installedCapabilitySuiteOnly(),
   };
 }
 
@@ -103,7 +106,8 @@ describe('collectPlannerContributions', () => {
     expect(tasks).toEqual([
       {
         contributionId: 'source-repository.read-code',
-        capabilityId: 'source-repository',
+        // 实现由能力合编包承载：审计归属跟着走，历史 descriptor 仍 pin 旧 id 由归一化兜住
+        capabilityId: CORE_CAPABILITIES_PACK_ID,
         kind: 'readCode',
         nodeId: null,
         repoId: 'repo-ready',
@@ -256,14 +260,16 @@ describe('还没选岗位的 Campaign', () => {
 
   it('已落库任务也拿不到插件降级状态', () => {
     for (const platform of ['desktop', 'mobile'] as const) {
-      expect(pluginTaskClientView(null, 'readCode', platform)).toBeNull();
+      expect(pluginTaskClientView(null, 'readCode', platform, [])).toBeNull();
     }
   });
 });
 
 describe('pluginTaskClientView', () => {
   it('已落库的 readCode 在手机上标记需桌面完成', () => {
-    expect(pluginTaskClientView(descriptor(), 'readCode', 'mobile')).toEqual({
+    expect(
+      pluginTaskClientView(descriptor(), 'readCode', 'mobile', installedCapabilitySuiteOnly()),
+    ).toEqual({
       platform: 'mobile',
       availability: 'view-only',
       executable: false,
@@ -272,7 +278,9 @@ describe('pluginTaskClientView', () => {
   });
 
   it('桌面上同一条任务可以直接执行', () => {
-    expect(pluginTaskClientView(descriptor(), 'readCode', 'desktop')).toEqual({
+    expect(
+      pluginTaskClientView(descriptor(), 'readCode', 'desktop', installedCapabilitySuiteOnly()),
+    ).toEqual({
       platform: 'desktop',
       availability: 'full',
       executable: true,
@@ -282,7 +290,7 @@ describe('pluginTaskClientView', () => {
 
   it('基础任务不归插件所有，不带降级状态', () => {
     for (const kind of ['learn', 'drill', 'review', 'fallbackScript'] as const) {
-      expect(pluginTaskClientView(descriptor(), kind, 'mobile')).toBeNull();
+      expect(pluginTaskClientView(descriptor(), kind, 'mobile', installedCapabilitySuiteOnly())).toBeNull();
     }
   });
 
@@ -293,6 +301,8 @@ describe('pluginTaskClientView', () => {
       ],
     });
 
-    expect(pluginTaskClientView(disabled, 'readCode', 'desktop')).toBeNull();
+    expect(
+      pluginTaskClientView(disabled, 'readCode', 'desktop', installedCapabilitySuiteOnly()),
+    ).toBeNull();
   });
 });

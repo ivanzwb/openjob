@@ -6,6 +6,7 @@ import {
   canParseArtifact,
   capabilityMode,
   listBuiltInPlugins,
+  toInstalledPlugin,
 } from '../../clientView';
 import { BuiltInPluginRegistry } from '../../registry';
 import { DeterministicRuntimeResolver } from '../../resolver';
@@ -15,7 +16,10 @@ import type {
   CapabilityRegistry,
 } from '../../types';
 import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
-import { BUILT_IN_CAPABILITY_PLUGINS } from '..';
+import {
+  CORE_CAPABILITIES_PACK_ID,
+  coreCapabilitiesSuite,
+} from '../../capabilitySuite';
 import { PRODUCT_MANAGER_ROLE_PACK_ID, productManagerRolePack } from '@plugins/productManager';
 import {
   ANALYTICS_CASE_CAPABILITY_ID,
@@ -50,12 +54,13 @@ function collectRegistered(): ArtifactParserDefinition[] {
 function resolveProductManager(): ReturnType<DeterministicRuntimeResolver['resolve']> {
   const registry = new BuiltInPluginRegistry();
   DISTRIBUTED_ROLE_PACKS.forEach((pack) => registry.register(pack));
-  BUILT_IN_CAPABILITY_PLUGINS.forEach((plugin) => registry.registerCapability(plugin));
+  // 能力已并入合编包：能力引用（PM 包的可选依赖）现在都指向 openjob-capabilities
+  registry.registerCapability(coreCapabilitiesSuite);
   return new DeterministicRuntimeResolver(registry).resolve({
     coreVersion: '1.0.0',
     schemaVersion: 23,
     rolePackId: PRODUCT_MANAGER_ROLE_PACK_ID,
-    capabilityIds: [ANALYTICS_CASE_CAPABILITY_ID],
+    capabilityIds: [CORE_CAPABILITIES_PACK_ID],
   });
 }
 
@@ -106,11 +111,11 @@ describe('analyticsCaseCapabilityPlugin 契约', () => {
     expect(roundTrip).toEqual(ANALYTICS_CASE_SCENARIOS);
   });
 
-  it('进入内置插件清单，无需再单独注册一次', () => {
-    expect(BUILT_IN_CAPABILITY_PLUGINS).toContain(analyticsCaseCapabilityPlugin);
-    expect(listBuiltInPlugins().map((plugin) => plugin.id)).toContain(
-      ANALYTICS_CASE_CAPABILITY_ID,
-    );
+  it('声明并入能力合编包，本包数据继续供打包脚本录制', () => {
+    // 内置清单已清空；合编包的 register 委托到本声明，解析与校验照常覆盖
+    expect(coreCapabilitiesSuite.manifest.artifactSchemas).toMatchObject({
+      [TABULAR_DATASET_ARTIFACT_TYPE]: TABULAR_DATASET_SCHEMA_VERSION,
+    });
   });
 });
 
@@ -145,19 +150,22 @@ describe('内置场景可直接出题', () => {
 });
 
 describe('产品岗可选启用', () => {
-  it('产品岗把它作为可选依赖，缺席不影响岗位可用', () => {
+  it('产品岗把承载本能力的合编包作为可选依赖，缺席不影响岗位可用', () => {
     const dependency = productManagerRolePack.manifest.dependencies?.find(
-      (item) => item.id === ANALYTICS_CASE_CAPABILITY_ID,
+      (item) => item.id === CORE_CAPABILITIES_PACK_ID,
     );
     expect(dependency).toMatchObject({ optional: true });
   });
 
   it('启用后桌面可解析 artifact，手机只读', () => {
     const descriptor = descriptorWithAnalytics();
-    const input = { descriptor, installed: listBuiltInPlugins() };
+    const input = {
+      descriptor,
+      installed: [...listBuiltInPlugins(), toInstalledPlugin(coreCapabilitiesSuite.manifest)],
+    };
     const artifacts = [
       {
-        capabilityId: ANALYTICS_CASE_CAPABILITY_ID,
+        capabilityId: CORE_CAPABILITIES_PACK_ID,
         artifactType: TABULAR_DATASET_ARTIFACT_TYPE,
         schemaVersion: TABULAR_DATASET_SCHEMA_VERSION,
       },
@@ -166,9 +174,9 @@ describe('产品岗可选启用', () => {
     const desktop = buildClientCapabilityView({ ...input, platform: 'desktop', artifacts });
     const mobile = buildClientCapabilityView({ ...input, platform: 'mobile', artifacts });
 
-    expect(capabilityMode(desktop, ANALYTICS_CASE_CAPABILITY_ID)).toBe('full');
+    expect(capabilityMode(desktop, CORE_CAPABILITIES_PACK_ID)).toBe('full');
     // 手机端没有文件选择与表格读入，只能看已同步的结果
-    expect(capabilityMode(mobile, ANALYTICS_CASE_CAPABILITY_ID)).toBe('view-only');
+    expect(capabilityMode(mobile, CORE_CAPABILITIES_PACK_ID)).toBe('view-only');
     expect(canParseArtifact(desktop, artifacts[0])).toBe(true);
     expect(desktop.configSnapshotHash).toBe(mobile.configSnapshotHash);
   });
@@ -178,10 +186,13 @@ describe('产品岗可选启用', () => {
     const view = buildClientCapabilityView({
       descriptor,
       platform: 'desktop',
-      installed: listBuiltInPlugins(),
+      installed: [
+        ...listBuiltInPlugins(),
+        toInstalledPlugin(coreCapabilitiesSuite.manifest),
+      ],
       artifacts: [
         {
-          capabilityId: ANALYTICS_CASE_CAPABILITY_ID,
+          capabilityId: CORE_CAPABILITIES_PACK_ID,
           artifactType: TABULAR_DATASET_ARTIFACT_TYPE,
           schemaVersion: TABULAR_DATASET_SCHEMA_VERSION + 1,
         },

@@ -34,6 +34,16 @@ vi.mock('../sync/identity', () => ({
 vi.mock('../sync/triggers', () => ({
   writingAs: (_db: unknown, _id: string, fn: () => void) => fn(),
 }));
+// planLocal 现在引用 rolePackLocal（能力合编包安装判定），后者 import 到 RN 侧模块，
+// 这里整包替换成测试关心的最小面
+vi.mock('./rolePackLocal', () => ({
+  // 排程判定按「桌面装了合编包」给全量清单；能力在手机本就钳到 view-only
+  installedPluginsForCampaign: (db: unknown, descriptor: { capabilities?: Array<{ id: string; enabled?: boolean }> } | null) => {
+    void db;
+    void descriptor;
+    return [{ id: 'openjob-capabilities', version: '1.0.0', type: 'capability', displayName: 'OpenJob 能力包', description: '', runtime: { desktop: 'full', mobile: 'view-only' }, artifactSchemas: {}, interactionSchemas: {}, permissions: [] }];
+  },
+}));
 
 const { generatePlan, pluginTaskSupport } = await import('./planLocal');
 

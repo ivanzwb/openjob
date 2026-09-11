@@ -1,4 +1,5 @@
 import { EXAM_FORMS, TASK_KINDS } from '@core/enums';
+import { CORE_CAPABILITIES_PACK_ID } from '@core/plugins/capabilitySuite';
 import {
   formatIdForLegacyExamForm,
   LEGACY_ROLE_PACK_REF,
@@ -17,7 +18,12 @@ import type {
  * 定义留在宿主的 legacyRoleData（基础包不带岗位包，宿主读旧数据时也得认得这些 id）。
  */
 export const SOFTWARE_ENGINEERING_ROLE_PACK_ID = LEGACY_ROLE_PACK_REF.id;
-export const SOFTWARE_ENGINEERING_ROLE_PACK_VERSION = LEGACY_ROLE_PACK_REF.version;
+/**
+ * 岗位包自身的版本与旧数据无关了：id 仍沿用 LEGACY_ROLE_PACK_REF.id（旧 Campaign 的
+ * descriptor 与题型投影 pin 着它），但包内容（依赖的能力合编包改名）换代时版本要跟着走，
+ * 否则解析器会把新旧两份包当成同一份。
+ */
+export const SOFTWARE_ENGINEERING_ROLE_PACK_VERSION = '1.1.0';
 
 /**
  * References into PROMPT_REGISTRY. Values are keys, never copied prompt bodies.
@@ -144,7 +150,7 @@ export const softwareEngineeringRolePack: RolePack = {
     description: '软件工程岗位的技术诊断、训练和模拟面试声明',
     compatibility: { core: '^1.0.0', schema: 23 },
     permissions: [],
-    dependencies: [{ id: 'source-repository', version: '^1.0.0', optional: true }],
+    dependencies: [{ id: CORE_CAPABILITIES_PACK_ID, version: '^1.0.0', optional: true }],
   },
   roleMatchers: [
     {
@@ -533,7 +539,7 @@ export const softwareEngineeringRolePack: RolePack = {
         SOFTWARE_ENGINEERING_FORMAT_IDS.systemDesign,
         SOFTWARE_ENGINEERING_FORMAT_IDS.projectDeepDive,
       ],
-      capabilityId: 'source-repository',
+      capabilityId: CORE_CAPABILITIES_PACK_ID,
     },
     {
       id: 'se.review',

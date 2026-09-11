@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { coreCapabilitiesSuite } from '@core/plugins/capabilitySuite';
 import { resolvePracticeFormat } from '@core/practice';
 import { composePrompt } from '@core/prompts/composer';
 import { BuiltInPluginRegistry } from '@core/plugins/registry';
@@ -122,9 +123,8 @@ function resolveWithoutRolePlay(): ReturnType<DeterministicRuntimeResolver['reso
   DISTRIBUTED_ROLE_PACKS.forEach((pack) => registry.register(pack));
   // 明确把 role-play 排除掉。本用例考的是「插件缺席时如何降级」，
   // 原先靠「仓库里还没实现 role-play」这个前提成立，T19 把它实现出来后前提就失效了。
-  BUILT_IN_CAPABILITY_PLUGINS.filter(
-    (plugin) => plugin.manifest.id !== SALES_ROLE_PLAY_CAPABILITY_ID,
-  ).forEach((plugin) => registry.registerCapability(plugin));
+  // 能力已并入合编包：「没装」= 注册表里没有合编包（不注册任何能力）
+  BUILT_IN_CAPABILITY_PLUGINS.forEach((plugin) => registry.registerCapability(plugin));
   return new DeterministicRuntimeResolver(registry).resolve({
     coreVersion: '1.0.0',
     schemaVersion: 23,
@@ -239,7 +239,7 @@ describe('sales & customer success role pack goldens', () => {
   it('装了 role-play 时对话题型所依赖的能力被启用', () => {
     const registry = new BuiltInPluginRegistry();
     DISTRIBUTED_ROLE_PACKS.forEach((pack) => registry.register(pack));
-    BUILT_IN_CAPABILITY_PLUGINS.forEach((plugin) => registry.registerCapability(plugin));
+    registry.registerCapability(coreCapabilitiesSuite);
     const resolved = new DeterministicRuntimeResolver(registry).resolve({
       coreVersion: '1.0.0',
       schemaVersion: 23,

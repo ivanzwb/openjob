@@ -13,6 +13,7 @@
  * 没装时解析结果里它是 disabled，产品案例仍然要能完整出题、作答和评分。
  */
 
+import { CORE_CAPABILITIES_PACK_ID } from '@core/plugins/capabilitySuite';
 import type { TaskKind } from '@core/enums';
 import type {
   CompetencyTemplate,
@@ -26,11 +27,11 @@ import type {
 } from '@core/plugins/types';
 
 export const PRODUCT_MANAGER_ROLE_PACK_ID = 'product-manager';
-export const PRODUCT_MANAGER_ROLE_PACK_VERSION = '1.0.0';
+export const PRODUCT_MANAGER_ROLE_PACK_VERSION = '1.1.0';
 
 /** 可选能力：装了能加强，没装不影响任何一种题型可用。 */
 export const PRODUCT_MANAGER_OPTIONAL_CAPABILITY_IDS = {
-  analyticsCase: 'analytics-case',
+  analyticsCase: CORE_CAPABILITIES_PACK_ID,
   portfolioReview: 'portfolio-review',
 } as const;
 

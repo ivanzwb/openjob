@@ -16,6 +16,7 @@
  * 差在能不能问出真实痛点、能不能把价值说到对方的衡量标准上，与实现细节无关。
  */
 
+import { CORE_CAPABILITIES_PACK_ID } from '@core/plugins/capabilitySuite';
 import type { TaskKind } from '@core/enums';
 import type {
   CompetencyTemplate,
@@ -29,7 +30,7 @@ import type {
 } from '@core/plugins/types';
 
 export const SALES_CUSTOMER_SUCCESS_ROLE_PACK_ID = 'sales-customer-success';
-export const SALES_CUSTOMER_SUCCESS_ROLE_PACK_VERSION = '1.0.0';
+export const SALES_CUSTOMER_SUCCESS_ROLE_PACK_VERSION = '1.1.0';
 
 /**
  * 可选能力：装了才有实时角色扮演，没装时对话轮退回文本行为题。
@@ -37,7 +38,8 @@ export const SALES_CUSTOMER_SUCCESS_ROLE_PACK_VERSION = '1.0.0';
  * 由 T19 交付；在它落地之前这个包必须能独立成立，否则「可选」只是写在清单里的
  * 一个词。
  */
-export const SALES_ROLE_PLAY_CAPABILITY_ID = 'role-play';
+/** 角色扮演来自能力合编包（原内置 role-play 并入 openjob-capabilities）。 */
+export const SALES_ROLE_PLAY_CAPABILITY_ID = CORE_CAPABILITIES_PACK_ID;
 
 export const SALES_CUSTOMER_SUCCESS_FORMAT_IDS = {
   behavioral: 'sales.behavioral',

@@ -13,7 +13,7 @@ vi.mock('../db', () => ({
 }));
 
 import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
-import { BUILT_IN_CAPABILITY_PLUGINS } from '@core/plugins/builtin';
+import { CORE_CAPABILITIES_PACK_ID } from '@core/plugins/capabilitySuite';
 import type { PluginManifest, PluginPermission } from '@core/plugins';
 import type { RolePack } from '@core/plugins/types';
 import type { PluginInventoryEntry } from './inventory';
@@ -70,17 +70,10 @@ afterEach(() => {
 });
 
 describe('installedPermissionContracts', () => {
-  it('没装外置插件时逐字等于内置声明', () => {
+  it('没装外置插件时契约为空（内置清单已清空）', () => {
     const contracts = installedPermissionContracts();
 
-    expect([...contracts.keys()].sort()).toEqual(
-      BUILT_IN_CAPABILITY_PLUGINS.map((plugin) => plugin.manifest.id).sort(),
-    );
-    for (const plugin of BUILT_IN_CAPABILITY_PLUGINS) {
-      expect([...(contracts.get(plugin.manifest.id) ?? [])].sort()).toEqual(
-        [...plugin.manifest.permissions].sort(),
-      );
-    }
+    expect([...contracts.keys()]).toEqual([]);
   });
 
   it('外置能力插件按自己 manifest 声明的权限受限', () => {
@@ -121,15 +114,12 @@ describe('installedPermissionContracts', () => {
     });
   });
 
-  it('外置能力借不到内置能力的权限', () => {
-    const builtIn = BUILT_IN_CAPABILITY_PLUGINS.find(
-      (plugin) => plugin.manifest.permissions.length > 0,
-    )!;
-    const borrowed = builtIn.manifest.permissions[0]!;
+  it('一个外置能力借不到另一个外置能力的权限', () => {
+    // 合编包有 repository:read，不代表一个只声明 artifact:read 的外置包也能读仓库
     setExternalPlugins([entry({ permissions: [] })]);
 
-    expect(authorize(builtIn.manifest.id, borrowed).allowed).toBe(true);
-    expect(authorize('demo.cap', borrowed)).toMatchObject({
+    expect(authorize(CORE_CAPABILITIES_PACK_ID, 'repository:read').allowed).toBe(false);
+    expect(authorize('demo.cap', 'repository:read')).toMatchObject({
       allowed: false,
       code: 'permission-undeclared',
     });

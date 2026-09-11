@@ -9,7 +9,7 @@ import { DatabaseSync } from 'node:sqlite';
 import type { Database } from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
-import { sourceRepositoryCapabilityPlugin } from '@core/plugins/builtin/sourceRepository';
+import { CORE_CAPABILITIES_PACK_ID, CORE_CAPABILITIES_PACK_VERSION } from '@core/plugins/capabilitySuite';
 import { listBuiltInPlugins } from '@core/plugins/clientView';
 import {
   builtInPluginKeys,
@@ -27,7 +27,7 @@ import { installSyncTriggers } from '../sync/triggers';
 const MIGRATIONS_DIR = join(__dirname, '..', 'db', 'migrations');
 const ROLE_PACK_ID = softwareEngineeringRolePack.manifest.id;
 const ROLE_PACK_VERSION = softwareEngineeringRolePack.manifest.version;
-const REPO_ID = sourceRepositoryCapabilityPlugin.manifest.id;
+const REPO_ID = CORE_CAPABILITIES_PACK_ID;
 const EXTERNAL_ROLE_PACK_ID = 'demo.role';
 
 /**
@@ -126,10 +126,11 @@ describe('listInstalledPlugins', () => {
     setExternalPlugins([]);
   });
 
-  it('什么都没装时清单里只有内置能力插件，没有任何岗位包', () => {
+  it('什么都没装时清单为空：基础包不自带任何插件', () => {
+    // 能力已并入单独安装的合编包（openjob-capabilities），内置清单清空；
+    // 出厂状态下练习链路就该是「还没选岗位」，能力也还没有
     expect(listInstalledPlugins()).toEqual(listBuiltInPlugins());
-    expect(listInstalledPlugins().map((plugin) => plugin.id)).toContain(REPO_ID);
-    // 基础包岗位中立：出厂状态下练习链路就该是「还没选岗位」，而不是默认工程岗
+    expect(listInstalledPlugins()).toEqual([]);
     expect(listInstalledPlugins().map((plugin) => plugin.id)).not.toContain(ROLE_PACK_ID);
   });
 
@@ -153,11 +154,14 @@ describe('listInstalledPlugins', () => {
     expect(listInstalledPlugins()).toEqual(forward);
   });
 
-  it('builtInPluginKeys 覆盖每个内置插件，外置包无法顶替它们', () => {
+  it('builtInPluginKeys 是退役名册：三个旧能力 id@1.0.0 不被外置包顶替', () => {
     const keys = builtInPluginKeys();
 
-    expect(keys.has(`${REPO_ID}@${sourceRepositoryCapabilityPlugin.manifest.version}`)).toBe(true);
-    expect(keys.size).toBe(listBuiltInPlugins().length);
+    expect(keys.has('source-repository@1.0.0')).toBe(true);
+    expect(keys.has('role-play@1.0.0')).toBe(true);
+    expect(keys.has('analytics-case@1.0.0')).toBe(true);
+    expect(keys.size).toBe(3);
+    expect(listBuiltInPlugins()).toEqual([]);
   });
 
   it('岗位包的 id@version 不被占用，官方包才装得进来', () => {
@@ -267,8 +271,9 @@ describe('setCampaignRoleProfile', () => {
       resolvedAt: 1234,
     });
     expect(view.descriptor.configSnapshotHash).toMatch(/^[a-f0-9]{64}$/);
+    // SE 包 1.1.0 的可选依赖指向能力合编包，resolver 展开为它的精确版本
     expect(view.descriptor.capabilities).toEqual([
-      { id: REPO_ID, version: sourceRepositoryCapabilityPlugin.manifest.version, enabled: true },
+      { id: CORE_CAPABILITIES_PACK_ID, version: '1.0.0', enabled: true },
     ]);
     expect(view.roleProfile).toMatchObject({
       roleFamily: 'software',
@@ -276,14 +281,15 @@ describe('setCampaignRoleProfile', () => {
       interviewLanguage: 'zh',
       userConfirmed: true,
     });
+    // resolver 先写 capabilities 再写岗位包（见 runtime.ts 的 bound 顺序）
     expect(bindings(raw)).toEqual([
+      { plugin_id: REPO_ID, plugin_version: CORE_CAPABILITIES_PACK_VERSION, revision: 1, active_execution: 1 },
       {
         plugin_id: ROLE_PACK_ID,
         plugin_version: ROLE_PACK_VERSION,
         revision: 1,
         active_execution: 1,
       },
-      { plugin_id: REPO_ID, plugin_version: '1.0.0', revision: 1, active_execution: 1 },
     ]);
   });
 

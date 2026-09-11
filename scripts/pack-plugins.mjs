@@ -44,12 +44,14 @@ async function loadModules() {
     optimizeDeps: { noDiscovery: true },
   });
   try {
-    const builtin = await server.ssrLoadModule('core/src/plugins/builtin/index.ts');
+    const suite = await server.ssrLoadModule('core/src/plugins/capabilitySuite.ts');
     const rolePacks = await server.ssrLoadModule('plugins/index.ts');
-    const replay = await server.ssrLoadModule('core/src/plugins/package/replay.ts');
     const transfer = await server.ssrLoadModule('core/src/plugins/package/rolePackTransfer.ts');
+    const capabilityTransfer = await server.ssrLoadModule(
+      'core/src/plugins/package/capabilityTransfer.ts',
+    );
     const bundle = await server.ssrLoadModule('desktop/src/main/plugins/bundle.ts');
-    return { builtin, rolePacks, replay, transfer, bundle };
+    return { suite, rolePacks, transfer, capabilityTransfer, bundle };
   } finally {
     await server.close();
   }
@@ -100,21 +102,29 @@ function resolveSigningKey() {
 }
 
 async function main() {
-  const { rolePacks, transfer, bundle } = await loadModules();
+  const { suite, rolePacks, transfer, capabilityTransfer, bundle } = await loadModules();
   const key = resolveSigningKey();
 
   /**
-   * 只打岗位包。
+   * 基础包不再内置任何插件，这里产出全部随 release 分发的包：
    *
-   * 能力插件不单独分发：它们声明的工具、解析器与交互类型的实现都在宿主里
-   * （`src/main/repo/tools.ts` 等），声明与实现必须同一版本发布。真打出来也装不上——
-   * `builtInPluginKeys()` 把内置的 id@version 占住了，安装会以 reserved-id 被拒。
+   * - 三个岗位包：一个岗位一个包，用户按自己的岗位装一个；
+   * - 一个能力合编包（源码仓库 + 角色扮演 + 案例拆解）：需要的用户装它一个。
+   *
+   * 能力包能装上了：三个旧 id@1.0.0 已从内置清单退役（只留在 reserved 名册里防抢注），
+   * 合编包用新 id 走与岗位包完全相同的安装链路。
    */
-  // 拆分走 rolePackTransfer：手机端收包也用这一处，「岗位包怎么变成包内文件」只有一份定义
-  const packages = rolePacks.DISTRIBUTED_ROLE_PACKS.map((pack) => ({
-    manifest: pack.manifest,
-    files: transfer.rolePackToPackageFiles(pack),
-  }));
+  // 拆分走各 transfer：手机端收岗位包、安装端解析都复用同一份定义
+  const packages = [
+    ...rolePacks.DISTRIBUTED_ROLE_PACKS.map((pack) => ({
+      manifest: pack.manifest,
+      files: transfer.rolePackToPackageFiles(pack),
+    })),
+    {
+      manifest: suite.coreCapabilitiesSuite.manifest,
+      files: capabilityTransfer.capabilityPluginToPackageFiles(suite.coreCapabilitiesSuite),
+    },
+  ];
 
   rmSync(OUT_DIR, { recursive: true, force: true });
   mkdirSync(OUT_DIR, { recursive: true });

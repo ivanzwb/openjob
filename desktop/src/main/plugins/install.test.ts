@@ -16,7 +16,6 @@ vi.mock('../paths', () => ({
   getAppPaths: () => paths,
 }));
 
-import { BUILT_IN_CAPABILITY_PLUGINS } from '@core/plugins/builtin';
 import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
 import {
   PACKAGE_MANIFEST_FILE,
@@ -181,9 +180,10 @@ describe('installPluginBundle', () => {
     expect(installedDirs()).toEqual([]);
   });
 
-  it('与内置能力插件同 id@version 的包拒装', () => {
-    const builtIn = BUILT_IN_CAPABILITY_PLUGINS[0]!.manifest;
-    const files = rolePackFiles(builtIn.id, builtIn.version);
+  it('退役的旧能力 id@version 拒装（reserved 名册防抢注）', () => {
+    // 能力合编包换了新 id；三个旧 id@1.0.0 被保留名册占住，防止第三方包
+    // 顶替存量战役 descriptor 里 pin 的身份
+    const files = rolePackFiles('source-repository', '1.0.0');
 
     expect(installPluginBundle(bundle(files))).toMatchObject({ code: 'reserved-id' });
   });

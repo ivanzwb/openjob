@@ -19,8 +19,13 @@ import {
 import { composePrompt } from '../prompts/composer';
 import { formatIdForLegacyExamForm } from './legacyRoleData';
 import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
-import { SOURCE_REPOSITORY_CAPABILITY_ID } from './builtin/sourceRepository';
-import { buildClientCapabilityView, capabilityMode, listBuiltInPlugins } from './clientView';
+import {
+  capabilityIdResolvedBySuite,
+  CORE_CAPABILITIES_PACK_ID,
+  normalizeCapabilityRefs,
+} from './capabilitySuite';
+import { buildClientCapabilityView, capabilityMode } from './clientView';
+import { installedCapabilitySuiteOnly } from './__fixtures__/installed';
 import {
   PHASE0_CAMPAIGN,
   PHASE0_READY_REPO_ID,
@@ -44,6 +49,7 @@ function context(overrides: Partial<PlannerContext> = {}): PlannerContext {
     budgetMinutes: PHASE0_CAMPAIGN.dailyMinutes,
     usedMinutes: 0,
     repos: repos(),
+    installed: installedCapabilitySuiteOnly(),
     ...overrides,
   };
 }
@@ -54,9 +60,9 @@ function withCapabilityDisabled(
   return {
     ...descriptor,
     capabilities: descriptor.capabilities.map((capability) =>
-      capability.id === SOURCE_REPOSITORY_CAPABILITY_ID
+      capabilityIdResolvedBySuite(capability.id)
         ? {
-            id: capability.id,
+            ...capability,
             enabled: false as const,
             disabledReason: 'user-disabled: 本次战役不看源码',
           }
@@ -67,7 +73,15 @@ function withCapabilityDisabled(
 
 describe('Phase 0 兼容性闸门', () => {
   it('工程 JD 的四种题型仍然各自组合得出 Prompt', () => {
-    const runtime = legacyRuntimeDescriptor(CAMPAIGN_ID);
+    // 组合器要求岗位包版本与 descriptor 逐字一致：岗位包换代到 1.1.0 后，
+    // 这里的运行时绑定也按当前包写（legacyRuntimeDescriptor 描述的是历史包，别混用）
+    const runtime: CampaignRuntimeDescriptor = {
+      ...legacyRuntimeDescriptor(CAMPAIGN_ID),
+      rolePack: {
+        id: softwareEngineeringRolePack.manifest.id,
+        version: softwareEngineeringRolePack.manifest.version,
+      },
+    };
     const formatIds = EXAM_FORMS.map(formatIdForLegacyExamForm);
     expect(new Set(formatIds).size).toBe(EXAM_FORMS.length);
 
@@ -99,7 +113,7 @@ describe('Phase 0 兼容性闸门', () => {
       nodeId: null,
       repoId: PHASE0_READY_REPO_ID,
       estMinutes: PHASE0_READ_CODE_MINUTES,
-      capabilityId: SOURCE_REPOSITORY_CAPABILITY_ID,
+      capabilityId: CORE_CAPABILITIES_PACK_ID,
     });
     expect(tasks[0].client.executable).toBe(true);
   });
@@ -120,12 +134,13 @@ describe('Phase 0 兼容性闸门', () => {
     expect(collectPlannerContributions(disabled, context())).toEqual([]);
 
     const view = buildClientCapabilityView({
-      descriptor: disabled,
+      // 落库的 descriptor 仍写旧 id（历史事实），视图判定前归一
+      descriptor: { ...disabled, capabilities: normalizeCapabilityRefs(disabled.capabilities) },
       platform: 'desktop',
-      installed: listBuiltInPlugins(),
+      installed: installedCapabilitySuiteOnly(),
     });
-    expect(capabilityMode(view, SOURCE_REPOSITORY_CAPABILITY_ID)).toBe('unsupported');
-    expect(view.enabledCapabilityIds).not.toContain(SOURCE_REPOSITORY_CAPABILITY_ID);
+    expect(capabilityMode(view, CORE_CAPABILITIES_PACK_ID)).toBe('unsupported');
+    expect(view.enabledCapabilityIds).not.toContain(CORE_CAPABILITIES_PACK_ID);
   });
 
   it('手机把 readCode 标成需桌面完成，而不是少排一条', () => {
@@ -151,9 +166,10 @@ describe('Phase 0 兼容性闸门', () => {
 
     const views = (['desktop', 'mobile'] as const).map((platform) =>
       buildClientCapabilityView({
-        descriptor: runtime,
+        // 视图判定前把退役 id 归一成合编包 id（落库数据本身不改写）
+        descriptor: { ...runtime, capabilities: normalizeCapabilityRefs(runtime.capabilities) },
         platform,
-        installed: listBuiltInPlugins(),
+        installed: installedCapabilitySuiteOnly(),
       }),
     );
 
@@ -163,6 +179,6 @@ describe('Phase 0 兼容性闸门', () => {
       expect(view.configSnapshotHash).toBe(runtime.configSnapshotHash);
     }
     expect(views[0].readOnlyCapabilityIds).toEqual([]);
-    expect(views[1].readOnlyCapabilityIds).toEqual([SOURCE_REPOSITORY_CAPABILITY_ID]);
+    expect(views[1].readOnlyCapabilityIds).toEqual([CORE_CAPABILITIES_PACK_ID]);
   });
 });

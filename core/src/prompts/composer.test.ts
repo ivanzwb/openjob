@@ -38,7 +38,7 @@ const CAPABILITIES: ResolvedCapabilityRef[] = [
 
 const RUNTIME: PromptRuntimeSnapshot = {
   coreVersion: '1.0.0',
-  rolePack: { id: 'software-engineering', version: '1.0.0' },
+  rolePack: { id: 'software-engineering', version: '1.1.0' },
   capabilities: CAPABILITIES,
   configSnapshotHash: 'snapshot-hash',
 };
@@ -150,7 +150,7 @@ describe('Core Policy 的位置与内容不可被插件覆盖', () => {
       composed.systemPrompt.indexOf(fragment),
     );
     expect(composed.provenance.promptId).toBe('software-engineering#diagnosis');
-    expect(composed.provenance.promptVersionId).toBe('software-engineering#diagnosis@1.0.0');
+    expect(composed.provenance.promptVersionId).toBe('software-engineering#diagnosis@1.1.0');
   });
 
   it('岗位包与运行时绑定不一致时拒绝组合', () => {
@@ -350,7 +350,7 @@ describe('provenance 可复现所用插件版本', () => {
 
     expect(composed.provenance).toMatchObject({
       coreVersion: '1.0.0',
-      rolePack: { id: 'software-engineering', version: '1.0.0' },
+      rolePack: { id: 'software-engineering', version: '1.1.0' },
       capabilityIds: ['source-repository'],
       capabilities: [{ id: 'source-repository', version: '1.0.0' }],
       promptSlot: 'scoring',

@@ -1,27 +1,30 @@
 /**
- * 随应用发布的内置插件清单，唯一事实源。
+ * 内置插件清单——**已清空**。
  *
- * 之前这份清单散在三处：`clientView.ts` 的安装清单、`src/main/plugins/runtime.ts`
- * 的解析注册表和 `src/main/practice/rolePack.ts` 的练习查找表。三处都要手动补一行，
- * 漏掉任意一处都不会报错，只会表现成「岗位包能选但练不了」或「练得了但不在安装
- * 清单里，于是整个 Campaign 被判成只读」——都是排查成本远高于改动成本的故障。
- * 新增内置插件现在只改这一处。
+ * 原来这里随应用发布三个能力插件（sourceRepository / rolePlay / analyticsCase），
+ * 现在它们合并为一个独立分发的能力包 `openjob-capabilities`（见
+ * `../capabilitySuite.ts`），由 `scripts/pack-plugins.mjs` 打成 release 附件、
+ * 用户按需安装。插件页从此没有「随应用发布」一栏，装了什么显示什么。
  *
- * **岗位包不在这里**：基础包岗位中立，三个岗位包改为随 release 单独分发、由用户自己装
- * （见仓库顶层 `plugins/index.ts`）。留在内置的只有能力插件——它们声明的工具实现本来就长在
- * 宿主里（`src/main/repo/tools.ts` 等），把声明单独发版只会让声明与实现分头漂移。
+ * 本目录的三个声明模块**继续保留**，两个用途：
+ * - 工具/场景/交互的数据与结构是宿主实现的一部分（tools.ts、rolePlaySession.ts
+ *   直接 import）；
+ * - 打包脚本从它们录制 contributions，合成能力合编包。
+ *
+ * **岗位包不在这里**：基础包岗位中立，三个岗位包随 release 单独分发、由用户自己装
+ * （见仓库顶层 `plugins/index.ts`）。
  */
 
 import type { CapabilityPlugin, PluginManifest } from '../types';
-import { analyticsCaseCapabilityPlugin } from './analyticsCase';
-import { rolePlayCapabilityPlugin } from './rolePlay';
-import { sourceRepositoryCapabilityPlugin } from './sourceRepository';
 
-export const BUILT_IN_CAPABILITY_PLUGINS: readonly CapabilityPlugin[] = [
-  sourceRepositoryCapabilityPlugin,
-  rolePlayCapabilityPlugin,
-  analyticsCaseCapabilityPlugin,
-];
+/**
+ * 随应用发布的插件：无。
+ *
+ * 导出保留为空集而不是删掉：clientView 的 listBuiltInPlugins、desktop runtime 的
+ * createRegistry 等消费方按「内置清单（现为空）+ 本机安装清单」的模型工作，保留
+ * 空集让这条链路继续成立，也保留「哪天要随包发某个能力」的回填位置。
+ */
+export const BUILT_IN_CAPABILITY_PLUGINS: readonly CapabilityPlugin[] = [];
 
 export const BUILT_IN_PLUGIN_MANIFESTS: readonly PluginManifest[] =
   BUILT_IN_CAPABILITY_PLUGINS.map((plugin) => plugin.manifest);

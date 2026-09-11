@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { CORE_CAPABILITIES_PACK_ID } from '@core/plugins/capabilitySuite';
 import { PROMPT_REGISTRY } from '@core/prompts/registry';
 import { validateRolePack } from '@core/plugins/contracts';
 import {
@@ -20,11 +21,11 @@ describe('softwareEngineeringRolePack contract', () => {
   it('keeps the legacy runtime identity and role-pack permission boundary', () => {
     expect(softwareEngineeringRolePack.manifest).toMatchObject({
       id: 'software-engineering',
-      version: '1.0.0',
+      version: '1.1.0',
       type: 'role-pack',
       compatibility: { core: '^1.0.0', schema: 23 },
       permissions: [],
-      dependencies: [{ id: 'source-repository', version: '^1.0.0', optional: true }],
+      dependencies: [{ id: CORE_CAPABILITIES_PACK_ID, version: '^1.0.0', optional: true }],
     });
   });
 

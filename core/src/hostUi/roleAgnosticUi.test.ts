@@ -18,9 +18,9 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { listBuiltInPlugins } from '../plugins/clientView';
+import { CORE_CAPABILITIES_PACK_ID } from '../plugins/capabilitySuite';
 import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
 import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
-import { SOURCE_REPOSITORY_CAPABILITY_ID } from '../plugins/builtin/sourceRepository';
 
 // core/src/hostUi/ → 仓库根 → 渲染进程源码。只读文本、不 import，
 // 所以这条静态关卡不会让 core 反向依赖 desktop 包。
@@ -98,26 +98,24 @@ describe('渲染进程只消费 descriptor', () => {
   });
 
   /**
-   * 能力插件与岗位包在这里区别对待。宿主功能本来就按能力门控，界面知道
-   * `source-repository` 这个 ID 是本分；岗位包是数据，界面一旦 import 进来，
-   * 就等于把「这个岗位有哪些题型」抄了一份到渲染进程。
+   * 能力声明与岗位包在这里区别对待。宿主功能本来就按能力门控，界面引用能力 ID 常量
+   * 是本分（源码页签就靠它）；岗位包是数据，界面一旦 import 进来，就等于把「这个岗位
+   * 有哪些题型」抄了一份到渲染进程。
+   *
+   * 能力声明模块的白名单：合编包的 ID 常量模块，与三个宿主声明模块（它们是宿主实现的
+   * 一部分，能力合编包只是把它们的声明打包分发）。岗位包在 `@plugins` 下，一律不许。
    */
-  it('不从内置插件里 import 岗位包，能力插件的 ID 常量除外', () => {
-    const imports = /from\s+['"]([^'"]*plugins\/builtin\/[^'"]*)['"]/g;
-
-    // 按插件类型推导可放行的目录，而不是写死 sourceRepository 一个路径。
-    // 规则本身允许「任何能力插件的 ID 常量」，写死一个路径会让第二个能力插件
-    // 撞上一条与注释自相矛盾的断言——role-play 就是这么撞上的。
-    const allowedDirs = listBuiltInPlugins()
-      .filter((plugin) => plugin.type === 'capability')
-      .map((plugin) => plugin.id.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase()));
-    expect(allowedDirs.length).toBeGreaterThan(1);
+  it('界面 import 能力声明只走白名单模块，岗位包一律不许 import', () => {
+    const ALLOWED = /^@core\/plugins\/(?:capabilitySuite|builtin\/(?:sourceRepository|rolePlay|analyticsCase))$/;
+    const imports = /from\s+['"]([^'"]+)['"]/g;
 
     expect(
       offenders((text) =>
-        [...text.matchAll(imports)].some(
-          ([, path]) => !allowedDirs.some((dir) => path.endsWith(`/${dir}`)),
-        ),
+        [...text.matchAll(imports)].some(([, path]) => {
+          const touchesPlugins =
+            path.startsWith('@plugins') || path.includes('plugins/builtin/') || path.includes('plugins/capabilitySuite');
+          return touchesPlugins && !ALLOWED.test(path);
+        }),
       ),
     ).toEqual([]);
   });
@@ -155,17 +153,23 @@ describe('渲染进程只消费 descriptor', () => {
 
   /** ID 漂移一次，门控就会静默失效成「永远不可用」，而界面上只是少了一个入口 */
   it('能力 ID 走共享常量，不在界面里重抄一遍字面量', () => {
-    // 逐个能力插件检查，新增插件自动纳入
-    for (const plugin of listBuiltInPlugins().filter((item) => item.type === 'capability')) {
+    // 内置清单已清空（能力改为单独安装的合编包），这里直接盯合编包与三个退役 id：
+    // 界面只许引用共享常量，不许把这些字面量抄一遍
+    const watchedIds = [
+      CORE_CAPABILITIES_PACK_ID,
+      ...listBuiltInPlugins().filter((item) => item.type === 'capability').map((item) => item.id),
+    ];
+    for (const id of watchedIds) {
       expect(
-        offenders((text) => text.includes(`'${plugin.id}'`) || text.includes(`"${plugin.id}"`)),
-        `${plugin.id} 的 ID 被写成了字面量`,
+        offenders((text) => text.includes(`'${id}'`) || text.includes(`"${id}"`)),
+        `${id} 的 ID 被写成了字面量`,
       ).toEqual([]);
     }
 
-    expect(offenders((text) => text.includes(`'${SOURCE_REPOSITORY_CAPABILITY_ID}'`))).toEqual([]);
+    expect(offenders((text) => text.includes(`'${CORE_CAPABILITIES_PACK_ID}'`))).toEqual([]);
+    // App.tsx 必须通过共享常量认识它（源码页签的门控）
     expect(
-      offenders((text) => text.includes('SOURCE_REPOSITORY_CAPABILITY_ID')).length,
+      offenders((text) => text.includes('CORE_CAPABILITIES_PACK_ID')).length,
     ).toBeGreaterThan(0);
   });
 });

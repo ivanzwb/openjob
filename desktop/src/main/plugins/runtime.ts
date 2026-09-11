@@ -14,9 +14,8 @@ import type {
   ClientCapabilityViewRequest,
   SetRoleProfileInput,
 } from '@core/ipc';
-import { BUILT_IN_CAPABILITY_PLUGINS } from '@core/plugins/builtin';
+import { RETIRED_CAPABILITY_KEYS } from '@core/plugins/capabilitySuite';
 import {
-  BUILT_IN_PLUGIN_MANIFESTS,
   buildClientCapabilityView,
   listBuiltInPlugins,
   toInstalledPlugin,
@@ -37,7 +36,7 @@ import {
   LEGACY_CORE_VERSION,
   LEGACY_SCHEMA_VERSION,
 } from '../db/backfill/pluginRuntime';
-import { exactKeyOf, type PluginInventoryEntry } from './inventory';
+import type { PluginInventoryEntry } from './inventory';
 
 /** 与 backfill 共用同一组常量，回填出来的旧 Campaign 与新写入的 hash 才可比。 */
 export const CORE_VERSION = LEGACY_CORE_VERSION;
@@ -100,7 +99,8 @@ function registerExternal(registry: BuiltInPluginRegistry, entry: PluginInventor
 
 function createRegistry(): BuiltInPluginRegistry {
   const registry = new BuiltInPluginRegistry();
-  BUILT_IN_CAPABILITY_PLUGINS.forEach((plugin) => registry.registerCapability(plugin));
+  // 基础包不再内置任何插件：能力来自单独安装的 openjob-capabilities 合编包，
+  // 岗位包来自用户安装。这里只装配本机安装清单，注册顺序即扫描顺序。
   externalEntries.forEach((entry) => registerExternal(registry, entry));
   return registry;
 }
@@ -108,9 +108,15 @@ function createRegistry(): BuiltInPluginRegistry {
 let registry = createRegistry();
 let resolver = new DeterministicRuntimeResolver(registry);
 
-/** 内置插件占掉的 `id@version`，外置包不允许顶替（理由见 inventory.ts 的 reservedKeys）。 */
+/**
+ * 内置占用的 `id@version`，外置包不允许顶替。
+ *
+ * 内置清单清空后这个集合退化为**退役名册**：三个旧能力 id@1.0.0（改动前随应用
+ * 发布）仍被保留——存量战役的 descriptor/binding pin 着它们，若不占位，任何第三方
+ * 可以签一个同 id@version 的包装进来，借尸还魂拿到对应的权限契约与「已安装」判定。
+ */
 export function builtInPluginKeys(): Set<string> {
-  return new Set(BUILT_IN_PLUGIN_MANIFESTS.map((manifest) => exactKeyOf(manifest.id, manifest.version)));
+  return new Set([...RETIRED_CAPABILITY_KEYS]);
 }
 
 /**

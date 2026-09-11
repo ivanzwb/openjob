@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { installedWith } from '../plugins/__fixtures__/installed';
 import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
 import { SOFTWARE_ENGINEERING_ROLE_PACK_ID } from '@plugins/softwareEngineering';
-import { SOURCE_REPOSITORY_CAPABILITY_ID } from '../plugins/builtin/sourceRepository';
+import { CORE_CAPABILITIES_PACK_ID } from '../plugins/capabilitySuite';
 import { buildCapabilityView, buildDescriptor, buildRuntimeView, CAMPAIGN_ID } from './__fixtures__/runtime';
 import {
   buildCapabilityRows,
@@ -46,7 +46,8 @@ describe('listPluginOptions', () => {
     expect(listPluginOptions(installed, 'capability').map((option) => option.id).sort()).toEqual(
       [...installedCapabilityIds].sort(),
     );
-    expect(installedCapabilityIds).toContain(SOURCE_REPOSITORY_CAPABILITY_ID);
+    // 能力合编包单独安装后，能力列表里是它的 id（内置清单已清空）
+    expect(installedCapabilityIds).toEqual([CORE_CAPABILITIES_PACK_ID]);
     expect(listPluginOptions(installed, 'industry-pack')).toEqual([]);
   });
 });
@@ -61,7 +62,7 @@ describe('draftFromRuntime', () => {
       industryPackId: '',
       location: '上海',
       interviewLanguage: 'zh',
-      capabilityIds: [SOURCE_REPOSITORY_CAPABILITY_ID],
+      capabilityIds: [CORE_CAPABILITIES_PACK_ID],
     });
   });
 
@@ -88,7 +89,7 @@ describe('toSetRoleProfileInput', () => {
     industryPackId: '',
     location: '  ',
     interviewLanguage: 'en',
-    capabilityIds: [SOURCE_REPOSITORY_CAPABILITY_ID],
+    capabilityIds: [CORE_CAPABILITIES_PACK_ID],
   };
 
   it('走这条路径的每一次写入都是用户按下确认，userConfirmed 恒为 true', () => {
@@ -102,7 +103,7 @@ describe('toSetRoleProfileInput', () => {
       interviewLanguage: 'en',
       confidence: 1,
       userConfirmed: true,
-      capabilityIds: [SOURCE_REPOSITORY_CAPABILITY_ID],
+      capabilityIds: [CORE_CAPABILITIES_PACK_ID],
     });
   });
 
@@ -158,20 +159,20 @@ describe('reconcileCapabilitySelection', () => {
   const descriptor = buildDescriptor();
 
   it('岗位包依赖强制打开的能力会被指出来', () => {
-    expect(enabledCapabilityIds(descriptor)).toContain(SOURCE_REPOSITORY_CAPABILITY_ID);
+    expect(enabledCapabilityIds(descriptor)).toContain(CORE_CAPABILITIES_PACK_ID);
 
     const reconciliation = reconcileCapabilitySelection([], descriptor);
 
-    expect(reconciliation.forcedOn).toEqual([SOURCE_REPOSITORY_CAPABILITY_ID]);
+    expect(reconciliation.forcedOn).toEqual([CORE_CAPABILITIES_PACK_ID]);
     expect(reconciliation.rejected).toEqual([]);
     expect(reconciliationNotices(reconciliation, (id) => id)).toEqual([
-      `${SOURCE_REPOSITORY_CAPABILITY_ID}：岗位包把它声明为依赖，本次仍然启用，无法单独关闭`,
+      `${CORE_CAPABILITIES_PACK_ID}：岗位包把它声明为依赖，本次仍然启用，无法单独关闭`,
     ]);
   });
 
   it('勾了却没能启用时带上 resolver 给的原因', () => {
     const reconciliation = reconcileCapabilitySelection(
-      [SOURCE_REPOSITORY_CAPABILITY_ID, 'not-installed'],
+      [CORE_CAPABILITIES_PACK_ID, 'not-installed'],
       descriptor,
     );
 
@@ -196,7 +197,7 @@ describe('reconcileCapabilitySelection', () => {
 
   it('勾选与生效完全一致时没有任何需要解释的差异', () => {
     expect(
-      reconcileCapabilitySelection([SOURCE_REPOSITORY_CAPABILITY_ID], descriptor),
+      reconcileCapabilitySelection([CORE_CAPABILITIES_PACK_ID], descriptor),
     ).toEqual({ forcedOn: [], rejected: [] });
   });
 });
@@ -213,9 +214,9 @@ describe('buildCapabilityRows', () => {
 
     // 只针对 descriptor 真的启用了的那条断言；本机还装着别的能力插件，
     // 它们没进这场备考，状态本就不该是「可用」。
-    const row = rows.find((item) => item.id === SOURCE_REPOSITORY_CAPABILITY_ID);
+    const row = rows.find((item) => item.id === CORE_CAPABILITIES_PACK_ID);
     expect(row).toMatchObject({
-      id: SOURCE_REPOSITORY_CAPABILITY_ID,
+      id: CORE_CAPABILITIES_PACK_ID,
       enabledInCampaign: true,
       disabledReason: null,
       localMode: 'full',
@@ -233,7 +234,7 @@ describe('buildCapabilityRows', () => {
       installed,
     });
 
-    const row = rows.find((item) => item.id === SOURCE_REPOSITORY_CAPABILITY_ID);
+    const row = rows.find((item) => item.id === CORE_CAPABILITIES_PACK_ID);
     expect(row).toMatchObject({ localMode: 'view-only', enabledInCampaign: true });
     expect(row!.localDetail).toBeTruthy();
   });

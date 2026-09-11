@@ -11,6 +11,7 @@ import {
 } from '@core/planner/contributions';
 import type { CampaignRuntimeDescriptor } from '@core/plugins/types';
 import { getDb, schema } from '../db';
+import { listInstalledPlugins } from '../plugins/runtime';
 import { getCampaignRow, listCampaigns, rowToNode, updateCampaign } from '../campaign/repository';
 import { sortNodesByStudyOrder } from '../campaign/edges';
 import { recordPlanChange, recordPlanDecision } from './session';
@@ -254,6 +255,7 @@ export function generatePlan(
       budgetMinutes: budget,
       usedMinutes: used,
       repos,
+      installed: listInstalledPlugins(),
     })) {
       dayTasks.push({
         kind: planned.kind,

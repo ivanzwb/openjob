@@ -8,7 +8,8 @@
  * 磁盘扫描——扫描本身由 `inventory.test.ts` 用真实临时目录覆盖。
  */
 import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
-import type { RolePack } from '@core/plugins/types';
+import { coreCapabilitiesSuite } from '@core/plugins/capabilitySuite';
+import type { CapabilityPlugin, RolePack } from '@core/plugins/types';
 import type { PluginInventoryEntry } from '../inventory';
 import { setExternalPlugins } from '../runtime';
 
@@ -20,9 +21,36 @@ export function installedRolePackEntry(pack: RolePack): PluginInventoryEntry {
   };
 }
 
-/** 默认装上全部随 release 分发的岗位包，等价于「用户按引导把官方包都装了」。 */
+/** 能力合编包的「本机已装」夹具：目录名与生产一致（id@version）。 */
+export function installedCapabilitySuiteEntry(): PluginInventoryEntry {
+  const manifest = coreCapabilitiesSuite.manifest;
+  return {
+    dir: `/test/plugins/${manifest.id}@${manifest.version}`,
+    trust: 'first-party',
+    // 安装端会把 contributions 重放成 CapabilityPlugin（runtime.registerExternal），
+    // 与真实链路一致
+    package: {
+      manifest,
+      contributions: (() => {
+        const collected: { tools: unknown[]; artifactParsers: unknown[]; interactions: unknown[] } = {
+          tools: [],
+          artifactParsers: [],
+          interactions: [],
+        };
+        (coreCapabilitiesSuite as CapabilityPlugin).register({
+          registerTool: (tool) => collected.tools.push(tool),
+          registerArtifactParser: (parser) => collected.artifactParsers.push(parser),
+          registerInteractionType: (interaction) => collected.interactions.push(interaction),
+        });
+        return collected as never;
+      })(),
+    },
+  };
+}
+
+/** 默认装上全部随 release 分发的包：三个岗位包 + 能力合编包。 */
 export function installRolePacks(packs: readonly RolePack[] = DISTRIBUTED_ROLE_PACKS): void {
-  setExternalPlugins(packs.map(installedRolePackEntry));
+  setExternalPlugins([...packs.map(installedRolePackEntry), installedCapabilitySuiteEntry()]);
 }
 
 /** 回到「一个岗位包都没装」的出厂状态；进程内状态是全局的，用完要还回去。 */

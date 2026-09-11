@@ -19,15 +19,14 @@ import {
 import { composePrompt } from '../prompts/composer';
 import type { PromptSlot } from '../prompts/registry';
 import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
-import { BUILT_IN_CAPABILITY_PLUGINS } from './builtin';
-import { ANALYTICS_CASE_CAPABILITY_ID } from './builtin/analyticsCase';
+import { coreCapabilitiesSuite } from './capabilitySuite';
 import {
   PRODUCT_MANAGER_FORMAT_IDS,
   PRODUCT_MANAGER_ROLE_PACK_ID,
   productManagerRolePack,
 } from '@plugins/productManager';
 import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
-import { SOURCE_REPOSITORY_CAPABILITY_ID } from './builtin/sourceRepository';
+import { CORE_CAPABILITIES_PACK_ID } from './capabilitySuite';
 import { buildClientCapabilityView } from './clientView';
 import { installedWith } from './__fixtures__/installed';
 import { BuiltInPluginRegistry } from './registry';
@@ -50,7 +49,8 @@ const PM_FORMAT_IDS = Object.values(PRODUCT_MANAGER_FORMAT_IDS);
 function phase1Runtime(): CampaignRuntimeDescriptor {
   const registry = new BuiltInPluginRegistry();
   DISTRIBUTED_ROLE_PACKS.forEach((pack) => registry.register(pack));
-  BUILT_IN_CAPABILITY_PLUGINS.forEach((plugin) => registry.registerCapability(plugin));
+  // 内置清单已清空：能力由合编包承载，测试里的「已安装」与生产一样走注册表
+  registry.registerCapability(coreCapabilitiesSuite);
 
   const resolved = new DeterministicRuntimeResolver(registry).resolve({
     coreVersion: '1.0.0',
@@ -77,6 +77,7 @@ function context(overrides: Partial<PlannerContext> = {}): PlannerContext {
     budgetMinutes: PHASE0_CAMPAIGN.dailyMinutes,
     usedMinutes: 0,
     repos: repos(),
+    installed: installedWith(productManagerRolePack, softwareEngineeringRolePack),
     ...overrides,
   };
 }
@@ -225,7 +226,8 @@ describe('Phase 1 通用核心闸门', () => {
     expect(tasks).toHaveLength(1);
     expect(tasks[0]).toMatchObject({
       kind: 'readCode',
-      capabilityId: SOURCE_REPOSITORY_CAPABILITY_ID,
+      // 贡献的实现由合编包承载：旧 descriptor 的退役 id 归一化后按新 id 归属
+      capabilityId: CORE_CAPABILITIES_PACK_ID,
     });
     expect(tasks[0].client.executable).toBe(true);
   });
@@ -261,8 +263,9 @@ describe('Phase 1 通用核心闸门', () => {
       views[1].capabilities.map((item) => item.id),
     );
     // analytics-case 是产品岗的可选依赖，装上了就自动生效；手机端没有表格读入，只读
-    expect(views[0].enabledCapabilityIds).toContain(ANALYTICS_CASE_CAPABILITY_ID);
-    expect(views[1].enabledCapabilityIds).not.toContain(ANALYTICS_CASE_CAPABILITY_ID);
-    expect(views[1].readOnlyCapabilityIds).toEqual([ANALYTICS_CASE_CAPABILITY_ID]);
+    // analytics-case 已并入能力合编包：PM 包的可选依赖装上即生效，手机只读
+    expect(views[0].enabledCapabilityIds).toContain(CORE_CAPABILITIES_PACK_ID);
+    expect(views[1].enabledCapabilityIds).not.toContain(CORE_CAPABILITIES_PACK_ID);
+    expect(views[1].readOnlyCapabilityIds).toEqual([CORE_CAPABILITIES_PACK_ID]);
   });
 });

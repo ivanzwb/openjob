@@ -8,14 +8,18 @@
 import type { RuntimeAvailability, TaskKind } from '../enums';
 import { LEGACY_ROLE_PACK_REF } from '../plugins/legacyRoleData';
 import {
+  CORE_CAPABILITIES_PACK_ID,
+  normalizeCapabilityRefs,
+} from '../plugins/capabilitySuite';
+import {
   SOURCE_REPOSITORY_CAPABILITY_ID,
-  sourceRepositoryCapabilityPlugin,
+  SOURCE_REPOSITORY_CAPABILITY_VERSION,
 } from '../plugins/builtin/sourceRepository';
 import {
   buildClientCapabilityView,
-  listBuiltInPlugins,
   type ClientDegradationReason,
   type ClientPluginStatus,
+  type InstalledPlugin,
 } from '../plugins/clientView';
 import { hashRuntimeConfig } from '../plugins/resolver';
 import type { CampaignRuntimeDescriptor, ClientPlatform } from '../plugins/types';
@@ -40,6 +44,14 @@ export interface PlannerContext {
   usedMinutes: number;
   /** 全部仓库，可用与否由贡献者判断。 */
   repos: readonly PlannerRepo[];
+  /**
+   * 本机的插件安装清单。
+   *
+   * 曾经这里读内置清单（`listBuiltInPlugins()`），因为能力插件随应用发布；能力
+   * 改由单独安装的合编包提供之后，内置恒为空——继续读内置会让「装了能力包也不
+   * 排任务」，而且不会报错。两端各自取真实安装集合传进来（桌面 runtime、手机角色包缓存）。
+   */
+  installed: readonly InstalledPlugin[];
 }
 
 /**
@@ -111,7 +123,7 @@ function defaultRepo(repos: readonly PlannerRepo[]): PlannerRepo | null {
 
 const readCodeContribution: PlannerContribution = {
   id: 'source-repository.read-code',
-  capabilityId: SOURCE_REPOSITORY_CAPABILITY_ID,
+  capabilityId: CORE_CAPABILITIES_PACK_ID,
   // 只有软件工程岗排读源码任务：其它岗位包即使启用了同一个能力也不排（见 rolePackIds 注释）
   rolePackIds: [LEGACY_ROLE_PACK_REF.id],
   taskKinds: ['readCode'],
@@ -136,22 +148,24 @@ const PLANNER_CONTRIBUTIONS: readonly PlannerContribution[] = [readCodeContribut
  * 平台可用性只在 clientView 一处算，排程不自己读 Manifest——两处各判一次时，
  * 「本机能做什么」迟早会漂移。
  *
- * `installed` 只给内置清单，不是偷懒：排程只读下面那一行 capability 状态，而贡献者
- * 声明的能力一律是随应用发布的内置能力（工具实现在宿主里，见 `PLANNER_CONTRIBUTIONS`）。
- * 岗位包装没装在这里不影响判定——上面那行 rolePackIds 已经按 descriptor 判过是不是该
- * 排这个任务了。要是哪天有人在这里读 `view.rolePack` 或 `view.degraded`，得先把本机
- * 安装集合真的传进来：那两个字段在这份输入下永远是「岗位包没装」。
+ * `installed` 用调用方传来的本机真实安装清单（桌面 runtime、手机角色包缓存）。
+ * 曾经这里读内置清单，因为能力随应用发布；能力改为单独安装的合编包后内置恒为空，
+ * 再读内置会让已装能力包也不排任务。岗位包装没装不影响这里的判定——上面那行
+ * rolePackIds 已经按 descriptor 判过是不是该排这个任务了。
  */
 function capabilityStatus(
   runtime: CampaignRuntimeDescriptor,
   contribution: PlannerContribution,
   platform: ClientPlatform,
+  installed: readonly InstalledPlugin[],
 ): ClientPluginStatus | null {
   if (!contribution.rolePackIds.includes(runtime.rolePack.id)) return null;
   const view = buildClientCapabilityView({
-    descriptor: runtime,
+    // 旧战役的 descriptor 还 pin 着三个退役 id（历史事实，不能改写）：判定前归一成
+    // 合编包 id，否则装了合编包也会判成 plugin-not-installed，回填窗口内排程会跳变
+    descriptor: { ...runtime, capabilities: normalizeCapabilityRefs(runtime.capabilities) },
     platform,
-    installed: listBuiltInPlugins(),
+    installed,
   });
   return view.capabilities.find((item) => item.id === contribution.capabilityId) ?? null;
 }
@@ -168,8 +182,9 @@ function activeClientView(
   runtime: CampaignRuntimeDescriptor,
   contribution: PlannerContribution,
   platform: ClientPlatform,
+  installed: readonly InstalledPlugin[],
 ): PlannedTaskClientView | null {
-  const status = capabilityStatus(runtime, contribution, platform);
+  const status = capabilityStatus(runtime, contribution, platform, installed);
   if (!status) return null;
   if (status.reason !== null && NO_NEW_TASK_REASONS.includes(status.reason)) return null;
 
@@ -199,7 +214,7 @@ export function collectPlannerContributions(
   let usedMinutes = context.usedMinutes;
 
   for (const contribution of PLANNER_CONTRIBUTIONS) {
-    const client = activeClientView(runtime, contribution, context.platform);
+    const client = activeClientView(runtime, contribution, context.platform, context.installed);
     if (!client) continue;
     for (const payload of contribution.createTasks({ ...context, usedMinutes })) {
       tasks.push({
@@ -224,12 +239,13 @@ export function pluginTaskClientView(
   runtime: CampaignRuntimeDescriptor | null,
   taskKind: TaskKind,
   platform: ClientPlatform,
+  installed: readonly InstalledPlugin[],
 ): PlannedTaskClientView | null {
   if (!runtime) return null;
 
   for (const contribution of PLANNER_CONTRIBUTIONS) {
     if (!contribution.taskKinds.includes(taskKind)) continue;
-    const client = activeClientView(runtime, contribution, platform);
+    const client = activeClientView(runtime, contribution, platform, installed);
     if (!client) continue;
     return client;
   }
@@ -250,6 +266,10 @@ export const LEGACY_CAMPAIGN_SCOPE_KIND = 'generic-interview-v1:legacy';
  *
  * 字段与 `src/main/db/backfill/pluginRuntime.ts` 的回填默认值一致，使回填前后的
  * 排程结果不发生跳变。没有凭据的战役不走这里，见 `collectPlannerContributions`。
+ *
+ * 这里的 `source-repository@1.0.0` 是**历史事实**：那时它是内置能力。旧战役的
+ * binding/descriptor 也 pin 着这个 id，投影与 hash 都按它算——不要跟着合编包改名，
+ * 否则旧记录的 config_snapshot_hash 会跳变（同样的理由见 legacyRoleData）。
  */
 export function legacyRuntimeDescriptor(campaignId: string): CampaignRuntimeDescriptor {
   const coreVersion = '1.0.0';
@@ -258,7 +278,7 @@ export function legacyRuntimeDescriptor(campaignId: string): CampaignRuntimeDesc
   const capabilities: CampaignRuntimeDescriptor['capabilities'] = [
     {
       id: SOURCE_REPOSITORY_CAPABILITY_ID,
-      version: sourceRepositoryCapabilityPlugin.manifest.version,
+      version: SOURCE_REPOSITORY_CAPABILITY_VERSION,
       enabled: true,
     },
   ];

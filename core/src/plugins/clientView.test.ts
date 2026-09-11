@@ -17,14 +17,19 @@ import {
   type InstalledPlugin,
 } from './clientView';
 import { installedWith } from './__fixtures__/installed';
+import {
+  CORE_CAPABILITIES_PACK_ID,
+  CORE_CAPABILITIES_PACK_VERSION,
+} from './capabilitySuite';
 import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
 import { sourceRepositoryCapabilityPlugin } from './builtin/sourceRepository';
 import type { CampaignRuntimeDescriptor } from './types';
 
 const ROLE_PACK_ID = softwareEngineeringRolePack.manifest.id;
 const ROLE_PACK_VERSION = softwareEngineeringRolePack.manifest.version;
-const REPO_ID = sourceRepositoryCapabilityPlugin.manifest.id;
-const REPO_VERSION = sourceRepositoryCapabilityPlugin.manifest.version;
+// 能力已并入单独安装的合编包：descriptor 里 pin 的是合编包 id
+const REPO_ID = CORE_CAPABILITIES_PACK_ID;
+const REPO_VERSION = CORE_CAPABILITIES_PACK_VERSION;
 
 /**
  * 本机装了工程岗位包时的安装集合。
@@ -77,23 +82,11 @@ function deepFreeze<T>(value: T): T {
 }
 
 describe('本机安装清单', () => {
-  it('由内置 Manifest 投影，按 ID 稳定排序', () => {
-    const listed = listBuiltInPlugins();
-    const ids = listed.map((plugin) => plugin.id);
-
-    // 断言「投影 + 按 ID 排序」这两条性质，而不是逐个枚举：
-    // 每新增一个内置插件都要回来改一次枚举，这条用例迟早被当成噪音顺手改掉
-    expect(ids).toEqual([...ids].sort());
-    expect(listed).toHaveLength(BUILT_IN_PLUGIN_MANIFESTS.length);
-    expect(listed.map((plugin) => `${plugin.id}@${plugin.version}`)).toEqual(
-      expect.arrayContaining([`${REPO_ID}@${REPO_VERSION}`]),
-    );
-  });
-
-  it('内置清单里没有岗位包：基础包岗位中立', () => {
-    // 反过来写才守得住：只断言「能力插件都在」，某天有人把岗位包塞回内置数组也照样绿
-    expect(listBuiltInPlugins().filter((plugin) => plugin.type === 'role-pack')).toEqual([]);
-    expect(listBuiltInPlugins().map((plugin) => plugin.id)).not.toContain(ROLE_PACK_ID);
+  it('内置清单已清空：能力与岗位包都由用户安装', () => {
+    // 内置清单曾经有三个能力插件，现在合编为单独分发的 openjob-capabilities。
+    // 这条空集断言守的是「基础包不自带插件」：谁往内置数组塞回东西，这里就红。
+    expect(listBuiltInPlugins()).toEqual([]);
+    expect(BUILT_IN_PLUGIN_MANIFESTS).toEqual([]);
   });
 
   it('岗位包不携带运行能力声明，能力插件必须携带', () => {

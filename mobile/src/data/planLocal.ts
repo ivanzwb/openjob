@@ -14,6 +14,7 @@ import {
 } from '@core/planner/contributions';
 import type { CampaignRuntimeDescriptor, ResolvedPluginRef } from '@core/plugins/types';
 import { getCampaign } from './campaignLocal';
+import { installedPluginsForCampaign } from './rolePackLocal';
 import { updateCampaignFields } from './nodesLocal';
 import { getDeviceIdentity } from '../sync/identity';
 import { writingAs } from '../sync/triggers';
@@ -118,7 +119,8 @@ export function pluginTaskSupport(
   campaignId: string,
   kind: TaskKind,
 ): PlannedTaskClientView | null {
-  return pluginTaskClientView(loadRuntimeDescriptor(db, campaignId), kind, 'mobile');
+  const runtime = loadRuntimeDescriptor(db, campaignId);
+  return pluginTaskClientView(runtime, kind, 'mobile', installedPluginsForCampaign(db, runtime));
 }
 
 export async function generatePlan(
@@ -252,6 +254,7 @@ export async function generatePlan(
       budgetMinutes: budget,
       usedMinutes: used,
       repos,
+      installed: installedPluginsForCampaign(db, runtime),
     })) {
       dayTasks.push({
         kind: planned.kind,

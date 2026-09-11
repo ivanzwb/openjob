@@ -14,13 +14,14 @@ import type { Database } from 'better-sqlite3';
 import type { LlmRole } from '@core/enums';
 import { composePrompt, type ComposedPrompt } from '@core/prompts/composer';
 import {
-  ROLE_PLAY_CAPABILITY_ID,
   ROLE_PLAY_SCENARIOS,
   customerConversationInteraction,
   rolePlayCapabilityPlugin,
   type RolePlayScenario,
 } from '@core/plugins/builtin/rolePlay';
+import { CORE_CAPABILITIES_PACK_ID } from '@core/plugins/capabilitySuite';
 import { buildInteractionHostView } from '@core/plugins/interactions/hostView';
+import { listInstalledPlugins } from './runtime';
 import type { PluginPermission } from '@core/plugins/permissions';
 import type { InterviewFormatDefinition, RolePack } from '@core/plugins/types';
 import type {
@@ -97,7 +98,7 @@ function findScenario(scenarioId: string | undefined): RolePlayScenario {
  */
 function resolveRolePlayFormat(rolePack: RolePack): InterviewFormatDefinition {
   const format = rolePack.interviewFormats.find(
-    (item) => item.capabilityId === ROLE_PLAY_CAPABILITY_ID,
+    (item) => item.capabilityId === CORE_CAPABILITIES_PACK_ID,
   );
   if (!format) {
     throw new RolePlayError(
@@ -118,6 +119,11 @@ function grantedPermissions(microphoneAvailable: boolean): PluginPermission[] {
   return rolePlayCapabilityPlugin.manifest.permissions.filter(
     (permission) => permission !== 'microphone:read' || microphoneAvailable,
   );
+}
+
+/** 合编能力包在本机装没装。对练渲染的可交互性由它决定（没装只能看历史快照）。 */
+function isCapabilitySuiteInstalled(): boolean {
+  return listInstalledPlugins().some((plugin) => plugin.id === CORE_CAPABILITIES_PACK_ID);
 }
 
 function toTurnViews(state: RolePlayState): RolePlayTurnView[] {
@@ -142,7 +148,7 @@ export function createRolePlaySessionService(
     const format = resolveRolePlayFormat(runtime.rolePack);
 
     const capabilityRef = runtime.descriptor.capabilities.find(
-      (item) => item.id === ROLE_PLAY_CAPABILITY_ID,
+      (item) => item.id === CORE_CAPABILITIES_PACK_ID,
     );
     const capabilityEnabled = capabilityRef?.enabled === true;
 
@@ -151,7 +157,10 @@ export function createRolePlaySessionService(
       interaction: customerConversationInteraction,
       platform: 'desktop',
       capabilityEnabled,
-      pluginInstalled: true,
+      // 能力现在来自单独安装的合编包：本机没装时不渲染，交回 view-only 降级视图。
+      // 写死 true 是内置时代的遗留，会让「没装包却出题」被渲染成可交互表单。
+      pluginInstalled: isCapabilitySuiteInstalled(),
+      externalPlugin: true,
       knownSchemaVersion:
         rolePlayCapabilityPlugin.manifest.interactionSchemas?.[
           customerConversationInteraction.type

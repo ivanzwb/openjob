@@ -15,16 +15,14 @@ import { DatabaseSync } from 'node:sqlite';
 import type { Database } from 'better-sqlite3';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { BUILT_IN_CAPABILITY_PLUGINS } from '@core/plugins/builtin';
-import { ANALYTICS_CASE_CAPABILITY_ID } from '@core/plugins/builtin/analyticsCase';
+import { coreCapabilitiesSuite } from '@core/plugins/capabilitySuite';
 import {
   PRODUCT_MANAGER_OPTIONAL_CAPABILITY_IDS,
   PRODUCT_MANAGER_ROLE_PACK_ID,
 } from '@plugins/productManager';
-import { ROLE_PLAY_CAPABILITY_ID } from '@core/plugins/builtin/rolePlay';
 import { SALES_CUSTOMER_SUCCESS_ROLE_PACK_ID } from '@plugins/salesCustomerSuccess';
 import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
-import { SOURCE_REPOSITORY_CAPABILITY_ID } from '@core/plugins/builtin/sourceRepository';
+import { CORE_CAPABILITIES_PACK_ID } from '@core/plugins/capabilitySuite';
 import type { CampaignRuntimeDescriptor } from '@core/plugins/types';
 import { buildClientCapabilityView } from '@core/plugins/clientView';
 import { installRolePacks } from './plugins/__fixtures__/installedPlugins';
@@ -79,24 +77,21 @@ const ROLE_PACK_CASES: readonly RolePackCase[] = [
     label: '软件工程',
     rolePackId: softwareEngineeringRolePack.manifest.id,
     roleFamily: 'software',
-    capabilityId: SOURCE_REPOSITORY_CAPABILITY_ID,
+    capabilityId: CORE_CAPABILITIES_PACK_ID,
   },
   {
     label: '产品经理',
     rolePackId: PRODUCT_MANAGER_ROLE_PACK_ID,
     roleFamily: 'product',
-    capabilityId: ANALYTICS_CASE_CAPABILITY_ID,
+    capabilityId: CORE_CAPABILITIES_PACK_ID,
   },
   {
     label: '销售客户成功',
     rolePackId: SALES_CUSTOMER_SUCCESS_ROLE_PACK_ID,
     roleFamily: 'sales',
-    capabilityId: ROLE_PLAY_CAPABILITY_ID,
+    capabilityId: CORE_CAPABILITIES_PACK_ID,
   },
 ];
-
-/** 三个能力插件的 ID，顺序与 ROLE_PACK_CASES 的对角线一致。 */
-const CAPABILITY_IDS = ROLE_PACK_CASES.map((item) => item.capabilityId);
 
 let raw: Database;
 
@@ -172,30 +167,24 @@ describe('三个岗位包在同一份库上共存', () => {
   });
 });
 
-describe('能力隔离矩阵', () => {
-  it('每个岗位包只拿到自己声明的那一个能力', () => {
-    const matrix = ROLE_PACK_CASES.map((item) => {
-      const enabled = new Set(enabledIds(bindRolePack(item)));
-      return CAPABILITY_IDS.map((capabilityId) => enabled.has(capabilityId));
-    });
-
-    // 对角线为真、其余为假：多出来的那一格就是某个岗位包多拿了一个能力
-    expect(matrix).toEqual([
-      [true, false, false],
-      [false, true, false],
-      [false, false, true],
-    ]);
+describe('能力绑定', () => {
+  it('三个岗位包启用的都是同一个能力合编包，各绑一条', () => {
+    // 三个能力已并入一个包：隔离不再靠「不同 id」，而靠岗位包各自的题型声明
+    // （哪些题型挂 capabilityId）与战役级启用开关。这里守的是绑定结果：
+    // 每个岗位包恰好一条能力 binding，且都指向合编包。
+    for (const item of ROLE_PACK_CASES) {
+      const descriptor = bindRolePack(item);
+      expect(enabledIds(descriptor)).toEqual([CORE_CAPABILITIES_PACK_ID]);
+    }
   });
 
   it('岗位包没声明的能力即使装在本机也不会被启用', () => {
     const descriptor = bindRolePack(ROLE_PACK_CASES[0]);
     const installed = listInstalledPlugins().map((plugin) => plugin.id);
 
-    // 三个能力插件都随应用发布，所以「没启用」不可能是「没装」
-    for (const capabilityId of CAPABILITY_IDS) {
-      expect(installed).toContain(capabilityId);
-    }
-    expect(enabledIds(descriptor)).toEqual([SOURCE_REPOSITORY_CAPABILITY_ID]);
+    expect(installed).toContain(CORE_CAPABILITIES_PACK_ID);
+    // SE 包 1.1.0 只声明依赖合编包；PM/sales 的可选依赖不归这个战役
+    expect(enabledIds(descriptor)).toEqual([CORE_CAPABILITIES_PACK_ID]);
   });
 });
 
@@ -212,9 +201,9 @@ describe('两端消费同一份 descriptor', () => {
     );
 
     // 手机端的可用性以 Manifest 声明为准，不在这里重写一份预期
-    const manifest = BUILT_IN_CAPABILITY_PLUGINS.find(
-      (plugin) => plugin.manifest.id === item.capabilityId,
-    )?.manifest;
+    const manifest = CORE_CAPABILITIES_PACK_ID === item.capabilityId
+      ? coreCapabilitiesSuite.manifest
+      : undefined;
     expect(mobile.capabilities.find((entry) => entry.id === item.capabilityId)?.mode).toBe(
       manifest?.runtime?.mobile,
     );
@@ -231,7 +220,7 @@ describe('未交付的能力留在 backlog，不阻塞发布', () => {
     // 未实现的可选能力只以 disabled 出现，解析不失败、战役照常可用
     expect(ref).toMatchObject({ enabled: false });
     expect(ref?.enabled === false ? ref.disabledReason : '').toContain('plugin-not-found');
-    expect(enabledIds(descriptor)).toContain(ANALYTICS_CASE_CAPABILITY_ID);
+    expect(enabledIds(descriptor)).toContain(CORE_CAPABILITIES_PACK_ID);
   });
 
   it('本机根本没有的能力不会被凭空写进 descriptor', () => {

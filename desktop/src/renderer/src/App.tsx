@@ -15,7 +15,7 @@ import { useJobProgress } from './ipc/useJobProgress';
 import { useCapabilityNav } from './ipc/useCapabilityNav';
 import { useBackgroundErrorToast } from './ipc/errorToast';
 import { nextVisibleTab } from '@core/hostUi';
-import { SOURCE_REPOSITORY_CAPABILITY_ID } from '@core/plugins/builtin/sourceRepository';
+import { CORE_CAPABILITIES_PACK_ID } from '@core/plugins/capabilitySuite';
 
 type Tab = 'overview' | 'campaigns' | 'resumes' | 'design' | 'repos' | 'scripts' | 'settings';
 
@@ -123,7 +123,7 @@ export default function App(): React.JSX.Element {
   useBackgroundErrorToast();
 
   // 源码页是 source-repository 能力插件的宿主界面，没有任何 Campaign 启用它时不该出现
-  const reposEnabled = useCapabilityNav(SOURCE_REPOSITORY_CAPABILITY_ID);
+  const reposEnabled = useCapabilityNav(CORE_CAPABILITIES_PACK_ID);
   const isTabVisible = (key: Tab): boolean => key !== 'repos' || reposEnabled;
   // 门控是异步算出来的，用户可能正停在被藏起来的页签上：渲染期同步换页，
   // 免得看到一个没有选中项的导航栏和一片空白

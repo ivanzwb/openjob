@@ -6,9 +6,30 @@
  * 装好之后的渲染与降级，就得把岗位包显式加进来。默认值省掉的那一步，恰好是这一版最容易
  * 判错的一步。
  */
+import { coreCapabilitiesSuite } from '../capabilitySuite';
 import type { RolePack } from '../types';
 import { listBuiltInPlugins, toInstalledPlugin, type InstalledPlugin } from '../clientView';
 
+/**
+ * 能力合编包（源码仓库 + 角色扮演 + 案例拆解）的「本机已装」形态。
+ *
+ * 它曾经是三个随应用发布的内置能力，现在是一个单独安装的包；用例里凡是要表达
+ * 「装了能力」的，都用这一条，而不是凭空造一个 InstalledPlugin。
+ */
+export const CAPABILITY_SUITE_INSTALLED: InstalledPlugin = toInstalledPlugin(
+  coreCapabilitiesSuite.manifest,
+);
+
+/** 本机装了：能力合编包 + 给定岗位包（+ 空的内置清单）。 */
 export function installedWith(...packs: readonly RolePack[]): InstalledPlugin[] {
-  return [...listBuiltInPlugins(), ...packs.map((pack) => toInstalledPlugin(pack.manifest))];
+  return [
+    ...listBuiltInPlugins(),
+    CAPABILITY_SUITE_INSTALLED,
+    ...packs.map((pack) => toInstalledPlugin(pack.manifest)),
+  ];
+}
+
+/** 只装了能力合编包、一个岗位包都没有的安装态。 */
+export function installedCapabilitySuiteOnly(): InstalledPlugin[] {
+  return [...listBuiltInPlugins(), CAPABILITY_SUITE_INSTALLED];
 }

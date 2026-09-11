@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { EXAM_FORMS, TASK_KINDS } from '@core/enums';
 import { LEGACY_EXAM_FORM_TO_FORMAT_ID, SOFTWARE_ENGINEERING_FORMAT_IDS, formatIdForLegacyExamForm } from '@core/plugins/legacyRoleData';
+import { CORE_CAPABILITIES_PACK_ID } from '@core/plugins/capabilitySuite';
 import { softwareEngineeringRolePack } from './index';
 
 describe('software engineering legacy mappings', () => {
@@ -48,7 +49,7 @@ describe('software engineering legacy mappings', () => {
     expect(readCode).toMatchObject({
       id: 'se.read-code',
       defaultMinutes: 25,
-      capabilityId: 'source-repository',
+      capabilityId: CORE_CAPABILITIES_PACK_ID,
     });
     expect(
       softwareEngineeringRolePack.taskTemplates

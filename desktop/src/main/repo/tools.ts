@@ -1,8 +1,6 @@
 import type { Citation } from '@core/entities';
-import {
-  SOURCE_REPOSITORY_CAPABILITY_ID,
-  SOURCE_REPOSITORY_TOOL_DEFINITIONS,
-} from '@core/plugins/builtin/sourceRepository';
+import { SOURCE_REPOSITORY_TOOL_DEFINITIONS } from '@core/plugins/builtin/sourceRepository';
+import { CORE_CAPABILITIES_PACK_ID } from '@core/plugins/capabilitySuite';
 import { formatPathSuggestions, suggestRepoPaths } from '@core/repo/pathSuggest';
 import { normalizeRepoPath } from '@core/repo/virtualFs';
 import {
@@ -131,7 +129,7 @@ export async function runCodeRepoTool(
   if (SOURCE_REPOSITORY_TOOL_NAMES.has(name)) {
     const decision = (ctx?.permissionGateway ?? defaultPermissionGateway).authorize({
       campaignId: ctx?.campaignId ?? '',
-      capabilityId: SOURCE_REPOSITORY_CAPABILITY_ID,
+      capabilityId: CORE_CAPABILITIES_PACK_ID,
       permission: 'repository:read',
       resource: {
         kind: 'repository',

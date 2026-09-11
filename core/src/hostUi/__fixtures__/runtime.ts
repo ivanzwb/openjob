@@ -13,7 +13,7 @@ import {
 } from '../../plugins/clientView';
 import type { ClientCapabilityView } from '../../plugins/clientView';
 import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
-import { sourceRepositoryCapabilityPlugin } from '../../plugins/builtin/sourceRepository';
+import { coreCapabilitiesSuite } from '../../plugins/capabilitySuite';
 import { BuiltInPluginRegistry } from '../../plugins/registry';
 import { DeterministicRuntimeResolver } from '../../plugins/resolver';
 import type { CampaignRuntimeDescriptor, ClientPlatform } from '../../plugins/types';
@@ -27,7 +27,8 @@ export const SCHEMA_VERSION = 23;
 function resolver(): DeterministicRuntimeResolver {
   const registry = new BuiltInPluginRegistry();
   registry.register(softwareEngineeringRolePack);
-  registry.registerCapability(sourceRepositoryCapabilityPlugin);
+  // 能力已并入合编包：fixture 里的「本机装了它」与生产安装路径同构
+  registry.registerCapability(coreCapabilitiesSuite);
   return new DeterministicRuntimeResolver(registry);
 }
 
@@ -78,6 +79,7 @@ export function buildCapabilityView(
     installed: [
       ...listBuiltInPlugins(),
       toInstalledPlugin(softwareEngineeringRolePack.manifest),
+      toInstalledPlugin(coreCapabilitiesSuite.manifest),
     ],
   });
 }
