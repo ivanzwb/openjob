@@ -9,7 +9,11 @@ const files = readdirSync(srcDir)
   .sort();
 
 const parts = files.map((file) => {
-  const sql = readFileSync(join(srcDir, file), 'utf8');
+  // 行尾必须归一成 LF：Windows 上 core.autocrlf 让工作区是 CRLF，而 JSON.stringify
+  // 会把 \r\n 变成字符串字面量的内容（转义序列不是换行，autocrlf 之后再也管不到），
+  // 于是 bundle 里烘着 CRLF、git 里的 .sql 是 LF，两边永久对不上。
+  // 症状只在 Linux 上现形：本地全绿，CI 报「有迁移没重新打包」。
+  const sql = readFileSync(join(srcDir, file), 'utf8').replace(/\r\n/g, '\n');
   return JSON.stringify(sql);
 });
 

@@ -135,10 +135,17 @@ describe('手机端迁移清单', () => {
   it('bundle.ts 与 .sql 文件逐字对应，不会漏跑没重新打包的迁移', () => {
     // runMigrations 按 MIGRATIONS 的下标记录进度，所以少打包一条不是「晚一点跑」，
     // 而是那条永远不跑，且后面每一条的下标都错位
-    const bundle = readFileSync(join(MOBILE_MIGRATIONS_DIR, 'bundle.ts'), 'utf8');
+    //
+    // 两边都先把行尾归一成 LF，否则这条用例的结论取决于跑在哪个系统上：Windows 的
+    // core.autocrlf 让工作区的 .sql 是 CRLF，而 bundle.ts 里存的是 LF 转义，
+    // 逐字比就会全军覆没。bundle-migrations.mjs 生成时做同样的归一。
+    const lf = (text: string): string => text.replace(/\r\n/g, '\n');
+    const bundle = lf(readFileSync(join(MOBILE_MIGRATIONS_DIR, 'bundle.ts'), 'utf8'));
     const missing = mobileSqlFiles().filter(
       (file) =>
-        !bundle.includes(JSON.stringify(readFileSync(join(MOBILE_MIGRATIONS_DIR, file), 'utf8'))),
+        !bundle.includes(
+          JSON.stringify(lf(readFileSync(join(MOBILE_MIGRATIONS_DIR, file), 'utf8'))),
+        ),
     );
 
     expect(missing, '有迁移没重新打包：跑一次 npm run db:bundle').toEqual([]);

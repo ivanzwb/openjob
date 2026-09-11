@@ -2,6 +2,7 @@
   "name": "mobile",
   "version": "1.0.0-rc.2",
   "main": "index.ts",
+  "//": "devDependencies 里的 @types/better-sqlite3 只为类型检查：src/sync 的往返用例引桌面端的 legacyDb，那边拿 better-sqlite3 的 Database 做类型标注（运行时其实走 node:sqlite 垫片，手机上永远不装这个原生模块）。手机端自己备一份类型，typecheck 才能脱离工作区根的 node_modules 独立跑通——CI 里这个 job 只在 mobile/ 下 npm ci。",
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
     "@noble/hashes": "^2.3.0",
@@ -33,6 +34,7 @@
     "whisper.rn": "^0.7.4"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
     "@types/react": "~19.2.2",
     "eslint": "^9.39.5",
     "eslint-config-expo": "~57.0.1",
