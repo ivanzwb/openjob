@@ -1,0 +1,17 @@
+{
+  "name": "@openjob/plugin-sales-customer-success",
+  "version": "1.1.0",
+  "description": "Sales & Customer Success role pack — interview format, rubric, prompt fragments, and competency mapping.",
+  "private": true,
+  "type": "module",
+  "main": "index.ts",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "dependencies": {
+    "@openjob/core": "workspace:*"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ../../plugins/tsconfig.json"
+  }
+}

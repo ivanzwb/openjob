@@ -8,3 +8,4 @@ packages:
   - core
   - desktop
   - plugins
+  - plugins/*

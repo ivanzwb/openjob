@@ -1,10 +1,10 @@
 {
   "name": "@openjob/plugins",
   "version": "0.0.0",
-  "description": "随 release 单独分发的官方岗位包（纯数据，不进基础包）",
+  "description": "官方岗位包聚合目录：每个岗位是独立的 workspace 子项目（plugins/*），随 release 单独分发（纯数据，不进基础包）",
   "private": true,
   "type": "module",
-  "//": "npm 版本号恒为 0.0.0 且无意义：真正的发布版本写在每个岗位包自己的 manifest 里（software-engineering@1.0.0 等），由 scripts/pack-plugins.mjs 打成签名包。",
+  "//": "本包是聚合容器，npm 版本号恒为 0.0.0 且无意义。真正的发布版本写在各岗位子项目自己的 manifest 里（plugins/*/package.json，与 index.ts 里的 *_ROLE_PACK_VERSION 保持一致），由 scripts/pack-plugins.mjs 各自打成签名包。",
   "dependencies": {
     "@openjob/core": "workspace:*"
   },
