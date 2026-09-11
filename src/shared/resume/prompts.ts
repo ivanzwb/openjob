@@ -78,7 +78,7 @@ export const RESUME_STRUCTURE_SYSTEM = `你是简历排版助手，把一份从 
 
 ## 模块 key 只能用这几个（没有内容的模块不要输出）
 basic（基本信息）/ intention（求职意向）/ summary（个人优势）/ experience（工作经历）/
-project（项目经历）/ education（教育经历）/ skills（专业技能）/ certificate（资格证书）/ other（其他）
+project（项目经历）/ education（教育经历）/ skills（专业技能）/ certificate（荣誉与证书）/ other（其他）
 
 ## 每个模块的 contentMd 写法
 - basic、intention：每行一项「标签：值」，如「姓名：张三」「电话：13800138000」「期望城市：上海」

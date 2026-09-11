@@ -35,7 +35,7 @@ export const RESUME_SECTION_CATALOG: Array<{
   { key: 'project', title: '项目经历', hint: '按项目分条填写，写清角色、技术栈与成果' },
   { key: 'education', title: '教育经历', hint: '学校、专业与学历、起止时间' },
   { key: 'skills', title: '专业技能', hint: '按类别分条，如「前端：React、TypeScript」' },
-  { key: 'certificate', title: '资格证书', hint: '证书、奖项等，一条一项' },
+  { key: 'certificate', title: '荣誉与证书', hint: '证书、奖项等，一条一项' },
   { key: 'other', title: '其他', hint: '整段补充说明' },
 ];
 
@@ -55,6 +55,7 @@ const TITLE_KEY_MAP: Record<string, ResumeSectionKey> = {
   技能: 'skills',
   资格证书: 'certificate',
   证书: 'certificate',
+  '荣誉与证书': 'certificate',
 };
 
 export function inferSectionKey(title: string): ResumeSectionKey {

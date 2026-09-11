@@ -39,7 +39,7 @@ const HEADING_ALIASES: Array<{ pattern: RegExp; key: ResumeSectionKey }> = [
   },
   {
     pattern:
-      /^(资格证书|技能证书|荣誉证书|证书奖项|荣誉奖项|奖励荣誉|获奖情况|荣誉|证书|所获荣誉|certificat(e|ions?))$/i,
+      /^(资格证书|荣誉与证书|技能证书|荣誉证书|证书奖项|荣誉奖项|奖励荣誉|获奖情况|荣誉|证书|所获荣誉|certificat(e|ions?))$/i,
     key: 'certificate',
   },
 ];
