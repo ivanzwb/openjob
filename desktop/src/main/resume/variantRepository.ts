@@ -125,9 +125,12 @@ export function updateResumeVariant(input: UpdateResumeVariantInput): ResumeVari
   if (!existing) throw new Error('优化简历不存在');
 
   const now = Date.now();
+  // 名字可以单独改：空串按「不改」处理（清空输入框不该把名字弄丢），
+  // 改名也不该点亮「用户改过正文」的标记
+  const nextLabel = input.label?.trim();
   db.update(schema.resumeVariant)
     .set({
-      label: input.label?.trim() ?? existing.label,
+      label: nextLabel ? nextLabel : existing.label,
       contentMd: input.contentMd?.trim() ?? existing.contentMd,
       changelogMd: input.changelogMd ?? existing.changelogMd,
       previewStyle: input.previewStyle !== undefined ? input.previewStyle : existing.previewStyle,

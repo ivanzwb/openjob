@@ -74,7 +74,7 @@ export function ResumeEditor({
       try {
         await updateResumeEntry(getRawDb(), entry.kind, entry.id, {
           contentMd: next.contentMd,
-          ...(entry.kind === 'resume' ? { label: next.label } : {}),
+          label: next.label,
         });
         savedRef.current = next;
         notifyDataChanged();
@@ -117,7 +117,7 @@ export function ResumeEditor({
       pendingRef.current = null;
       await updateResumeEntry(getRawDb(), entry.kind, entry.id, {
         contentMd: nextMd,
-        ...(entry.kind === 'resume' ? { label: nextLabel } : {}),
+        label: nextLabel,
       });
       savedRef.current = { contentMd: nextMd, label: nextLabel };
       notifyDataChanged();
@@ -244,30 +244,24 @@ export function ResumeEditor({
           <Pressable onPress={onBack} style={{ paddingVertical: 4, paddingRight: 6 }}>
             <Text style={{ color: theme.accent, fontSize: 13 }}>‹ 返回</Text>
           </Pressable>
-          {entry.kind === 'resume' ? (
-            <TextInput
-              value={label}
-              onChangeText={setLabel}
-              placeholder="简历名称"
-              placeholderTextColor={theme.muted}
-              style={{
-                flex: 1,
-                color: theme.text,
-                fontSize: 14,
-                fontWeight: '600',
-                borderWidth: 1,
-                borderColor: theme.border,
-                borderRadius: 8,
-                paddingHorizontal: 10,
-                paddingVertical: 6,
-                backgroundColor: theme.surface,
-              }}
-            />
-          ) : (
-            <Text style={{ flex: 1, color: theme.text, fontSize: 14, fontWeight: '600' }} numberOfLines={1}>
-              {entry.label}
-            </Text>
-          )}
+          <TextInput
+            value={label}
+            onChangeText={setLabel}
+            placeholder={entry.kind === 'variant' ? '优化版名称' : '简历名称'}
+            placeholderTextColor={theme.muted}
+            style={{
+              flex: 1,
+              color: theme.text,
+              fontSize: 14,
+              fontWeight: '600',
+              borderWidth: 1,
+              borderColor: theme.border,
+              borderRadius: 8,
+              paddingHorizontal: 10,
+              paddingVertical: 6,
+              backgroundColor: theme.surface,
+            }}
+          />
         </View>
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>

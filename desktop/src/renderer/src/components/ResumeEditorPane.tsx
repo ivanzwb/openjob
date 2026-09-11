@@ -39,7 +39,6 @@ export function ResumeEditorPane({
   initialPreviewStyle,
   initialLabel,
   initialPhoto,
-  heading,
   subtitle,
   variantMeta,
   onSave,
@@ -52,9 +51,8 @@ export function ResumeEditorPane({
   initialPreviewStyle: string | null;
   initialLabel: string;
   initialPhoto: string | null;
-  /** 优化版用固定标题，母版用可编辑名称 */
-  heading?: string;
   subtitle: string;
+  /** 优化版预览的抬头与副标题（公司 · 岗位）；抬头跟随可编辑名称 */
   variantMeta?: { headline: string; subtitle: string };
   onSave: (payload: ResumeEditorSavePayload) => Promise<void>;
   onMessage: (message: string) => void;
@@ -79,8 +77,10 @@ export function ResumeEditorPane({
   const { running: structuring, error: structureError } = useTask(structureKey);
   const toast = useToast();
 
+  // 取消名称后按默认名兜底：优化版的预览抬头跟随可编辑名称，副标题仍是公司 · 岗位
   const previewMeta: { headline: string; subtitle?: string; photo: string | null } = {
-    ...(variantMeta ?? { headline: label }),
+    headline: label.trim() || variantMeta?.headline || '简历',
+    subtitle: variantMeta?.subtitle,
     photo,
   };
 
@@ -202,7 +202,7 @@ export function ResumeEditorPane({
     });
 
   const exportPdf = (): void => {
-    const stem = variantMeta ? variantMeta.subtitle : label.trim() || '母版';
+    const stem = label.trim() || variantMeta?.subtitle || '母版';
     const meta = previewMeta;
     void runTask(exportKey, async () => {
       const res = await invoke('resume:exportPdf', {
@@ -223,17 +223,13 @@ export function ResumeEditorPane({
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-start justify-between gap-3 border-b border-[var(--color-border)] px-4 py-3">
         <div className="min-w-0 flex-1">
-          {kind === 'variant' ? (
-            <h3 className="text-base font-semibold">{heading}</h3>
-          ) : (
-            <input
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-              placeholder="简历名称"
-              title="简历名称"
-              className="-ml-2 w-full max-w-[420px] rounded border border-transparent bg-transparent px-2 py-1 text-base font-semibold hover:border-[var(--color-border)] focus:border-[var(--color-border)] focus:bg-[var(--color-bg)] focus:outline-none"
-            />
-          )}
+          <input
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            placeholder={kind === 'variant' ? '优化版名称' : '简历名称'}
+            title="简历名称（可直接修改）"
+            className="-ml-2 w-full max-w-[420px] rounded border border-transparent bg-transparent px-2 py-1 text-base font-semibold hover:border-[var(--color-border)] focus:border-[var(--color-border)] focus:bg-[var(--color-bg)] focus:outline-none"
+          />
           <p className="mt-1 text-xs text-[var(--color-muted)]">
             {subtitle}
             {saveState !== 'idle' && (
