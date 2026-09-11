@@ -82,17 +82,19 @@ export function listResumeEntries(db: SQLiteDatabase): ResumeEntry[] {
 
   for (const row of variants) {
     const target = [row.company, row.role_title].filter(Boolean).join(' · ');
+    // 名字可改：优先存储的名称，为空才退回「公司 · 岗位」
+    const label = row.label?.trim() || target || '优化版';
     entries.push({
       kind: 'variant',
       id: row.id,
-      label: target || row.label,
+      label,
       subtitle: row.source_label ? `源自 ${row.source_label}` : '母版已删除',
       contentMd: row.content_md,
       previewStyle: row.preview_style,
       photo: row.photo,
       updatedAt: row.updated_at,
-      headline: row.label,
-      fileStem: target || row.label || '优化版',
+      headline: label,
+      fileStem: label,
     });
   }
 
@@ -108,7 +110,7 @@ export function getResumeEntry(
 }
 
 export interface ResumeEntryPatch {
-  /** 只有母版可以改名 */
+  /** 母版与优化版都可以改名；空串按「不改」处理 */
   label?: string;
   contentMd?: string;
   previewStyle?: string;
@@ -148,6 +150,12 @@ export async function updateResumeEntry(
 
     const sets: string[] = [];
     const args: (string | number)[] = [];
+    // 改名不点亮「用户改过正文」，也允许单独改；空串按「不改」处理
+    const nextLabel = patch.label?.trim();
+    if (nextLabel) {
+      sets.push('label = ?');
+      args.push(nextLabel);
+    }
     if (patch.contentMd !== undefined) {
       sets.push('content_md = ?', 'is_user_edited = 1');
       args.push(patch.contentMd);

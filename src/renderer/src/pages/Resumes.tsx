@@ -81,7 +81,8 @@ export function Resumes(): React.JSX.Element {
       items.push({
         kind: 'variant',
         id: v.id,
-        label: `${v.company} · ${v.roleTitle}`,
+        // 名字可改：优先显示存储的名称，为空才退回「公司 · 岗位」
+        label: v.label.trim() || `${v.company} · ${v.roleTitle}`,
         subtitle: v.sourceResumeLabel ? `来自 ${v.sourceResumeLabel}` : '母版已删除',
         updatedAt: v.updatedAt,
         variant: v,
@@ -343,6 +344,7 @@ export function Resumes(): React.JSX.Element {
       if (editorKind === 'variant') {
         await invoke('resumeVariant:update', {
           id: editorId,
+          label: payload.label,
           contentMd: payload.contentMd,
           previewStyle: payload.previewStyle,
           photo: payload.photo,
@@ -754,7 +756,6 @@ export function Resumes(): React.JSX.Element {
                 initialPreviewStyle={activeVariant.previewStyle}
                 initialLabel={activeVariant.label}
                 initialPhoto={activeVariant.photo}
-                heading={`${activeVariant.company} · ${activeVariant.roleTitle}`}
                 subtitle={
                   activeVariant.sourceResumeLabel
                     ? `来自 ${activeVariant.sourceResumeLabel}`
