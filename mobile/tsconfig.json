@@ -8,6 +8,13 @@
       "@plugins/*": ["../plugins/*"],
       "drizzle-orm": ["./node_modules/drizzle-orm"],
       "drizzle-orm/*": ["./node_modules/drizzle-orm/*"],
+      // 这几条把桌面端文件里的裸引用钉到手机端自己的副本上。必须这么做：
+      // TypeScript 按「引用该模块的文件」所在目录往上找 node_modules，而这些
+      // import 写在 desktop/ 里（src/sync 的往返用例引了桌面端实现），那条路径上
+      // 只有 desktop/node_modules 和工作区根，永远走不到 mobile/node_modules。
+      // CI 的 mobile job 只在 mobile/ 下 npm ci，缺了映射就报「找不到模块」。
+      // better-sqlite3 只需要类型：运行时那边走 node:sqlite 垫片。
+      "better-sqlite3": ["./node_modules/@types/better-sqlite3/index.d.ts"],
       "whisper.rn": ["./node_modules/whisper.rn/lib/typescript/index.d.ts"],
       "whisper.rn/index": ["./node_modules/whisper.rn/lib/typescript/index.d.ts"]
     }
