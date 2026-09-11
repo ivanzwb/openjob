@@ -686,12 +686,17 @@ function useDragReorder<T>(
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
   const heightsRef = useRef<number[]>([]);
-  const dragY = useRef(new Animated.Value(0)).current;
+  // 稳定实例（懒初始化一次，之后只 setValue 不 setState），避免渲染期间访问 ref
+  const [dragY] = useState(() => new Animated.Value(0));
   const stateRef = useRef({ dragIndex: null as number | null, overIndex: null as number | null });
   const itemsRef = useRef(items);
-  itemsRef.current = items;
   const moveRef = useRef(move);
-  moveRef.current = move;
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
+  useEffect(() => {
+    moveRef.current = move;
+  }, [move]);
 
   /** 行 i 顶边的 Y（按已测量高度累加，未测量先用兜底值） */
   const posOf = useCallback((i: number): number => {
