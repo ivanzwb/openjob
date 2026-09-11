@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
-import type { Repo } from '@shared/entities';
+import type { Repo } from '@core/entities';
 import { getRawDb } from '../db';
 import { countRepoFiles } from '../data/repoFiles';
 import { appendRepoQaMessage, deleteRepoQaHistory } from '../data/mutations';

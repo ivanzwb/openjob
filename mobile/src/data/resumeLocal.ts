@@ -1,7 +1,7 @@
 import * as Crypto from 'expo-crypto';
 import type { SQLiteDatabase } from 'expo-sqlite';
-import type { Resume } from '@shared/entities';
-import { structureResumeText } from '@shared/resume/importStructure';
+import type { Resume } from '@core/entities';
+import { structureResumeText } from '@core/resume/importStructure';
 import { structureResume } from './resumeAi';
 import { getDeviceIdentity } from '../sync/identity';
 import { writingAs } from '../sync/triggers';

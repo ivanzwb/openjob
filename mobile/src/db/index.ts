@@ -1,7 +1,7 @@
 import * as Crypto from 'expo-crypto';
 import { openDatabaseSync, type SQLiteDatabase } from 'expo-sqlite';
-import type { FieldOverwrite, PairingPayload } from '@shared/sync';
-import { planMerge } from '@shared/syncMerge';
+import type { FieldOverwrite, PairingPayload } from '@core/sync';
+import { planMerge } from '@core/syncMerge';
 import { pendingMigrationIndices, runMigrations, userTableCount } from './migrate';
 import { backfillRowVersions, installSyncTriggers } from '../sync/triggers';
 import { getDeviceIdentity } from '../sync/identity';
@@ -25,6 +25,7 @@ import {
 } from '../sync/repoFileStorage';
 import { exchangeWithDesktop, pairWithDesktop } from '../sync/client';
 import { setPeerCreds } from '../remote/rpc';
+import { fetchMissingRolePacks } from '../data/rolePackLocal';
 import { hydrateAppSettingsFromDb } from '../config/settings';
 import { ensureCriticalSchema } from './schemaEnsure';
 
@@ -356,11 +357,29 @@ let inFlight: Promise<SyncOutcome> | null = null;
  * 界面上很多地方是"写完一条就顺手同步一下"，这种调用会等到下一次轮询才真正推出去，
  * 最多晚一分钟。只是晚，不会丢——改动躺在本机 oplog 里，哪一轮都会带上。
  */
+/**
+ * 补齐本机战役固定的岗位包数据。
+ *
+ * 放在同步之后而不是同步之中：刚到的 descriptor 可能固定了一个本机还没有的岗位包，而
+ * 岗位包不是同步表里的行，它得单独向桌面要（见 data/rolePackLocal.ts）。失败一律吞掉——
+ * 取不到只是「这个岗位暂时在手机上练不了」，而这一轮搬过来的备考数据与它无关，把整轮
+ * 同步判成失败反而会让下一轮去做没必要的全表对账。
+ */
+async function catchUpRolePacks(sqlite: SQLiteDatabase): Promise<void> {
+  try {
+    await fetchMissingRolePacks(sqlite);
+  } catch {
+    // 状态留在 role_pack_cache 里，界面按「待取回」显示，下一轮同步再试
+  }
+}
+
 export function syncNow(): Promise<SyncOutcome> {
   if (inFlight) return inFlight;
   const run = (async () => {
     try {
-      return await runSyncOnce();
+      const outcome = await runSyncOnce();
+      await catchUpRolePacks(getRawDb());
+      return outcome;
     } finally {
       inFlight = null;
     }

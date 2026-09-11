@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import type { TaskView } from '@shared/ipc';
+import type { TaskView } from '@core/ipc';
 import { StudyPlanCalendar, todayLocal } from './StudyPlanCalendar';
 import { getRawDb } from '../db';
 import { getTodayPlan, listPlanDates } from '../data/queries';
 import { completeTask, skipTask } from '../data/mutations';
-import { deferToday } from '../data/planLocal';
+import { deferToday, pluginTaskSupport } from '../data/planLocal';
 import { runTask, useTaskResult, useTaskState } from '../context/RemoteTaskContext';
 import { useTheme, type Palette } from '../theme';
 
@@ -74,6 +74,23 @@ export function StudyPlanCalendarPopover({
   const refresh = async (): Promise<void> => {
     bumpTick((t) => t + 1);
     await onTasksChanged();
+  };
+
+  /**
+   * 本机跑不动的任务给出原因，而不是让它静静地点不开。
+   *
+   * 排程有意把这类任务留在计划里（见 planLocal.pluginTaskSupport），因为它们是这场备考
+   * 该做的事，只是得回桌面端做。但界面此前既不显示原因也不响应点击，用户只会觉得应用卡了。
+   * 按 kind 缓存：同一天里同类任务往往有好几条，每条都去查一遍能力视图没必要。
+   */
+  const supportCache = new Map<TaskView['kind'], string | null>();
+  const blockedReasonOf = (kind: TaskView['kind']): string | null => {
+    const cached = supportCache.get(kind);
+    if (cached !== undefined) return cached;
+    const support = pluginTaskSupport(getRawDb(), campaignId, kind);
+    const reason = support && !support.executable ? support.blockedReason : null;
+    supportCache.set(kind, reason);
+    return reason;
   };
 
   // 生成与顺延都在全局任务里跑：关掉弹窗、切页再回来都能接上
@@ -221,6 +238,7 @@ export function StudyPlanCalendarPopover({
                         <DayTaskRow
                           key={t.id}
                           task={t}
+                          blockedReason={blockedReasonOf(t.kind)}
                           onOpen={() => {
                             onOpenTask(t);
                             onClose();
@@ -245,11 +263,14 @@ export function StudyPlanCalendarPopover({
 
 function DayTaskRow({
   task,
+  blockedReason,
   onOpen,
   onComplete,
   onSkip,
 }: {
   task: TaskView;
+  /** 本机跑不动这类任务时的原因，直接显示给用户 */
+  blockedReason: string | null;
   onOpen: () => void;
   onComplete: () => void;
   onSkip: () => void;
@@ -284,6 +305,9 @@ function DayTaskRow({
           {canOpen ? ' →' : ''}
         </Text>
       </Pressable>
+      {blockedReason && !done && !skipped && (
+        <Text style={{ color: theme.muted, fontSize: 10 }}>{blockedReason}</Text>
+      )}
       {!done && !skipped && (
         <View style={{ flexDirection: 'row', gap: 12 }}>
           <Pressable onPress={onComplete} disabled={completing || skipping}>

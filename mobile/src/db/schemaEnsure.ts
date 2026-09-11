@@ -115,6 +115,23 @@ export function ensureCriticalSchema(sqlite: SQLiteDatabase): void {
     `CREATE INDEX IF NOT EXISTS idx_design_case_campaign_type ON design_case (campaign_id, requested_type);`,
   );
 
+  /**
+   * 从桌面端取回的岗位包数据。
+   *
+   * 设备本地，不进同步表：同步搬的是备考数据，而「本机有哪几个岗位包」和桌面端的
+   * userData/plugins 一样是设备属性。手机端也不安装包，它只是把桌面端已经验过签名的
+   * 那份数据缓存下来，断网之后照样打得开（见 data/rolePackLocal.ts）。
+   */
+  sqlite.execSync(`
+    CREATE TABLE IF NOT EXISTS role_pack_cache (
+      id text NOT NULL,
+      version text NOT NULL,
+      pack_json text NOT NULL,
+      fetched_at integer NOT NULL,
+      PRIMARY KEY (id, version)
+    );
+  `);
+
   ensureLastWriteWinsSchema(sqlite);
 }
 

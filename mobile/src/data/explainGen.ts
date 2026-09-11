@@ -1,9 +1,9 @@
 import * as Crypto from 'expo-crypto';
 import type { SQLiteDatabase } from 'expo-sqlite';
-import type { Explanation } from '@shared/entities';
-import type { ExplanationTier } from '@shared/enums';
-import { normalizeDisplayText } from '@shared/lib/markdownDisplay';
-import { quizAnchorBlock } from '@shared/explain/prompt';
+import type { Explanation } from '@core/entities';
+import type { ExplanationTier } from '@core/enums';
+import { normalizeDisplayText } from '@core/lib/markdownDisplay';
+import { quizAnchorBlock } from '@core/explain/prompt';
 import { completeJson } from '../llm/json';
 import { resolveLlmRole } from '../llm/resolve';
 import { buildResumeContext, getCampaign, getKnowledgeNode } from './campaignLocal';

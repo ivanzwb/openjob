@@ -1,14 +1,14 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import type { Citation } from '@shared/entities';
+import type { Citation } from '@core/entities';
 import {
   globFromPaths,
   grepFileContents,
   listDirFromPaths,
   normalizeRepoPath,
   readFileRangeFromContent,
-} from '@shared/repo/virtualFs';
-import { formatPathSuggestions, suggestRepoPaths } from '@shared/repo/pathSuggest';
-import { findSymbolsInFiles, formatSymbolMatches } from '@shared/repo/symbolScan';
+} from '@core/repo/virtualFs';
+import { formatPathSuggestions, suggestRepoPaths } from '@core/repo/pathSuggest';
+import { findSymbolsInFiles, formatSymbolMatches } from '@core/repo/symbolScan';
 import {
   getRepoFileContent,
   listRepoFilePaths,

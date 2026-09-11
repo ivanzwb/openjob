@@ -11,7 +11,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { EXPAND_DEPTH_LIMIT_MESSAGE, canExpandNode } from '@shared/diagnosis/tree';
+import { EXPAND_DEPTH_LIMIT_MESSAGE, canExpandNode } from '@core/diagnosis/tree';
 
 const completeJson = vi.hoisted(() => vi.fn());
 vi.mock('../llm/json', () => ({ completeJson }));

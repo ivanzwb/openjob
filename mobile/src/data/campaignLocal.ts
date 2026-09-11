@@ -1,8 +1,8 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import type { Campaign, KnowledgeNode, Resume } from '@shared/entities';
-import type { CoverageType, ExamForm, MasterySource, NodeKind, NodeStatus } from '@shared/enums';
-import { buildExplainResumeContext } from '@shared/prompts/candidateContext';
-import type { ResumeRelevanceQuery } from '@shared/resume/relevance';
+import type { Campaign, KnowledgeNode, Resume } from '@core/entities';
+import type { CoverageType, ExamForm, MasterySource, NodeKind, NodeStatus } from '@core/enums';
+import { buildExplainResumeContext } from '@core/prompts/candidateContext';
+import type { ResumeRelevanceQuery } from '@core/resume/relevance';
 import { loadCampaignResumeForPrompt } from './resumeProfileLocal';
 
 type NodeRow = {
@@ -70,6 +70,7 @@ export function getCampaign(db: SQLiteDatabase, campaignId: string): Campaign {
     jd_raw: string;
     jd_parsed: string | null;
     job_target_id: string | null;
+    role_profile_id: string | null;
     resume_id: string | null;
     interview_date: string | null;
     daily_minutes: number | null;
@@ -85,6 +86,7 @@ export function getCampaign(db: SQLiteDatabase, campaignId: string): Campaign {
     jdRaw: row.jd_raw,
     jdParsed: row.jd_parsed ? (JSON.parse(row.jd_parsed) as Campaign['jdParsed']) : null,
     jobTargetId: row.job_target_id,
+    roleProfileId: row.role_profile_id,
     resumeId: row.resume_id,
     interviewDate: row.interview_date,
     dailyMinutes: row.daily_minutes,

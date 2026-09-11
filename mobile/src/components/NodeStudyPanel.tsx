@@ -1,4 +1,4 @@
-import type { QuizAnswerResult, QuizQuestionResult, QuizSubmitResult } from '@shared/ipc';
+import type { QuizAnswerResult, QuizQuestionResult, QuizSubmitResult } from '@core/ipc';
 import { ExplanationStudyPanel } from './ExplanationStudyPanel';
 import { MarkdownPreview } from './MarkdownPreview';
 import { getRawDb } from '../db';

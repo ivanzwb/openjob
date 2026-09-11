@@ -3,4 +3,4 @@ export {
   syncTableSpec,
   isDeviceLocalColumn,
   type SyncTableSpec,
-} from '../../../src/main/sync/tables';
+} from '../../../desktop/src/main/sync/tables';

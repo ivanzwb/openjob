@@ -7,8 +7,8 @@ import type {
   SyncPairRequest,
   SyncPairResponse,
   SyncPingResponse,
-} from '@shared/sync';
-import { SYNC_VERSION_MISMATCH, type SyncErrorBody } from '@shared/version';
+} from '@core/sync';
+import { SYNC_VERSION_MISMATCH, type SyncErrorBody } from '@core/version';
 import { getCurrentVersion } from '../lib/appVersion';
 
 /**

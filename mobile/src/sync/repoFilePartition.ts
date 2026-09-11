@@ -1,4 +1,4 @@
-import type { AutoChange } from '@shared/sync';
+import type { AutoChange } from '@core/sync';
 
 export const REPO_FILE_TABLE = 'repo_file';
 

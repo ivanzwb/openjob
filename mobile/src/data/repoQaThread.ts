@@ -1,4 +1,4 @@
-import type { ChatMessage } from '@shared/llm/messages';
+import type { ChatMessage } from '@core/llm/messages';
 
 export type RepoQaMessage = { role: 'user' | 'assistant'; text: string };
 

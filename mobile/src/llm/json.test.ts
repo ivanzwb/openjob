@@ -2,7 +2,7 @@
  * 手机端 completeJson 的回退链防线。
  *
  * 这份实现和桌面的 src/main/llm/json.ts 是两份平行代码（一份走 OpenAI SDK，
- * 一份直接 fetch），共用的只有 prompt 和 @shared/llm/parseJson。桌面那边有
+ * 一份直接 fetch），共用的只有 prompt 和 @core/llm/parseJson。桌面那边有
  * json.test.ts 守着，手机这份长期没有——而「提交评分」踩到的截断就出在这条路上，
  * 所以两端都得各守各的。
  *

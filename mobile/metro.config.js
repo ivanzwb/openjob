@@ -12,7 +12,7 @@ config.resolver.nodeModulesPaths = [
   path.resolve(workspaceRoot, 'node_modules'),
 ];
 config.resolver.extraNodeModules = {
-  '@shared': path.resolve(workspaceRoot, 'src/shared'),
+  '@core': path.resolve(workspaceRoot, 'core/src'),
   // whisper.rn 依赖 safe-buffer → require('buffer')（Node 内置）。
   // Metro 默认不解析 Node 内置模块，用 npm 的 buffer 包顶替。
   buffer: require.resolve('buffer/'),

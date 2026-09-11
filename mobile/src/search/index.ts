@@ -1,7 +1,7 @@
 import { getMobileConfig, getMobileSecret } from '../config/settings';
-import { pickProvider } from '@shared/search/routing';
-import { bochaSearch } from '@shared/search/bocha';
-import type { SearchRequest, SearchResponse } from '@shared/ipc';
+import { pickProvider } from '@core/search/routing';
+import { bochaSearch } from '@core/search/bocha';
+import type { SearchRequest, SearchResponse } from '@core/ipc';
 
 export async function searchWeb(
   query: string,

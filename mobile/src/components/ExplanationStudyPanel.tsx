@@ -7,13 +7,13 @@ import {
   View,
 } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
-import type { Annotation, Explanation } from '@shared/entities';
-import type { ExplanationTier } from '@shared/enums';
+import type { Annotation, Explanation } from '@core/entities';
+import type { ExplanationTier } from '@core/enums';
 import {
   annotationMarkSummary,
   findMarkOnSelection,
   sortMarksByContentPosition,
-} from '@shared/annotationMarkList';
+} from '@core/annotationMarkList';
 import { getRawDb } from '../db';
 import {
   createAnnotation,

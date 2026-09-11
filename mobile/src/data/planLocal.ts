@@ -1,9 +1,18 @@
 import * as Crypto from 'expo-crypto';
 import type { SQLiteDatabase } from 'expo-sqlite';
-import type { DateOnly } from '@shared/entities';
-import type { PlanGenerateResult } from '@shared/ipc';
-import type { TaskKind } from '@shared/enums';
-import { sortNodesByStudyOrder } from '@shared/campaign/studyOrder';
+import type { DateOnly } from '@core/entities';
+import type { PlanGenerateResult } from '@core/ipc';
+import type { TaskKind } from '@core/enums';
+import { sortNodesByStudyOrder } from '@core/campaign/studyOrder';
+import {
+  LEGACY_CAMPAIGN_SCOPE_KIND,
+  collectPlannerContributions,
+  legacyRuntimeDescriptor,
+  pluginTaskClientView,
+  type PlannedTaskClientView,
+  type PlannerRepo,
+} from '@core/planner/contributions';
+import type { CampaignRuntimeDescriptor, ResolvedPluginRef } from '@core/plugins/types';
 import { getCampaign } from './campaignLocal';
 import { updateCampaignFields } from './nodesLocal';
 import { getDeviceIdentity } from '../sync/identity';
@@ -43,6 +52,73 @@ function dailyBudget(minutes: number): number {
 
 function conservativeEst(minutes: number): number {
   return Math.max(10, Math.ceil(minutes * 0.75));
+}
+
+/** 是否属于插件化迁移那一刻就已存在的那批 Campaign（凭据由 0025 打上） */
+function isLegacyScopedCampaign(db: SQLiteDatabase, campaignId: string): boolean {
+  const row = db.getFirstSync<{ id: string }>(
+    `SELECT id FROM migration_checkpoint WHERE campaign_id = ? AND kind = ?`,
+    campaignId,
+    LEGACY_CAMPAIGN_SCOPE_KIND,
+  );
+  return row !== null && row !== undefined;
+}
+
+/**
+ * 取当前激活的 revision，判定与桌面 `src/main/plan/schedule.ts` 同一套。
+ *
+ * 没有 descriptor 的两种情况必须分开：插件化之前就存在的旧 Campaign（带
+ * `LEGACY_CAMPAIGN_SCOPE_KIND` 凭据）在桌面回填并同步过来之前继续走工程岗位包
+ * 默认值，两端排程结果不跳变；新建的、还没选岗位的战役返回 null，不排插件任务。
+ */
+function loadRuntimeDescriptor(
+  db: SQLiteDatabase,
+  campaignId: string,
+): CampaignRuntimeDescriptor | null {
+  const row = db.getFirstSync<{
+    core_version: string;
+    role_pack: string;
+    industry_pack: string | null;
+    capabilities: string;
+    competency_baseline_version: string;
+    config_snapshot_hash: string;
+    resolved_at: number;
+  }>(
+    `SELECT core_version, role_pack, industry_pack, capabilities, competency_baseline_version,
+            config_snapshot_hash, resolved_at
+     FROM campaign_runtime_descriptor WHERE campaign_id = ? ORDER BY revision DESC LIMIT 1`,
+    campaignId,
+  );
+  if (!row) {
+    return isLegacyScopedCampaign(db, campaignId) ? legacyRuntimeDescriptor(campaignId) : null;
+  }
+
+  return {
+    campaignId,
+    coreVersion: row.core_version,
+    rolePack: JSON.parse(row.role_pack) as ResolvedPluginRef,
+    industryPack: row.industry_pack
+      ? (JSON.parse(row.industry_pack) as ResolvedPluginRef)
+      : undefined,
+    capabilities: JSON.parse(row.capabilities) as CampaignRuntimeDescriptor['capabilities'],
+    competencyBaselineVersion: row.competency_baseline_version,
+    configSnapshotHash: row.config_snapshot_hash,
+    resolvedAt: row.resolved_at,
+  };
+}
+
+/**
+ * 已落库的插件任务在手机端能否执行。
+ *
+ * 手机排的插件任务与桌面逐条相同，本机跑不动时给出「需桌面完成」，
+ * 而不是把任务从计划里抹掉。
+ */
+export function pluginTaskSupport(
+  db: SQLiteDatabase,
+  campaignId: string,
+  kind: TaskKind,
+): PlannedTaskClientView | null {
+  return pluginTaskClientView(loadRuntimeDescriptor(db, campaignId), kind, 'mobile');
 }
 
 export async function generatePlan(
@@ -116,9 +192,8 @@ export async function generatePlan(
   let overflowFallbacks = 0;
   const learnedQueue: string[] = [];
 
-  const defaultRepoId =
-    db.getFirstSync<{ id: string }>(`SELECT id FROM repo WHERE status = 'ready' ORDER BY url LIMIT 1`)?.id ??
-    null;
+  const runtime = loadRuntimeDescriptor(db, campaignId);
+  const repos = db.getAllSync<PlannerRepo>(`SELECT id, url, status FROM repo`);
 
   for (let di = 0; di < dates.length; di++) {
     const date = dates[di]!;
@@ -169,12 +244,23 @@ export async function generatePlan(
       }
     }
 
-    if (defaultRepoId && di % 2 === 1) {
-      const est = 25;
-      if (used + est <= budget) {
-        dayTasks.push({ kind: 'readCode', nodeId: null, repoId: defaultRepoId, estMinutes: est, orderIdx: dayTasks.length });
-        used += est;
-      }
+    // 插件任务（源码阅读等）由共享 PlannerContribution 决定，两端不各自判断
+    for (const planned of collectPlannerContributions(runtime, {
+      platform: 'mobile',
+      dayIndex: di,
+      dayCount: dates.length,
+      budgetMinutes: budget,
+      usedMinutes: used,
+      repos,
+    })) {
+      dayTasks.push({
+        kind: planned.kind,
+        nodeId: planned.nodeId,
+        repoId: planned.repoId,
+        estMinutes: planned.estMinutes,
+        orderIdx: dayTasks.length,
+      });
+      used += planned.estMinutes;
     }
 
     writingAs(db, identity.deviceId, () => {

@@ -1,13 +1,17 @@
 node_modules/
-out/
-dist/
+# 构建产物落在各子项目里（desktop/out、desktop/dist），用通配一次性挡住
+**/out/
+**/dist/
+# 打包产物：dist-plugins 由 scripts/pack-plugins.mjs 生成随 release 分发；
+# dist-rc*/ 等手工产物含 360MB 级 app.asar，通配一次性挡住，避免 git add -A 误入库
+dist-*/
 export/
-build/.toolchain/
+desktop/build/.toolchain/
 .vite/
 mobile/node_modules/
 
-# tree-sitter 语法文件由 scripts/sync-grammars.mjs 从 node_modules 复制而来，约 17MB，不入库
-resources/tree-sitter/*.wasm
+# tree-sitter 语法文件由 desktop/scripts/sync-grammars.mjs 从 node_modules 复制而来，约 17MB，不入库
+desktop/resources/tree-sitter/*.wasm
 
 # 本地配置与密钥绝不入库（运行时实际落在 userData，此处防止误放）
 config.json

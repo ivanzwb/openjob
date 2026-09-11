@@ -1,7 +1,7 @@
 import { Directory, File, Paths } from 'expo-file-system';
 import type { SQLiteDatabase } from 'expo-sqlite';
-import type { BackupInfo, BackupRetention } from '@shared/sync';
-import { selectStaleBackups, shouldCreatePresyncBackup } from '@shared/sync';
+import type { BackupInfo, BackupRetention } from '@core/sync';
+import { selectStaleBackups, shouldCreatePresyncBackup } from '@core/sync';
 
 /**
  * 手机端的整库快照。

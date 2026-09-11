@@ -82,7 +82,7 @@ OpenJob 把模型放进一套有状态的流程：JD 和简历决定考点，面
 - 距离面试只剩几天或几周，需要迅速做取舍；
 - 收藏了大量资料，但每天不知道从哪里开始；
 - 简历技术点较多，担心被连续深挖；
-- 正在准备开发、架构、数据或算法等技术岗位；
+- 正在准备开发、架构、数据、算法等技术岗位，或产品、销售与客户成功岗位；
 - 希望通过口述和模拟面试训练输出，而不只是继续阅读；
 - 希望在桌面与手机之间延续同一套备考进度。
 
@@ -96,8 +96,11 @@ OpenJob 把模型放进一套有状态的流程：JD 和简历决定考点，面
 | 目标岗位库、简历定向优化与 PDF 导出 | ✅ | ✅（编辑、分块优化、导出 PDF） |
 | 每日计划与任务推进 | ✅ | ✅ |
 | 知识点讲解、考我、模拟面试 | ✅ | ✅ |
+| 岗位包：软件工程 / 产品经理 / 销售与客户成功 | ✅ | ✅（同步后浏览与学习） |
 | 仓库克隆与 tree-sitter 索引 | ✅ | — |
 | 源码 Agent 与 `file:line` 引用 | ✅ | ✅（同步源码快照后） |
+| 客户对话角色扮演（销售 / 客户成功） | ✅ | ✅（查看对话记录） |
+| 表格数据案例分析（CSV） | ✅ | ✅（查看分析结果） |
 | 联网检索（博查 / Tavily） | ✅ | 按配置 |
 | 多端 P2P 同步 | ✅ | ✅ |
 | 浅色 / 深色主题 | ✅ | ✅ |
@@ -131,7 +134,7 @@ export ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-b
 
 ```bash
 pnpm install
-node node_modules/electron/install.js   # 首次若 electron/dist 不存在
+node desktop/node_modules/electron/install.js   # 首次若 electron/dist 不存在
 pnpm dev
 ```
 
@@ -154,7 +157,7 @@ npm start
 |------|------|
 | `pnpm dev` | 桌面开发模式 |
 | `pnpm build` | 桌面生产构建 |
-| `pnpm dist` | 打安装包（`dist/OpenJob-Setup-*.exe` 等） |
+| `pnpm dist` | 打安装包（`desktop/dist/OpenJob-Setup-*.exe` 等） |
 | `pnpm ci` | 类型检查 + lint + smoke + build |
 | `pnpm db:generate` | 生成 Drizzle 迁移 |
 
@@ -175,18 +178,30 @@ npm start
 
 ## 项目结构
 
+按包拆开，边界靠物理隔离而不只靠 lint 规则：
+
 ```
 openJob/
-├── src/
-│   ├── main/          # Electron 主进程（DB、LLM、同步、Agent）
-│   ├── renderer/      # React UI
-│   ├── preload/       # IPC 白名单桥接
-│   └── shared/        # 双端共享类型与协议
-├── mobile/            # Expo 手机端
-├── docs/DESIGN.md     # 产品与架构设计（主文档）
-├── scripts/           # 构建、图标、NSIS 工具链等
-└── electron-builder.yml
+├── core/              # @openjob/core — 双端共享的类型与协议
+│   └── src/           #   零运行时依赖（package.json 的 dependencies 是空的）
+├── desktop/           # @openjob/desktop — Electron 桌面端
+│   ├── src/main/      #   主进程（DB、LLM、同步、Agent）
+│   ├── src/preload/   #   IPC 白名单桥接
+│   ├── src/renderer/  #   React UI
+│   ├── scripts/       #   构建、图标、NSIS 工具链等桌面专用脚本
+│   └── electron-builder.yml
+├── plugins/           # @openjob/plugins — 岗位包，不进基础包
+├── mobile/            # Expo 手机端（独立 npm 装依赖，不在 pnpm workspace 里）
+├── scripts/           # 跨包脚本（打插件包、数据诊断等）
+└── docs/DESIGN.md     # 产品与架构设计（主文档）
 ```
+
+几条约束值得单独记一下，破了会以很难懂的方式炸：
+
+- **core 的 `dependencies` 必须保持为空。** 它同时被 Electron 和 Metro 编译，装了 Node 专属依赖就只在桌面端能跑。pnpm 的严格 node_modules 让这条从「约定」变成「装不上」。
+- **`@plugins` 别名故意没登记在 `desktop/electron.vite.config.ts` 里**，应用代码一旦 import 岗位包，构建当场失败。`plugins/basePackage.test.ts` 另外静态扫一遍源码树兜底。
+- **版本号的唯一来源是 `desktop/package.json`**，工作区根那份不带 `version`。手机端由 `mobile/scripts/sync-version.mjs` 同步，`core/src/version.test.ts` 盯住两端一致。
+- **`@types/*` 要提升到根 node_modules**（见 `.npmrc`）。第三方包自带的 `.d.ts` 引用 `react` 这类裸模块时，是从它在 `.pnpm` 里的位置往上找，只躺在 `desktop/node_modules` 的 `@types/react` 它看不见。
 
 ## 配置与密钥
 
@@ -195,6 +210,10 @@ openJob/
 ## 文档
 
 - [docs/DESIGN.md](docs/DESIGN.md) — 产品定位、数据模型、Agent 流程、同步协议、实施阶段与踩坑记录
+- [docs/USER_MANUAL.md](docs/USER_MANUAL.md) — 使用手册：从建战役到面后复盘的完整流程
+- [docs/GENERAL_INTERVIEW_AGENT_ARCHITECTURE.md](docs/GENERAL_INTERVIEW_AGENT_ARCHITECTURE.md) — 岗位包与能力插件的插件化架构
+- [docs/GENERAL_INTERVIEW_AGENT_IMPLEMENTATION_PLAN.md](docs/GENERAL_INTERVIEW_AGENT_IMPLEMENTATION_PLAN.md) — 实施计划与实施状态
+- [docs/V1_UPGRADE_ROLLBACK.md](docs/V1_UPGRADE_ROLLBACK.md) — v1.0 升级、回滚与发布验收
 - [OpenJob 产品长文](docs/marketing/openjob-longform.md) — 功能逻辑、使用价值与完整产品截图
 
 ## 许可证

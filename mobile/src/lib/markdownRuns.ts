@@ -1,4 +1,4 @@
-import { parseMarkdownLine } from '@shared/lib/markdownSegments';
+import { parseMarkdownLine } from '@core/lib/markdownSegments';
 
 /**
  * 把一段里的行分成「能合进同一个 Text 的连续块」。

@@ -1,0 +1,207 @@
+/**
+ * 全局枚举与联合类型。
+ * 使用 `as const` 对象 + 派生联合类型，而非 TS enum：
+ * 值在运行时可枚举（用于校验、下拉选项），类型在编译期收窄。
+ */
+
+export const LLM_TIERS = ['main', 'cheap'] as const;
+export type LlmTier = (typeof LLM_TIERS)[number];
+
+/** 业务角色只做 → 档位映射，不直接持有模型配置 */
+export const LLM_ROLES = ['outline', 'explain', 'codeAgent', 'quiz', 'resumeOptimize'] as const;
+export type LlmRole = (typeof LLM_ROLES)[number];
+
+export const CAMPAIGN_STATUSES = ['planning', 'active', 'done'] as const;
+export type CampaignStatus = (typeof CAMPAIGN_STATUSES)[number];
+
+/**
+ * 知识点的覆盖类型，由 JD × 简历交叉分析得出，决定准备策略与优先级。
+ * - deepDive: 简历写了 + JD 要求 → 必被深挖，要扛得住追问
+ * - gap:      JD 要求 + 简历没有 → 短板，答出框架不露怯
+ * - landmine: 简历写了 + JD 没要求 → 雷区，容易被顺嘴一问问崩
+ * - extra:    都没有但相关 → 有余力再看
+ */
+export const COVERAGE_TYPES = ['deepDive', 'gap', 'landmine', 'extra'] as const;
+export type CoverageType = (typeof COVERAGE_TYPES)[number];
+
+export const NODE_KINDS = ['domain', 'topic', 'point'] as const;
+export type NodeKind = (typeof NODE_KINDS)[number];
+
+export const NODE_STATUSES = ['todo', 'learning', 'shaky', 'mastered'] as const;
+export type NodeStatus = (typeof NODE_STATUSES)[number];
+
+/** 只保留三种语义明确的横向关系，不做任意网状连接 */
+export const EDGE_RELATIONS = ['prerequisite', 'related', 'contrast'] as const;
+export type EdgeRelation = (typeof EDGE_RELATIONS)[number];
+
+/**
+ * 讲解的三档深度。`spoken` 是主战场，必须是口语稿而非书面语。
+ */
+export const EXPLANATION_TIERS = ['oneliner', 'spoken', 'deep'] as const;
+export type ExplanationTier = (typeof EXPLANATION_TIERS)[number];
+
+export const EXAM_FORMS = ['concept', 'coding', 'design', 'scenario'] as const;
+export type ExamForm = (typeof EXAM_FORMS)[number];
+
+/** 插件分类。Role/Industry Pack 只提供声明式配置，Capability 才能申请执行权限。 */
+export const PLUGIN_TYPES = ['role-pack', 'industry-pack', 'capability'] as const;
+export type PluginType = (typeof PLUGIN_TYPES)[number];
+
+/** 客户端对某项插件能力的本地支持程度。 */
+export const RUNTIME_AVAILABILITIES = ['full', 'view-only', 'unsupported'] as const;
+export type RuntimeAvailability = (typeof RUNTIME_AVAILABILITIES)[number];
+
+/** 跨岗位复用的面试交互协议；具体题型 ID 由岗位包定义。 */
+export const INTERVIEW_PROTOCOLS = [
+  'knowledge',
+  'behavioral',
+  'case',
+  'role-play',
+  'work-sample',
+  'presentation',
+  'portfolio',
+  'coding',
+] as const;
+export type InterviewProtocol = (typeof INTERVIEW_PROTOCOLS)[number];
+
+export const COMPETENCY_CATEGORIES = ['knowledge', 'skill', 'behavior', 'experience'] as const;
+export type CompetencyCategory = (typeof COMPETENCY_CATEGORIES)[number];
+
+export const FOLLOW_UP_STRATEGIES = ['fixed', 'adaptive'] as const;
+export type FollowUpStrategy = (typeof FOLLOW_UP_STRATEGIES)[number];
+
+/**
+ * 候选人亲身经历的证据分类。
+ * 与下方 EvidenceKind（模型/网页/代码引用来源）语义不同，禁止合并。
+ */
+export const CANDIDATE_EVIDENCE_KINDS = [
+  'experience',
+  'achievement',
+  'skill',
+  'behavior',
+  'credential',
+] as const;
+export type CandidateEvidenceKind = (typeof CANDIDATE_EVIDENCE_KINDS)[number];
+
+export const MASTERY_SOURCES = ['self', 'quiz', 'mixed'] as const;
+export type MasterySource = (typeof MASTERY_SOURCES)[number];
+
+export const SEARCH_PROVIDERS = ['bocha', 'tavily'] as const;
+export type SearchProviderName = (typeof SEARCH_PROVIDERS)[number];
+
+/** 外部内容的获取方式，`manual` 表示用户手动粘贴 */
+export const SOURCE_PROVIDERS = ['bocha', 'tavily', 'manual'] as const;
+export type SourceProvider = (typeof SOURCE_PROVIDERS)[number];
+
+/**
+ * 面经来源。三个入口走同一条摄入管道，仅可信度权重不同。
+ * selfDebrief（自己面完复盘）权重最高，web（搜索抓取）最低。
+ */
+export const REPORT_SOURCE_TYPES = ['web', 'pasted', 'selfDebrief'] as const;
+export type ReportSourceType = (typeof REPORT_SOURCE_TYPES)[number];
+
+export const PLAN_DAY_STATUSES = ['pending', 'done', 'skipped', 'deferred'] as const;
+export type PlanDayStatus = (typeof PLAN_DAY_STATUSES)[number];
+
+/** fallbackScript = 时间不够的知识点，生成 30 秒兜底话术 */
+export const TASK_KINDS = ['learn', 'drill', 'readCode', 'review', 'fallbackScript'] as const;
+export type TaskKind = (typeof TASK_KINDS)[number];
+
+export const TASK_STATUSES = ['pending', 'done', 'skipped'] as const;
+export type TaskStatus = (typeof TASK_STATUSES)[number];
+
+/** 标记的目标类型，统一 annotation 表靠它区分 */
+export const ANNOTATION_TARGETS = [
+  'node',
+  'explanation',
+  'codeRef',
+  'question',
+  'intel',
+] as const;
+export type AnnotationTarget = (typeof ANNOTATION_TARGETS)[number];
+
+export const ANNOTATION_KINDS = ['highlight', 'note', 'elaboration', 'bookmark'] as const;
+export type AnnotationKind = (typeof ANNOTATION_KINDS)[number];
+
+/**
+ * 一条话术从哪条链路来。
+ *
+ * `story` 是 STAR/CAR 经历的口述版本，sourceId 是 story.id。新增取值必须同时更新
+ * 两端解析 sourceType 的地方（桌面 src/main/speech，手机 mobile/src/data/queries），
+ * 否则话术库里会出现一条标题是「话术」、又归不到任何一场备考下的孤儿条目。
+ */
+export const SPEECH_SOURCE_TYPES = ['node', 'codeRef', 'quiz', 'design', 'story'] as const;
+export type SpeechSourceType = (typeof SPEECH_SOURCE_TYPES)[number];
+
+export const SESSION_KINDS = ['quiz', 'repoQa', 'freeChat', 'nodeFollowUp', 'planning'] as const;
+export type SessionKind = (typeof SESSION_KINDS)[number];
+
+export const MESSAGE_ROLES = ['system', 'user', 'assistant', 'tool'] as const;
+export type MessageRole = (typeof MESSAGE_ROLES)[number];
+
+export const REPO_STATUSES = ['pending', 'cloning', 'indexing', 'ready', 'failed'] as const;
+export type RepoStatus = (typeof REPO_STATUSES)[number];
+
+/**
+ * 信息来源可信度分级，UI 上用角标区分，可信度递增。
+ * 技术内容尤其需要让用户知道哪些结论值得再验证一遍。
+ */
+export const EVIDENCE_KINDS = ['model', 'web', 'code'] as const;
+export type EvidenceKind = (typeof EVIDENCE_KINDS)[number];
+
+/**
+ * 能产出 CandidateEvidence 的来源文档类型。
+ *
+ * 与下方 JOB_CONTEXT_SOURCE_KINDS 是两个不相交的集合，而不是同一个枚举里的
+ * 几个取值：JD 和公司情报描述的是岗位要求，把它们和简历放进同一个字段，
+ * 就等于给「把 JD 背成自己的经历」留了一条合法路径。
+ */
+export const CANDIDATE_SOURCE_KINDS = ['resume', 'resumeVariant', 'selfReport'] as const;
+export type CandidateSourceKind = (typeof CANDIDATE_SOURCE_KINDS)[number];
+
+/** 岗位侧文档。只能用于判断哪条候选人事实更重要，永远不能成为事实本身。 */
+export const JOB_CONTEXT_SOURCE_KINDS = ['jd', 'company'] as const;
+export type JobContextSourceKind = (typeof JOB_CONTEXT_SOURCE_KINDS)[number];
+
+/**
+ * 候选人证据的审核状态。
+ *
+ * 不用架构文档里那个 `userConfirmed: boolean`：拒绝必须留痕，否则同一段原文
+ * 每次抽取都会重新冒出来，用户得反复拒同一条。三态里只有 confirmed 能进
+ * 个人化回答。
+ */
+export const EVIDENCE_STATUSES = ['proposed', 'confirmed', 'rejected'] as const;
+export type EvidenceStatus = (typeof EVIDENCE_STATUSES)[number];
+
+/**
+ * 通用练习协议的枚举。
+ * 题型 ID 与评分维度由岗位包声明，这里只固定跨岗位不变的会话/回合形态。
+ */
+export const PRACTICE_SESSION_STATUSES = ['open', 'evaluated', 'abandoned'] as const;
+export type PracticeSessionStatus = (typeof PRACTICE_SESSION_STATUSES)[number];
+
+export const PRACTICE_TURN_SPEAKERS = ['interviewer', 'candidate'] as const;
+export type PracticeTurnSpeaker = (typeof PRACTICE_TURN_SPEAKERS)[number];
+
+/** closing 由引擎按 followUpPolicy 直接生成，不经模型 */
+export const PRACTICE_TURN_KINDS = ['question', 'followUp', 'answer', 'closing'] as const;
+export type PracticeTurnKind = (typeof PRACTICE_TURN_KINDS)[number];
+
+/**
+ * PracticeAttempt 的来源。
+ * quiz / design 是历史记录的只读投影，不写回原表，也不产生新的 practice_attempt 行。
+ */
+export const PRACTICE_ATTEMPT_SOURCES = ['practice', 'quiz', 'design'] as const;
+export type PracticeAttemptSource = (typeof PRACTICE_ATTEMPT_SOURCES)[number];
+
+/** Agent 共享工具箱 */
+export const TOOL_NAMES = [
+  'web_search',
+  'fetch_url',
+  'list_dir',
+  'read_file',
+  'grep',
+  'query_graph',
+  'update_mastery',
+] as const;
+export type ToolName = (typeof TOOL_NAMES)[number];

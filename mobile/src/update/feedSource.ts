@@ -3,11 +3,11 @@
  *
  * 桌面端在「设置 → 自动更新」里配的 feedUrl 会随 app_setting 同步到手机端，
  * 这里的规则与桌面 electron-updater 的 generic provider 完全一致（见
- * @shared/updateFeed 的 normalizeFeedUrl），手机端只是换成了「latest.yml
+ * @core/updateFeed 的 normalizeFeedUrl），手机端只是换成了「latest.yml
  * 取版本 + 按 CI 命名约定下载 OpenJob-<version>.apk」的消费方式。
  */
 
-import { normalizeFeedUrl } from '@shared/updateFeed';
+import { normalizeFeedUrl } from '@core/updateFeed';
 
 /**
  * 当前生效的 generic 目录；返回 null 表示没配置，走官方 GitHub Release。

@@ -1,18 +1,18 @@
 import * as Crypto from 'expo-crypto';
 import type { SQLiteDatabase } from 'expo-sqlite';
-import type { QuizAttempt } from '@shared/entities';
-import type { NodeStatus } from '@shared/enums';
+import type { QuizAttempt } from '@core/entities';
 import type {
   QuizAnswerResult,
   QuizDraftResult,
   QuizQuestionResult,
   QuizSubmitResult,
   QuizUpdateDraftInput,
-} from '@shared/ipc';
-import { normalizeDisplayText } from '@shared/lib/markdownDisplay';
+} from '@core/ipc';
+import { normalizeDisplayText } from '@core/lib/markdownDisplay';
+import { applyMasterySignal, masteryToStatus } from '@core/practice';
 import { getMobileConfig } from '../config/settings';
 import { completeJson } from '../llm/json';
-import { computePriority } from '@shared/priority';
+import { computePriority } from '@core/priority';
 import {
   loadQuizPromptContext,
   quizAnswerUserMessage,
@@ -26,12 +26,6 @@ interface QuizScoreResult {
   score: number;
   feedbackMd: string;
   improvedScriptMd: string;
-}
-
-function masteryToStatus(mastery: number): NodeStatus {
-  if (mastery >= 4.5) return 'mastered';
-  if (mastery >= 2.5) return 'learning';
-  return 'shaky';
 }
 
 interface QuizDraftRow {
@@ -177,10 +171,12 @@ export async function submitQuizAnswer(
   );
 
   const score = Math.min(5, Math.max(1, Math.round(scored.score)));
-  const newMastery =
-    node.masterySource === 'quiz'
-      ? node.mastery * 0.3 + score * 0.7
-      : node.mastery * 0.5 + score * 0.5;
+  // 混合权重与分档规则取 shared 的那一份：两端对同一次作答必须算出同一个掌握度
+  const next = applyMasterySignal(
+    { mastery: node.mastery, masterySource: node.masterySource },
+    { kind: 'practice', score },
+  );
+  const newMastery = next.mastery;
 
   const nodeStatus = masteryToStatus(newMastery);
   const priority = computePriority({ ...node, mastery: newMastery }, getMobileConfig().priority);

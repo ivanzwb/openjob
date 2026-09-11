@@ -1,0 +1,202 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1786086985766,
+      "tag": "0000_natural_mesmero",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1786119229573,
+      "tag": "0001_narrow_christian_walker",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1786148749276,
+      "tag": "0002_early_nehzno",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1786328851437,
+      "tag": "0003_secret_joystick",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1786410000000,
+      "tag": "0004_highlight_color",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1786490000000,
+      "tag": "0005_selection_start",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1786570000000,
+      "tag": "0006_app_setting",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1786650000000,
+      "tag": "0007_repo_file",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1786730000000,
+      "tag": "0008_job_target_resume_variant",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1786810000000,
+      "tag": "0009_resume_variant_preview_style",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1786890000000,
+      "tag": "0010_resume_preview_style",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1786970000000,
+      "tag": "0011_resume_variant_source_optional",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1787050000000,
+      "tag": "0012_resume_photo",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1787051000000,
+      "tag": "0013_prompt_run",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1787051860000,
+      "tag": "0014_design_case_cache",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "6",
+      "when": 1787365800000,
+      "tag": "0015_session_node",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1787367000000,
+      "tag": "0016_follow_up_context_summary",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1787450000000,
+      "tag": "0017_design_case_answers",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1787530000000,
+      "tag": "0018_sync_row_version",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1787540000000,
+      "tag": "0019_prompt_run_repair",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1787550000000,
+      "tag": "0020_node_quiz_cache",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1787560000000,
+      "tag": "0021_node_quiz_answer_draft",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "6",
+      "when": 1787570000000,
+      "tag": "0022_campaign_resume_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1787580000000,
+      "tag": "0023_plugin_runtime_persistence",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1787590000000,
+      "tag": "0024_candidate_evidence",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1787600000000,
+      "tag": "0025_practice_engine",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1787610000000,
+      "tag": "0026_story",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "6",
+      "when": 1787620000000,
+      "tag": "0027_legacy_campaign_scope",
+      "breakpoints": true
+    }
+  ]
+}

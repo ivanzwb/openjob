@@ -1,16 +1,16 @@
-import type { LlmRole } from '@shared/enums';
+import type { LlmRole } from '@core/enums';
 import {
   foldSystemIntoUser,
   isStrictSystemMessageError,
   normalizeChatMessages,
   type ChatMessage,
-} from '@shared/llm/messages';
+} from '@core/llm/messages';
 import {
   SALVAGE_TRUNCATED_PROMPTS,
   looksTruncated,
   parseJsonResponse,
-} from '@shared/llm/parseJson';
-import { resolvePrompt } from '@shared/prompts/registry';
+} from '@core/llm/parseJson';
+import { resolvePrompt } from '@core/prompts/registry';
 import { resolveLlmRole } from './resolve';
 
 /** JD 诊断等结构化输出可能很长，给足 token 上限 */

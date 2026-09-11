@@ -10,16 +10,16 @@ import type {
   TaskView,
   SessionSummary,
   SessionMessageView,
-} from '@shared/ipc';
-import type { Repo as RepoEntity } from '@shared/entities';
-import type { EdgeRelation } from '@shared/enums';
-import { sortNodesByStudyOrder } from '@shared/campaign/studyOrder';
+} from '@core/ipc';
+import type { Repo as RepoEntity } from '@core/entities';
+import type { EdgeRelation } from '@core/enums';
+import { sortNodesByStudyOrder } from '@core/campaign/studyOrder';
 import type { FollowUpMessage } from './mutations';
 import { repoQaSessionId, type RepoQaMessage } from './repoQaThread';
 import type {
   FollowUpStoredMessage,
   FollowUpSummaryState,
-} from '@shared/llm/followUpContext';
+} from '@core/llm/followUpContext';
 
 function todayLocal(): string {
   const d = new Date();
@@ -65,14 +65,23 @@ function resolveSnippetCampaign(
   sourceType: SpeechSnippetView['sourceType'],
   sourceId: string,
 ): { campaignId: string; label: string } | null {
-  // design：sourceId 直接就是 campaignId；其余类型经 knowledge_node 取 campaign_id
-  if (sourceType === 'design') {
+  // design：sourceId 直接就是 campaignId；story 经 story.campaign_id；
+  // 其余类型经 knowledge_node 取 campaign_id
+  if (sourceType === 'design' || sourceType === 'story') {
+    const campaignId =
+      sourceType === 'design'
+        ? sourceId
+        : (db.getFirstSync<{ campaign_id: string }>(
+            `SELECT campaign_id FROM story WHERE id = ?`,
+            sourceId,
+          )?.campaign_id ?? null);
+    if (!campaignId) return null;
     const campaign = db.getFirstSync<{ company: string; role_title: string }>(
       `SELECT company, role_title FROM campaign WHERE id = ?`,
-      sourceId,
+      campaignId,
     );
     return campaign
-      ? { campaignId: sourceId, label: `${campaign.company} · ${campaign.role_title}` }
+      ? { campaignId, label: `${campaign.company} · ${campaign.role_title}` }
       : null;
   }
   let nodeId: string | null = null;
@@ -188,6 +197,14 @@ function resolveSpeechSourceLabel(
       sourceId,
     );
     return campaign ? `模拟面试 · ${campaign.company}` : '模拟面试';
+  }
+  if (sourceType === 'story') {
+    // 与桌面端同一套文案：同一条话术在两块屏幕上必须显示同样的来源
+    const story = db.getFirstSync<{ title: string }>(
+      `SELECT title FROM story WHERE id = ?`,
+      sourceId,
+    );
+    return story ? `经历 · ${story.title}` : '经历';
   }
   return '话术';
 }
@@ -353,6 +370,7 @@ export function getCampaignDetail(db: SQLiteDatabase, id: string): CampaignDetai
     jd_raw: string;
     jd_parsed: string | null;
     job_target_id: string | null;
+    role_profile_id: string | null;
     resume_id: string | null;
     interview_date: string | null;
     daily_minutes: number | null;
@@ -464,6 +482,7 @@ export function getCampaignDetail(db: SQLiteDatabase, id: string): CampaignDetai
       jdRaw: row.jd_raw,
       jdParsed: row.jd_parsed ? JSON.parse(row.jd_parsed) : null,
       jobTargetId: row.job_target_id,
+      roleProfileId: row.role_profile_id,
       resumeId: row.resume_id,
       interviewDate: row.interview_date,
       dailyMinutes: row.daily_minutes,

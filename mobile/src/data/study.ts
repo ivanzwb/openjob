@@ -1,9 +1,9 @@
 import * as Crypto from 'expo-crypto';
 import type { SQLiteDatabase } from 'expo-sqlite';
-import type { Annotation, Explanation } from '@shared/entities';
-import type { AnnotationTarget, ExplanationTier } from '@shared/enums';
-import type { AnnotationCreateInput } from '@shared/ipc';
-import { findMarkOnSelection } from '@shared/annotationMarkList';
+import type { Annotation, Explanation } from '@core/entities';
+import type { AnnotationTarget, ExplanationTier } from '@core/enums';
+import type { AnnotationCreateInput } from '@core/ipc';
+import { findMarkOnSelection } from '@core/annotationMarkList';
 import { getDeviceIdentity } from '../sync/identity';
 import { writingAs } from '../sync/triggers';
 

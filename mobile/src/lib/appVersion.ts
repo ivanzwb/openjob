@@ -1,5 +1,5 @@
 import * as Application from 'expo-application';
-import { normalizeVersion } from '@shared/version';
+import { normalizeVersion } from '@core/version';
 
 /**
  * 当前安装版本。用 expo-application 而不是 expo-constants：

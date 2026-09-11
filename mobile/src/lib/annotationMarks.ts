@@ -1,5 +1,5 @@
-import type { Annotation } from '@shared/entities';
-import { findMarkOnSelection } from '@shared/annotationMarkList';
+import type { Annotation } from '@core/entities';
+import { findMarkOnSelection } from '@core/annotationMarkList';
 
 export const HIGHLIGHT_COLORS = [
   '#fef08a',

@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
-import type { Repo } from '@shared/entities';
+import type { Repo } from '@core/entities';
 import { RepoQaPanel } from '../components/RepoQaPanel';
 import { MarkdownPreview } from '../components/MarkdownPreview';
 import { getRawDb } from '../db';

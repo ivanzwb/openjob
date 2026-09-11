@@ -1,0 +1,10 @@
+# mobile 故意不在这里。
+#
+# 手机端用 npm（mobile/package-lock.json）单独安装，Metro 的 resolver 按
+# mobile/metro.config.js 里那两条 nodeModulesPaths 找依赖。把它并进 pnpm workspace
+# 需要连带迁包管理器、重验 Expo 的 node_modules 布局、改 Android 的 CI，
+# 换来的只是少一次 install——不值当。它自带 package.json，本身就是独立子项目。
+packages:
+  - core
+  - desktop
+  - plugins

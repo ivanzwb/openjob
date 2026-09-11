@@ -4,10 +4,10 @@ import { WebView } from 'react-native-webview';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { File, Paths } from 'expo-file-system';
-import type { ResumeDocument } from '@shared/resume/document';
-import { buildResumeDocumentHtml } from '@shared/resume/renderHtml';
-import type { ResumePreviewStyle } from '@shared/resume/previewStyle';
-import { RESUME_TEMPLATES, RESUME_TEMPLATE_META } from '@shared/resume/templates';
+import type { ResumeDocument } from '@core/resume/document';
+import { buildResumeDocumentHtml } from '@core/resume/renderHtml';
+import type { ResumePreviewStyle } from '@core/resume/previewStyle';
+import { RESUME_TEMPLATES, RESUME_TEMPLATE_META } from '@core/resume/templates';
 import { runTask, useTaskState } from '../context/RemoteTaskContext';
 import { useTheme } from '../theme';
 

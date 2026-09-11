@@ -7,21 +7,22 @@
  * 2. 手机端单测跑在 node 上，import 到 expo-crypto 那类模块整个文件就起不来。
  *    这里只 type-import expo-sqlite（类型会被擦除），所以拼装逻辑测得到。
  *
- * 文本长什么样由 @shared/prompts/candidateContext 决定，两端共用同一份，
+ * 文本长什么样由 @core/prompts/candidateContext 决定，两端共用同一份，
  * 别在这里另拼一套。
  */
 
 import type { SQLiteDatabase } from 'expo-sqlite';
-import type { KnowledgeNode } from '@shared/entities';
+import type { KnowledgeNode } from '@core/entities';
 import {
   buildCandidateContext,
   jdSummaryForPrompt,
   type CandidateContextInput,
   type NodeContextInput,
-} from '@shared/prompts/candidateContext';
-import { resolvePrompt } from '@shared/prompts/registry';
-import type { FallbackProject } from '@shared/resume/experienceTimeline';
+} from '@core/prompts/candidateContext';
+import { resolvePrompt } from '@core/prompts/registry';
+import type { FallbackProject } from '@core/resume/experienceTimeline';
 import { getCampaign, getKnowledgeNode } from './campaignLocal';
+import { loadCampaignResumeForPrompt } from './resumeProfileLocal';
 
 export interface ResumePromptRow {
   parsed: string | null;
@@ -64,7 +65,6 @@ export function loadResumeForPrompt(
 
 // 战役级「派生版优先」取数单独放 resumeProfileLocal（campaignLocal 也要用，
 // 直接放这里会和它成环）；这里转发一份，designLocal 等从本模块取数不换 import。
-import { loadCampaignResumeForPrompt } from './resumeProfileLocal';
 export { loadCampaignResumeForPrompt };
 
 export function loadCandidateContextInput(

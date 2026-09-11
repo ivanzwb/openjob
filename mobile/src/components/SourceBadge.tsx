@@ -1,5 +1,5 @@
 import { Text, View } from 'react-native';
-import type { EvidenceKind } from '@shared/enums';
+import type { EvidenceKind } from '@core/enums';
 import { useTheme } from '../theme';
 
 const LABELS: Record<EvidenceKind, string> = {

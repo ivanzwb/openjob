@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { Text, type TextStyle } from 'react-native';
-import type { Annotation } from '@shared/entities';
-import { MARKER_ICON, markerKinds, type InlineMarkerKind } from '@shared/inlineMarkers';
+import type { Annotation } from '@core/entities';
+import { MARKER_ICON, markerKinds, type InlineMarkerKind } from '@core/inlineMarkers';
 import {
   buildDisplaySegments,
   filterInlineAnnotations,

@@ -1,5 +1,5 @@
-import type { LlmRole } from '@shared/enums';
-import { normalizeChatMessages, type ChatMessage } from '@shared/llm/messages';
+import type { LlmRole } from '@core/enums';
+import { normalizeChatMessages, type ChatMessage } from '@core/llm/messages';
 import { resolveLlmRole } from './resolve';
 
 export async function completeChat(

@@ -1,24 +1,18 @@
 import { defineConfig } from 'vitest/config';
-import { resolve } from 'node:path';
 
 /**
- * 桌面端单元测试配置。
+ * 工作区测试入口：一次跑遍 core / desktop / plugins 三个包。
  *
- * 被测对象是 src/shared 与 src/main 的纯逻辑模块（合并引擎、IPC 契约、
- * LLM 降档、同步加密等），运行在 Node 环境，不启动 Electron。
- * 路径别名与 tsconfig.node.json / electron.vite.config 保持一致。
+ * 每个包自己那份 vitest.config.ts 管别名与 include，这里只负责编排。
+ * 单进程跑三个包（而不是 `pnpm -r test` 分三次起 vitest）有两个好处：
+ * 跨包的静态关卡（如 plugins/basePackage.test.ts 扫 core 与 desktop 的源码）
+ * 在同一次运行里就能验完，失败报告也是一份。
+ *
+ * mobile 不在其中：它是独立安装的 npm 包，自带 vitest.config.mts，
+ * 在 mobile/ 目录里跑。
  */
 export default defineConfig({
-  resolve: {
-    alias: {
-      '@shared': resolve(__dirname, 'src/shared'),
-      '@main': resolve(__dirname, 'src/main'),
-    },
-  },
   test: {
-    environment: 'node',
-    include: ['src/**/*.test.ts'],
-    // 迁移自 scripts/smoke-sync-merge.ts 的合并引擎用例在这里
-    exclude: ['node_modules', 'dist', 'out', 'src/renderer/**'],
+    projects: ['core', 'desktop', 'plugins'],
   },
 });
