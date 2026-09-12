@@ -250,9 +250,13 @@ const ROLE_PACK_ARRAY_FIELDS = [
   'interviewFormats',
   'rubrics',
   'taskTemplates',
+  // 片段是数组（file 内联正文或迁移期 ref），正文随包传输，不是端上再拼的映射表
+  'promptFragments',
+  'resumeModules',
+  'navigation',
 ] as const;
 
-const ROLE_PACK_OBJECT_FIELDS = ['promptFragments', 'sourcePolicy'] as const;
+const ROLE_PACK_OBJECT_FIELDS = ['sourcePolicy'] as const;
 
 function validateRolePackShape(pack: Record<string, unknown>): PluginContractIssue[] {
   const issues: PluginContractIssue[] = [];

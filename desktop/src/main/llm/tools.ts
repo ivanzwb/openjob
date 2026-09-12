@@ -139,6 +139,8 @@ export async function runTool(
         query,
         freshness: args['freshness'] as never,
         count: typeof args['count'] === 'number' ? args['count'] : 8,
+        // Agent 的检索跟随当前 Campaign 的岗位检索策略
+        campaignId: ctx?.campaignId ?? undefined,
       },
       signal,
     );

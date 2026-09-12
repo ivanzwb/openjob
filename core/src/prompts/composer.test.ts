@@ -8,7 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import { SOFTWARE_ENGINEERING_FORMAT_IDS } from '../plugins/legacyRoleData';
 import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
-import type { PromptFragmentSet, ResolvedCapabilityRef, RolePack } from '../plugins/types';
+import type { PromptSlot, ResolvedCapabilityRef, RolePack } from '../plugins/types';
 import {
   PROMPT_LAYER_ORDER,
   PromptCompositionError,
@@ -17,6 +17,7 @@ import {
   type PromptCompositionInput,
   type PromptEvidence,
   type PromptRuntimeSnapshot,
+  resolveRolePackFragment,
 } from './composer';
 import {
   CORE_PROMPT_POLICY,
@@ -38,7 +39,7 @@ const CAPABILITIES: ResolvedCapabilityRef[] = [
 
 const RUNTIME: PromptRuntimeSnapshot = {
   coreVersion: '1.0.0',
-  rolePack: { id: 'software-engineering', version: '1.1.0' },
+  rolePack: { id: 'software-engineering', version: '1.2.0' },
   capabilities: CAPABILITIES,
   configSnapshotHash: 'snapshot-hash',
 };
@@ -61,9 +62,14 @@ function compose(overrides: Partial<PromptCompositionInput> = {}): ComposedPromp
   });
 }
 
-/** 用自带文本片段的岗位包：工程岗位填的是 registry key，覆盖不到这条分支 */
-function packWithInlineFragments(fragments: PromptFragmentSet): RolePack {
-  return { ...softwareEngineeringRolePack, promptFragments: fragments };
+/** 用自带文本片段的岗位包：工程岗位走的是 ref 引用，覆盖不到这条分支 */
+function packWithInlineFragments(fragments: Partial<Record<'diagnosis' | 'debrief', string>>): RolePack {
+  return {
+    ...softwareEngineeringRolePack,
+    promptFragments: (Object.entries(fragments) as Array<[PromptSlot, string]>).map(
+      ([slot, text]) => ({ slot, file: `prompts/${slot}.md`, text }),
+    ),
+  };
 }
 
 function occurrences(haystack: string, needle: string): number {
@@ -149,8 +155,11 @@ describe('Core Policy 的位置与内容不可被插件覆盖', () => {
     expect(composed.systemPrompt.indexOf(CORE_PROMPT_POLICY)).toBeLessThan(
       composed.systemPrompt.indexOf(fragment),
     );
-    expect(composed.provenance.promptId).toBe('software-engineering#diagnosis');
-    expect(composed.provenance.promptVersionId).toBe('software-engineering#diagnosis@1.1.0');
+    // 文件化片段的 provenance 记录包内路径与内容指纹，片段改动从此可回溯
+    expect(composed.provenance.promptId).toBe('software-engineering:prompts/diagnosis.md');
+    expect(composed.provenance.promptVersionId).toMatch(
+      /^software-engineering:prompts\/diagnosis\.md@1\.2\.0#[0-9a-f]{8}$/,
+    );
   });
 
   it('岗位包与运行时绑定不一致时拒绝组合', () => {
@@ -256,11 +265,8 @@ describe('工程岗位组合后语义不变', () => {
   ];
 
   it.each(cases)('$slot/$formatId 的原文逐字保留', ({ slot, formatId, params }) => {
-    const fragments = softwareEngineeringRolePack.promptFragments;
-    const ref =
-      slot === 'diagnosis' || slot === 'explanation'
-        ? fragments[slot]!
-        : fragments[slot]![formatId!]!;
+    const fragment = resolveRolePackFragment(softwareEngineeringRolePack, slot, formatId)!;
+    const ref = fragment.ref!;
     const expected = resolvePrompt(ref, params);
     const composed = compose({
       slot,
@@ -350,7 +356,7 @@ describe('provenance 可复现所用插件版本', () => {
 
     expect(composed.provenance).toMatchObject({
       coreVersion: '1.0.0',
-      rolePack: { id: 'software-engineering', version: '1.1.0' },
+      rolePack: { id: 'software-engineering', version: '1.2.0' },
       capabilityIds: ['source-repository'],
       capabilities: [{ id: 'source-repository', version: '1.0.0' }],
       promptSlot: 'scoring',

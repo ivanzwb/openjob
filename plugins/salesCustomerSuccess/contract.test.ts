@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { composePrompt } from '@core/prompts/composer';
 import type { PromptEvidence, PromptRuntimeSnapshot } from '@core/prompts/composer';
-import { isRegisteredPrompt } from '@core/prompts/registry';
 import type { PromptSlot } from '@core/prompts/registry';
 import { validateRolePack } from '@core/plugins/contracts';
 import {
@@ -58,7 +57,7 @@ describe('salesCustomerSuccessRolePack contract', () => {
   it('是不申请任何执行权限的岗位包，角色扮演只作为可选依赖', () => {
     expect(salesCustomerSuccessRolePack.manifest).toMatchObject({
       id: 'sales-customer-success',
-      version: '1.1.0',
+      version: '1.2.0',
       type: 'role-pack',
       compatibility: { core: '^1.0.0', schema: 23 },
       permissions: [],
@@ -71,37 +70,30 @@ describe('salesCustomerSuccessRolePack contract', () => {
   });
 
   it('两种题型都提供出题、评分和话术片段，落到练习与 Story 流程上不会缺片段', () => {
-    const { questionGeneration, scoring, answerCoaching } =
-      salesCustomerSuccessRolePack.promptFragments;
+    const { promptFragments } = salesCustomerSuccessRolePack;
+    const find = (slot: PromptSlot, formatId?: string) =>
+      promptFragments.find((fragment) => fragment.slot === slot && fragment.formatId === formatId);
     for (const formatId of formatIds) {
-      expect(questionGeneration?.[formatId], `${formatId} 缺出题片段`).toBeTruthy();
-      expect(scoring?.[formatId], `${formatId} 缺评分片段`).toBeTruthy();
-      expect(answerCoaching?.[formatId], `${formatId} 缺话术片段`).toBeTruthy();
+      expect(find('questionGeneration', formatId), `${formatId} 缺出题片段`).toBeTruthy();
+      expect(find('scoring', formatId), `${formatId} 缺评分片段`).toBeTruthy();
+      expect(find('answerCoaching', formatId), `${formatId} 缺话术片段`).toBeTruthy();
     }
-    expect(salesCustomerSuccessRolePack.promptFragments.diagnosis).toBeTruthy();
-    expect(salesCustomerSuccessRolePack.promptFragments.explanation).toBeTruthy();
-    expect(salesCustomerSuccessRolePack.promptFragments.debrief).toBeTruthy();
+    expect(find('diagnosis')).toBeTruthy();
+    expect(find('explanation')).toBeTruthy();
+    expect(find('debrief')).toBeTruthy();
   });
 
   /**
-   * 按「片段是不是 registry key」判定，而不是扫关键词：Core 现有的 prompt 全部按
-   * 工程题型描述任务，销售岗位引用其中任意一条就等于把那套口吻整段载进来。
+   * 判定方式是「片段正文必须来自包内 prompts/ 文件、不得用迁移期 ref」：Core 的
+   * prompt 全部按工程题型描述任务，销售岗位引用其中任意一条就等于把那套口吻整段
+   * 载进来。
    */
   it('全部片段由岗位包自带，不引用 Core 的任何工程 Prompt', () => {
-    const values = [
-      salesCustomerSuccessRolePack.promptFragments.diagnosis,
-      salesCustomerSuccessRolePack.promptFragments.explanation,
-      salesCustomerSuccessRolePack.promptFragments.debrief,
-      ...formatIds.flatMap((formatId) => [
-        salesCustomerSuccessRolePack.promptFragments.questionGeneration?.[formatId],
-        salesCustomerSuccessRolePack.promptFragments.scoring?.[formatId],
-        salesCustomerSuccessRolePack.promptFragments.answerCoaching?.[formatId],
-      ]),
-    ].filter((value): value is string => value !== undefined);
-
-    expect(values.length).toBeGreaterThan(0);
-    for (const value of values) {
-      expect(isRegisteredPrompt(value), `不应引用 Core prompt：${value}`).toBe(false);
+    expect(salesCustomerSuccessRolePack.promptFragments.length).toBeGreaterThan(0);
+    for (const fragment of salesCustomerSuccessRolePack.promptFragments) {
+      expect(fragment.file, '片段必须来自包内 prompts/ 文件').toBeTruthy();
+      expect(fragment.text, `${fragment.file} 缺正文`).toBeTruthy();
+      expect(fragment.ref, '不应引用 Core prompt').toBeUndefined();
     }
   });
 
@@ -122,7 +114,7 @@ describe('salesCustomerSuccessRolePack contract', () => {
       // Core Policy 永远第一节：片段不允许把它顶掉
       expect(composed.sections[0]?.layer).toBe('corePolicy');
       expect(composed.provenance.promptId).toContain(
-        `${SALES_CUSTOMER_SUCCESS_ROLE_PACK_ID}#${slot}`,
+        `${SALES_CUSTOMER_SUCCESS_ROLE_PACK_ID}:prompts/`,
       );
       expect(composed.provenance.promptVersionId).toContain(
         SALES_CUSTOMER_SUCCESS_ROLE_PACK_VERSION,

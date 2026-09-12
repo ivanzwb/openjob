@@ -108,7 +108,9 @@ function rolePack(
         supportedFormats: ['test.knowledge'],
       },
     ],
-    promptFragments: { diagnosis: '执行测试岗位诊断。' },
+    navigation: [],
+  resumeModules: [],
+  promptFragments: [{ slot: 'diagnosis', text: '执行测试岗位诊断。', file: 'prompts/diagnosis.md' }],
     sourcePolicy: { preferredDomains: [] },
   };
 }

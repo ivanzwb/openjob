@@ -14,6 +14,7 @@ export async function ingestWebReports(campaignId: string): Promise<{
     freshness: 'oneYear',
     count: 6,
     cacheCategory: 'interviewReports',
+    campaignId,
   });
 
   const reports: IngestReportResult[] = [];

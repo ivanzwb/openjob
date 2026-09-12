@@ -5,29 +5,36 @@ import { UpdateBadge } from './components/UpdateBadge';
 import { CampaignsPanel, type CampaignView } from './pages/CampaignsPanel';
 import { Settings } from './pages/Settings';
 import { Overview } from './pages/Overview';
-import { Repos } from './pages/Repos';
 import { Scripts } from './pages/Scripts';
 import { DesignPractice } from './pages/DesignPractice';
 import { Resumes } from './pages/Resumes';
 import { invoke, onEvent } from './ipc';
 import { bumpDataVersion } from './ipc/dataVersion';
 import { useJobProgress } from './ipc/useJobProgress';
-import { useCapabilityNav } from './ipc/useCapabilityNav';
+import { useNavigationTabs } from './ipc/useNavigationTabs';
 import { useBackgroundErrorToast } from './ipc/errorToast';
+import { HOST_PAGES } from './hostPages';
 import { nextVisibleTab } from '@core/hostUi';
-import { CORE_CAPABILITIES_PACK_ID } from '@core/plugins/capabilitySuite';
 
-type Tab = 'overview' | 'campaigns' | 'resumes' | 'design' | 'repos' | 'scripts' | 'settings';
+type Tab =
+  | 'overview'
+  | 'resumes'
+  | 'campaigns'
+  | 'design'
+  | 'scripts'
+  | 'settings'
+  // 插入点 A：岗位包声明的导航入口，键为 nav:<entry.id>
+  | `nav:${string}`;
 
 /** 页签被能力门控藏起来时的落脚点：备考是这个应用的主线，回到它总是说得通 */
 const FALLBACK_TAB: Tab = 'campaigns';
 
+/** 宿主拥有的固定一级导航；能力页签槽位插在「模拟面试」和「话术」之间 */
 const TABS: Array<{ key: Tab; label: string }> = [
   { key: 'overview', label: '总览' },
   { key: 'resumes', label: '简历' },
   { key: 'campaigns', label: '备考' },
   { key: 'design', label: '模拟面试' },
-  { key: 'repos', label: '源码' },
   { key: 'scripts', label: '话术' },
   { key: 'settings', label: '设置' },
 ];
@@ -122,9 +129,11 @@ export default function App(): React.JSX.Element {
   // 任务与流式请求可能在用户已经切走的页面上失败，提示统一由这里弹出来
   useBackgroundErrorToast();
 
-  // 源码页是 source-repository 能力插件的宿主界面，没有任何 Campaign 启用它时不该出现
-  const reposEnabled = useCapabilityNav(CORE_CAPABILITIES_PACK_ID);
-  const isTabVisible = (key: Tab): boolean => key !== 'repos' || reposEnabled;
+  // 插入点 A：能力页签槽位来自岗位包声明的 navigation[]，没有任何 Campaign 启用时不出现
+  const { tabs: navTabs } = useNavigationTabs();
+  const navTabsKeys = navTabs.map<Tab>((entry) => `nav:${entry.id}`);
+  const isTabVisible = (key: Tab): boolean =>
+    !key.startsWith('nav:') || navTabsKeys.includes(key);
   // 门控是异步算出来的，用户可能正停在被藏起来的页签上：渲染期同步换页，
   // 免得看到一个没有选中项的导航栏和一片空白
   const activeTab = nextVisibleTab(tab, isTabVisible, FALLBACK_TAB);
@@ -155,7 +164,14 @@ export default function App(): React.JSX.Element {
             <UpdateBadge onOpenSettings={() => selectTab('settings')} />
           </div>
           <nav className="app-region-no-drag ml-4 flex gap-1">
-            {TABS.filter(({ key }) => isTabVisible(key)).map(({ key, label }) => (
+            {/* 能力页签槽位固定插在「模拟面试」之后（§12.1），顺序由声明决定而非包竞争 */}
+            {[
+              ...TABS.slice(0, 4),
+              ...navTabs.map((entry) => ({ key: `nav:${entry.id}` as Tab, label: entry.label })),
+              ...TABS.slice(4),
+            ]
+              .filter(({ key }) => isTabVisible(key))
+              .map(({ key, label }) => (
               <button
                 key={key}
                 type="button"
@@ -212,11 +228,16 @@ export default function App(): React.JSX.Element {
             </TabPanel>
           )}
           {/* 能力被关掉之后连挂载也撤掉：留着的话仓库索引仍在后台跑，用户却没有入口停它 */}
-          {mountedTabs.has('repos') && isTabVisible('repos') && (
-            <TabPanel active={activeTab === 'repos'} className="overflow-hidden">
-              <Repos />
-            </TabPanel>
-          )}
+          {navTabs.map((entry) => {
+            const key: Tab = `nav:${entry.id}`;
+            if (!mountedTabs.has(key) || !isTabVisible(key)) return null;
+            const Page = HOST_PAGES[entry.pageId];
+            return (
+              <TabPanel key={key} active={activeTab === key} className="overflow-hidden">
+                <Page />
+              </TabPanel>
+            );
+          })}
           {mountedTabs.has('scripts') && (
             <TabPanel active={activeTab === 'scripts'} className="overflow-hidden">
               <Scripts />

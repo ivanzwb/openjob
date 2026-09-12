@@ -4,6 +4,7 @@ import type { JobTarget, Resume } from '@core/entities';
 import type { ResumeImportResult, ResumeVariantView } from '@core/ipc';
 import type { ResumeEditorSavePayload } from '../components/ResumeEditorPane';
 import { ResumeEditorPane } from '../components/ResumeEditorPane';
+import { ResumeModulesCard } from '../components/ResumeModulesCard';
 import { PageShell } from '../components/PageShell';
 import { Spinner } from '../components/Spinner';
 import { TaskButton } from '../components/TaskButton';
@@ -769,18 +770,21 @@ export function Resumes(): React.JSX.Element {
                 onMessage={setMessage}
               />
             ) : editorKind === 'resume' && selectedResume ? (
-              <ResumeEditorPane
-                key={`resume-${selectedResume.id}`}
-                kind="resume"
-                taskScope={`resume:${selectedResume.id}`}
-                initialContentMd={selectedResume.rawText}
-                initialPreviewStyle={selectedResume.previewStyle}
-                initialLabel={selectedResume.label}
+              <div className="space-y-4">
+                <ResumeEditorPane
+                  key={`resume-${selectedResume.id}`}
+                  kind="resume"
+                  taskScope={`resume:${selectedResume.id}`}
+                  initialContentMd={selectedResume.rawText}
+                  initialPreviewStyle={selectedResume.previewStyle}
+                  initialLabel={selectedResume.label}
                 initialPhoto={selectedResume.photo}
                 subtitle={`母版 · 更新于 ${new Date(selectedResume.updatedAt).toLocaleString()}`}
                 onSave={saveEditorDocument}
                 onMessage={setMessage}
-              />
+                />
+                <ResumeModulesCard parsed={selectedResume.parsed} />
+              </div>
             ) : (
               <p className="p-4 text-sm text-[var(--color-muted)]">
                 从左侧选择简历，或点击「新建简历」添加

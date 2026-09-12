@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { completeJson } from '../llm/json';
 import { search } from '../search';
-import { getDb, schema } from '../db';
+import { getDb, getRawDb, schema } from '../db';
 import {
   clearCampaignNodes,
   getCampaignRow,
@@ -36,7 +36,13 @@ import {
 import { filterDuplicatesByEmbedding } from './embedding';
 import { applyHistoricalPrior } from './prior';
 import { computePriority } from './priority';
-import type { ResumeParsed } from '@core/entities';
+import type { ResumeModuleDefinition } from '@core/plugins/types';
+import {
+  assembleResumeModules,
+  buildResumeModulesUserSection,
+  type ResumeParsedResponse,
+} from '@core/resume/modules';
+import { findInstalledRolePack, getCampaignRuntime } from '../plugins/runtime';
 
 function report(jobId: string, label: string, message: string, progress: number | null): void {
   emit('job:progress', { jobId, label, progress, message, done: false, error: null });
@@ -96,6 +102,21 @@ export async function diagnoseFromJd(campaignId: string, jobId: string): Promise
   }
 }
 
+/**
+ * 取当前 Campaign 岗位包声明的简历模块（插入点 D）。
+ * descriptor 缺失或包被卸载时退回空列表——简历解析不能因为策略层缺席而不可用。
+ */
+function resolveCampaignResumeModules(campaignId: string): ResumeModuleDefinition[] {
+  try {
+    const view = getCampaignRuntime(getRawDb(), campaignId);
+    if (!view) return [];
+    const { id, version } = view.descriptor.rolePack;
+    return findInstalledRolePack(id, version)?.resumeModules ?? [];
+  } catch {
+    return [];
+  }
+}
+
 /** 附加简历：解析 + 交叉分析更新覆盖类型 */
 export async function diagnoseAttachResume(
   campaignId: string,
@@ -108,11 +129,22 @@ export async function diagnoseAttachResume(
     const resume = getResumeRow(resumeId);
 
     report(jobId, label, '正在解析简历…', 0.15);
+    const declaredModules = resolveCampaignResumeModules(campaignId);
     let parsed = resume.parsed;
     if (!parsed) {
-      parsed = await completeJson<ResumeParsed>('outline', 'diagnosis.resume', resume.rawText);
-      saveResumeParsed(resumeId, parsed);
+      // 只有无法从旧字段派生的模块才进抽取指令；工程岗位因此保持原有解析行为
+      const moduleSection = buildResumeModulesUserSection(declaredModules);
+      parsed = await completeJson<ResumeParsedResponse>(
+        'outline',
+        'diagnosis.resume',
+        moduleSection ? `${resume.rawText}\n\n${moduleSection}` : resume.rawText,
+      );
     }
+    // 模块组装：模型抽到的优先，可派生的从旧字段回填（老缓存 parse 也能补齐展示数据）
+    const modules = assembleResumeModules(parsed, declaredModules);
+    if (modules) parsed = { ...parsed, modules };
+    const enrichedCached = resume.parsed !== null && modules !== undefined && resume.parsed.modules === undefined;
+    if (!resume.parsed || enrichedCached) saveResumeParsed(resumeId, parsed);
 
     updateCampaign({ id: campaignId, resumeId });
 
@@ -244,6 +276,7 @@ export async function diagnoseFetchIntel(campaignId: string, jobId: string): Pro
       freshness: 'oneYear',
       count: 8,
       cacheCategory: 'companyIntel',
+      campaignId,
     });
 
     const context = searchRes.results

@@ -271,7 +271,7 @@ describe('setCampaignRoleProfile', () => {
       resolvedAt: 1234,
     });
     expect(view.descriptor.configSnapshotHash).toMatch(/^[a-f0-9]{64}$/);
-    // SE 包 1.1.0 的可选依赖指向能力合编包，resolver 展开为它的精确版本
+    // SE 包（当前 1.2.0）的可选依赖指向能力合编包，resolver 展开为它的精确版本
     expect(view.descriptor.capabilities).toEqual([
       { id: CORE_CAPABILITIES_PACK_ID, version: '1.0.0', enabled: true },
     ]);

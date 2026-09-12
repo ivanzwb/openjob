@@ -234,6 +234,11 @@ export interface SearchRequest {
   noCache?: boolean;
   /** 覆盖 Tavily 的地域偏好（小写英文国名，如 china）；不传用配置里的值 */
   country?: string;
+  /**
+   * 岗位相关的检索传 campaignId：检索配置会合入该 Campaign 岗位包的 sourcePolicy
+   * （插入点 C，覆盖顺序 core 默认 < 岗位包 < 用户设置）。不传则只用全局配置。
+   */
+  campaignId?: string;
 }
 
 export interface SearchResultItem {

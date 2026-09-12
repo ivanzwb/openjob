@@ -206,9 +206,9 @@ export const productManagementRolePack: RolePack = {
       supportedFormats: [PRODUCT_MANAGEMENT_FORMAT_IDS.behavioral],
     },
   ],
-  promptFragments: {
-    diagnosis: 'diagnosis.jd',
-  },
+  navigation: [],
+  resumeModules: [],
+  promptFragments: [{ slot: 'diagnosis', ref: 'diagnosis.jd' }],
   sourcePolicy: {
     preferredDomains: ['woshipm.com', 'zhihu.com'],
   },

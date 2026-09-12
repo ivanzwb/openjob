@@ -11,7 +11,7 @@
  */
 
 import type { ExplanationTier } from '@core/enums';
-import type { PromptFragmentSet } from '@core/plugins/types';
+import type { PromptSlot } from '@core/plugins/types';
 import {
   EXPAND_SYSTEM,
   INTEL_SYSTEM,
@@ -46,17 +46,18 @@ import { MATCH_SYSTEM } from './ingest';
 import { REPO_SUMMARY_SYSTEM, buildRepoAnalyzeSystem } from './repo';
 
 /**
- * 岗位包能贡献片段的 Prompt Slot。名字与 PromptFragmentSet 的键绑死，
- * 插件新增 slot 必须先改 T01 的契约，改不动这里就等于改不动组合顺序。
+ * 岗位包能贡献片段的 Prompt Slot，定义在 plugins/types 的 PROMPT_SLOTS。
+ * 这里只 re-export：新增 slot 是契约变更，要同时改组合顺序与契约校验，
+ * 不是往这张表里加一行就完事。
  */
-export type PromptSlot = keyof PromptFragmentSet;
+export type { PromptSlot };
 
 /**
  * 某条 prompt 文本归谁所有。
  *
- * Core 自有的条目永远是 `core`：岗位包在 promptFragments 里填的是这里的
- * promptId，只是「选用哪一条」，不是「改写这一条」。插件自带文本时才记
- * pluginId/pluginVersion，provenance 里凭这个区分该次生成能不能被 Core 复现。
+ * Core 自有的条目永远是 `core`：岗位包片段用 ref 引用这里的 promptId（迁移期
+ * 通道），只是「选用哪一条」，不是「改写这一条」。包自带文本（file 片段）时
+ * provenance 记包内文件路径与内容指纹，凭这个区分该次生成能不能被 Core 复现。
  */
 export interface PromptSource {
   owner: 'core' | 'plugin';

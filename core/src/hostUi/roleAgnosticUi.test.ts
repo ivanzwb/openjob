@@ -167,9 +167,8 @@ describe('渲染进程只消费 descriptor', () => {
     }
 
     expect(offenders((text) => text.includes(`'${CORE_CAPABILITIES_PACK_ID}'`))).toEqual([]);
-    // App.tsx 必须通过共享常量认识它（源码页签的门控）
-    expect(
-      offenders((text) => text.includes('CORE_CAPABILITIES_PACK_ID')).length,
-    ).toBeGreaterThan(0);
+    // 插入点 A 声明化之后，界面不再按能力 ID 做门控——导航入口来自岗位包的
+    // navigation[] 声明（descriptor 数据），渲染层连共享常量都不需要引用
+    expect(offenders((text) => text.includes('CORE_CAPABILITIES_PACK_ID'))).toEqual([]);
   });
 });

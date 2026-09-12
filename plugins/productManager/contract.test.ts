@@ -2,9 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { CORE_CAPABILITIES_PACK_ID } from '@core/plugins/capabilitySuite';
 import { composePrompt } from '@core/prompts/composer';
 import type { PromptEvidence, PromptRuntimeSnapshot } from '@core/prompts/composer';
-import { isRegisteredPrompt } from '@core/prompts/registry';
-import { validateRolePack } from '@core/plugins/contracts';
 import type { PromptSlot } from '@core/prompts/registry';
+import { validateRolePack } from '@core/plugins/contracts';
 import {
   PRODUCT_MANAGER_FORMAT_IDS,
   PRODUCT_MANAGER_OPTIONAL_CAPABILITY_IDS,
@@ -57,7 +56,7 @@ describe('productManagerRolePack contract', () => {
   it('是不申请任何执行权限的岗位包，能力插件只作为可选依赖', () => {
     expect(productManagerRolePack.manifest).toMatchObject({
       id: 'product-manager',
-      version: '1.1.0',
+      version: '1.2.0',
       type: 'role-pack',
       compatibility: { core: '^1.0.0', schema: 23 },
       permissions: [],
@@ -73,39 +72,31 @@ describe('productManagerRolePack contract', () => {
   });
 
   it('三种题型都提供出题、评分和话术片段，落到练习与 Story 流程上不会缺片段', () => {
-    const { questionGeneration, scoring, answerCoaching } = productManagerRolePack.promptFragments;
+    const { promptFragments } = productManagerRolePack;
+    const find = (slot: PromptSlot, formatId?: string) =>
+      promptFragments.find((fragment) => fragment.slot === slot && fragment.formatId === formatId);
     for (const formatId of formatIds) {
-      expect(questionGeneration?.[formatId], `${formatId} 缺出题片段`).toBeTruthy();
-      expect(scoring?.[formatId], `${formatId} 缺评分片段`).toBeTruthy();
-      expect(answerCoaching?.[formatId], `${formatId} 缺话术片段`).toBeTruthy();
+      expect(find('questionGeneration', formatId), `${formatId} 缺出题片段`).toBeTruthy();
+      expect(find('scoring', formatId), `${formatId} 缺评分片段`).toBeTruthy();
+      expect(find('answerCoaching', formatId), `${formatId} 缺话术片段`).toBeTruthy();
     }
-    expect(productManagerRolePack.promptFragments.diagnosis).toBeTruthy();
-    expect(productManagerRolePack.promptFragments.explanation).toBeTruthy();
-    expect(productManagerRolePack.promptFragments.debrief).toBeTruthy();
+    expect(find('diagnosis')).toBeTruthy();
+    expect(find('explanation')).toBeTruthy();
+    expect(find('debrief')).toBeTruthy();
   });
 
   /**
    * T14 的硬性验收：不加载 coding、QPS、repo Prompt。
    *
-   * 按「片段是不是 registry key」判定，而不是扫关键词：Core 现有的 prompt 全部按
-   * 工程题型描述任务（`diagnosis.jd` 连 examForms 都写死成 concept/coding/design/
-   * scenario），产品岗位只要引用其中任意一条，就等于把那套口吻整段载进来了。
+   * 判定方式是「片段正文必须来自包内 prompts/ 文件、不得用迁移期 ref」：只要引用
+   * 任何一条 Core prompt，就等于把工程题型的口吻整段载进产品岗位。
    */
   it('全部片段由岗位包自带，不引用 Core 的任何工程 Prompt', () => {
-    const values = [
-      productManagerRolePack.promptFragments.diagnosis,
-      productManagerRolePack.promptFragments.explanation,
-      productManagerRolePack.promptFragments.debrief,
-      ...formatIds.flatMap((formatId) => [
-        productManagerRolePack.promptFragments.questionGeneration?.[formatId],
-        productManagerRolePack.promptFragments.scoring?.[formatId],
-        productManagerRolePack.promptFragments.answerCoaching?.[formatId],
-      ]),
-    ].filter((value): value is string => value !== undefined);
-
-    expect(values.length).toBeGreaterThan(0);
-    for (const value of values) {
-      expect(isRegisteredPrompt(value), `不应引用 Core prompt：${value}`).toBe(false);
+    expect(productManagerRolePack.promptFragments.length).toBeGreaterThan(0);
+    for (const fragment of productManagerRolePack.promptFragments) {
+      expect(fragment.file, '片段必须来自包内 prompts/ 文件').toBeTruthy();
+      expect(fragment.text, `${fragment.file} 缺正文`).toBeTruthy();
+      expect(fragment.ref, '不应引用 Core prompt').toBeUndefined();
     }
   });
 
@@ -127,7 +118,7 @@ describe('productManagerRolePack contract', () => {
       const composed = compose(slot, formatId);
       // Core Policy 永远第一节：片段不允许把它顶掉
       expect(composed.sections[0]?.layer).toBe('corePolicy');
-      expect(composed.provenance.promptId).toContain(`${PRODUCT_MANAGER_ROLE_PACK_ID}#${slot}`);
+      expect(composed.provenance.promptId).toContain(`${PRODUCT_MANAGER_ROLE_PACK_ID}:prompts/`);
       expect(composed.provenance.promptVersionId).toContain(PRODUCT_MANAGER_ROLE_PACK_VERSION);
       // 未启用的可选能力不算这次运行时的一部分
       expect(composed.provenance.capabilityIds).toEqual([]);

@@ -8,11 +8,14 @@ import {
 import { isPluginPermission } from './permissions';
 import type {
   CapabilityPlugin,
+  NavigationEntry,
   PluginManifest,
-  PromptFragmentSet,
+  PromptFragment,
+  ResumeModuleDefinition,
   RolePack,
   RubricAnchors,
 } from './types';
+import { HOST_PAGE_IDS, PROMPT_SLOTS, RESUME_MODULE_KINDS } from './types';
 
 export interface PluginContractIssue {
   path: string;
@@ -43,14 +46,6 @@ const ID_RE = /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
 const SEMVER_RE =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 const SEMVER_RANGE_CHARS_RE = /^[0-9A-Za-z.*+<>=~^|\s-]+$/;
-const PROMPT_SLOTS = [
-  'diagnosis',
-  'explanation',
-  'questionGeneration',
-  'scoring',
-  'answerCoaching',
-  'debrief',
-] as const satisfies ReadonlyArray<keyof PromptFragmentSet>;
 
 function issue(
   issues: PluginContractIssue[],
@@ -223,37 +218,135 @@ export function validatePluginManifest(manifest: PluginManifest): PluginContract
 }
 
 function validatePromptFragments(
-  fragments: PromptFragmentSet,
+  fragments: PromptFragment[],
   formatIds: Set<string>,
   issues: PluginContractIssue[],
 ): void {
-  Object.keys(fragments).forEach((slot) => {
-    if (!(PROMPT_SLOTS as readonly string[]).includes(slot)) {
-      issue(issues, `promptFragments.${slot}`, 'invalid-prompt-slot', '不允许的 Prompt Slot');
+  if (!Array.isArray(fragments)) {
+    issue(issues, 'promptFragments', 'invalid-value', 'promptFragments 必须是数组');
+    return;
+  }
+  const seen = new Set<string>();
+  fragments.forEach((fragment, index) => {
+    const path = `promptFragments[${index}]`;
+    if (!(PROMPT_SLOTS as readonly string[]).includes(fragment.slot)) {
+      issue(issues, `${path}.slot`, 'invalid-prompt-slot', '不允许的 Prompt Slot');
+    }
+    if (fragment.formatId !== undefined && !formatIds.has(fragment.formatId)) {
+      issue(issues, `${path}.formatId`, 'missing-reference', '引用了未定义的面试形式');
+    }
+    const hasFile = typeof fragment.file === 'string';
+    const hasRef = typeof fragment.ref === 'string';
+    if (hasFile === hasRef) {
+      issue(
+        issues,
+        path,
+        'invalid-value',
+        '片段必须且只能选择 file（包内 markdown 文件）或 ref（迁移期 promptId）之一',
+      );
+    }
+    if (hasFile) {
+      if (!isNonEmpty(fragment.text)) {
+        issue(issues, `${path}.text`, 'invalid-value', 'file 片段正文为空：文件未被加载或内容为空');
+      }
+      if (!fragment.file!.startsWith('prompts/')) {
+        issue(issues, `${path}.file`, 'invalid-value', '片段文件必须位于包内 prompts/ 目录');
+      }
+    }
+    if (hasRef && !isNonEmpty(fragment.ref)) {
+      issue(issues, `${path}.ref`, 'invalid-value', 'promptId 引用不能为空');
+    }
+    const key = `${fragment.slot}::${fragment.formatId ?? '*'}`;
+    if (seen.has(key)) {
+      issue(issues, path, 'duplicate-id', `同 slot 同题型只能声明一个片段：${key}`);
+    }
+    seen.add(key);
+  });
+}
+
+function validateResumeModules(
+  modules: ResumeModuleDefinition[],
+  issues: PluginContractIssue[],
+): void {
+  if (!Array.isArray(modules)) {
+    issue(issues, 'resumeModules', 'invalid-value', 'resumeModules 必须是数组');
+    return;
+  }
+  validateUniqueIds(modules, 'resumeModules', issues);
+  modules.forEach((module, index) => {
+    const path = `resumeModules[${index}]`;
+    if (!(RESUME_MODULE_KINDS as readonly string[]).includes(module.kind)) {
+      issue(issues, `${path}.kind`, 'invalid-value', '未知的简历模块类型');
+    }
+    if (!isNonEmpty(module.label)) {
+      issue(issues, `${path}.label`, 'invalid-value', '模块展示名不能为空');
+    }
+    if (!Number.isInteger(module.schemaVersion) || module.schemaVersion < 1) {
+      issue(issues, `${path}.schemaVersion`, 'invalid-value', 'schemaVersion 必须是正整数');
+    }
+    if ((module.evidenceKinds ?? []).length === 0) {
+      issue(issues, `${path}.evidenceKinds`, 'invalid-value', '至少声明一种证据类型');
+    }
+    // 可派生模块从旧字段回填，不参与模型抽取，也不该带指令
+    const needsInstruction = module.deriveFrom === undefined;
+    const hasInline = typeof module.instruction === 'string';
+    const hasFile = typeof module.extractionPromptFile === 'string';
+    if (needsInstruction && hasInline === hasFile) {
+      issue(
+        issues,
+        path,
+        'invalid-value',
+        '模块必须且只能选择 instruction（内联指令）或 extractionPromptFile（包内文件）之一',
+      );
+    }
+    if (!needsInstruction && (hasInline || hasFile)) {
+      issue(
+        issues,
+        path,
+        'invalid-value',
+        '声明了 deriveFrom 的模块从旧字段回填，不要再带抽取指令',
+      );
+    }
+    if (hasInline && !isNonEmpty(module.instruction)) {
+      issue(issues, `${path}.instruction`, 'invalid-value', '抽取指令不能为空');
+    }
+    if (hasFile && !isNonEmpty(module.extractionPromptFile)) {
+      issue(issues, `${path}.extractionPromptFile`, 'invalid-value', '指令文件路径不能为空');
+    }
+    if (
+      module.deriveFrom !== undefined &&
+      !['skills', 'drillableTopics'].includes(module.deriveFrom)
+    ) {
+      issue(issues, `${path}.deriveFrom`, 'invalid-value', '未知的旧字段派生来源');
     }
   });
+}
 
-  (['diagnosis', 'explanation', 'debrief'] as const).forEach((slot) => {
-    const value = fragments[slot];
-    if (value !== undefined && !isNonEmpty(value)) {
-      issue(issues, `promptFragments.${slot}`, 'invalid-value', 'Prompt fragment 不能为空');
+function validateNavigation(entries: NavigationEntry[], issues: PluginContractIssue[]): void {
+  if (!Array.isArray(entries)) {
+    issue(issues, 'navigation', 'invalid-value', 'navigation 必须是数组');
+    return;
+  }
+  validateUniqueIds(entries, 'navigation', issues);
+  entries.forEach((entry, index) => {
+    const path = `navigation[${index}]`;
+    if (!isNonEmpty(entry.label)) {
+      issue(issues, `${path}.label`, 'invalid-value', '入口展示名不能为空');
     }
-  });
-
-  (['questionGeneration', 'scoring', 'answerCoaching'] as const).forEach((slot) => {
-    Object.entries(fragments[slot] ?? {}).forEach(([formatId, value]) => {
-      if (!formatIds.has(formatId)) {
-        issue(
-          issues,
-          `promptFragments.${slot}.${formatId}`,
-          'missing-reference',
-          '引用了未定义的面试形式',
-        );
-      }
-      if (!isNonEmpty(value)) {
-        issue(issues, `promptFragments.${slot}.${formatId}`, 'invalid-value', 'Prompt fragment 不能为空');
-      }
-    });
+    if (!(HOST_PAGE_IDS as readonly string[]).includes(entry.pageId)) {
+      issue(
+        issues,
+        `${path}.pageId`,
+        'missing-reference',
+        `页面不存在于宿主页面注册表：${entry.pageId}`,
+      );
+    }
+    if (
+      entry.requiredCapabilityId !== undefined &&
+      !isStablePluginId(entry.requiredCapabilityId)
+    ) {
+      issue(issues, `${path}.requiredCapabilityId`, 'invalid-id', 'Capability ID 不合法');
+    }
   });
 }
 
@@ -474,6 +567,8 @@ export function validateRolePack(pack: RolePack): PluginContractIssue[] {
   });
 
   validatePromptFragments(pack.promptFragments, formatIds, issues);
+  validateResumeModules(pack.resumeModules, issues);
+  validateNavigation(pack.navigation, issues);
   return issues;
 }
 

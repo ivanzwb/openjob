@@ -183,7 +183,7 @@ describe('能力绑定', () => {
     const installed = listInstalledPlugins().map((plugin) => plugin.id);
 
     expect(installed).toContain(CORE_CAPABILITIES_PACK_ID);
-    // SE 包 1.1.0 只声明依赖合编包；PM/sales 的可选依赖不归这个战役
+    // SE 包只声明依赖合编包；PM/sales 的可选依赖不归这个战役
     expect(enabledIds(descriptor)).toEqual([CORE_CAPABILITIES_PACK_ID]);
   });
 });

@@ -18,6 +18,7 @@
     "smoke:grammars": "pnpm --filter @openjob/desktop smoke:grammars",
     "smoke:app": "pnpm --filter @openjob/desktop smoke:app",
     "pack:plugins": "node scripts/pack-plugins.mjs",
+    "pack:validate": "node scripts/pack-validate.mjs",
     "verify:plugins": "node scripts/pack-plugins.mjs && node scripts/verify-plugin-bundles.mjs dist-plugins",
     "ci": "pnpm run typecheck && pnpm run lint && pnpm run test && pnpm run smoke:grammars && pnpm run build && pnpm run smoke:app"
   },

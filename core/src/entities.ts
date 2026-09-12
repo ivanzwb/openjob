@@ -95,6 +95,11 @@ export interface ResumeParsed {
     drillableTopics: string[];
   }>;
   yearsOfExperience: number | null;
+  /**
+   * 插入点 D：岗位包声明的简历模块数据，键为 ResumeModuleDefinition.id。
+   * 旧数据没有这个字段；未知 schemaVersion 的模块只保留、不参与展示。
+   */
+  modules?: Record<string, { schemaVersion: number; data: unknown }>;
 }
 
 export interface JdParsed {

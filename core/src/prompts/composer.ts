@@ -7,8 +7,10 @@
  * 定三件事，其余都可以由插件决定：
  *
  * 1. 层次顺序固定（PROMPT_LAYER_ORDER），Core Policy 永远第一节；
- * 2. 岗位包只能向预定义 Slot 贡献片段——填 registry 里的 promptId（等于「选用
- *    Core 的哪一条」），或给一段只能追加、不能重定义骨架的自带文本；
+ * 2. 岗位包只能向预定义 Slot 贡献片段——正文来自包内 prompts/ markdown 文件
+ *    （file 指向包内路径，text 由加载器内联），迁移期可用 ref 显式引用 registry
+ *    的 promptId。file 与 ref 在类型与校验上都互斥，不再做「像不像 promptId」
+ *    的字符串猜测：ref 引用了未注册的 promptId 直接报错；
  * 3. 会产出候选人个人事实的 slot 缺少已确认证据时直接拒绝组合（fail closed），
  *    不靠下游的事实校验兜。
  *
@@ -19,6 +21,7 @@
 import type {
   CampaignRuntimeDescriptor,
   InterviewFormatDefinition,
+  PromptFragment,
   ResolvedCapabilityRef,
   ResolvedPluginRef,
   RolePack,
@@ -108,6 +111,15 @@ const PERSONAL_FACT_SLOTS: ReadonlySet<PromptSlot> = new Set<PromptSlot>([
 const CORE_HEADING_RE = /^#\s+\S/m;
 
 const FRAGMENT_LENGTH_LIMIT = 4000;
+
+/** djb2：片段正文的内容指纹，进 provenance 让「哪个版本的片段」可回溯 */
+function shortHash(text: string): string {
+  let hash = 5381;
+  for (let index = 0; index < text.length; index += 1) {
+    hash = ((hash * 33) ^ text.charCodeAt(index)) >>> 0;
+  }
+  return hash.toString(16).padStart(8, '0');
+}
 
 /** 静态检查不是唯一安全边界，但这几类写法一旦放行，后面的层次约束就全是空话 */
 const FRAGMENT_FORBIDDEN_PATTERNS: ReadonlyArray<{ pattern: RegExp; reason: string }> = [
@@ -219,43 +231,62 @@ export class PromptCompositionError extends Error {
   }
 }
 
-function fragmentRef(input: PromptCompositionInput): string {
-  const { promptFragments } = input.rolePack;
-  const { slot, formatId } = input;
-  if (slot === 'diagnosis' || slot === 'explanation' || slot === 'debrief') {
-    const value = promptFragments[slot];
-    if (!value) {
-      throw new PromptCompositionError(
-        'missing-fragment',
-        `岗位包 ${input.rolePack.manifest.id} 未提供 ${slot} 片段`,
-      );
-    }
-    return value;
-  }
-  if (!formatId) {
-    throw new PromptCompositionError(
-      'unknown-format',
-      `${slot} 按题型分片，必须指定 formatId`,
-    );
-  }
-  const value = promptFragments[slot]?.[formatId];
-  if (!value) {
-    throw new PromptCompositionError(
-      'missing-fragment',
-      `岗位包 ${input.rolePack.manifest.id} 未为 ${formatId} 提供 ${slot} 片段`,
-    );
-  }
-  return value;
+/**
+ * 片段解析的唯一实现：同 slot 内 formatId 精确匹配优先于全题型兜底。
+ * composer 内部抛错版与给宿主（如 Story 挑题型）用的只读版都走这里。
+ */
+export function resolveRolePackFragment(
+  rolePack: RolePack,
+  slot: PromptSlot,
+  formatId?: string,
+): PromptFragment | undefined {
+  const candidates = rolePack.promptFragments.filter((fragment) => fragment.slot === slot);
+  const exact = formatId
+    ? candidates.find((fragment) => fragment.formatId === formatId)
+    : undefined;
+  return exact ?? candidates.find((fragment) => fragment.formatId === undefined);
 }
 
-function assertPluginFragmentSafe(text: string, origin: string): void {
+function resolveFragment(input: PromptCompositionInput): PromptFragment {
+  const { slot, formatId } = input;
+  if (slot === 'questionGeneration' || slot === 'scoring' || slot === 'answerCoaching') {
+    if (!formatId) {
+      throw new PromptCompositionError(
+        'unknown-format',
+        `${slot} 按题型分片，必须指定 formatId`,
+      );
+    }
+  }
+  const fragment = resolveRolePackFragment(input.rolePack, slot, formatId);
+  if (!fragment) {
+    throw new PromptCompositionError(
+      'missing-fragment',
+      formatId
+        ? `岗位包 ${input.rolePack.manifest.id} 未为 ${formatId} 提供 ${slot} 片段`
+        : `岗位包 ${input.rolePack.manifest.id} 未提供 ${slot} 片段`,
+    );
+  }
+  return fragment;
+}
+
+/**
+ * 片段/指令文本的静态安全检查。导出给岗位包装配（pack-authoring）复用：
+ * 简历模块的抽取指令与 Prompt 片段走同一套边界——一级标题、角色重置、
+ * 权限提升和绕过证据策略的写法在这里就拦下，不等进 prompt 才炸。
+ */
+export function assertPluginFragmentSafe(
+  text: string,
+  origin: string,
+  maxLength: number | null = FRAGMENT_LENGTH_LIMIT,
+): void {
   if (text.trim().length === 0) {
     throw new PromptCompositionError('missing-fragment', `${origin} 的片段为空`);
   }
-  if (text.length > FRAGMENT_LENGTH_LIMIT) {
+  // 文件化片段不设长度上限：上限只针对「运行时兜底文本」，防止片段被当成完整 System Prompt
+  if (maxLength !== null && text.length > maxLength) {
     throw new PromptCompositionError(
       'fragment-overrides-core',
-      `${origin} 的片段超过 ${FRAGMENT_LENGTH_LIMIT} 字符，片段不能当成完整 System Prompt`,
+      `${origin} 的片段超过 ${maxLength} 字符，片段不能当成完整 System Prompt`,
     );
   }
   if (CORE_HEADING_RE.test(text)) {
@@ -344,21 +375,34 @@ export function composePrompt(input: PromptCompositionInput): ComposedPrompt {
     );
   }
 
-  const ref = fragmentRef(input);
-  const registered = isRegisteredPrompt(ref);
+  const fragment = resolveFragment(input);
   let fragmentText: string;
   let promptId: string;
   let promptVersionId: string;
-  if (registered) {
-    const resolved = resolvePrompt(ref, input.params, input.experiment, input.fingerprint);
+  if (fragment.ref !== undefined) {
+    // ref 是显式契约：引用了不存在的 promptId 立刻停下，不再回退成「当成自带文本」
+    if (!isRegisteredPrompt(fragment.ref)) {
+      throw new PromptCompositionError(
+        'missing-fragment',
+        `岗位包 ${rolePack.manifest.id} 引用了未注册的 promptId：${fragment.ref}`,
+      );
+    }
+    const resolved = resolvePrompt(fragment.ref, input.params, input.experiment, input.fingerprint);
     fragmentText = resolved.text;
     promptId = resolved.promptId;
     promptVersionId = resolved.versionId;
+  } else if (fragment.text !== undefined) {
+    const origin = fragment.file ?? `${rolePack.manifest.id} 的 ${slot}`;
+    // 文件化片段不做长度截断：静态安全检查照跑，长度上限只属于运行时兜底文本
+    assertPluginFragmentSafe(fragment.text, origin, null);
+    fragmentText = fragment.text;
+    promptId = `${rolePack.manifest.id}:${fragment.file ?? slot}`;
+    promptVersionId = `${promptId}@${rolePack.manifest.version}#${shortHash(fragmentText)}`;
   } else {
-    assertPluginFragmentSafe(ref, `岗位包 ${rolePack.manifest.id} 的 ${slot}`);
-    fragmentText = ref;
-    promptId = `${rolePack.manifest.id}#${slot}${input.formatId ? `:${input.formatId}` : ''}`;
-    promptVersionId = `${promptId}@${rolePack.manifest.version}`;
+    throw new PromptCompositionError(
+      'missing-fragment',
+      `岗位包 ${rolePack.manifest.id} 的 ${slot} 片段既没有 ref 也没有正文`,
+    );
   }
 
   if (input.industryFragment) {

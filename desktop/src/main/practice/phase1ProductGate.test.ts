@@ -225,9 +225,9 @@ describe('Phase 1 产品战役练习闸门', () => {
 
     const question = h.calls.find((call) => call.slot === 'questionGeneration');
     expect(question).toBeDefined();
-    // 自带片段的 promptId 形如 <packId>#<slot>:<formatId>；registry key 不是这个形状
+    // 文件化片段的 promptId 形如 <packId>:<包内文件路径>；registry key 不是这个形状
     expect(question?.prompt.provenance.promptId).toBe(
-      `${PRODUCT_MANAGER_ROLE_PACK_ID}#questionGeneration:${CASE_FORMAT_ID}`,
+      `${PRODUCT_MANAGER_ROLE_PACK_ID}:prompts/questionGeneration/${CASE_FORMAT_ID}.md`,
     );
 
     const lowered = question!.prompt.systemPrompt.toLocaleLowerCase();

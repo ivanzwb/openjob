@@ -42,7 +42,7 @@ function composed() {
   return composePrompt({
     runtime: {
       coreVersion: '1.0.0',
-      rolePack: { id: 'software-engineering', version: '1.1.0' },
+      rolePack: { id: 'software-engineering', version: '1.2.0' },
       capabilities: CAPABILITIES,
       configSnapshotHash: 'snapshot-hash',
     },

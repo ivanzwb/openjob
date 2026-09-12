@@ -26,7 +26,7 @@ import type { CandidateEvidence, SpeechSnippet } from '@core/entities';
 import type { LlmRole } from '@core/enums';
 import { toPromptEvidenceList } from '@core/evidence/promptEvidence';
 import type { InterviewFormatDefinition, RolePack } from '@core/plugins/types';
-import { composePrompt, type ComposedPrompt } from '@core/prompts/composer';
+import { composePrompt, resolveRolePackFragment, type ComposedPrompt } from '@core/prompts/composer';
 import {
   buildStoryFactSet,
   checkDeliveryGrounding,
@@ -88,8 +88,9 @@ export interface StoryService extends StoryProtocol {
  * 拿系统设计的口吻讲一段个人经历，用户一听就知道不是自己会说的话。
  */
 export function resolveStoryDeliveryFormat(rolePack: RolePack): InterviewFormatDefinition {
-  const coaching = rolePack.promptFragments.answerCoaching ?? {};
-  const usable = rolePack.interviewFormats.filter((format) => Boolean(coaching[format.id]));
+  const usable = rolePack.interviewFormats.filter(
+    (format) => resolveRolePackFragment(rolePack, 'answerCoaching', format.id) !== undefined,
+  );
   const behavioral = usable.find((format) => format.protocol === 'behavioral');
   const chosen = behavioral ?? usable[0];
   if (!chosen) {
