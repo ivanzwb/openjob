@@ -420,6 +420,15 @@ function validatePackageInternal(files: PluginPackageFiles): PluginContractIssue
       );
       break;
     }
+    case 'plugin': {
+      // 代码插件（v3）：manifest + main.js + ui/ 资产，不带岗位数据与能力贡献
+      for (const name of [PACKAGE_PACK_FILE, PACKAGE_CONTRIBUTIONS_FILE]) {
+        if (files[name] !== undefined) {
+          issue(issues, name, 'invalid-value', `代码插件不带 ${name}`);
+        }
+      }
+      break;
+    }
     default:
       issue(issues, 'manifest.type', 'invalid-value', `未知插件类型：${String(manifest.type)}`);
   }

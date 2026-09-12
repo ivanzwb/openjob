@@ -16,7 +16,7 @@
  */
 import { Buffer } from 'node:buffer';
 import { generateKeyPairSync, createHash, createPrivateKey, createPublicKey } from 'node:crypto';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createServer } from 'vite';
 
@@ -55,8 +55,9 @@ async function loadModules() {
     const capabilityTransfer = await server.ssrLoadModule(
       'core/src/plugins/package/capabilityTransfer.ts',
     );
+    const contract = await server.ssrLoadModule('core/src/plugins/package/contract.ts');
     const bundle = await server.ssrLoadModule('desktop/src/main/plugins/bundle.ts');
-    return { suite, rolePacks, transfer, capabilityTransfer, bundle };
+    return { suite, rolePacks, transfer, capabilityTransfer, contract, bundle };
   } finally {
     await server.close();
   }
@@ -107,7 +108,7 @@ function resolveSigningKey() {
 }
 
 async function main() {
-  const { suite, rolePacks, transfer, capabilityTransfer, bundle } = await loadModules();
+  const { suite, rolePacks, transfer, capabilityTransfer, contract, bundle } = await loadModules();
   const key = resolveSigningKey();
 
   /**
@@ -120,6 +121,18 @@ async function main() {
    * 合编包用新 id 走与岗位包完全相同的安装链路。
    */
   // 拆分走各 transfer：手机端收岗位包、安装端解析都复用同一份定义
+  // 代码插件（v3）：examples/ 下的纯文本资产直接读入，无需 ssrLoadModule
+  const CODE_PLUGIN_DIR = join(ROOT, 'examples', 'portfolio-board');
+  const codeFiles = {};
+  for (const name of ['manifest.json', 'main.js', 'ui/index.html']) {
+    codeFiles[name] = readFileSync(join(CODE_PLUGIN_DIR, name), 'utf8');
+  }
+  const codeIssues = contract.validatePluginPackage(codeFiles);
+  if (codeIssues.length > 0) {
+    const detail = codeIssues.map((issue) => `  ${issue.path}: ${issue.message}`).join('\n');
+    throw new Error(`代码插件 ${CODE_PLUGIN_DIR} 校验失败：\n${detail}`);
+  }
+
   const allPackages = [
     ...rolePacks.DISTRIBUTED_ROLE_PACKS.map((pack) => ({
       manifest: pack.manifest,
@@ -128,6 +141,10 @@ async function main() {
     {
       manifest: suite.coreCapabilitiesSuite.manifest,
       files: capabilityTransfer.capabilityPluginToPackageFiles(suite.coreCapabilitiesSuite),
+    },
+    {
+      manifest: JSON.parse(codeFiles['manifest.json']),
+      files: codeFiles,
     },
   ];
 
