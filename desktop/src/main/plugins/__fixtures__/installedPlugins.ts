@@ -8,8 +8,10 @@
  * 磁盘扫描——扫描本身由 `inventory.test.ts` 用真实临时目录覆盖。
  */
 import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
-import { coreCapabilitiesSuite } from '@core/plugins/capabilitySuite';
+import { synthesizeSuiteFromRolePack } from '@core/plugins/capabilitySuite';
+import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
 import type { CapabilityPlugin, RolePack } from '@core/plugins/types';
+import type { PluginPackageContributions } from '@core/plugins/package/contract';
 import type { PluginInventoryEntry } from '../inventory';
 import { setExternalPlugins } from '../runtime';
 
@@ -21,31 +23,53 @@ export function installedRolePackEntry(pack: RolePack): PluginInventoryEntry {
   };
 }
 
-/** 能力合编包的「本机已装」夹具：目录名与生产一致（id@version）。 */
+/** 合编包的「本机已装」夹具：从 SE 包内嵌声明合成（版本随包 1.4.0）。 */
 export function installedCapabilitySuiteEntry(): PluginInventoryEntry {
-  const manifest = coreCapabilitiesSuite.manifest;
+  const suite = synthesizeSuiteFromRolePack(softwareEngineeringRolePack);
+  if (!suite) throw new Error('SE 包合成套件失败');
+  const manifest = suite.manifest;
   return {
     dir: `/test/plugins/${manifest.id}@${manifest.version}`,
     trust: 'first-party',
-    // 安装端会把 contributions 重放成 CapabilityPlugin（runtime.registerExternal），
-    // 与真实链路一致
     package: {
       manifest,
-      contributions: (() => {
-        const collected: { tools: unknown[]; artifactParsers: unknown[]; interactions: unknown[] } = {
-          tools: [],
-          artifactParsers: [],
-          interactions: [],
-        };
-        (coreCapabilitiesSuite as CapabilityPlugin).register({
-          registerTool: (tool) => collected.tools.push(tool),
-          registerArtifactParser: (parser) => collected.artifactParsers.push(parser),
-          registerInteractionType: (interaction) => collected.interactions.push(interaction),
-        });
-        return collected as never;
-      })(),
+      contributions: collectContributions(suite),
     },
   };
+}
+
+/** legacy 1.0.0 条目：历史 descriptor pin 退役 id@1.0.0，归一化后按该版本判 installed。 */
+export function legacyCapabilitySuiteEntry(): PluginInventoryEntry {
+  const suite = synthesizeSuiteFromRolePack(softwareEngineeringRolePack);
+  if (!suite) throw new Error('SE 包合成套件失败');
+  const manifest = { ...suite.manifest, version: '1.0.0' };
+  return {
+    dir: `/test/plugins/${manifest.id}@${manifest.version}`,
+    trust: 'first-party',
+    package: {
+      manifest,
+      contributions: collectContributions(suite),
+    },
+  };
+}
+
+/** 两个版本一起装：当前 1.4.0 + legacy 1.0.0，与「旧版本仍装着」的生产常态一致。 */
+export function installedCapabilitySuiteEntries(): PluginInventoryEntry[] {
+  return [installedCapabilitySuiteEntry(), legacyCapabilitySuiteEntry()];
+}
+
+function collectContributions(suite: CapabilityPlugin): PluginPackageContributions {
+  const collected: { tools: unknown[]; artifactParsers: unknown[]; interactions: unknown[] } = {
+    tools: [],
+    artifactParsers: [],
+    interactions: [],
+  };
+  suite.register({
+    registerTool: (tool) => collected.tools.push(tool),
+    registerArtifactParser: (parser) => collected.artifactParsers.push(parser),
+    registerInteractionType: (interaction) => collected.interactions.push(interaction),
+  });
+  return collected as PluginPackageContributions;
 }
 
 /** 默认装上全部随 release 分发的包：三个岗位包 + 能力合编包。 */

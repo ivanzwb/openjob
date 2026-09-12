@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   ROLE_PLAY_SCENARIOS,
-  customerConversationInteraction,
-} from '@core/plugins/builtin/rolePlay';
+} from '@core/plugins/interactions/rolePlayScenarios';
+import { customerConversationInteraction } from '@plugins/salesCustomerSuccess/capabilities';
 import type { PluginPermission } from '@core/plugins/permissions';
 import {
   PERSONA_FAILURE_BUDGET,

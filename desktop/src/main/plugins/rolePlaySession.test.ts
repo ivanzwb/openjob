@@ -13,7 +13,7 @@ import {
   SALES_CUSTOMER_SUCCESS_ROLE_PACK_ID,
 } from '@plugins/salesCustomerSuccess';
 import { SOFTWARE_ENGINEERING_ROLE_PACK_ID } from '@plugins/softwareEngineering';
-import { ROLE_PLAY_SCENARIOS } from '@core/plugins/builtin/rolePlay';
+import { ROLE_PLAY_SCENARIOS } from '@core/plugins/interactions/rolePlayScenarios';
 import type { ComposedPrompt } from '@core/prompts/composer';
 import { newLegacyDb } from '../db/__fixtures__/legacyDb';
 import { installRolePacks } from './__fixtures__/installedPlugins';

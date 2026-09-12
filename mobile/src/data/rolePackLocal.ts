@@ -12,7 +12,10 @@
  * 这份缓存不进同步表，理由与 repo.local_path 相同：它是设备属性，不是备考数据。
  */
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { capabilityIdResolvedBySuite, coreCapabilitiesSuite } from '@core/plugins/capabilitySuite';
+import {
+  capabilityIdResolvedBySuite,
+  synthesizeSuiteFromRolePack,
+} from '@core/plugins/capabilitySuite';
 import { listBuiltInPlugins, toInstalledPlugin, type InstalledPlugin } from '@core/plugins/clientView';
 import { parseTransferredRolePack } from '@core/plugins/package/rolePackTransfer';
 import type { CampaignRuntimeDescriptor, ResolvedPluginRef, RolePack } from '@core/plugins/types';
@@ -145,7 +148,12 @@ export function installedPluginsForCampaign(
     (item) => capabilityIdResolvedBySuite(item.id) && item.enabled === true,
   );
   if (!capabilityEnabled) return packs;
-  return [...packs, toInstalledPlugin(coreCapabilitiesSuite.manifest)];
+  // 合编包条目从缓存里任一带内嵌能力的岗位包合成（版本随包）
+  for (const pack of listCachedRolePacks(db)) {
+    const suite = synthesizeSuiteFromRolePack(pack);
+    if (suite) return [...packs, toInstalledPlugin(suite.manifest)];
+  }
+  return packs;
 }
 
 /** 界面用的下发状态：每个被固定的岗位包，数据到了没有。 */

@@ -158,11 +158,14 @@ export function listExternalPlugins(): readonly PluginInventoryEntry[] {
  */
 export function listInstalledPlugins(): InstalledPlugin[] {
   // 内嵌声明按「套件版本」合并：descriptor pin 的是包版本，多个包同版本时合成条目
-  // 必须携带全部声明（并集），权限网关与能力视图才不会互相削掉能力。ids 取排序后的
-  // 并集，合并结果与注入顺序无关（清单排序测试守这条性质）。
+  // 必须携带全部声明（并集），权限网关与能力视图才不会互相削掉能力。合并结果与
+  // 注入顺序无关（清单排序测试守这条性质）。
   const byVersion = new Map<
     string,
-    { ids: string[]; compatibility: { core: string; schema: number } }
+    {
+      declarations: RolePack['capabilities'];
+      compatibility: { core: string; schema: number };
+    }
   >();
   for (const entry of externalEntries) {
     const pack = entry.package.rolePack;
@@ -170,17 +173,17 @@ export function listInstalledPlugins(): InstalledPlugin[] {
     const version = pack.manifest.version;
     const bucket = byVersion.get(version);
     if (bucket) {
-      bucket.ids.push(...pack.capabilities.map((item) => item.id));
+      bucket.declarations.push(...pack.capabilities);
     } else {
       byVersion.set(version, {
-        ids: pack.capabilities.map((item) => item.id),
+        declarations: [...pack.capabilities],
         compatibility: pack.manifest.compatibility,
       });
     }
   }
   const synthesized = new Map<string, InstalledPlugin>();
-  for (const [version, { ids, compatibility }] of byVersion) {
-    const suite = synthesizeSuite(ids, version, compatibility, '已安装岗位包的内嵌声明');
+  for (const [version, { declarations, compatibility }] of byVersion) {
+    const suite = synthesizeSuite(declarations, version, compatibility, '已安装岗位包的内嵌声明');
     if (suite === null) continue;
     synthesized.set(version, toInstalledPlugin(suite.manifest));
   }

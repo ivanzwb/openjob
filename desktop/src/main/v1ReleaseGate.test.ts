@@ -15,13 +15,21 @@ import { DatabaseSync } from 'node:sqlite';
 import type { Database } from 'better-sqlite3';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { coreCapabilitiesSuite } from '@core/plugins/capabilitySuite';
+import { synthesizeSuiteFromRolePack } from '@core/plugins/capabilitySuite';
+import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
+import { productManagerRolePack } from '@plugins/productManager';
+import { salesCustomerSuccessRolePack } from '@plugins/salesCustomerSuccess';
+
+const SUITE_MANIFEST_BY_PACK = (): Record<string, { runtime?: { mobile?: string } }> => ({
+  'software-engineering': synthesizeSuiteFromRolePack(softwareEngineeringRolePack)!.manifest,
+  'product-manager': synthesizeSuiteFromRolePack(productManagerRolePack)!.manifest,
+  'sales-customer-success': synthesizeSuiteFromRolePack(salesCustomerSuccessRolePack)!.manifest,
+});
 import {
   PRODUCT_MANAGER_OPTIONAL_CAPABILITY_IDS,
   PRODUCT_MANAGER_ROLE_PACK_ID,
 } from '@plugins/productManager';
 import { SALES_CUSTOMER_SUCCESS_ROLE_PACK_ID } from '@plugins/salesCustomerSuccess';
-import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
 import { CORE_CAPABILITIES_PACK_ID } from '@core/plugins/capabilitySuite';
 import type { CampaignRuntimeDescriptor } from '@core/plugins/types';
 import { buildClientCapabilityView } from '@core/plugins/clientView';
@@ -201,9 +209,10 @@ describe('两端消费同一份 descriptor', () => {
     );
 
     // 手机端的可用性以 Manifest 声明为准，不在这里重写一份预期
-    const manifest = CORE_CAPABILITIES_PACK_ID === item.capabilityId
-      ? coreCapabilitiesSuite.manifest
-      : undefined;
+    const manifest =
+      CORE_CAPABILITIES_PACK_ID === item.capabilityId
+        ? SUITE_MANIFEST_BY_PACK()[item.rolePackId]
+        : undefined;
     expect(mobile.capabilities.find((entry) => entry.id === item.capabilityId)?.mode).toBe(
       manifest?.runtime?.mobile,
     );

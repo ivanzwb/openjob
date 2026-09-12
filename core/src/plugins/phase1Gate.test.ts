@@ -19,7 +19,7 @@ import {
 import { composePrompt } from '../prompts/composer';
 import type { PromptSlot } from '../prompts/registry';
 import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
-import { coreCapabilitiesSuite } from './capabilitySuite';
+import { synthesizeSuiteFromRolePack } from './capabilitySuite';
 import {
   PRODUCT_MANAGER_FORMAT_IDS,
   PRODUCT_MANAGER_ROLE_PACK_ID,
@@ -50,7 +50,8 @@ function phase1Runtime(): CampaignRuntimeDescriptor {
   const registry = new BuiltInPluginRegistry();
   DISTRIBUTED_ROLE_PACKS.forEach((pack) => registry.register(pack));
   // 内置清单已清空：能力由合编包承载，测试里的「已安装」与生产一样走注册表
-  registry.registerCapability(coreCapabilitiesSuite);
+  const suite = synthesizeSuiteFromRolePack(softwareEngineeringRolePack);
+  if (suite) registry.registerCapability(suite);
 
   const resolved = new DeterministicRuntimeResolver(registry).resolve({
     coreVersion: '1.0.0',

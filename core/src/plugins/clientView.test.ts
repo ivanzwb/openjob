@@ -8,7 +8,6 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
-  BUILT_IN_PLUGIN_MANIFESTS,
   buildClientCapabilityView,
   canParseArtifact,
   capabilityMode,
@@ -19,17 +18,17 @@ import {
 import { installedWith } from './__fixtures__/installed';
 import {
   CORE_CAPABILITIES_PACK_ID,
-  CORE_CAPABILITIES_PACK_VERSION,
+  synthesizeSuiteFromRolePack,
 } from './capabilitySuite';
 import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
-import { sourceRepositoryCapabilityPlugin } from './builtin/sourceRepository';
 import type { CampaignRuntimeDescriptor } from './types';
 
 const ROLE_PACK_ID = softwareEngineeringRolePack.manifest.id;
 const ROLE_PACK_VERSION = softwareEngineeringRolePack.manifest.version;
 // 能力已并入单独安装的合编包：descriptor 里 pin 的是合编包 id
 const REPO_ID = CORE_CAPABILITIES_PACK_ID;
-const REPO_VERSION = CORE_CAPABILITIES_PACK_VERSION;
+// descriptor pin 的版本 = SE 包内嵌合成条目的版本（随包 1.4.0）
+const REPO_VERSION = synthesizeSuiteFromRolePack(softwareEngineeringRolePack)!.manifest.version;
 
 /**
  * 本机装了工程岗位包时的安装集合。
@@ -88,12 +87,12 @@ describe('本机安装清单', () => {
     // 内置清单曾经有三个能力插件，现在合编为单独分发的 openjob-capabilities。
     // 这条空集断言守的是「基础包不自带插件」：谁往内置数组塞回东西，这里就红。
     expect(listBuiltInPlugins()).toEqual([]);
-    expect(BUILT_IN_PLUGIN_MANIFESTS).toEqual([]);
   });
 
   it('岗位包不携带运行能力声明，能力插件必须携带', () => {
     expect(toInstalledPlugin(softwareEngineeringRolePack.manifest).runtime).toBeNull();
-    expect(toInstalledPlugin(sourceRepositoryCapabilityPlugin.manifest).runtime).toEqual({
+    const suite = synthesizeSuiteFromRolePack(softwareEngineeringRolePack)!;
+    expect(toInstalledPlugin(suite.manifest).runtime).toEqual({
       desktop: 'full',
       mobile: 'view-only',
     });

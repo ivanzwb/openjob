@@ -8,7 +8,30 @@
  */
 import { describe, expect, it } from 'vitest';
 import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
-import { BUILT_IN_CAPABILITY_PLUGINS } from '../builtin';
+import { synthesizeSuiteFromRolePack } from '../capabilitySuite';
+
+/** 重放样例：岗位包的内嵌声明按版本合并成一个能力插件（与 runtime 合并规则一致）。 */
+function mergeSuites(packs: readonly (typeof DISTRIBUTED_ROLE_PACKS)[number][]): CapabilityPlugin {
+  const suites = packs
+    .map((pack) => synthesizeSuiteFromRolePack(pack))
+    .filter((suite): suite is NonNullable<ReturnType<typeof synthesizeSuiteFromRolePack>> => suite !== null);
+  const first = suites[0]!;
+  return {
+    manifest: {
+      ...first.manifest,
+      permissions: [...new Set(suites.flatMap((suite) => suite.manifest.permissions))].sort(),
+      artifactSchemas: Object.assign({}, ...suites.map((suite) => suite.manifest.artifactSchemas ?? {})),
+      interactionSchemas: Object.assign({}, ...suites.map((suite) => suite.manifest.interactionSchemas ?? {})),
+    },
+    register(registry) {
+      for (const suite of suites) suite.register(registry);
+    },
+  };
+}
+
+const DECLARED_CAPABILITY_PLUGINS = [
+  { id: 'openjob-capabilities', plugin: mergeSuites(DISTRIBUTED_ROLE_PACKS) },
+];
 import { BuiltInPluginRegistry } from '../registry';
 import { DeterministicRuntimeResolver } from '../resolver';
 import type {
@@ -31,10 +54,7 @@ const CORE_VERSION = '1.0.0';
 
 /** 从插件自己的兼容性声明里取，别写死数字：插件抬了 schema 要求，这个测试不该跟着改。 */
 const SCHEMA_VERSION = Math.max(
-  ...[
-    ...DISTRIBUTED_ROLE_PACKS.map((pack) => pack.manifest),
-    ...BUILT_IN_CAPABILITY_PLUGINS.map((plugin) => plugin.manifest),
-  ].map((manifest) => manifest.compatibility.schema),
+  ...DISTRIBUTED_ROLE_PACKS.map((pack) => pack.manifest.compatibility.schema),
 );
 
 interface Registrations {
@@ -79,7 +99,7 @@ function packagedCapability(plugin: CapabilityPlugin): CapabilityPlugin {
 function builtInRegistry(): BuiltInPluginRegistry {
   const registry = new BuiltInPluginRegistry();
   DISTRIBUTED_ROLE_PACKS.forEach((pack) => registry.register(pack));
-  BUILT_IN_CAPABILITY_PLUGINS.forEach((plugin) => registry.registerCapability(plugin));
+  DECLARED_CAPABILITY_PLUGINS.forEach(({ plugin }) => registry.registerCapability(plugin));
   return registry;
 }
 
@@ -87,14 +107,14 @@ function builtInRegistry(): BuiltInPluginRegistry {
 function packagedRegistry(): BuiltInPluginRegistry {
   const registry = new BuiltInPluginRegistry();
   DISTRIBUTED_ROLE_PACKS.forEach((pack) => registry.register(packagedRolePack(pack)));
-  BUILT_IN_CAPABILITY_PLUGINS.forEach((plugin) =>
+  DECLARED_CAPABILITY_PLUGINS.forEach(({ plugin }) =>
     registry.registerCapability(packagedCapability(plugin)),
   );
   return registry;
 }
 
 describe('重放与原 register() 等价', () => {
-  it.each(BUILT_IN_CAPABILITY_PLUGINS.map((plugin) => [plugin.manifest.id, plugin] as const))(
+  it.each(DECLARED_CAPABILITY_PLUGINS.map(({ plugin }) => [plugin.manifest.id, plugin] as const))(
     '%s 重放出的注册项与原插件逐条相同',
     (_id, plugin) => {
       const original = record(plugin);
@@ -107,7 +127,7 @@ describe('重放与原 register() 等价', () => {
   );
 
   it('manifest 过一遍包格式后不变', () => {
-    for (const plugin of BUILT_IN_CAPABILITY_PLUGINS) {
+    for (const { plugin } of DECLARED_CAPABILITY_PLUGINS) {
       expect(packagedCapability(plugin).manifest).toEqual(plugin.manifest);
     }
   });
@@ -140,7 +160,7 @@ describe('解析结果与内置路径逐条一致', () => {
       coreVersion: CORE_VERSION,
       schemaVersion: SCHEMA_VERSION,
       rolePackId: DISTRIBUTED_ROLE_PACKS[0]!.manifest.id,
-      capabilityIds: BUILT_IN_CAPABILITY_PLUGINS.map((plugin) => plugin.manifest.id),
+      capabilityIds: DECLARED_CAPABILITY_PLUGINS.map(({ plugin }) => plugin.manifest.id),
     };
 
     const left = builtIn.resolve(input);

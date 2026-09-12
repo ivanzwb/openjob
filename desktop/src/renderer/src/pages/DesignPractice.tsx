@@ -18,7 +18,6 @@ import { normalizeDisplayText } from '@core/lib/markdownDisplay';
 import { MarkdownContent } from '../components/MarkdownContent';
 import { PracticeRunner } from '../components/PracticeRunner';
 import { RolePlayRunner } from '../components/RolePlayRunner';
-import { ROLE_PLAY_CAPABILITY_ID } from '@core/plugins/builtin/rolePlay';
 import { VoiceInputButton } from '../components/VoiceInputButton';
 import { PageShell } from '../components/PageShell';
 import { invoke } from '../ipc';
@@ -146,10 +145,10 @@ export function DesignPractice(): React.JSX.Element {
       .then((view) =>
         setRolePlayState({
           campaignId,
-          enabled:
-            view?.descriptor.capabilities.some(
-              (item) => item.id === ROLE_PLAY_CAPABILITY_ID && item.enabled,
-            ) ?? false,
+          // role-play 能力随销售岗位包启用；界面只消费 descriptor 数据
+          enabled: (view?.descriptor.capabilities ?? []).some(
+            (item) => item.enabled === true,
+          ),
         }),
       )
       .catch(() => setRolePlayState({ campaignId, enabled: false }));

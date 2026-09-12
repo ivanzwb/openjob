@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  CUSTOMER_CONVERSATION_INTERACTION,
-  CUSTOMER_CONVERSATION_SCHEMA_VERSION,
-  customerConversationInteraction,
-} from '../builtin/rolePlay';
+import { capabilities as salesCapabilities } from '@plugins/salesCustomerSuccess/capabilities';
+
+const rolePlayDeclaration = salesCapabilities.find((item) => item.id === 'role-play')!;
+const customerConversationInteraction = rolePlayDeclaration.interactions![0];
+const CUSTOMER_CONVERSATION_INTERACTION = customerConversationInteraction.type;
+const CUSTOMER_CONVERSATION_SCHEMA_VERSION = customerConversationInteraction.schemaVersion;
 import type { ClientPlatform, HostRenderedInteraction } from '../types';
 import { buildInteractionHostView, type InteractionHostViewInput } from './hostView';
 import { INTERACTION_PROTOCOL_VERSION } from './schema';

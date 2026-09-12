@@ -30,7 +30,10 @@ const paths = { userData: '', pluginsDir: '' };
 vi.mock('../paths', () => ({ getAppPaths: () => paths }));
 
 import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
-import { coreCapabilitiesSuite } from '@core/plugins/capabilitySuite';
+import { synthesizeSuiteFromRolePack } from '@core/plugins/capabilitySuite';
+import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
+
+const coreCapabilitiesSuite = synthesizeSuiteFromRolePack(softwareEngineeringRolePack)!;
 import { signPackageFiles, toBundleJson } from './bundle';
 import { installPluginBundle } from './install';
 import { listInstalledPlugins, setExternalPlugins, findInstalledRolePack } from './runtime';
@@ -119,11 +122,11 @@ describe('release 附件端到端', () => {
       expect(findInstalledRolePack(pack.manifest.id, pack.manifest.version)).not.toBeNull();
     }
 
-    // 合编包的能力都在：5 个工具 + 1 个交互 + 1 个解析器
-    const suite = installed.find((p) => p.id === 'openjob-capabilities')!;
-    expect(suite.permissions.sort()).toEqual(
-      ['artifact:read', 'llm:complete', 'microphone:read', 'repository:read'].sort(),
+    // 套件附件由 SE 声明合成（版本随包），权限 = SE 内嵌能力
+    const suite = installed.find(
+      (p) => p.id === 'openjob-capabilities' && p.version === coreCapabilitiesSuite.manifest.version,
     );
+    expect(suite!.permissions.sort()).toEqual(['repository:read']);
     // 合成条目按包版本存在：每个版本的权限 = 该版本岗位包内嵌能力的并集
     for (const pack of DISTRIBUTED_ROLE_PACKS) {
       if (!pack.manifest.main) continue;

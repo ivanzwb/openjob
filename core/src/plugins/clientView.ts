@@ -6,7 +6,6 @@
  * 不重新展开依赖，也不写回 Campaign binding。
  */
 import type { PluginType, RuntimeAvailability } from '../enums';
-import { BUILT_IN_PLUGIN_MANIFESTS } from './builtin';
 import type { PluginPermission } from './permissions';
 import type {
   CampaignRuntimeDescriptor,
@@ -145,8 +144,6 @@ export function toInstalledPlugin(manifest: PluginManifest): InstalledPlugin {
   };
 }
 
-export { BUILT_IN_PLUGIN_MANIFESTS };
-
 /**
  * 随应用发布的那部分插件，**不等于本机安装清单**。
  *
@@ -155,12 +152,12 @@ export { BUILT_IN_PLUGIN_MANIFESTS };
  * 表达的是「一个岗位包都没装」——那会把所有战役判成 view-only。
  */
 
+/** 随应用发布的插件：自 v1.0 后期起恒为空集（声明归岗位包，能力随包分发）。 */
 export function listBuiltInPlugins(): InstalledPlugin[] {
-  return BUILT_IN_PLUGIN_MANIFESTS.map(toInstalledPlugin).sort(
-    (left, right) =>
-      compareStrings(left.id, right.id) || compareStrings(left.version, right.version),
-  );
+  return [];
 }
+
+export const BUILT_IN_PLUGIN_MANIFESTS: readonly PluginManifest[] = [];
 
 function degradedStatus(
   id: string,
@@ -179,9 +176,8 @@ function degradedStatus(
  * 外置包不允许占用这些键（见 `main/plugins/inventory.ts` 的 reservedKeys），所以
  * 「不在这个集合里」就等价于「这个包是用户自己装进来的」。
  */
-const BUILT_IN_KEYS = new Set(
-  BUILT_IN_PLUGIN_MANIFESTS.map((manifest) => exactKey(manifest.id, manifest.version)),
-);
+/** 空内置清单 → 空保留键集合（保留结构，回填位置见 listBuiltInPlugins 注释）。 */
+const BUILT_IN_KEYS = new Set<string>();
 
 /**
  * 本机对某个已安装插件的运行能力，外加降级原因。

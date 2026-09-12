@@ -43,6 +43,7 @@ const LOADER_FILES = [
   join(__dirname, 'install.ts'),
   join(__dirname, 'bundle.ts'),
   join(__dirname, 'runtime.ts'),
+  join(__dirname, '__fixtures__', 'installedPlugins.ts'),
   join(__dirname, 'package', 'signature.ts'),
   join(__dirname, 'package', 'trustedKeys.ts'),
   join(CORE_SRC, 'plugins', 'package', 'contract.ts'),

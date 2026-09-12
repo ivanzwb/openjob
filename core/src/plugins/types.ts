@@ -7,6 +7,7 @@ import type {
 } from '../enums';
 import type { InteractionResultSchema, InteractionSchema } from './interactions/schema';
 import type { PluginPermission } from './permissions';
+export type { PluginPermission };
 
 export type ClientPlatform = 'desktop' | 'mobile';
 
@@ -343,13 +344,27 @@ export interface CapabilityRegistry {
 /**
  * 插入点 E：岗位包内嵌的能力声明。
  *
- * 包只声明「选用哪个宿主已知能力」——工具/交互/解析器的贡献契约与执行实现
- * 都长在宿主（按 id 重放内置声明），包不复制、也不允许自带实现数据。
- * 所需权限由宿主注册表推导，manifest.permissions 必须等于并集（契约校验强制）。
+ * **声明归插件包所有**：工具定义、交互 schema、解析器类型是随包分发的数据
+ * （与 prompts 片段同一个模型），core 不持有任何具体能力的清单——它只负责
+ * 校验声明的结构与一致性，不认识「source-repository」这类具体 id。
+ *
+ * `implementations` 是宿主侧的实现绑定提示：声明了 tool 的能力需要宿主
+ * （desktop main）有同名工具实现，否则能力不可激活。执行代码永远在宿主。
  */
 export interface CapabilityDeclaration {
-  /** 宿主已知能力 id，例如 source-repository / role-play / analytics-case。 */
+  /** 能力 id，包内唯一；例如 source-repository。 */
   id: string;
+  /** 工具贡献契约；声明的工具由宿主按 toolName 绑定实现。 */
+  tools?: ScopedToolDefinition[];
+  /** 宿主渲染的交互声明；schema 校验与桌面端一致。 */
+  interactions?: HostRenderedInteraction[];
+  /** artifact 解析器类型声明；文件读取与解析由宿主按授权执行。 */
+  artifactParsers?: ArtifactParserDefinition[];
+  /**
+   * 无逐项 permission 字段的贡献（如交互）所需的额外权限。
+   * manifest.permissions 必须等于 tools/parsers 的 permission 加上这里的并集。
+   */
+  permissions?: PluginPermission[];
 }
 
 export interface CapabilityPlugin {

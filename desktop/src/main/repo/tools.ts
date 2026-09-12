@@ -1,5 +1,12 @@
 import type { Citation } from '@core/entities';
-import { SOURCE_REPOSITORY_TOOL_DEFINITIONS } from '@core/plugins/builtin/sourceRepository';
+// 源码工具实现绑定：与 SE 包 capabilities.ts 里的声明逐一对应
+const SOURCE_REPOSITORY_TOOL_DEFINITIONS = [
+  { name: 'glob', description: 'Find repository files by name or glob pattern.', permission: 'repository:read', inputSchemaVersion: 1 },
+  { name: 'find_symbol', description: 'Find symbol definitions in the repository.', permission: 'repository:read', inputSchemaVersion: 1 },
+  { name: 'list_dir', description: 'List entries within a repository directory.', permission: 'repository:read', inputSchemaVersion: 1 },
+  { name: 'read_file', description: 'Read a line range from a repository file.', permission: 'repository:read', inputSchemaVersion: 1 },
+  { name: 'grep', description: 'Search repository file contents.', permission: 'repository:read', inputSchemaVersion: 1 },
+] as const;
 import { CORE_CAPABILITIES_PACK_ID } from '@core/plugins/capabilitySuite';
 import { formatPathSuggestions, suggestRepoPaths } from '@core/repo/pathSuggest';
 import { normalizeRepoPath } from '@core/repo/virtualFs';

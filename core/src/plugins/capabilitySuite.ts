@@ -1,53 +1,35 @@
 /**
- * 能力合编包：源码仓库 + 角色扮演 + 案例拆解 打成**一个**单独分发的插件包。
+ * 能力合编包（openjob-capabilities）的兼容层。
  *
- * 基础包不再内置任何插件（插件页不再有「随应用发布」一栏）；需要这三样能力的用户
- * 从 release 附件下载本包装上。三个能力的工具/交互/解析器实现仍然长在宿主里
- * （tools.ts、rolePlaySession.ts 等），本包只是把它们的**声明**合成一份——与岗位包
- * 一样是纯数据，装进来之后由宿主按 id 接上实现。
+ * v1.0 里三个能力是随应用发布的内置插件，后来合并成单独分发的合编包；
+ * v3 起声明归岗位包所有（CapabilityDeclaration 内嵌 tools/interactions/
+ * parsers），这里的职责只剩两件：
  *
- * 三个旧 id（source-repository / role-play / analytics-case@1.0.0）随之退役：
- * - 新战役的 descriptor/binding 一律 pin 本包 id；
- * - 旧战役 pin 的旧 id 按「插件未安装」降级，重选一次岗位即按新 id 重绑；
- * - 旧 id 进入 reserved tombstone（desktop runtime 的 builtInPluginKeys），
- *   防止第三方签一个同 id@version 的包借尸还魂。
+ * 1. `synthesizeSuite`：把岗位包的内嵌声明合成为 descriptor 里的能力引用
+ *    （形状不变，下游网关/视图/排程/移动端零改动）；
+ * 2. retired-key 归一：历史数据里 pin 着三个旧能力 id，读的时候必须认得。
+ *
+ * core 在这里依然**不认识任何具体能力**：合成器只做声明的搬运与归集，
+ * 权限取自声明本身，实现绑定是 desktop main 的事。
  */
 
-import type { CapabilityPlugin, RolePack } from './types';
-import { TABULAR_DATASET_ARTIFACT_TYPE, TABULAR_DATASET_SCHEMA_VERSION } from './builtin/analyticsCase/dataset';
-import { analyticsCaseCapabilityPlugin } from './builtin/analyticsCase';
-import {
-  CUSTOMER_CONVERSATION_INTERACTION,
-  CUSTOMER_CONVERSATION_SCHEMA_VERSION,
-  rolePlayCapabilityPlugin,
-} from './builtin/rolePlay';
-import { sourceRepositoryCapabilityPlugin } from './builtin/sourceRepository';
-import { HOST_CAPABILITY_PLUGINS } from './hostCapabilities';
+import type { CapabilityDeclaration, CapabilityPlugin, PluginPermission, RolePack } from './types';
 
 export const CORE_CAPABILITIES_PACK_ID = 'openjob-capabilities';
 export const CORE_CAPABILITIES_PACK_VERSION = '1.0.0';
 
 /** 合编包一并取代的旧内置能力 id。tombstone 与旧 descriptor 识别都用它。 */
 export const RETIRED_CAPABILITY_KEYS: readonly string[] = [
-  `${sourceRepositoryCapabilityPlugin.manifest.id}@${sourceRepositoryCapabilityPlugin.manifest.version}`,
-  `${rolePlayCapabilityPlugin.manifest.id}@${rolePlayCapabilityPlugin.manifest.version}`,
-  `${analyticsCaseCapabilityPlugin.manifest.id}@${analyticsCaseCapabilityPlugin.manifest.version}`,
+  'source-repository@1.0.0',
+  'role-play@1.0.0',
+  'analytics-case@1.0.0',
 ];
 
-/**
- * 旧能力 id → 合编包 id。
- *
- * 历史数据里还躺着三个旧 id：回填出来的 Campaign descriptor、legacyRuntimeDescriptor
- * 的兜底、以及改动前的 binding。它们描述的是历史事实，不能改写（改写会让
- * config_snapshot_hash 跳变），但读的时候必须认得——合编包承载的就是这三份实现，
- * descriptor 里 pin 着旧 id 的战役，装上合编包就算这几项能力可用。
- *
- * 消费方：排程的能力判定（core/planner）与桌面端的能力视图（main/plugins/runtime）。
- */
+/** 旧能力 id → 合编包 id。消费方：排程的能力判定与桌面端的能力视图。 */
 export const RETIRED_CAPABILITY_ID_TO_SUITE: Readonly<Record<string, string>> = {
-  [sourceRepositoryCapabilityPlugin.manifest.id]: CORE_CAPABILITIES_PACK_ID,
-  [rolePlayCapabilityPlugin.manifest.id]: CORE_CAPABILITIES_PACK_ID,
-  [analyticsCaseCapabilityPlugin.manifest.id]: CORE_CAPABILITIES_PACK_ID,
+  'source-repository': CORE_CAPABILITIES_PACK_ID,
+  'role-play': CORE_CAPABILITIES_PACK_ID,
+  'analytics-case': CORE_CAPABILITIES_PACK_ID,
 };
 
 /** 这个能力 id 是否由合编包承载（含它自己的 id 与三个退役 id）。 */
@@ -71,67 +53,43 @@ export function normalizeCapabilityRefs<
 }
 
 /**
- * manifest 取三者并集；register 委托三个原声明——它们只向 registry 注册纯数据
- * （5 个 tool、1 个交互类型、1 个 artifactParser），互不重名，先后顺序无影响。
- */
-export const coreCapabilitiesSuite: CapabilityPlugin = {
-  manifest: {
-    id: CORE_CAPABILITIES_PACK_ID,
-    version: CORE_CAPABILITIES_PACK_VERSION,
-    type: 'capability',
-    displayName: 'OpenJob 能力包',
-    description: '源码仓库阅读、客户对话角色扮演、表格案例分析三个能力的合编包。',
-    compatibility: {
-      core: '^1.0.0',
-      schema: 23,
-    },
-    permissions: ['repository:read', 'llm:complete', 'microphone:read', 'artifact:read'],
-    runtime: {
-      desktop: 'full',
-      mobile: 'view-only',
-    },
-    artifactSchemas: {
-      [TABULAR_DATASET_ARTIFACT_TYPE]: TABULAR_DATASET_SCHEMA_VERSION,
-    },
-    interactionSchemas: {
-      [CUSTOMER_CONVERSATION_INTERACTION]: CUSTOMER_CONVERSATION_SCHEMA_VERSION,
-    },
-  },
-  register(registry) {
-    sourceRepositoryCapabilityPlugin.register(registry);
-    rolePlayCapabilityPlugin.register(registry);
-    analyticsCaseCapabilityPlugin.register(registry);
-  },
-};
-
-/**
- * 插入点 E：把岗位包的内嵌能力声明合成为套件插件。
+ * 把岗位包的内嵌能力声明合成为套件插件。
  *
- * descriptor 的能力引用形状不变（仍是 openjob-capabilities@<包版本>），下游的
- * 权限网关、能力视图、排程与移动端都不需要知道「声明已经搬进岗位包」——
- * 溶解只改变声明的归属，不改变运行时的消费方式。
- *
- * 权限取所选宿主能力 manifest 的并集（宿主是权限的唯一事实源）；schema 表同理。
- * 声明里没有宿主已知能力时返回 null。
+ * descriptor 的能力引用形状不变（openjob-capabilities@<包版本>），下游消费方式
+ * 不变——溶解只改变声明的归属，不改变运行时的消费方式。声明归包所有，这里
+ * 只搬运：权限取各声明 tools/interactions/parsers 里 permission 字段的并集。
  */
 export function synthesizeSuite(
-  declaredIds: readonly string[],
+  declarations: readonly CapabilityDeclaration[],
   version: string,
   compatibility: { core: string; schema: number },
   sourceLabel: string,
 ): CapabilityPlugin | null {
-  const ids = [...new Set(declaredIds)].filter((id) => HOST_CAPABILITY_PLUGINS.has(id)).sort();
-  if (ids.length === 0) return null;
+  const declared = declarations.filter(
+    (item) =>
+      (item.tools?.length ?? 0) + (item.interactions?.length ?? 0) + (item.artifactParsers?.length ?? 0) >
+      0,
+  );
+  if (declared.length === 0) return null;
 
-  const plugins = ids.map((id) => HOST_CAPABILITY_PLUGINS.get(id)!);
   const permissions = [
-    ...new Set(plugins.flatMap((plugin) => plugin.manifest.permissions)),
+    ...new Set<PluginPermission>(
+      declared.flatMap((declaration) => [
+        ...(declaration.tools ?? []).map((tool) => tool.permission),
+        ...(declaration.artifactParsers ?? []).map((parser) => parser.permission),
+      ]),
+    ),
   ].sort();
+
   const artifactSchemas: Record<string, number> = {};
   const interactionSchemas: Record<string, number> = {};
-  for (const plugin of plugins) {
-    Object.assign(artifactSchemas, plugin.manifest.artifactSchemas ?? {});
-    Object.assign(interactionSchemas, plugin.manifest.interactionSchemas ?? {});
+  for (const declaration of declared) {
+    for (const parser of declaration.artifactParsers ?? []) {
+      artifactSchemas[parser.artifactType] = parser.schemaVersion;
+    }
+    for (const interaction of declaration.interactions ?? []) {
+      interactionSchemas[interaction.type] = interaction.schemaVersion;
+    }
   }
 
   return {
@@ -151,8 +109,14 @@ export function synthesizeSuite(
       ...(Object.keys(interactionSchemas).length > 0 ? { interactionSchemas } : {}),
     },
     register(registry) {
-      for (const plugin of plugins) {
-        plugin.register(registry);
+      for (const declaration of declared) {
+        for (const tool of declaration.tools ?? []) registry.registerTool(tool);
+        for (const parser of declaration.artifactParsers ?? []) {
+          registry.registerArtifactParser(parser);
+        }
+        for (const interaction of declaration.interactions ?? []) {
+          registry.registerInteractionType(interaction);
+        }
       }
     },
   };
@@ -160,7 +124,7 @@ export function synthesizeSuite(
 
 export function synthesizeSuiteFromRolePack(pack: RolePack): CapabilityPlugin | null {
   return synthesizeSuite(
-    (pack.capabilities ?? []).map((item) => item.id),
+    pack.capabilities ?? [],
     pack.manifest.version,
     pack.manifest.compatibility,
     `岗位包 ${pack.manifest.id}@${pack.manifest.version}`,

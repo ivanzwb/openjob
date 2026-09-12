@@ -16,7 +16,7 @@ import {
   type LegacyPlanDay,
 } from '@core/planner/__fixtures__/legacyPlan';
 import * as schema from '../db/schema';
-import { installedCapabilitySuiteEntry } from '../plugins/__fixtures__/installedPlugins';
+import { installedCapabilitySuiteEntries } from '../plugins/__fixtures__/installedPlugins';
 import { setExternalPlugins } from '../plugins/runtime';
 import {
   LEGACY_CORE_VERSION,
@@ -197,7 +197,7 @@ beforeEach(() => {
   vi.setSystemTime(new Date(`${CROSS_CLIENT_PLAN.today}T09:00:00`));
   // 排程按本机安装清单判能力：legacy descriptor 归一化后指向能力合编包，
   // 装上它 readCode 才会被排进计划（与生产安装链路同构）
-  setExternalPlugins([installedCapabilitySuiteEntry()]);
+  setExternalPlugins(installedCapabilitySuiteEntries());
 });
 
 afterEach(() => {

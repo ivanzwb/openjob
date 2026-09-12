@@ -19,12 +19,11 @@ vi.mock('../db', () => ({
 }));
 
 import { PLUGIN_PERMISSIONS, type PluginPermission } from '@core/plugins/permissions';
-import { HOST_CAPABILITY_PLUGINS } from '@core/plugins/hostCapabilities';
 import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
 import {
   CORE_CAPABILITIES_PACK_ID,
   RETIRED_CAPABILITY_KEYS,
-  coreCapabilitiesSuite,
+  synthesizeSuiteFromRolePack,
 } from '@core/plugins/capabilitySuite';
 import {
   DefaultDenyPermissionGateway,
@@ -39,8 +38,10 @@ import {
  * 的隔离升级为「一个包一份并集契约」：用户装这个包，等于一次性授权这四项权限。
  * 单能力的边界退到 descriptor 绑定层（战役启用与否）与宿主实现的按名分派。
  */
+// 合编包契约按「合成条目的版本」登记：每个版本的权限 = 该版本岗位包内嵌声明的并集；
+// 独立分发的旧套件（1.0.0）保留全量四项权限的兼容契约。
 const SUITE_CONTRACTS: ReadonlyMap<string, ReadonlySet<PluginPermission>> = new Map([
-  [CORE_CAPABILITIES_PACK_ID, new Set(coreCapabilitiesSuite.manifest.permissions)],
+  [CORE_CAPABILITIES_PACK_ID, new Set(['repository:read', 'llm:complete', 'microphone:read', 'artifact:read'])],
 ]);
 
 /** 一切 Campaign 侧条件都放行，把变量收敛到「权限本身准不准」。 */
@@ -74,12 +75,21 @@ function authorize(capabilityId: string, permission: PluginPermission) {
 }
 
 describe('权限契约来自安装清单', () => {
-  it('能力合编包有一条契约，等于三个能力权限的并集', () => {
+  it('能力合编包有一条契约，等于岗位包内嵌声明权限的并集', () => {
     const declared = SUITE_CONTRACTS.get(CORE_CAPABILITIES_PACK_ID);
     expect(declared).toBeDefined();
-    expect([...declared!].sort()).toEqual(
-      [...coreCapabilitiesSuite.manifest.permissions].sort(),
-    );
+    const fromPacks = [
+      ...new Set(
+        DISTRIBUTED_ROLE_PACKS.flatMap((pack) => [
+          ...(pack.capabilities ?? []).flatMap((declaration) => [
+            ...(declaration.tools ?? []).map((tool) => tool.permission),
+            ...(declaration.artifactParsers ?? []).map((parser) => parser.permission),
+            ...(declaration.permissions ?? []),
+          ]),
+        ]),
+      ),
+    ].sort();
+    expect([...declared!].sort()).toEqual(fromPacks);
   });
 
   it('三个退役 id 不在契约里：旧内置身份不能再被借用', () => {
@@ -95,11 +105,13 @@ describe('权限契约来自安装清单', () => {
     // 插入点 E：权限随内嵌能力声明走，并集由宿主注册表推导（contracts 强制）
     for (const pack of DISTRIBUTED_ROLE_PACKS) {
       const expected = [
-        ...new Set(
-          pack.capabilities.flatMap(
-            (declaration) => HOST_CAPABILITY_PLUGINS.get(declaration.id)?.manifest.permissions ?? [],
-          ),
-        ),
+        ...new Set([
+          ...pack.capabilities.flatMap((declaration) => [
+            ...(declaration.tools ?? []).map((tool) => tool.permission),
+            ...(declaration.artifactParsers ?? []).map((parser) => parser.permission),
+            ...(declaration.permissions ?? []),
+          ]),
+        ]),
       ].sort();
       expect(pack.manifest.permissions, pack.manifest.id).toEqual(expected);
     }
@@ -172,7 +184,7 @@ const FORBIDDEN_SOURCE_PATTERNS: readonly { pattern: RegExp; reason: string }[] 
  */
 const REPO_ROOT = join(__dirname, '..', '..', '..', '..');
 const PLUGIN_ROOTS = [
-  join(REPO_ROOT, 'core', 'src', 'plugins', 'builtin'),
+  // 声明归包所有：静态扫描的「插件源码」就是仓库里的岗位包目录
   join(REPO_ROOT, 'plugins'),
 ];
 
@@ -186,7 +198,12 @@ function pluginSourcesByDirectory(): Map<string, string[]> {
         recursive: true,
         encoding: 'utf8',
       })
-        .filter((entry) => entry.endsWith('.ts') && !entry.endsWith('.test.ts'))
+        .filter(
+          (entry) =>
+            // TS 声明与 JS 入口/资产脚本都是插件源码，都在扫描范围内
+            (entry.endsWith('.ts') || entry.endsWith('.js')) &&
+            !entry.endsWith('.test.ts'),
+        )
         .map((entry) => join(root, directory.name, entry));
       byDirectory.set(directory.name, files);
     }
@@ -198,7 +215,7 @@ describe('插件够不到宿主资源', () => {
   it('插件源码里没有数据库、文件系统、模型 SDK 或环境变量的入口', () => {
     const byDirectory = pluginSourcesByDirectory();
     // 扫描范围要覆盖到每一个插件目录：漏掉哪个目录，这条用例就在替它放行
-    expect(byDirectory.size).toBeGreaterThanOrEqual(DISTRIBUTED_ROLE_PACKS.length + 3);
+    expect(byDirectory.size).toBeGreaterThanOrEqual(DISTRIBUTED_ROLE_PACKS.length);
     for (const [directory, files] of byDirectory) {
       expect(files.length, `${directory} 没有扫到源码`).toBeGreaterThan(0);
     }
@@ -217,7 +234,9 @@ describe('插件够不到宿主资源', () => {
   });
 
   it('能力插件是纯声明：只导出数据与 register，不含运行期副作用', () => {
-    for (const plugin of [coreCapabilitiesSuite]) {
+    for (const plugin of DISTRIBUTED_ROLE_PACKS.filter((pack) => pack.manifest.main).map(
+      (pack) => synthesizeSuiteFromRolePack(pack)!,
+    )) {
       // Manifest 能原样 JSON 往返，说明里面没有函数、类实例或句柄
       expect(JSON.parse(JSON.stringify(plugin.manifest))).toEqual(plugin.manifest);
       expect(typeof plugin.register).toBe('function');

@@ -1,10 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { coreCapabilitiesSuite } from '@core/plugins/capabilitySuite';
 import { resolvePracticeFormat } from '@core/practice';
 import { composePrompt } from '@core/prompts/composer';
 import { BuiltInPluginRegistry } from '@core/plugins/registry';
 import { DeterministicRuntimeResolver } from '@core/plugins/resolver';
-import { BUILT_IN_CAPABILITY_PLUGINS } from '@core/plugins/builtin';
 import { DISTRIBUTED_ROLE_PACKS } from '../../scripts/distributed-role-packs';
 import { productManagerRolePack } from '../productManager';
 import { softwareEngineeringRolePack } from '../softwareEngineering';
@@ -123,8 +121,7 @@ function resolveWithoutRolePlay(): ReturnType<DeterministicRuntimeResolver['reso
   const registry = new BuiltInPluginRegistry();
   DISTRIBUTED_ROLE_PACKS.forEach((pack) => registry.register(pack));
   // 插入点 E 后 role-play 随包内嵌：注册表里没有任何独立能力包，
-  // resolver 仍从包内嵌声明合成启用——能力归属包，不再依赖单独安装。
-  BUILT_IN_CAPABILITY_PLUGINS.forEach((plugin) => registry.registerCapability(plugin));
+  // resolver 从包内嵌声明合成启用——能力归属包，不再依赖单独安装。
   return new DeterministicRuntimeResolver(registry).resolve({
     coreVersion: '1.0.0',
     schemaVersion: 23,
@@ -239,7 +236,6 @@ describe('sales & customer success role pack goldens', () => {
   it('装了 role-play 时对话题型所依赖的能力被启用', () => {
     const registry = new BuiltInPluginRegistry();
     DISTRIBUTED_ROLE_PACKS.forEach((pack) => registry.register(pack));
-    registry.registerCapability(coreCapabilitiesSuite);
     const resolved = new DeterministicRuntimeResolver(registry).resolve({
       coreVersion: '1.0.0',
       schemaVersion: 23,

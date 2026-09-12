@@ -6,21 +6,19 @@
  * PlannerContext 必须得到逐条相同的 PlannedTask。
  */
 import type { RuntimeAvailability, TaskKind } from '../enums';
-import { LEGACY_ROLE_PACK_REF } from '../plugins/legacyRoleData';
-import {
-  CORE_CAPABILITIES_PACK_ID,
-  normalizeCapabilityRefs,
-} from '../plugins/capabilitySuite';
-import {
-  SOURCE_REPOSITORY_CAPABILITY_ID,
-  SOURCE_REPOSITORY_CAPABILITY_VERSION,
-} from '../plugins/builtin/sourceRepository';
+// readCode 任务的常量：工程岗位包专属，snapshot 值与包 tasks.ts 保持一致
+const SOURCE_REPOSITORY_CAPABILITY_ID = 'source-repository';
 import {
   buildClientCapabilityView,
   type ClientDegradationReason,
   type ClientPluginStatus,
   type InstalledPlugin,
 } from '../plugins/clientView';
+import { LEGACY_ROLE_PACK_REF } from '../plugins/legacyRoleData';
+import {
+  normalizeCapabilityRefs,
+  CORE_CAPABILITIES_PACK_ID,
+} from '../plugins/capabilitySuite';
 import { hashRuntimeConfig } from '../plugins/resolver';
 import type { CampaignRuntimeDescriptor, ClientPlatform } from '../plugins/types';
 
@@ -278,7 +276,7 @@ export function legacyRuntimeDescriptor(campaignId: string): CampaignRuntimeDesc
   const capabilities: CampaignRuntimeDescriptor['capabilities'] = [
     {
       id: SOURCE_REPOSITORY_CAPABILITY_ID,
-      version: SOURCE_REPOSITORY_CAPABILITY_VERSION,
+      version: '1.0.0',
       enabled: true,
     },
   ];

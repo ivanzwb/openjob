@@ -5,7 +5,6 @@ import {
   PLUGIN_TYPES,
   RUNTIME_AVAILABILITIES,
 } from '../enums';
-import { HOST_CAPABILITY_PLUGINS } from './hostCapabilities';
 import { isPluginPermission } from './permissions';
 import type {
   CapabilityPlugin,
@@ -373,33 +372,44 @@ function validateCapabilities(
     return;
   }
   validateUniqueIds(pack.capabilities, 'capabilities', issues);
+
+  // 声明归包所有：core 不认识具体能力 id，只校验声明结构的一致性——
+  // 权限并集规则（声明少于实现会漏授权，多于实现是凭空要权）依然成立，
+  // 但事实源是声明本身，不是某个宿主内置清单。
+  const declared = new Set<string>();
   for (const declaration of pack.capabilities) {
-    if (!HOST_CAPABILITY_PLUGINS.has(declaration.id)) {
+    const contributionCount =
+      (declaration.tools?.length ?? 0) +
+      (declaration.interactions?.length ?? 0) +
+      (declaration.artifactParsers?.length ?? 0);
+    if (contributionCount === 0) {
       issue(
         issues,
         `capabilities[${declaration.id}]`,
-        'missing-reference',
-        `宿主没有可重放的能力实现：${declaration.id}`,
+        'invalid-value',
+        '能力声明至少要包含一项贡献（tools / interactions / artifactParsers），否则装上等于没装',
       );
     }
+    for (const tool of declaration.tools ?? []) {
+      declared.add(tool.permission);
+    }
+    for (const parser of declaration.artifactParsers ?? []) {
+      declared.add(parser.permission);
+    }
+    for (const permission of declaration.permissions ?? []) {
+      declared.add(permission);
+    }
+    // 交互的 schema 深校验交给 resolver 的 RegistrationCollector，这里不重复
   }
 
-  // 权限并集规则：声明少于实现会漏授权，多于实现是凭空要权。
-  // 宿主注册表是权限的唯一事实源，包不允许自行加减。
-  const expected = [
-    ...new Set(
-      pack.capabilities.flatMap((declaration) =>
-        HOST_CAPABILITY_PLUGINS.get(declaration.id)?.manifest.permissions ?? [],
-      ),
-    ),
-  ].sort();
+  const expected = [...declared].sort();
   const actual = [...pack.manifest.permissions].sort();
   if (actual.join(',') !== expected.join(',')) {
     issue(
       issues,
       'manifest.permissions',
       'invalid-permission',
-      `权限必须等于内嵌能力权限的并集 [${expected.join(', ')}]，当前为 [${actual.join(', ')}]`,
+      `权限必须等于内嵌能力贡献的权限并集 [${expected.join(', ')}]，当前为 [${actual.join(', ')}]`,
     );
   }
 }

@@ -1,6 +1,5 @@
 import { and, desc, eq } from 'drizzle-orm';
 import type { PluginPermission } from '@core/plugins';
-import { BUILT_IN_CAPABILITY_PLUGINS } from '@core/plugins/builtin';
 import { getDb, schema } from '../db';
 import { listInstalledPlugins } from './runtime';
 
@@ -176,12 +175,7 @@ class DatabasePermissionScopeProvider implements PermissionScopeProvider {
  * 权限，到网关这一层也会被判成 permission-undeclared——表现是能力装上了、
  * 界面也开了，一到真正取数据就失败，而错误信息指向「插件没声明」，与事实相反。
  */
-export const BUILT_IN_PERMISSION_CONTRACTS: CapabilityPermissionContracts = new Map(
-  BUILT_IN_CAPABILITY_PLUGINS.map((plugin) => [
-    plugin.manifest.id,
-    new Set(plugin.manifest.permissions),
-  ]),
-);
+export const BUILT_IN_PERMISSION_CONTRACTS: CapabilityPermissionContracts = new Map();
 
 /**
  * 按**本机已安装**的能力插件推导契约，内置与外置同一条规则。

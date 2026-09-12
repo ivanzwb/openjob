@@ -22,7 +22,7 @@ import type { HostRenderedInteraction } from '@core/plugins/types';
 import {
   CUSTOMER_CONVERSATION_SCHEMA_VERSION,
   type RolePlayScenario,
-} from '@core/plugins/builtin/rolePlay';
+} from '@core/plugins/interactions/rolePlayScenarios';
 
 /** 生成客户台词所需权限；被撤销后无法继续对练。 */
 const LLM_PERMISSION: PluginPermission = 'llm:complete';

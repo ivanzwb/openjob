@@ -7,10 +7,14 @@
  */
 import { describe, expect, it } from 'vitest';
 import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
-import { coreCapabilitiesSuite } from '../capabilitySuite';
-import { sourceRepositoryCapabilityPlugin } from '../builtin/sourceRepository';
-import { rolePlayCapabilityPlugin } from '../builtin/rolePlay';
-import { analyticsCaseCapabilityPlugin } from '../builtin/analyticsCase';
+import { synthesizeSuiteFromRolePack } from '../capabilitySuite';
+import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
+import { productManagerRolePack } from '@plugins/productManager';
+import { salesCustomerSuccessRolePack } from '@plugins/salesCustomerSuccess';
+
+const coreCapabilitiesSuite = synthesizeSuiteFromRolePack(softwareEngineeringRolePack)!;
+const pmSuite = synthesizeSuiteFromRolePack(productManagerRolePack)!;
+const salesSuite = synthesizeSuiteFromRolePack(salesCustomerSuccessRolePack)!;
 import type {
   ArtifactParserDefinition,
   CapabilityPlugin,
@@ -75,12 +79,7 @@ describe('插件包格式', () => {
 
   it('每个能力声明序列化成外置包后都合法（含三合一的合编包）', () => {
     // 内置清单已清空：能力来自单独安装的合编包，声明模块仍在 core 供打包录制
-    const capabilityPlugins = [
-      coreCapabilitiesSuite,
-      sourceRepositoryCapabilityPlugin,
-      rolePlayCapabilityPlugin,
-      analyticsCaseCapabilityPlugin,
-    ];
+    const capabilityPlugins = [coreCapabilitiesSuite];
     expect(capabilityPlugins.length).toBeGreaterThan(0);
 
     for (const plugin of capabilityPlugins) {
@@ -123,10 +122,9 @@ describe('插件包格式', () => {
   });
 
   it('能力插件声明了 manifest 里没写的权限时拒装', () => {
-    // 用单能力声明（manifest 只写 repository:read）：改权限到 microphone:read 后
-    // 与 manifest 不一致才会被拒；合编包的 manifest 恰好含全部权限，不适合这条用例
-    const plugin = sourceRepositoryCapabilityPlugin;
-    expect(plugin, '需要一个注册了工具的内置能力插件').toBeDefined();
+    // SE 合成套件的 manifest 只含 repository:read：改权限到 microphone:read 后
+    // 与 manifest 不一致才会被拒
+    const plugin = coreCapabilitiesSuite;
 
     const contributions = recordContributions(plugin!);
     contributions.tools![0]!.permission = 'microphone:read';
@@ -140,7 +138,7 @@ describe('插件包格式', () => {
   });
 
   it('能力插件一项都不声明时拒装', () => {
-    const plugin = sourceRepositoryCapabilityPlugin;
+    const plugin = coreCapabilitiesSuite;
 
     expect(
       paths({
@@ -151,7 +149,7 @@ describe('插件包格式', () => {
   });
 
   it('artifact parser 的版本必须与 manifest.artifactSchemas 对齐', () => {
-    const plugin = [coreCapabilitiesSuite, analyticsCaseCapabilityPlugin].find(
+    const plugin = [pmSuite].find(
       (item) => recordContributions(item).artifactParsers!.length > 0,
     );
     expect(plugin, '需要一个注册了 artifact parser 的内置能力插件').toBeDefined();
@@ -168,7 +166,7 @@ describe('插件包格式', () => {
   });
 
   it('交互类型的版本必须与 manifest.interactionSchemas 对齐', () => {
-    const plugin = [coreCapabilitiesSuite, rolePlayCapabilityPlugin].find(
+    const plugin = [salesSuite].find(
       (item) => recordContributions(item).interactions!.length > 0,
     );
     expect(plugin, '需要一个注册了交互类型的内置能力插件').toBeDefined();

@@ -6,7 +6,7 @@ import { DeterministicRuntimeResolver } from '@core/plugins/resolver';
 import { softwareEngineeringRolePack } from '../softwareEngineering';
 import {
   CORE_CAPABILITIES_PACK_ID,
-  coreCapabilitiesSuite,
+  synthesizeSuiteFromRolePack,
 } from '@core/plugins/capabilitySuite';
 import { DISTRIBUTED_ROLE_PACKS } from '../../scripts/distributed-role-packs';
 import {
@@ -81,7 +81,7 @@ const roleOwnedText = JSON.stringify({
 }).toLocaleLowerCase();
 
 function resolveWith(
-  capabilityPlugins: readonly (typeof coreCapabilitiesSuite)[],
+  capabilityPlugins: readonly NonNullable<ReturnType<typeof synthesizeSuiteFromRolePack>>[],
 ): ReturnType<DeterministicRuntimeResolver['resolve']> {
   const registry = new BuiltInPluginRegistry();
   DISTRIBUTED_ROLE_PACKS.forEach((pack) => registry.register(pack));
@@ -267,7 +267,8 @@ describe('product manager role pack goldens', () => {
   });
 
   it('装了 analytics-case 时产品岗自动把它启用', () => {
-    const resolved = resolveWith([coreCapabilitiesSuite]);
+    const pmSuite = synthesizeSuiteFromRolePack(productManagerRolePack)!;
+    const resolved = resolveWith([pmSuite]);
     expect(resolved.ok).toBe(true);
     if (!resolved.ok) return;
 

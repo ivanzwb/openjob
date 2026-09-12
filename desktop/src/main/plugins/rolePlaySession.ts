@@ -13,17 +13,36 @@ import type { Database } from 'better-sqlite3';
 
 import type { LlmRole } from '@core/enums';
 import { composePrompt, type ComposedPrompt } from '@core/prompts/composer';
-import {
-  ROLE_PLAY_SCENARIOS,
-  customerConversationInteraction,
-  rolePlayCapabilityPlugin,
-  type RolePlayScenario,
-} from '@core/plugins/builtin/rolePlay';
+import { CUSTOMER_CONVERSATION_SCHEMA_VERSION } from '@core/plugins/interactions/rolePlayScenarios';
+import { ROLE_PLAY_SCENARIOS, type RolePlayScenario } from '@core/plugins/interactions/rolePlayScenarios';
 import { CORE_CAPABILITIES_PACK_ID } from '@core/plugins/capabilitySuite';
 import { buildInteractionHostView } from '@core/plugins/interactions/hostView';
 import { listInstalledPlugins } from './runtime';
 import type { PluginPermission } from '@core/plugins/permissions';
-import type { InterviewFormatDefinition, RolePack } from '@core/plugins/types';
+import type {
+  HostRenderedInteraction,
+  InterviewFormatDefinition,
+  RolePack,
+} from '@core/plugins/types';
+
+/** descriptor 缺失时的兜底：交互类型名是协议常量，schema 版本取最新已知值。 */
+const customerConversationFallback: HostRenderedInteraction = {
+  type: 'customer-conversation',
+  schemaVersion: CUSTOMER_CONVERSATION_SCHEMA_VERSION,
+  availability: { desktop: 'full', mobile: 'view-only' },
+  inputSchema: { protocolVersion: 1, fields: [] },
+  resultSchema: { protocolVersion: 1, fields: [] },
+};
+
+/** 从激活岗位包的内嵌声明里取 role-play 的交互 schema；没找到返回 null。 */
+function resolveRolePlayInteraction(rolePack: RolePack | null): HostRenderedInteraction | null {
+  for (const declaration of rolePack?.capabilities ?? []) {
+    for (const interaction of declaration.interactions ?? []) {
+      if (interaction.type === 'customer-conversation') return interaction;
+    }
+  }
+  return null;
+}
 import type {
   EndRolePlayRequest,
   RolePlaySessionView,
@@ -116,7 +135,9 @@ function resolveRolePlayFormat(rolePack: RolePack): InterviewFormatDefinition {
  * 所以渲染进程观测到的状态才是真的。
  */
 function grantedPermissions(microphoneAvailable: boolean): PluginPermission[] {
-  return rolePlayCapabilityPlugin.manifest.permissions.filter(
+  // role-play 能力需要的权限（声明在销售岗位包的内嵌能力里）
+  const declared: PluginPermission[] = ['llm:complete', 'microphone:read'];
+  return declared.filter(
     (permission) => permission !== 'microphone:read' || microphoneAvailable,
   );
 }
@@ -154,17 +175,14 @@ export function createRolePlaySessionService(
 
     const permissions = grantedPermissions(microphoneAvailable);
     const view = buildInteractionHostView({
-      interaction: customerConversationInteraction,
+      interaction: resolveRolePlayInteraction(runtime.rolePack) ?? customerConversationFallback,
       platform: 'desktop',
       capabilityEnabled,
       // 能力现在来自单独安装的合编包：本机没装时不渲染，交回 view-only 降级视图。
       // 写死 true 是内置时代的遗留，会让「没装包却出题」被渲染成可交互表单。
       pluginInstalled: isCapabilitySuiteInstalled(),
       externalPlugin: true,
-      knownSchemaVersion:
-        rolePlayCapabilityPlugin.manifest.interactionSchemas?.[
-          customerConversationInteraction.type
-        ] ?? null,
+      knownSchemaVersion: CUSTOMER_CONVERSATION_SCHEMA_VERSION,
       grantedPermissions: permissions,
     });
 
@@ -251,7 +269,7 @@ export function createRolePlaySessionService(
     const scenario = findScenario(request.scenarioId);
     const state = startRolePlaySession({
       sessionId: newId(),
-      interaction: customerConversationInteraction,
+      interaction: resolveRolePlayInteraction(resolved.runtime.rolePack) ?? customerConversationFallback,
       scenario,
       now: now(),
       totalSeconds: resolved.format.defaultDurationMinutes * 60,
@@ -278,7 +296,7 @@ export function createRolePlaySessionService(
       reply: request.reply,
       intent: request.intent,
       now: now(),
-      interaction: customerConversationInteraction,
+      interaction: resolveRolePlayInteraction(resolved.runtime.rolePack) ?? customerConversationFallback,
       grantedPermissions: resolved.permissions,
     });
 
