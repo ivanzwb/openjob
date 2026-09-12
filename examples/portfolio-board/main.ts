@@ -1,0 +1,30 @@
+/**
+ * 作品集看板：官方代码插件验收样本（§7.9）。
+ *
+ * 打包期由 esbuild 编译为 CJS 的 main.js；运行时（桌面渲染进程 / 移动端 WebView）
+ * 只提供 require('openjob') 门面，同一份编译产物两端激活。
+ */
+import type { CodePluginContext } from '@core/plugins/codePlugin/host';
+
+export function activate(ctx: CodePluginContext): () => void {
+  let attachedCampaignId: string | null = null;
+
+  ctx.events.on('campaign:attached', (payload) => {
+    attachedCampaignId = (payload as { campaignId: string }).campaignId;
+  });
+
+  ctx.commands.register('portfolio.refresh', async () => {
+    if (!attachedCampaignId) return { evidence: [], notes: [] };
+    const evidence = await ctx.evidence?.listConfirmed(attachedCampaignId);
+    const notes = JSON.parse((await ctx.storage.get('notes')) ?? '[]') as unknown[];
+    return { evidence, notes };
+  });
+
+  ctx.views.registerPage({
+    id: 'board',
+    title: '作品集看板',
+    webviewPath: 'ui/index.html',
+  });
+
+  return function deactivate() {};
+}

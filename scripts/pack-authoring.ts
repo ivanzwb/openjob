@@ -13,6 +13,7 @@
  * 3. 片段 file 与迁移期 ref 互斥，正文由加载器内联进 RolePack——
  *    分发信封（pack.json）因此是自包含的，手机端拿到就能用。
  */
+import { transformSync } from 'esbuild';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { isAbsolute, join, relative } from 'node:path';
@@ -132,11 +133,28 @@ export function loadPromptFragments(
 /** 代码资产上限：入口 + Webview 资源是逻辑代码，不是分发媒体的渠道 */
 const CODE_ASSET_MAX_LENGTH = 2_000_000;
 
-/** 读入 manifest.main 声明的代码资产并跑隔离扫描；违规在装配期就拦下 */
+/** 读入 manifest.main 声明的代码资产并跑隔离扫描；违规在装配期就拦下。
+ *
+ * 作者语言是 TypeScript：main.ts（推荐）在装配期由 esbuild 编译为 CJS 的 main.js，
+ * 编译产物才是被扫描、被签名、被两端执行的原文——「签的 = 扫的 = 跑的」。
+ * 纯 JavaScript 的 main.js 同样接受；两者并存时 main.ts 优先。
+ */
 function loadCodeAssets(root: string): Record<string, string> | undefined {
-  const mainPath = join(root, 'main.js');
-  if (!existsSync(mainPath)) return undefined;
-  const assets: Record<string, string> = { 'main.js': readFileSync(mainPath, 'utf8') };
+  const mainTs = join(root, 'main.ts');
+  const mainJs = join(root, 'main.js');
+  let entrySource: string;
+  if (existsSync(mainTs)) {
+    const transpiled = transformSync(readFileSync(mainTs, 'utf8'), {
+      loader: 'ts',
+      format: 'cjs',
+    });
+    entrySource = transpiled.code;
+  } else if (existsSync(mainJs)) {
+    entrySource = readFileSync(mainJs, 'utf8');
+  } else {
+    return undefined;
+  }
+  const assets: Record<string, string> = { 'main.js': entrySource };
   const uiDir = join(root, 'ui');
   if (existsSync(uiDir)) {
     for (const entry of readdirSync(uiDir, { withFileTypes: true }).sort((left, right) =>

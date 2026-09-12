@@ -16,7 +16,8 @@
  */
 import { Buffer } from 'node:buffer';
 import { generateKeyPairSync, createHash, createPrivateKey, createPublicKey } from 'node:crypto';
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { transformSync } from 'esbuild';
 import { join, resolve } from 'node:path';
 import { createServer } from 'vite';
 
@@ -121,10 +122,20 @@ async function main() {
    * 合编包用新 id 走与岗位包完全相同的安装链路。
    */
   // 拆分走各 transfer：手机端收岗位包、安装端解析都复用同一份定义
-  // 代码插件（v3）：examples/ 下的纯文本资产直接读入，无需 ssrLoadModule
+  // 代码插件（v3）：examples/ 下的纯文本资产直接读入，无需 ssrLoadModule。
+  // 入口作者语言是 TS：打包期编译为 CJS 的 main.js 入信封——信封里签的、扫的、跑的是同一份产物
   const CODE_PLUGIN_DIR = join(ROOT, 'examples', 'portfolio-board');
-  const codeFiles = {};
-  for (const name of ['manifest.json', 'main.js', 'ui/index.html']) {
+  const mainSourcePath = existsSync(join(CODE_PLUGIN_DIR, 'main.ts'))
+    ? join(CODE_PLUGIN_DIR, 'main.ts')
+    : join(CODE_PLUGIN_DIR, 'main.js');
+  const mainSource = readFileSync(mainSourcePath, 'utf8');
+  const entrySource = mainSourcePath.endsWith('.ts')
+    ? transformSync(mainSource, { loader: 'ts', format: 'cjs' }).code
+    : mainSource;
+  const codeFiles = {
+    'main.js': entrySource,
+  };
+  for (const name of ['manifest.json', 'ui/index.html']) {
     codeFiles[name] = readFileSync(join(CODE_PLUGIN_DIR, name), 'utf8');
   }
   const codeIssues = contract.validatePluginPackage(codeFiles);
@@ -138,9 +149,12 @@ async function main() {
       manifest: pack.manifest,
       files: transfer.rolePackToPackageFiles(pack),
     })),
+    // 独立分发的合编包附件：由岗位包内嵌声明合成，为已装旧版的用户保持升级路径
     {
-      manifest: suite.coreCapabilitiesSuite.manifest,
-      files: capabilityTransfer.capabilityPluginToPackageFiles(suite.coreCapabilitiesSuite),
+      manifest: suite.synthesizeSuiteFromRolePack(rolePacks.DISTRIBUTED_ROLE_PACKS[0]).manifest,
+      files: capabilityTransfer.capabilityPluginToPackageFiles(
+        suite.synthesizeSuiteFromRolePack(rolePacks.DISTRIBUTED_ROLE_PACKS[0]),
+      ),
     },
     {
       manifest: JSON.parse(codeFiles['manifest.json']),

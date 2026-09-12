@@ -495,11 +495,12 @@ interface CapabilityDeclaration {
 
 ### 7.9 代码贡献与运行时（v3）
 
-声明式贡献覆盖不了的「行为与 UI」由代码贡献承担。插件入口是一个 ES 模块：
+声明式贡献覆盖不了的「行为与 UI」由代码贡献承担。插件入口用 TypeScript 编写，打包期编译为 CJS：
 
-```js
-// main.js —— CommonJS 形式（进程内函数包装加载，require('openjob') 拿门面）
-module.exports.activate = function activate(ctx) {
+```ts
+// main.ts —— 作者语言是 TypeScript；打包期由 esbuild 编译为 CJS 的 main.js 入信封
+// （签名与隔离扫描针对编译产物），运行时 require('openjob') 拿门面。
+export function activate(ctx: CodePluginContext) {
   const disposable = ctx.views.registerPage({
     id: 'portfolio-board',
     title: '作品集看板',
@@ -509,7 +510,7 @@ module.exports.activate = function activate(ctx) {
   ctx.commands.register('portfolio.score', async (args) => { /* ... */ });
   ctx.events.on('campaign:attached', async ({ campaignId }) => { /* ... */ });
   return () => disposable.dispose(); // deactivate
-};
+}
 ```
 
 **生命周期**：安装（验签）→ 启用（用户确认权限清单）→ 宿主加载入口并调用 `activate(ctx)`；停用/卸载先调用 deactivate 再撤贡献。激活顺序 = 包声明顺序，同 id 幂等。
@@ -1093,7 +1094,7 @@ type RuntimeAvailability = {
 | E 内嵌能力 | 声明只做功能分级：工具不可执行时，能力入口、已同步快照、历史结果与 artifact 在手机端仍可查看，新任务标记“需桌面完成” |
 | F 领域模型 | 全量生效，无降级 |
 
-手机端不重新解析依赖、不改变 Campaign 绑定；Campaign 固定版本的包数据拉取不到时，相关任务进入只读/不可用降级，不允许静默改用其他版本。同步的内容包括代码插件资产（main.js 与 ui/ 资源）——信封本来就是数据，代码是其中的资产条目。
+手机端不重新解析依赖、不改变 Campaign 绑定；Campaign 固定版本的包数据拉取不到时，相关任务进入只读/不可用降级，不允许静默改用其他版本。同步的内容包括代码插件资产（main.ts/ui/ 资产（打包期编译为 main.js 入信封））——信封本来就是数据，代码是其中的资产条目。
 
 **移动端插件运行时（v3）**：手机端同样激活代码插件——插件入口与 Webview 页面跑在 WebView JS 环境里（与桌面 Webview 同引擎、同一条受控桥协议），`openjob.*` 走异步桥进宿主容器；插件拿不到 RN 上下文与文件系统，存储只有 `ctx.storage`。桌面与移动跑的是同一份入口代码，差别只在桥的实现与本机能力判定：某能力本机 `view-only` / `unsupported` 时，其页面照常渲染并显示降级说明（「功能可降级、展示必须成立」）。端上验签基础设施随本运行时一并交付，手机端从此可独立导入已签名的插件包。
 

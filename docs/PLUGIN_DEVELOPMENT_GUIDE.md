@@ -11,12 +11,12 @@
 | | 岗位包（role-pack） | 代码插件（plugin） |
 |---|---|---|
 | 回答的问题 | 这类岗位怎么被面试 | 提供一块宿主没有的功能/UI |
-| 内容 | 声明数据（能力/题型/量规/Prompt 片段/检索策略/简历模块/能力声明），可选代码入口 | `main.js` 入口 + `ui/` Webview 资源 |
+| 内容 | 声明数据（能力/题型/量规/Prompt 片段/检索策略/简历模块/能力声明），可选代码入口 | `main.ts` 入口 + `ui/` Webview 资源 |
 | 典型例子 | `plugins/softwareEngineering` | `examples/portfolio-board` |
 | 安装后 | 用户选岗即用 | 需用户确认权限清单后启用 |
 | 移动端 | 随同步数据自动可用 | WebView 运行时激活同一份代码 |
 
-一个岗位包可以同时是代码插件：manifest 声明 `main` 后，包内的 `main.js` 与 `ui/` 资产随包分发（如 software-engineering 的「源码」页）。
+一个岗位包可以同时是代码插件：manifest 声明 `main` 后，包内的 `main.ts`（编译为 main.js）与 `ui/` 资产随包分发（如 software-engineering 的「源码」页）。
 
 ---
 
@@ -37,7 +37,7 @@ plugins/<your-pack>/
   search-policy.ts        # 插入点 C：检索策略
   prompts/                # 插入点 B：Prompt 片段（frontmatter + markdown）
   navigation.ts           # 插入点 A：导航入口（没有就别建文件，index 里传 []）
-  main.js                 # 可选：代码入口（声明 manifest.main 后必须存在）
+  main.ts                 # 可选：代码入口（TS 编写，打包期编译为 main.js 入信封）
   ui/                     # 可选：代码入口的 Webview 资源
 
   contract.test.ts        # 契约测试（必写）
@@ -192,7 +192,7 @@ export const capabilities: CapabilityDeclaration[] = [
 
 ---
 
-## 4. 代码插件（main.js）
+## 4. 代码插件（main.ts）
 
 ### Manifest
 
@@ -205,18 +205,21 @@ export const capabilities: CapabilityDeclaration[] = [
   "description": "……",
   "compatibility": { "core": "^1.0.0", "schema": 23 },
   "permissions": ["evidence:read-confirmed"],
-  "main": "main.js",
+  "main": "main.js",   # 信封产物名固定；作者写 main.ts，打包期编译
   "api": "^1.0"
 }
 ```
 
 独立代码插件 `type` 用 `"plugin"`；权限清单会在用户启用时逐条展示。
 
-### 入口
+### 入口（TypeScript）
 
-```js
-// main.js —— CommonJS 形式；require('openjob') 是拿到宿主能力的唯一途径
-module.exports.activate = function activate(ctx) {
+```ts
+// main.ts —— 推荐用 TypeScript 编写；打包期由 esbuild 编译为 CJS 的 main.js 入信封。
+// import type 会被擦除：运行时只依赖 require('openjob')，对宿主模块零依赖。
+import type { CodePluginContext } from '@core/plugins/codePlugin/host';
+
+export function activate(ctx: CodePluginContext): () => void {
   ctx.views.registerPage({
     id: 'board',
     title: '作品集看板',
@@ -225,8 +228,14 @@ module.exports.activate = function activate(ctx) {
   ctx.commands.register('portfolio.refresh', async () => { /* ... */ });
   ctx.events.on('campaign:attached', (payload) => { /* payload.campaignId */ });
   return function deactivate() { /* 撤掉自己的副作用 */ };
-};
+}
 ```
+
+要点：
+
+- 入口文件写 `main.ts`（推荐）或 `main.js`；**信封里的产物统一是 main.js**——签名、隔离扫描、两端执行的同一份编译产物，「签的 = 扫的 = 跑的」；
+- `import type` 在编译时擦除，宿主模块不会进入插件产物；普通的 `import`/`require` 会在运行时被 require shim 拒绝；
+- `ui/` 下的脚本目前保持纯 JavaScript（随 HTML 内联执行，无编译步骤）。
 
 ### ctx API 一览
 
@@ -288,7 +297,7 @@ pnpm verify:plugins                     # 打包并验签（CI 同款）
 
 - 产物是 gzip JSON 的签名信封（Ed25519），私钥走 `OPENJOB_PLUGIN_PRIVATE_KEY` 环境变量；
 - 用户从 release 附件安装，桌面端验签 → 格式校验 → 隔离扫描 → 落盘；
-- 移动端不装包：随同步链路拿到包数据与代码资产，在 WebView 运行时里激活同一份 `main.js`。
+- 移动端不装包：随同步链路拿到包数据与编译后的代码资产，在 WebView 运行时里激活同一份产物。
 
 ---
 
@@ -302,7 +311,7 @@ pnpm verify:plugins                     # 打包并验签（CI 同款）
 
 禁止：
 
-- `require` 除 `openjob` 外的任何模块（代码插件）；
+- 代码插件运行时 `require` 除 `openjob` 外的任何模块；TS 里非 `import type` 的宿主模块导入同样会被 require shim 拒绝；
 - 在片段里用一级标题、重置角色、绕过证据策略；
 - 为某一端复制或改写包内容（一包定义、两端消费）；
 - manifest 权限超出内嵌贡献的并集（少声明会漏授权，多声明直接拒装）。
