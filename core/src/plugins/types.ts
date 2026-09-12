@@ -267,6 +267,12 @@ export interface RolePack {
   resumeModules: ResumeModuleDefinition[];
   // 插入点 E：内嵌能力声明
   capabilities: CapabilityDeclaration[];
+  /**
+   * 代码插件资产（§7.9）：manifest.main 声明时由 defineRolePack 从包目录内联
+   * （main.js 与 ui/**），随 pack.json 走信封与移动端同步——与 promptFragments
+   * 内联正文同一个模型。纯声明式岗位包为空。
+   */
+  codeAssets?: Record<string, string>;
   sourcePolicy: SourcePolicy;
 }
 

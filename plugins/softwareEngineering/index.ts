@@ -20,7 +20,6 @@ import { interviewFormats, interviewStages } from './formats';
 import { codingRubric, technicalKnowledgeRubric } from './rubrics/technical';
 import { projectDeepDiveRubric, systemDesignRubric } from './rubrics/design';
 import { taskTemplates } from './tasks';
-import { navigation } from './navigation';
 import { resumeModules } from './resume-modules';
 import { capabilities } from './capabilities';
 import { sourcePolicy } from './search-policy';
@@ -94,6 +93,9 @@ export const softwareEngineeringRolePack: RolePack = defineRolePack({
     compatibility: { core: '^1.0.0', schema: 23 },
     // 内嵌 source-repository 能力：权限 = 其声明的并集（contracts 校验）
     permissions: ['repository:read'],
+    // 「源码」页已移入本包：页面跑在 Webview 沙箱，宿主 Repos 页退役
+    main: 'main.js',
+    api: '^1.0',
     dependencies: [],
   },
   roleMatchers: softwareEngineeringMatchers,
@@ -108,7 +110,7 @@ export const softwareEngineeringRolePack: RolePack = defineRolePack({
   ],
   taskTemplates,
   promptFragments,
-  navigation,
+  navigation: [],
   resumeModules,
   capabilities,
   sourcePolicy,

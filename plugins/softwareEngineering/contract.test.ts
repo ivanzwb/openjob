@@ -20,7 +20,7 @@ describe('softwareEngineeringRolePack contract', () => {
   it('keeps the legacy runtime identity and role-pack permission boundary', () => {
     expect(softwareEngineeringRolePack.manifest).toMatchObject({
       id: 'software-engineering',
-      version: '1.3.0',
+      version: '1.4.0',
       type: 'role-pack',
       compatibility: { core: '^1.0.0', schema: 23 },
       permissions: ['repository:read'],

@@ -49,7 +49,7 @@ afterEach(() => {
 const CLEAN_MANIFEST = {
   id: 'portfolio-board',
   version: '1.0.0',
-  type: 'role-pack' as const,
+  type: 'plugin' as const,
   displayName: '作品集看板',
   description: '代码插件验收样本：看板页面 + 命令',
   compatibility: { core: '^1.0.0', schema: 23 },
@@ -68,20 +68,6 @@ export function activate(ctx) {
 function codePluginFiles(mainSource: string): Record<string, string> {
   return {
     'manifest.json': JSON.stringify(CLEAN_MANIFEST),
-    // role-pack 信封需要 pack.json；代码插件可以没有岗位数据，给最小合法骨架
-    'pack.json': JSON.stringify({
-      roleMatchers: [],
-      competencyTemplates: [],
-      interviewStages: [],
-      interviewFormats: [],
-      rubrics: [],
-      taskTemplates: [],
-      promptFragments: [],
-      navigation: [],
-      resumeModules: [],
-      capabilities: [],
-      sourcePolicy: { preferredDomains: [] },
-    }),
     'main.js': mainSource,
     'ui/index.html': '<!doctype html><html><body><main>看板</main></body></html>',
   };

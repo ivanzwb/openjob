@@ -1,0 +1,80 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body { font-family: system-ui, sans-serif; padding: 16px; color: inherit; background: transparent; }
+      h2 { font-size: 14px; margin: 12px 0 6px; }
+      ul { margin: 0; padding-left: 18px; }
+      li { margin: 4px 0; font-size: 13px; display: flex; gap: 8px; align-items: baseline; }
+      .name { font-weight: 600; }
+      .muted { opacity: 0.65; }
+      button { font-size: 12px; }
+      input { width: 60%; font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <h2>仓库</h2>
+    <ul id="repos"></ul>
+    <p>
+      <input id="url" placeholder="https://github.com/org/repo.git" />
+      <button id="add">链接仓库</button>
+      <span id="msg" class="muted"></span>
+    </p>
+    <script>
+      // 受控桥：只能调宿主白名单方法（repo:* 会在宿主侧按权限与网关再校验）
+      function call(method, params) {
+        return new Promise((resolve, reject) => {
+          const reqId = Date.now() + Math.random();
+          const onReply = (event) => {
+            const reply = event.data && event.data.openjobResponse;
+            if (reply && reply.reqId === reqId) {
+              window.removeEventListener('message', onReply);
+              reply.error ? reject(new Error(reply.error)) : resolve(reply.result);
+            }
+          };
+          window.addEventListener('message', onReply);
+          window.parent.postMessage({ openjob: { reqId, method, params } }, '*');
+        });
+      }
+
+      async function refresh() {
+        const repos = await call('repo.list', {});
+        const node = document.getElementById('repos');
+        node.innerHTML = '';
+        for (const repo of repos) {
+          const li = document.createElement('li');
+          const name = document.createElement('span');
+          name.className = 'name';
+          name.textContent = repo.name || repo.url;
+          const meta = document.createElement('span');
+          meta.className = 'muted';
+          meta.textContent = repo.updatedAt ? new Date(repo.updatedAt).toLocaleString() : '未索引';
+          const update = document.createElement('button');
+          update.textContent = '更新索引';
+          update.onclick = async () => {
+            await call('repo.update', { id: repo.id });
+            document.getElementById('msg').textContent = '已开始更新索引';
+          };
+          li.append(name, meta, update);
+          node.appendChild(li);
+        }
+      }
+
+      document.getElementById('add').onclick = async () => {
+        const url = document.getElementById('url').value.trim();
+        if (!url) return;
+        try {
+          await call('repo.add', { url });
+          document.getElementById('url').value = '';
+          document.getElementById('msg').textContent = '已开始克隆与索引';
+          await refresh();
+        } catch (err) {
+          document.getElementById('msg').textContent = err.message;
+        }
+      };
+
+      void refresh();
+    </script>
+  </body>
+</html>

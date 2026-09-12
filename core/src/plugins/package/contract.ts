@@ -311,29 +311,7 @@ export function isCodeAssetName(name: string): boolean {
   return name === PLUGIN_MAIN_FILE || name.startsWith(PLUGIN_UI_PREFIX);
 }
 
-function validateCodeAssets(
-  manifest: PluginManifest,
-  files: PluginPackageFiles,
-): PluginContractIssue[] {
-  const issues: PluginContractIssue[] = [];
-  if (files[PLUGIN_MAIN_FILE] === undefined) {
-    issue(issues, PLUGIN_MAIN_FILE, 'invalid-value', '声明了 main 却缺少 main.js');
-    return issues;
-  }
-  for (const [name, content] of Object.entries(files)) {
-    if (!isCodeAssetName(name)) continue;
-    if (content.length > CODE_ASSET_MAX_LENGTH) {
-      issue(issues, name, 'invalid-value', `代码资产超过 ${CODE_ASSET_MAX_LENGTH} 字符上限`);
-    }
-    if (name !== PLUGIN_MAIN_FILE && !name.slice(PLUGIN_UI_PREFIX.length)) {
-      issue(issues, name, 'invalid-value', 'ui/ 资源必须有文件名');
-    }
-  }
-  if (files[PLUGIN_MAIN_FILE] !== undefined && manifest.api === undefined) {
-    issue(issues, 'manifest.api', 'invalid-value', '代码插件必须声明 api 版本范围');
-  }
-  return issues;
-}
+
 
 function validatePackageInternal(files: PluginPackageFiles): PluginContractIssue[] {
   const issues: PluginContractIssue[] = [];
@@ -362,10 +340,6 @@ function validatePackageInternal(files: PluginPackageFiles): PluginContractIssue
   for (const name of unexpected) {
     issue(issues, name, 'invalid-value', `包内出现未知文件：${name}`);
   }
-  if (codeAssetsAllowed) {
-    issues.push(...validateCodeAssets(manifest, files));
-  }
-
   if (issues.some((item) => item.path.startsWith('manifest.'))) return issues;
 
   issues.push(...validatePluginManifest(manifest));
@@ -395,9 +369,12 @@ function validatePackageInternal(files: PluginPackageFiles): PluginContractIssue
         issues.push(...shapeIssues);
         break;
       }
-      issues.push(
-        ...validateRolePack({ ...(packValue as Omit<RolePack, 'manifest'>), manifest }),
-      );
+      const pack = packValue as Omit<RolePack, 'manifest'>;
+      // 代码资产是岗位包数据的一部分（defineRolePack 内联），信封不再带散文件
+      if (manifest.main !== undefined && typeof pack.codeAssets?.['main.js'] !== 'string') {
+        issue(issues, 'pack.codeAssets', 'invalid-value', '声明了 main 却缺少 main.js 代码资产');
+      }
+      issues.push(...validateRolePack({ ...pack, manifest }));
       break;
     }
     case 'industry-pack': {
@@ -425,6 +402,19 @@ function validatePackageInternal(files: PluginPackageFiles): PluginContractIssue
       for (const name of [PACKAGE_PACK_FILE, PACKAGE_CONTRIBUTIONS_FILE]) {
         if (files[name] !== undefined) {
           issue(issues, name, 'invalid-value', `代码插件不带 ${name}`);
+        }
+      }
+      if (files[PLUGIN_MAIN_FILE] === undefined) {
+        issue(issues, PLUGIN_MAIN_FILE, 'invalid-value', '声明了 main 却缺少 main.js');
+        break;
+      }
+      for (const [name, content] of Object.entries(files)) {
+        if (!isCodeAssetName(name)) continue;
+        if (content.length > CODE_ASSET_MAX_LENGTH) {
+          issue(issues, name, 'invalid-value', `代码资产超过 ${CODE_ASSET_MAX_LENGTH} 字符上限`);
+        }
+        if (name !== PLUGIN_MAIN_FILE && !name.slice(PLUGIN_UI_PREFIX.length)) {
+          issue(issues, name, 'invalid-value', 'ui/ 资源必须有文件名');
         }
       }
       break;
@@ -456,11 +446,16 @@ export function parsePluginPackage(files: PluginPackageFiles): ParsedPluginPacka
   }
   // 代码插件：入口与 Webview 资产原文随解析结果带走（隔离扫描与激活都要用）
   if (manifest.main !== undefined) {
-    const codeAssets: Record<string, string> = {};
-    for (const [name, content] of Object.entries(files)) {
-      if (isCodeAssetName(name)) codeAssets[name] = content;
+    if (parsed.rolePack?.codeAssets) {
+      // 岗位包：资产内联在包数据里，随 pack.json 走信封与移动端同步
+      parsed.codeAssets = parsed.rolePack.codeAssets;
+    } else {
+      const codeAssets: Record<string, string> = {};
+      for (const [name, content] of Object.entries(files)) {
+        if (isCodeAssetName(name)) codeAssets[name] = content;
+      }
+      parsed.codeAssets = codeAssets;
     }
-    parsed.codeAssets = codeAssets;
   }
   return parsed;
 }

@@ -12,7 +12,7 @@ import { getUiAssets, onPluginEvent } from '../codePlugins/runtime';
  * 资源切片：html 与内联脚本都来自签名信封里的 ui/ 资产（slice 1 只支持内联资源）。
  */
 
-const BRIDGE_METHODS = {
+const BASE_BRIDGE_METHODS = {
   'storage.get': (pluginId: string, params: { key: string }) =>
     invoke('codePlugin:storage.get', { pluginId, key: params.key }),
   'storage.set': (pluginId: string, params: { key: string; value: string }) =>
@@ -21,20 +21,49 @@ const BRIDGE_METHODS = {
     invoke('codePlugin:storage.delete', { pluginId, key: params.key }),
   'campaign.getDescriptor': (_pluginId: string, params: { campaignId: string }) =>
     invoke('campaign:getRuntimeDescriptor', { campaignId: params.campaignId }),
-  'evidence.listConfirmed': (pluginId: string, params: { campaignId: string }) =>
-    invoke('codePlugin:evidence.listConfirmed', { pluginId, campaignId: params.campaignId }),
-} as const;
+};
+
+/** 权限 → 额外桥方法。repo:* 通道在宿主侧还有权限网关逐次校验 */
+function bridgeMethods(permissions: readonly string[]) {
+  const methods: Record<string, (pluginId: string, params: never) => Promise<unknown>> = {
+    ...BASE_BRIDGE_METHODS,
+  };
+  if (permissions.includes('repository:read')) {
+    methods['repo.list'] = (pluginId) => invoke('repo:list', undefined).then((r) => {
+      void pluginId;
+      return r;
+    });
+    methods['repo.gitStatus'] = (pluginId) => invoke('repo:gitStatus', undefined).then((r) => {
+      void pluginId;
+      return r;
+    });
+    methods['repo.add'] = (_pluginId, params: { url: string }) =>
+      invoke('repo:add', { url: params.url });
+    methods['repo.update'] = (_pluginId, params: { id: string }) =>
+      invoke('repo:update', { id: params.id });
+    methods['repo.delete'] = (_pluginId, params: { id: string }) =>
+      invoke('repo:delete', { id: params.id });
+  }
+  if (permissions.includes('evidence:read-confirmed')) {
+    methods['evidence.listConfirmed'] = (_pluginId, params: { campaignId: string }) =>
+      invoke('codePlugin:evidence.listConfirmed', { pluginId: _pluginId, campaignId: params.campaignId });
+  }
+  return methods;
+}
 
 export function CodePluginWebView({
   pluginId,
   webviewPath,
+  permissions,
 }: {
   pluginId: string;
   webviewPath: string;
+  permissions: readonly string[];
 }): React.JSX.Element | null {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const assets = getUiAssets(pluginId);
   const html = assets[webviewPath];
+  const methods = bridgeMethods(permissions);
 
   // 宿主事件单向推入沙箱：页面据此刷新，不需要自己实现轮询
   useEffect(() => {
@@ -64,8 +93,8 @@ export function CodePluginWebView({
         let result: unknown = null;
         let error: string | null = null;
         try {
-          if (method in BRIDGE_METHODS) {
-            result = await BRIDGE_METHODS[method as keyof typeof BRIDGE_METHODS](
+          if (method in methods) {
+            result = await methods[method as keyof typeof methods](
               pluginId,
               params as never,
             );

@@ -259,7 +259,11 @@ export default function App(): React.JSX.Element {
               if (!mountedTabs.has(key) || !isTabVisible(key)) return null;
               return (
                 <TabPanel key={key} active={activeTab === key} className="overflow-hidden">
-                  <CodePluginWebView pluginId={plugin.pluginId} webviewPath={page.webviewPath} />
+                  <CodePluginWebView
+                    pluginId={plugin.pluginId}
+                    webviewPath={page.webviewPath}
+                    permissions={plugin.permissions}
+                  />
                 </TabPanel>
               );
             }),

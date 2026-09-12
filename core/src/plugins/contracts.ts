@@ -624,6 +624,17 @@ export function validateRolePack(pack: RolePack): PluginContractIssue[] {
   validateResumeModules(pack.resumeModules, issues);
   validateNavigation(pack.navigation, issues);
   validateCapabilities(pack, issues);
+  if (pack.manifest.main !== undefined) {
+    const assets = pack.codeAssets ?? {};
+    if (!isNonEmpty(assets['main.js'])) {
+      issue(
+        issues,
+        'codeAssets',
+        'invalid-value',
+        '声明了 main 却缺少 main.js 代码资产（defineRolePack 会从包目录内联）',
+      );
+    }
+  }
   return issues;
 }
 

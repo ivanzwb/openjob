@@ -34,7 +34,7 @@ const { readPromptRunProvenance, recordPromptRun } = await import('./promptRun')
 
 const PROVENANCE: PromptProvenance = {
   coreVersion: '1.0.0',
-  rolePack: { id: 'software-engineering', version: '1.3.0' },
+  rolePack: { id: 'software-engineering', version: '1.4.0' },
   capabilityIds: ['source-repository'],
   capabilities: [{ id: 'source-repository', version: '1.0.0' }],
   promptSlot: 'scoring',

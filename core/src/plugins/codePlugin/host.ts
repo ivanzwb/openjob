@@ -95,6 +95,8 @@ export interface CodePluginModule {
 export interface ActiveCodePlugin {
   pluginId: string;
   version: string;
+  /** 声明的权限：宿主据此决定暴露给页面的桥方法 */
+  permissions: readonly string[];
   pages: RegisteredCodePluginPage[];
   commands: string[];
   deactivate(): void;
@@ -103,6 +105,8 @@ export interface ActiveCodePlugin {
 export interface CodePluginInput {
   pluginId: string;
   version: string;
+  /** 信息性字段：记录激活时的声明权限 */
+  permissions?: readonly string[];
   module: CodePluginModule;
   services: CodePluginServices;
   /** 事件分发器：宿主在事件发生时调用，把 payload 投给所有已激活插件的订阅者 */
@@ -124,7 +128,7 @@ const ID_RE = /^[a-z0-9][a-z0-9.-]*$/;
  * 插件回滚到未激活态——不允许「半个插件」活着。
  */
 export function activateCodePlugin(input: CodePluginInput): ActiveCodePlugin {
-  const { pluginId, version, module, services, hub } = input;
+  const { pluginId, version, permissions, module, services, hub } = input;
   const pages: RegisteredCodePluginPage[] = [];
   const commands: string[] = [];
   const cleanups: Array<() => void> = [];
@@ -201,6 +205,7 @@ export function activateCodePlugin(input: CodePluginInput): ActiveCodePlugin {
   return {
     pluginId,
     version,
+    permissions: permissions ?? [],
     // getter：deactivate 清空内部登记后，外部看到的快照同步为空
     get pages() {
       return [...pages];

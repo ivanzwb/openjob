@@ -110,7 +110,7 @@ describe('release 附件端到端', () => {
     // 清单里没有「随应用发布」：全部都是 first-party 外置包。
     // 插入点 E：带内嵌声明的岗位包按版本合并出一条合成套件条目（3 包 + 旧套件 + 合成 = 5）
     const installed = listInstalledPlugins();
-    expect(installed).toHaveLength(5);
+    expect(installed).toHaveLength(6);
     expect(installed.map((p) => p.id)).toContain('openjob-capabilities');
     expect(installed.map((p) => p.id)).not.toContain('source-repository');
 
@@ -124,14 +124,21 @@ describe('release 附件端到端', () => {
     expect(suite.permissions.sort()).toEqual(
       ['artifact:read', 'llm:complete', 'microphone:read', 'repository:read'].sort(),
     );
-    // 合成条目按包版本存在，权限为三个包内嵌能力的并集
-    const inlineVersion = DISTRIBUTED_ROLE_PACKS[0]!.manifest.version;
-    const inline = installed.find(
-      (p) => p.id === 'openjob-capabilities' && p.version === inlineVersion,
+    // 合成条目按包版本存在：每个版本的权限 = 该版本岗位包内嵌能力的并集
+    for (const pack of DISTRIBUTED_ROLE_PACKS) {
+      if (!pack.manifest.main) continue;
+      const inline = installed.find(
+        (p) => p.id === 'openjob-capabilities' && p.version === pack.manifest.version,
+      );
+      expect(inline, `缺少 ${pack.manifest.id} 版本的合成条目`).toBeDefined();
+      expect(inline!.permissions.length).toBeGreaterThan(0);
+    }
+    // 软件工程包的合成条目只带 repository:read（它只内嵌了源码能力）
+    const seInline = installed.find(
+      (p) =>
+        p.id === 'openjob-capabilities' &&
+        p.version === '1.4.0',
     );
-    expect(inline, `缺少 ${inlineVersion} 的合成条目`).toBeDefined();
-    expect(inline!.permissions.sort()).toEqual(
-      ['artifact:read', 'llm:complete', 'microphone:read', 'repository:read'].sort(),
-    );
+    expect(seInline!.permissions).toEqual(['repository:read']);
   });
 });

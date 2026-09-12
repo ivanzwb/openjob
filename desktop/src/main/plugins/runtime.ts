@@ -92,6 +92,9 @@ function registerExternal(registry: BuiltInPluginRegistry, entry: PluginInventor
       if (!contributions) throw new Error(`能力插件缺少 contributions：${manifest.id}`);
       registry.registerCapability(toCapabilityPlugin(manifest, contributions));
       return;
+    case 'plugin':
+      // 代码插件（§7.9）：声明面为空，激活由渲染层运行时负责，数据注册表无需登记
+      return;
     default:
       registry.registerIndustryPack(manifest);
   }

@@ -273,7 +273,7 @@ describe('setCampaignRoleProfile', () => {
     expect(view.descriptor.configSnapshotHash).toMatch(/^[a-f0-9]{64}$/);
     // 插入点 E：SE 包内嵌 source-repository 声明，resolver 合成与其同版本的套件引用
     expect(view.descriptor.capabilities).toEqual([
-      { id: CORE_CAPABILITIES_PACK_ID, version: '1.3.0', enabled: true },
+      { id: CORE_CAPABILITIES_PACK_ID, version: '1.4.0', enabled: true },
     ]);
     expect(view.roleProfile).toMatchObject({
       roleFamily: 'software',
@@ -283,7 +283,7 @@ describe('setCampaignRoleProfile', () => {
     });
     // resolver 先写 capabilities 再写岗位包（见 runtime.ts 的 bound 顺序）
     expect(bindings(raw)).toEqual([
-      { plugin_id: REPO_ID, plugin_version: '1.3.0', revision: 1, active_execution: 1 },
+      { plugin_id: REPO_ID, plugin_version: '1.4.0', revision: 1, active_execution: 1 },
       {
         plugin_id: ROLE_PACK_ID,
         plugin_version: ROLE_PACK_VERSION,

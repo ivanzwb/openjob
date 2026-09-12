@@ -231,7 +231,9 @@ export function registerIpcHandlers(): void {
         permissions: item.package.manifest.permissions,
         main: item.package.manifest.main!,
         api: item.package.manifest.api!,
-        enabled: codePluginEnabled(item.package.manifest.id),
+        // 岗位包的代码入口随岗位启用（选岗即确认）；独立 plugin 类型才需要逐个确认
+        enabled:
+          item.package.manifest.type === 'role-pack' || codePluginEnabled(item.package.manifest.id),
       })),
   );
   handle('codePlugin:setEnabled', ({ id, enabled }) => setCodePluginEnabled(id, enabled));

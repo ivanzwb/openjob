@@ -24,6 +24,7 @@ import {
   type ResumeModuleDefinition,
   type RolePack,
 } from '@core/plugins/types';
+import { scanPluginSources } from '@core/plugins/codePlugin/scan';
 import { assertPluginFragmentSafe } from '@core/prompts/composer';
 
 export class PackAuthoringError extends Error {
@@ -128,6 +129,36 @@ export function loadPromptFragments(
   });
 }
 
+/** 代码资产上限：入口 + Webview 资源是逻辑代码，不是分发媒体的渠道 */
+const CODE_ASSET_MAX_LENGTH = 2_000_000;
+
+/** 读入 manifest.main 声明的代码资产并跑隔离扫描；违规在装配期就拦下 */
+function loadCodeAssets(root: string): Record<string, string> | undefined {
+  const mainPath = join(root, 'main.js');
+  if (!existsSync(mainPath)) return undefined;
+  const assets: Record<string, string> = { 'main.js': readFileSync(mainPath, 'utf8') };
+  const uiDir = join(root, 'ui');
+  if (existsSync(uiDir)) {
+    for (const entry of readdirSync(uiDir, { withFileTypes: true }).sort((left, right) =>
+      left.name.localeCompare(right.name),
+    )) {
+      if (entry.isDirectory()) {
+        throw new PackAuthoringError(`ui/ 目前不支持子目录：ui/${entry.name}`);
+      }
+      assets[`ui/${entry.name}`] = readFileSync(join(uiDir, entry.name), 'utf8');
+    }
+  }
+  for (const [path, text] of Object.entries(assets)) {
+    if (text.length > CODE_ASSET_MAX_LENGTH) {
+      throw new PackAuthoringError(`${path}: 代码资产超过 ${CODE_ASSET_MAX_LENGTH} 字符上限`);
+    }
+    for (const violation of scanPluginSources({ [path]: text })) {
+      throw new PackAuthoringError(`${violation.path}: 静态隔离扫描未通过——${violation.reason}`);
+    }
+  }
+  return assets;
+}
+
 export interface DefineRolePackInput extends Omit<RolePack, 'promptFragments' | 'resumeModules'> {
   /** 包根目录，用于定位 prompts/ 与计算片段的相对路径。 */
   root: string;
@@ -190,6 +221,8 @@ export function defineRolePack(input: DefineRolePackInput): RolePack {
     ...pack,
     promptFragments: fragments,
     resumeModules: loadResumeModules(root, resumeModules ?? []),
+    // 代码入口声明了就必带资产（隔离扫描内联前完成）；纯声明式包无此字段
+    codeAssets: loadCodeAssets(root),
   };
   const issues = validateRolePack(result);
   if (issues.length > 0) {
