@@ -13,7 +13,10 @@ import {
 } from '../../plugins/clientView';
 import type { ClientCapabilityView } from '../../plugins/clientView';
 import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
-import { coreCapabilitiesSuite } from '../../plugins/capabilitySuite';
+import {
+  coreCapabilitiesSuite,
+  synthesizeSuiteFromRolePack,
+} from '../../plugins/capabilitySuite';
 import { BuiltInPluginRegistry } from '../../plugins/registry';
 import { DeterministicRuntimeResolver } from '../../plugins/resolver';
 import type { CampaignRuntimeDescriptor, ClientPlatform } from '../../plugins/types';
@@ -79,6 +82,8 @@ export function buildCapabilityView(
     installed: [
       ...listBuiltInPlugins(),
       toInstalledPlugin(softwareEngineeringRolePack.manifest),
+      // 内嵌声明的合成条目：descriptor pin 的是包版本，装着旧套件 1.0.0 反而是降级
+      toInstalledPlugin(synthesizeSuiteFromRolePack(softwareEngineeringRolePack)!.manifest),
       toInstalledPlugin(coreCapabilitiesSuite.manifest),
     ],
   });

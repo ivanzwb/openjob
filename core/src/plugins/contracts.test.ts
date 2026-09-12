@@ -93,6 +93,7 @@ function validRolePack(): RolePack {
       },
     ],
     navigation: [],
+  capabilities: [],
   resumeModules: [],
   promptFragments: [
       { slot: 'diagnosis', text: '按软件工程岗位能力诊断。', file: 'prompts/diagnosis.md' },

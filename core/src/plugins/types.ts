@@ -261,6 +261,8 @@ export interface RolePack {
   navigation: NavigationEntry[];
   // 插入点 D：简历模块
   resumeModules: ResumeModuleDefinition[];
+  // 插入点 E：内嵌能力声明
+  capabilities: CapabilityDeclaration[];
   sourcePolicy: SourcePolicy;
 }
 
@@ -326,6 +328,18 @@ export interface CapabilityRegistry {
   registerTool(tool: ScopedToolDefinition): void;
   registerArtifactParser(parser: ArtifactParserDefinition): void;
   registerInteractionType(type: HostRenderedInteraction): void;
+}
+
+/**
+ * 插入点 E：岗位包内嵌的能力声明。
+ *
+ * 包只声明「选用哪个宿主已知能力」——工具/交互/解析器的贡献契约与执行实现
+ * 都长在宿主（按 id 重放内置声明），包不复制、也不允许自带实现数据。
+ * 所需权限由宿主注册表推导，manifest.permissions 必须等于并集（契约校验强制）。
+ */
+export interface CapabilityDeclaration {
+  /** 宿主已知能力 id，例如 source-repository / role-play / analytics-case。 */
+  id: string;
 }
 
 export interface CapabilityPlugin {

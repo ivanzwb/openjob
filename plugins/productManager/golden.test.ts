@@ -6,14 +6,13 @@ import { DeterministicRuntimeResolver } from '@core/plugins/resolver';
 import { softwareEngineeringRolePack } from '../softwareEngineering';
 import {
   CORE_CAPABILITIES_PACK_ID,
-  CORE_CAPABILITIES_PACK_VERSION,
   coreCapabilitiesSuite,
 } from '@core/plugins/capabilitySuite';
 import { DISTRIBUTED_ROLE_PACKS } from '../../scripts/distributed-role-packs';
 import {
   PRODUCT_MANAGER_FORMAT_IDS,
-  PRODUCT_MANAGER_OPTIONAL_CAPABILITY_IDS,
   PRODUCT_MANAGER_ROLE_PACK_ID,
+  PRODUCT_MANAGER_ROLE_PACK_VERSION,
   productManagerRolePack,
 } from './index';
 
@@ -236,18 +235,16 @@ describe('product manager role pack goldens', () => {
     expect(engineeringDimensions.filter((id) => productDimensions.has(id))).toEqual([]);
   });
 
-  it('没装 analytics-case 时仍然能完整跑纯文本产品案例', () => {
+  it('analytics-case 内嵌于岗位包：无需独立安装即随包启用', () => {
+    // 空安装清单：能力声明随包分发，resolver 从包内嵌声明合成合编包引用
     const resolved = resolveWithoutOptionalCapabilities();
     expect(resolved.ok).toBe(true);
     if (!resolved.ok) return;
 
-    // 可选能力缺席只降级成 disabled，不让整次解析失败
-    for (const capabilityId of Object.values(PRODUCT_MANAGER_OPTIONAL_CAPABILITY_IDS)) {
-      const ref = resolved.descriptor.capabilities.find((item) => item.id === capabilityId);
-      expect(ref, `${capabilityId} 应作为未启用能力出现在描述符里`).toBeDefined();
-      expect(ref?.enabled).toBe(false);
-      expect(ref?.enabled === false ? ref.disabledReason : '').toContain('plugin-not-found');
-    }
+    const ref = resolved.descriptor.capabilities.find(
+      (item) => item.id === CORE_CAPABILITIES_PACK_ID,
+    );
+    expect(ref).toMatchObject({ enabled: true, version: PRODUCT_MANAGER_ROLE_PACK_VERSION });
 
     // 案例题不挂能力插件，题型与量规照常可解析
     const { format, rubric } = resolvePracticeFormat(
@@ -257,7 +254,6 @@ describe('product manager role pack goldens', () => {
     expect(format.capabilityId).toBeUndefined();
     expect(rubric.dimensions).toHaveLength(4);
 
-    // 出题与评分都能在缺能力的运行时下组合出来
     for (const slot of ['questionGeneration', 'scoring'] as const) {
       const composed = composePrompt({
         runtime: resolved.descriptor,
@@ -266,7 +262,7 @@ describe('product manager role pack goldens', () => {
         formatId: PRODUCT_MANAGER_FORMAT_IDS.productCase,
       });
       expect(composed.systemPrompt).toContain('产品案例');
-      expect(composed.provenance.capabilityIds).toEqual([]);
+      expect(composed.provenance.capabilityIds).toEqual(['openjob-capabilities']);
     }
   });
 
@@ -278,9 +274,8 @@ describe('product manager role pack goldens', () => {
     const ref = resolved.descriptor.capabilities.find(
       (item) => item.id === CORE_CAPABILITIES_PACK_ID,
     );
-    // 可选依赖装上了就该生效，用户不必再手动勾一次
-    // 三个能力并入一个包：产品岗自动启用的是合编包整体
-    expect(ref).toMatchObject({ enabled: true, version: CORE_CAPABILITIES_PACK_VERSION });
+    // 声明已内嵌进岗位包：descriptor 固定的是包内嵌合成的版本，不是独立安装的旧套件
+    expect(ref).toMatchObject({ enabled: true, version: PRODUCT_MANAGER_ROLE_PACK_VERSION });
 
     // 但它只是加强项：案例题依然不绑能力插件，纯文本路径不受影响
     const { format } = resolvePracticeFormat(

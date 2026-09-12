@@ -14,7 +14,7 @@ import type {
   ClientCapabilityViewRequest,
   SetRoleProfileInput,
 } from '@core/ipc';
-import { RETIRED_CAPABILITY_KEYS } from '@core/plugins/capabilitySuite';
+import { RETIRED_CAPABILITY_KEYS, synthesizeSuite } from '@core/plugins/capabilitySuite';
 import {
   buildClientCapabilityView,
   listBuiltInPlugins,
@@ -146,9 +146,44 @@ export function listExternalPlugins(): readonly PluginInventoryEntry[] {
   return externalEntries;
 }
 
+/**
+ * 本机安装清单（含合成条目）。
+ *
+ * 插入点 E：带内嵌能力声明的岗位包会为合编包 id 合成一条与包同版本的清单项，
+ * 让能力视图的 installed 判定与权限网关的契约推导照常工作——声明搬进了岗位包，
+ * 但下游不需要知道。同版本多条声明只保留第一条。
+ */
 export function listInstalledPlugins(): InstalledPlugin[] {
+  // 内嵌声明按「套件版本」合并：descriptor pin 的是包版本，多个包同版本时合成条目
+  // 必须携带全部声明（并集），权限网关与能力视图才不会互相削掉能力。ids 取排序后的
+  // 并集，合并结果与注入顺序无关（清单排序测试守这条性质）。
+  const byVersion = new Map<
+    string,
+    { ids: string[]; compatibility: { core: string; schema: number } }
+  >();
+  for (const entry of externalEntries) {
+    const pack = entry.package.rolePack;
+    if (!pack?.capabilities?.length) continue;
+    const version = pack.manifest.version;
+    const bucket = byVersion.get(version);
+    if (bucket) {
+      bucket.ids.push(...pack.capabilities.map((item) => item.id));
+    } else {
+      byVersion.set(version, {
+        ids: pack.capabilities.map((item) => item.id),
+        compatibility: pack.manifest.compatibility,
+      });
+    }
+  }
+  const synthesized = new Map<string, InstalledPlugin>();
+  for (const [version, { ids, compatibility }] of byVersion) {
+    const suite = synthesizeSuite(ids, version, compatibility, '已安装岗位包的内嵌声明');
+    if (suite === null) continue;
+    synthesized.set(version, toInstalledPlugin(suite.manifest));
+  }
   return [
     ...listBuiltInPlugins(),
+    ...synthesized.values(),
     ...externalEntries.map((entry) => toInstalledPlugin(entry.package.manifest)),
   ].sort(
     (left, right) =>

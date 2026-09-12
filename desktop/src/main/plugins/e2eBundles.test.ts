@@ -107,9 +107,10 @@ describe('release 附件端到端', () => {
     // 扫描装载（与启动同一条入口）
     loadExternalPlugins();
 
-    // 清单里没有「随应用发布」：全部都是 first-party 外置包
+    // 清单里没有「随应用发布」：全部都是 first-party 外置包。
+    // 插入点 E：带内嵌声明的岗位包按版本合并出一条合成套件条目（3 包 + 旧套件 + 合成 = 5）
     const installed = listInstalledPlugins();
-    expect(installed).toHaveLength(4);
+    expect(installed).toHaveLength(5);
     expect(installed.map((p) => p.id)).toContain('openjob-capabilities');
     expect(installed.map((p) => p.id)).not.toContain('source-repository');
 
@@ -121,6 +122,15 @@ describe('release 附件端到端', () => {
     // 合编包的能力都在：5 个工具 + 1 个交互 + 1 个解析器
     const suite = installed.find((p) => p.id === 'openjob-capabilities')!;
     expect(suite.permissions.sort()).toEqual(
+      ['artifact:read', 'llm:complete', 'microphone:read', 'repository:read'].sort(),
+    );
+    // 合成条目按包版本存在，权限为三个包内嵌能力的并集
+    const inlineVersion = DISTRIBUTED_ROLE_PACKS[0]!.manifest.version;
+    const inline = installed.find(
+      (p) => p.id === 'openjob-capabilities' && p.version === inlineVersion,
+    );
+    expect(inline, `缺少 ${inlineVersion} 的合成条目`).toBeDefined();
+    expect(inline!.permissions.sort()).toEqual(
       ['artifact:read', 'llm:complete', 'microphone:read', 'repository:read'].sort(),
     );
   });

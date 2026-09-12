@@ -46,8 +46,10 @@ describe('listPluginOptions', () => {
     expect(listPluginOptions(installed, 'capability').map((option) => option.id).sort()).toEqual(
       [...installedCapabilityIds].sort(),
     );
-    // 能力合编包单独安装后，能力列表里是它的 id（内置清单已清空）
-    expect(installedCapabilityIds).toEqual([CORE_CAPABILITIES_PACK_ID]);
+    // 能力列表里只有合编包一个 id（内置清单已清空）；内嵌声明的合成条目与独立
+    // 套件同 id 不同版本并存，所以条目数 ≥ 1 但 id 集合恒为一个
+    expect(installedCapabilityIds.length).toBeGreaterThanOrEqual(1);
+    expect(new Set(installedCapabilityIds)).toEqual(new Set([CORE_CAPABILITIES_PACK_ID]));
     expect(listPluginOptions(installed, 'industry-pack')).toEqual([]);
   });
 });
@@ -246,7 +248,9 @@ describe('buildCapabilityRows', () => {
       installed,
     });
 
-    expect([...rows.map((row) => row.id)].sort()).toEqual([...installedCapabilityIds].sort());
+    expect([...new Set(rows.map((row) => row.id))].sort()).toEqual([
+      ...new Set(installedCapabilityIds),
+    ].sort());
     for (const row of rows) {
       expect(row).toMatchObject({
         enabledInCampaign: false,

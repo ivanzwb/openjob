@@ -11,6 +11,7 @@ import { softwareEngineeringRolePack } from '../softwareEngineering';
 import {
   SALES_CUSTOMER_SUCCESS_FORMAT_IDS,
   SALES_CUSTOMER_SUCCESS_ROLE_PACK_ID,
+  SALES_CUSTOMER_SUCCESS_ROLE_PACK_VERSION,
   SALES_ROLE_PLAY_CAPABILITY_ID,
   salesCustomerSuccessRolePack,
 } from './index';
@@ -121,9 +122,8 @@ function ungatedFormatIds(): string[] {
 function resolveWithoutRolePlay(): ReturnType<DeterministicRuntimeResolver['resolve']> {
   const registry = new BuiltInPluginRegistry();
   DISTRIBUTED_ROLE_PACKS.forEach((pack) => registry.register(pack));
-  // 明确把 role-play 排除掉。本用例考的是「插件缺席时如何降级」，
-  // 原先靠「仓库里还没实现 role-play」这个前提成立，T19 把它实现出来后前提就失效了。
-  // 能力已并入合编包：「没装」= 注册表里没有合编包（不注册任何能力）
+  // 插入点 E 后 role-play 随包内嵌：注册表里没有任何独立能力包，
+  // resolver 仍从包内嵌声明合成启用——能力归属包，不再依赖单独安装。
   BUILT_IN_CAPABILITY_PLUGINS.forEach((plugin) => registry.registerCapability(plugin));
   return new DeterministicRuntimeResolver(registry).resolve({
     coreVersion: '1.0.0',
@@ -256,17 +256,17 @@ describe('sales & customer success role pack goldens', () => {
     expect(ref?.enabled).toBe(true);
   });
 
-  it('没装 role-play 时行为面仍然完整跑得通，且解析不失败', () => {
+  it('role-play 内嵌随包启用；无门槛题型保证降级路径', () => {
     const resolved = resolveWithoutRolePlay();
     expect(resolved.ok).toBe(true);
     if (!resolved.ok) return;
 
-    // 可选能力缺席只降级成 disabled，不让整次解析失败
+    // 声明已内嵌进岗位包：注册表里没有独立套件也照样合成启用
     const ref = resolved.descriptor.capabilities.find(
       (item) => item.id === SALES_ROLE_PLAY_CAPABILITY_ID,
     );
-    expect(ref?.enabled).toBe(false);
-    expect(ref?.enabled === false ? ref.disabledReason : '').toContain('plugin-not-found');
+    expect(ref?.enabled).toBe(true);
+    expect(ref).toMatchObject({ version: SALES_CUSTOMER_SUCCESS_ROLE_PACK_VERSION });
 
     const { format, rubric } = resolvePracticeFormat(
       salesCustomerSuccessRolePack,
@@ -283,7 +283,7 @@ describe('sales & customer success role pack goldens', () => {
         formatId: SALES_CUSTOMER_SUCCESS_FORMAT_IDS.behavioral,
       });
       expect(composed.systemPrompt).toContain('销售行为面');
-      expect(composed.provenance.capabilityIds).toEqual([]);
+      expect(composed.provenance.capabilityIds).toEqual(['openjob-capabilities']);
     }
   });
 

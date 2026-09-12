@@ -207,6 +207,7 @@ export const productManagementRolePack: RolePack = {
     },
   ],
   navigation: [],
+  capabilities: [],
   resumeModules: [],
   promptFragments: [{ slot: 'diagnosis', ref: 'diagnosis.jd' }],
   sourcePolicy: {

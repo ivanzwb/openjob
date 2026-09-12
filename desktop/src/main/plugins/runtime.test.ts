@@ -9,7 +9,7 @@ import { DatabaseSync } from 'node:sqlite';
 import type { Database } from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
-import { CORE_CAPABILITIES_PACK_ID, CORE_CAPABILITIES_PACK_VERSION } from '@core/plugins/capabilitySuite';
+import { CORE_CAPABILITIES_PACK_ID } from '@core/plugins/capabilitySuite';
 import { listBuiltInPlugins } from '@core/plugins/clientView';
 import {
   builtInPluginKeys,
@@ -271,9 +271,9 @@ describe('setCampaignRoleProfile', () => {
       resolvedAt: 1234,
     });
     expect(view.descriptor.configSnapshotHash).toMatch(/^[a-f0-9]{64}$/);
-    // SE 包（当前 1.2.0）的可选依赖指向能力合编包，resolver 展开为它的精确版本
+    // 插入点 E：SE 包内嵌 source-repository 声明，resolver 合成与其同版本的套件引用
     expect(view.descriptor.capabilities).toEqual([
-      { id: CORE_CAPABILITIES_PACK_ID, version: '1.0.0', enabled: true },
+      { id: CORE_CAPABILITIES_PACK_ID, version: '1.3.0', enabled: true },
     ]);
     expect(view.roleProfile).toMatchObject({
       roleFamily: 'software',
@@ -283,7 +283,7 @@ describe('setCampaignRoleProfile', () => {
     });
     // resolver 先写 capabilities 再写岗位包（见 runtime.ts 的 bound 顺序）
     expect(bindings(raw)).toEqual([
-      { plugin_id: REPO_ID, plugin_version: CORE_CAPABILITIES_PACK_VERSION, revision: 1, active_execution: 1 },
+      { plugin_id: REPO_ID, plugin_version: '1.3.0', revision: 1, active_execution: 1 },
       {
         plugin_id: ROLE_PACK_ID,
         plugin_version: ROLE_PACK_VERSION,

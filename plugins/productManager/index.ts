@@ -20,6 +20,7 @@ import { interviewFormats, interviewStages } from './formats';
 import { behavioralRubric, presentationRubric, productCaseRubric } from './rubrics';
 import { taskTemplates } from './tasks';
 import { resumeModules } from './resume-modules';
+import { capabilities } from './capabilities';
 import { sourcePolicy } from './search-policy';
 
 export {
@@ -40,9 +41,10 @@ export const productManagerRolePack: RolePack = defineRolePack({
     displayName: '产品经理',
     description: '产品经理岗位的能力诊断、案例训练和模拟面试声明',
     compatibility: { core: '^1.0.0', schema: 23 },
-    permissions: [],
+    // 内嵌 analytics-case：权限 = 其声明的并集（contracts 校验）
+    permissions: ['artifact:read'],
+    // portfolio-review 尚无宿主实现，保留为可选依赖；analytics-case 已内嵌
     dependencies: [
-      { id: PRODUCT_MANAGER_OPTIONAL_CAPABILITY_IDS.analyticsCase, version: '^1.0.0', optional: true },
       {
         id: PRODUCT_MANAGER_OPTIONAL_CAPABILITY_IDS.portfolioReview,
         version: '^1.0.0',
@@ -59,5 +61,6 @@ export const productManagerRolePack: RolePack = defineRolePack({
   // 插入点 A：产品岗位暂无能力页签，声明为空数组
   navigation: [],
   resumeModules,
+  capabilities,
   sourcePolicy,
 });

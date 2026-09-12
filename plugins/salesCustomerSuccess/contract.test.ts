@@ -57,11 +57,11 @@ describe('salesCustomerSuccessRolePack contract', () => {
   it('是不申请任何执行权限的岗位包，角色扮演只作为可选依赖', () => {
     expect(salesCustomerSuccessRolePack.manifest).toMatchObject({
       id: 'sales-customer-success',
-      version: '1.2.0',
+      version: '1.3.0',
       type: 'role-pack',
       compatibility: { core: '^1.0.0', schema: 23 },
-      permissions: [],
-      dependencies: [{ id: SALES_ROLE_PLAY_CAPABILITY_ID, version: '^1.0.0', optional: true }],
+      permissions: ['llm:complete', 'microphone:read'],
+      dependencies: [],
     });
     // 写成必需依赖时，T19 交付之前谁都选不了这个岗位
     for (const dependency of salesCustomerSuccessRolePack.manifest.dependencies ?? []) {

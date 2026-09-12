@@ -1,5 +1,9 @@
 import { RUNTIME_AVAILABILITIES, type PluginType } from '../enums';
 import {
+  CORE_CAPABILITIES_PACK_ID,
+  synthesizeSuiteFromRolePack,
+} from './capabilitySuite';
+import {
   isExactSemVer,
   isStablePluginId,
   validateCapabilityPlugin,
@@ -14,6 +18,7 @@ import { compareExactSemVer, type BuiltInPluginRegistry, type RegisteredPlugin }
 import type {
   ArtifactParserDefinition,
   CampaignRuntimeDescriptor,
+  CapabilityPlugin,
   CapabilityRegistry,
   HostRenderedInteraction,
   PluginManifest,
@@ -701,6 +706,26 @@ function validateCapabilityRegistrations(
   return null;
 }
 
+/** 与上面同一套校验，额外把岗位包内嵌声明合成的套件一起过 collector（防重名、验权限声明） */
+function validateRegistrationsWithInlineSuite(
+  selected: Map<string, RegisteredPlugin>,
+  inlineSuite: CapabilityPlugin,
+): RuntimeResolveError | null {
+  const baseError = validateCapabilityRegistrations(selected);
+  if (baseError) return baseError;
+  const collector = new RegistrationCollector('root', new Set(), {});
+  try {
+    inlineSuite.register(collector.forPlugin(inlineSuite.manifest.id, inlineSuite.manifest));
+  } catch (error) {
+    return {
+      code: 'invalid-manifest',
+      pluginId: inlineSuite.manifest.id,
+      message: error instanceof Error ? error.message : '内嵌能力注册失败',
+    };
+  }
+  return null;
+}
+
 function solveRequired(
   registry: BuiltInPluginRegistry,
   input: ResolveRuntimeInput,
@@ -943,6 +968,17 @@ export class DeterministicRuntimeResolver implements RuntimeResolver {
 
     const role = selected.get(input.rolePackId)!;
     const industry = input.industryPackId ? selected.get(input.industryPackId)! : undefined;
+
+    // 插入点 E：岗位包内嵌的能力声明合成为套件引用。descriptor 形状不变——
+    // 下游（网关/视图/排程/移动端）仍按 openjob-capabilities@<包版本> 消费。
+    // 启用语义与旧「可选依赖自动展开」一致：选中岗位包即启用其声明的能力，
+    // 不再受用户勾选影响——粒度更细的「按材料激活」由排程与网关在更下游判定。
+    const inlineSuite = role.rolePack ? synthesizeSuiteFromRolePack(role.rolePack) : null;
+    if (inlineSuite !== null) {
+      const registrationError = validateRegistrationsWithInlineSuite(selected, inlineSuite);
+      if (registrationError) return { ok: false, error: registrationError };
+    }
+
     const enabledCapabilities: ResolvedCapabilityRef[] = [...selected.values()]
       .filter((entry) => entry.manifest.type === 'capability')
       .map((entry) => ({
@@ -950,6 +986,13 @@ export class DeterministicRuntimeResolver implements RuntimeResolver {
         version: entry.manifest.version,
         enabled: true as const,
       }));
+    if (inlineSuite !== null) {
+      enabledCapabilities.push({
+        id: CORE_CAPABILITIES_PACK_ID,
+        version: inlineSuite.manifest.version,
+        enabled: true as const,
+      });
+    }
     const disabledCapabilities = [
       ...new Map(
         [...disabled.values()]

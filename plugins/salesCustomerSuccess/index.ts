@@ -20,7 +20,6 @@ import { defineRolePack, packRoot } from '../../scripts/pack-authoring';
 import {
   SALES_CUSTOMER_SUCCESS_ROLE_PACK_ID,
   SALES_CUSTOMER_SUCCESS_ROLE_PACK_VERSION,
-  SALES_ROLE_PLAY_CAPABILITY_ID,
 } from './ids';
 import { salesCustomerSuccessMatchers } from './matchers';
 import { competencyTemplates } from './competencies';
@@ -28,6 +27,7 @@ import { interviewFormats, interviewStages } from './formats';
 import { behavioralRubric, rolePlayRubric } from './rubrics';
 import { taskTemplates } from './tasks';
 import { resumeModules } from './resume-modules';
+import { capabilities } from './capabilities';
 import { sourcePolicy } from './search-policy';
 
 export {
@@ -48,10 +48,9 @@ export const salesCustomerSuccessRolePack: RolePack = defineRolePack({
     displayName: '销售 / 客户成功',
     description: '销售与客户成功岗位的能力诊断、对话训练和模拟面试声明',
     compatibility: { core: '^1.0.0', schema: 23 },
-    permissions: [],
-    dependencies: [
-      { id: SALES_ROLE_PLAY_CAPABILITY_ID, version: '^1.0.0', optional: true },
-    ],
+    // 内嵌 role-play：权限 = 其声明的并集（llm:complete 生成台词，microphone:read 语音作答）
+    permissions: ['llm:complete', 'microphone:read'],
+    dependencies: [],
   },
   roleMatchers: salesCustomerSuccessMatchers,
   competencyTemplates,
@@ -62,5 +61,6 @@ export const salesCustomerSuccessRolePack: RolePack = defineRolePack({
   // 插入点 A：销售岗位暂无能力页签，声明为空数组
   navigation: [],
   resumeModules,
+  capabilities,
   sourcePolicy,
 });

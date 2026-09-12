@@ -12,4 +12,4 @@ export const SOFTWARE_ENGINEERING_ROLE_PACK_ID = LEGACY_ROLE_PACK_REF.id;
  * descriptor 与题型投影 pin 着它），但包内容换代时版本要跟着走，
  * 否则解析器会把新旧两份包当成同一份。
  */
-export const SOFTWARE_ENGINEERING_ROLE_PACK_VERSION = '1.2.0';
+export const SOFTWARE_ENGINEERING_ROLE_PACK_VERSION = '1.3.0';

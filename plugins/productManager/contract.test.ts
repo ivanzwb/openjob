@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { CORE_CAPABILITIES_PACK_ID } from '@core/plugins/capabilitySuite';
 import { composePrompt } from '@core/prompts/composer';
 import type { PromptEvidence, PromptRuntimeSnapshot } from '@core/prompts/composer';
 import type { PromptSlot } from '@core/prompts/registry';
@@ -56,12 +55,11 @@ describe('productManagerRolePack contract', () => {
   it('是不申请任何执行权限的岗位包，能力插件只作为可选依赖', () => {
     expect(productManagerRolePack.manifest).toMatchObject({
       id: 'product-manager',
-      version: '1.2.0',
+      version: '1.3.0',
       type: 'role-pack',
       compatibility: { core: '^1.0.0', schema: 23 },
-      permissions: [],
+      permissions: ['artifact:read'],
       dependencies: [
-        { id: CORE_CAPABILITIES_PACK_ID, version: '^1.0.0', optional: true },
         { id: 'portfolio-review', version: '^1.0.0', optional: true },
       ],
     });

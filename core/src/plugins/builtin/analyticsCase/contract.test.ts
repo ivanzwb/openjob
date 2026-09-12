@@ -150,11 +150,13 @@ describe('内置场景可直接出题', () => {
 });
 
 describe('产品岗可选启用', () => {
-  it('产品岗把承载本能力的合编包作为可选依赖，缺席不影响岗位可用', () => {
-    const dependency = productManagerRolePack.manifest.dependencies?.find(
+  it('产品岗把本能力内嵌为声明，权限并集随之声明', () => {
+    // 插入点 E：声明归属岗位包，合编包引用由 resolver 合成，不再走可选依赖
+    expect(productManagerRolePack.capabilities).toContainEqual({ id: ANALYTICS_CASE_CAPABILITY_ID });
+    expect(productManagerRolePack.manifest.dependencies?.some(
       (item) => item.id === CORE_CAPABILITIES_PACK_ID,
-    );
-    expect(dependency).toMatchObject({ optional: true });
+    )).toBe(false);
+    expect(productManagerRolePack.manifest.permissions).toEqual(['artifact:read']);
   });
 
   it('启用后桌面可解析 artifact，手机只读', () => {

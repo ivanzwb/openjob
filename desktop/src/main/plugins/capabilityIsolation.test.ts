@@ -19,6 +19,7 @@ vi.mock('../db', () => ({
 }));
 
 import { PLUGIN_PERMISSIONS, type PluginPermission } from '@core/plugins/permissions';
+import { HOST_CAPABILITY_PLUGINS } from '@core/plugins/hostCapabilities';
 import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
 import {
   CORE_CAPABILITIES_PACK_ID,
@@ -90,10 +91,17 @@ describe('权限契约来自安装清单', () => {
     }
   });
 
-  it('岗位包不申请任何权限', () => {
-    // 岗位包只声明题目与量规；一旦它能申请权限，「岗位包不碰执行」这条边界就没了
+  it('岗位包权限等于内嵌能力权限的并集，不允许凭空多要', () => {
+    // 插入点 E：权限随内嵌能力声明走，并集由宿主注册表推导（contracts 强制）
     for (const pack of DISTRIBUTED_ROLE_PACKS) {
-      expect(pack.manifest.permissions, pack.manifest.id).toEqual([]);
+      const expected = [
+        ...new Set(
+          pack.capabilities.flatMap(
+            (declaration) => HOST_CAPABILITY_PLUGINS.get(declaration.id)?.manifest.permissions ?? [],
+          ),
+        ),
+      ].sort();
+      expect(pack.manifest.permissions, pack.manifest.id).toEqual(expected);
     }
   });
 });

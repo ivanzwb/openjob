@@ -6,7 +6,7 @@
  * 装好之后的渲染与降级，就得把岗位包显式加进来。默认值省掉的那一步，恰好是这一版最容易
  * 判错的一步。
  */
-import { coreCapabilitiesSuite } from '../capabilitySuite';
+import { coreCapabilitiesSuite, synthesizeSuiteFromRolePack } from '../capabilitySuite';
 import type { RolePack } from '../types';
 import { listBuiltInPlugins, toInstalledPlugin, type InstalledPlugin } from '../clientView';
 
@@ -25,7 +25,12 @@ export function installedWith(...packs: readonly RolePack[]): InstalledPlugin[] 
   return [
     ...listBuiltInPlugins(),
     CAPABILITY_SUITE_INSTALLED,
-    ...packs.map((pack) => toInstalledPlugin(pack.manifest)),
+    ...packs.flatMap((pack) => {
+      // 插入点 E：带内嵌声明的岗位包会为合编包 id 合成一条与包同版本的清单项
+      const suite = synthesizeSuiteFromRolePack(pack);
+      const synthesized = suite ? [toInstalledPlugin(suite.manifest)] : [];
+      return [toInstalledPlugin(pack.manifest), ...synthesized];
+    }),
   ];
 }
 

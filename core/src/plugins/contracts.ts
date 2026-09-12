@@ -5,6 +5,7 @@ import {
   PLUGIN_TYPES,
   RUNTIME_AVAILABILITIES,
 } from '../enums';
+import { HOST_CAPABILITY_PLUGINS } from './hostCapabilities';
 import { isPluginPermission } from './permissions';
 import type {
   CapabilityPlugin,
@@ -143,12 +144,13 @@ export function validatePluginManifest(manifest: PluginManifest): PluginContract
     }
     permissionSet.add(permission);
   });
-  if (manifest.type !== 'capability' && (manifest.permissions?.length ?? 0) > 0) {
+  // role-pack 的权限规则在 validateRolePack 里按内嵌能力并集校验；行业包仍然无权限
+  if (manifest.type === 'industry-pack' && (manifest.permissions?.length ?? 0) > 0) {
     issue(
       issues,
       'manifest.permissions',
       'invalid-permission',
-      'Role/Industry Pack 不得申请执行权限',
+      'Industry Pack 不得申请执行权限',
     );
   }
 
@@ -348,6 +350,46 @@ function validateNavigation(entries: NavigationEntry[], issues: PluginContractIs
       issue(issues, `${path}.requiredCapabilityId`, 'invalid-id', 'Capability ID 不合法');
     }
   });
+}
+
+function validateCapabilities(
+  pack: RolePack,
+  issues: PluginContractIssue[],
+): void {
+  if (!Array.isArray(pack.capabilities)) {
+    issue(issues, 'capabilities', 'invalid-value', 'capabilities 必须是数组');
+    return;
+  }
+  validateUniqueIds(pack.capabilities, 'capabilities', issues);
+  for (const declaration of pack.capabilities) {
+    if (!HOST_CAPABILITY_PLUGINS.has(declaration.id)) {
+      issue(
+        issues,
+        `capabilities[${declaration.id}]`,
+        'missing-reference',
+        `宿主没有可重放的能力实现：${declaration.id}`,
+      );
+    }
+  }
+
+  // 权限并集规则：声明少于实现会漏授权，多于实现是凭空要权。
+  // 宿主注册表是权限的唯一事实源，包不允许自行加减。
+  const expected = [
+    ...new Set(
+      pack.capabilities.flatMap((declaration) =>
+        HOST_CAPABILITY_PLUGINS.get(declaration.id)?.manifest.permissions ?? [],
+      ),
+    ),
+  ].sort();
+  const actual = [...pack.manifest.permissions].sort();
+  if (actual.join(',') !== expected.join(',')) {
+    issue(
+      issues,
+      'manifest.permissions',
+      'invalid-permission',
+      `权限必须等于内嵌能力权限的并集 [${expected.join(', ')}]，当前为 [${actual.join(', ')}]`,
+    );
+  }
 }
 
 function validateAnchors(
@@ -569,6 +611,7 @@ export function validateRolePack(pack: RolePack): PluginContractIssue[] {
   validatePromptFragments(pack.promptFragments, formatIds, issues);
   validateResumeModules(pack.resumeModules, issues);
   validateNavigation(pack.navigation, issues);
+  validateCapabilities(pack, issues);
   return issues;
 }
 

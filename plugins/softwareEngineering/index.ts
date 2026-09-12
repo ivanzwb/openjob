@@ -10,7 +10,6 @@
  * 引用的完整清单（含未被插入点 B 覆盖的宿主流水线 prompt）见
  * SOFTWARE_ENGINEERING_PROMPT_REFS；被插入点 B 引用的只是其中一个子集。
  */
-import { CORE_CAPABILITIES_PACK_ID } from '@core/plugins/capabilitySuite';
 import { SOFTWARE_ENGINEERING_FORMAT_IDS } from '@core/plugins/legacyRoleData';
 import type { PromptFragment, RolePack } from '@core/plugins/types';
 import { defineRolePack, packRoot } from '../../scripts/pack-authoring';
@@ -23,6 +22,7 @@ import { projectDeepDiveRubric, systemDesignRubric } from './rubrics/design';
 import { taskTemplates } from './tasks';
 import { navigation } from './navigation';
 import { resumeModules } from './resume-modules';
+import { capabilities } from './capabilities';
 import { sourcePolicy } from './search-policy';
 
 export {
@@ -92,8 +92,9 @@ export const softwareEngineeringRolePack: RolePack = defineRolePack({
     displayName: '软件工程',
     description: '软件工程岗位的技术诊断、训练和模拟面试声明',
     compatibility: { core: '^1.0.0', schema: 23 },
-    permissions: [],
-    dependencies: [{ id: CORE_CAPABILITIES_PACK_ID, version: '^1.0.0', optional: true }],
+    // 内嵌 source-repository 能力：权限 = 其声明的并集（contracts 校验）
+    permissions: ['repository:read'],
+    dependencies: [],
   },
   roleMatchers: softwareEngineeringMatchers,
   competencyTemplates,
@@ -109,5 +110,6 @@ export const softwareEngineeringRolePack: RolePack = defineRolePack({
   promptFragments,
   navigation,
   resumeModules,
+  capabilities,
   sourcePolicy,
 });

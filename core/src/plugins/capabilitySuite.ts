@@ -13,7 +13,7 @@
  *   防止第三方签一个同 id@version 的包借尸还魂。
  */
 
-import type { CapabilityPlugin } from './types';
+import type { CapabilityPlugin, RolePack } from './types';
 import { TABULAR_DATASET_ARTIFACT_TYPE, TABULAR_DATASET_SCHEMA_VERSION } from './builtin/analyticsCase/dataset';
 import { analyticsCaseCapabilityPlugin } from './builtin/analyticsCase';
 import {
@@ -22,6 +22,7 @@ import {
   rolePlayCapabilityPlugin,
 } from './builtin/rolePlay';
 import { sourceRepositoryCapabilityPlugin } from './builtin/sourceRepository';
+import { HOST_CAPABILITY_PLUGINS } from './hostCapabilities';
 
 export const CORE_CAPABILITIES_PACK_ID = 'openjob-capabilities';
 export const CORE_CAPABILITIES_PACK_VERSION = '1.0.0';
@@ -102,3 +103,66 @@ export const coreCapabilitiesSuite: CapabilityPlugin = {
     analyticsCaseCapabilityPlugin.register(registry);
   },
 };
+
+/**
+ * 插入点 E：把岗位包的内嵌能力声明合成为套件插件。
+ *
+ * descriptor 的能力引用形状不变（仍是 openjob-capabilities@<包版本>），下游的
+ * 权限网关、能力视图、排程与移动端都不需要知道「声明已经搬进岗位包」——
+ * 溶解只改变声明的归属，不改变运行时的消费方式。
+ *
+ * 权限取所选宿主能力 manifest 的并集（宿主是权限的唯一事实源）；schema 表同理。
+ * 声明里没有宿主已知能力时返回 null。
+ */
+export function synthesizeSuite(
+  declaredIds: readonly string[],
+  version: string,
+  compatibility: { core: string; schema: number },
+  sourceLabel: string,
+): CapabilityPlugin | null {
+  const ids = [...new Set(declaredIds)].filter((id) => HOST_CAPABILITY_PLUGINS.has(id)).sort();
+  if (ids.length === 0) return null;
+
+  const plugins = ids.map((id) => HOST_CAPABILITY_PLUGINS.get(id)!);
+  const permissions = [
+    ...new Set(plugins.flatMap((plugin) => plugin.manifest.permissions)),
+  ].sort();
+  const artifactSchemas: Record<string, number> = {};
+  const interactionSchemas: Record<string, number> = {};
+  for (const plugin of plugins) {
+    Object.assign(artifactSchemas, plugin.manifest.artifactSchemas ?? {});
+    Object.assign(interactionSchemas, plugin.manifest.interactionSchemas ?? {});
+  }
+
+  return {
+    manifest: {
+      id: CORE_CAPABILITIES_PACK_ID,
+      version,
+      type: 'capability',
+      displayName: 'OpenJob 能力包',
+      description: `由 ${sourceLabel} 内嵌声明合成的能力集合。`,
+      compatibility,
+      permissions,
+      runtime: {
+        desktop: 'full',
+        mobile: 'view-only',
+      },
+      ...(Object.keys(artifactSchemas).length > 0 ? { artifactSchemas } : {}),
+      ...(Object.keys(interactionSchemas).length > 0 ? { interactionSchemas } : {}),
+    },
+    register(registry) {
+      for (const plugin of plugins) {
+        plugin.register(registry);
+      }
+    },
+  };
+}
+
+export function synthesizeSuiteFromRolePack(pack: RolePack): CapabilityPlugin | null {
+  return synthesizeSuite(
+    (pack.capabilities ?? []).map((item) => item.id),
+    pack.manifest.version,
+    pack.manifest.compatibility,
+    `岗位包 ${pack.manifest.id}@${pack.manifest.version}`,
+  );
+}
