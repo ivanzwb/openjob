@@ -1,7 +1,19 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { PluginInstallResult, PluginInventoryView, PluginTrust } from '@core/ipc';
 import type { InstalledPlugin } from '@core/plugins/clientView';
+import { disableCodePlugin, enableCodePlugin } from '../codePlugins/runtime';
 import { invoke } from '../ipc';
+
+type CodePluginInfo = Awaited<ReturnType<typeof invoke<'codePlugin:list'>>>[number];
+
+/** 权限 → 用户能看懂的说明。启用确认框里展示的就是这些话。 */
+const PERMISSION_LABEL: Record<string, string> = {
+  'llm:complete': '调用模型补全（经统一网关与审计）',
+  'evidence:read-confirmed': '读取你已确认的个人证据（只读）',
+  'repository:read': '读取已链接的代码仓库（只读）',
+  'artifact:read': '读取简历、表格等附件',
+  'microphone:read': '使用麦克风（语音作答）',
+};
 
 const TYPE_LABEL: Record<InstalledPlugin['type'], string> = {
   'role-pack': '岗位包',
@@ -53,9 +65,13 @@ export function PluginsPanel(): React.JSX.Element {
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const [codePlugins, setCodePlugins] = useState<CodePluginInfo[]>([]);
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+
   const refresh = useCallback(async () => {
     setInstalled(await invoke('plugin:listInstalled', undefined));
     setInventory(await invoke('plugin:inventory', undefined));
+    setCodePlugins(await invoke('codePlugin:list', undefined));
   }, []);
 
   useEffect(() => {
@@ -183,10 +199,103 @@ export function PluginsPanel(): React.JSX.Element {
                     卸载
                   </button>
                 )}
+                {plugin.main !== null && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMessage(null);
+                      setConfirmingId(confirmingId === key ? null : key);
+                    }}
+                    disabled={busy}
+                    className={`ml-auto text-[var(--color-muted)] hover:text-[var(--color-fg)] disabled:opacity-40 ${trust !== undefined ? '' : 'ml-auto'}`}
+                  >
+                    {codePlugins.find((item) => item.id === plugin.id)?.enabled ? '停用' : '启用…'}
+                  </button>
+                )}
               </li>
             );
           })}
         </ul>
+
+        {confirmingId !== null && (
+          <div className="space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-xs">
+            <p className="text-[var(--color-fg)]">
+              启用「{codePlugins.find((item) => `${item.id}@${item.version}` === confirmingId)?.displayName}」
+              需要确认以下权限：
+            </p>
+            <ul className="list-disc space-y-0.5 pl-5 text-[var(--color-muted)]">
+              {(codePlugins.find((item) => `${item.id}@${item.version}` === confirmingId)?.permissions ?? []).map(
+                (permission) => (
+                  <li key={permission}>
+                    <code>{permission}</code>
+                    {PERMISSION_LABEL[permission] ? ` —— ${PERMISSION_LABEL[permission]}` : ''}
+                  </li>
+                ),
+              )}
+            </ul>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={busy}
+                className="rounded bg-amber-500/20 px-2 py-1 hover:bg-amber-500/30 disabled:opacity-40"
+                onClick={async () => {
+                  const info = codePlugins.find((item) => `${item.id}@${item.version}` === confirmingId);
+                  setBusy(true);
+                  try {
+                    await enableCodePlugin(confirmingId);
+                    setMessage(`已启用 ${info?.displayName ?? confirmingId}`);
+                  } finally {
+                    setBusy(false);
+                    setConfirmingId(null);
+                    void refresh();
+                  }
+                }}
+              >
+                确认启用
+              </button>
+              <button
+                type="button"
+                className="rounded px-2 py-1 text-[var(--color-muted)] hover:text-[var(--color-fg)]"
+                onClick={() => setConfirmingId(null)}
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        )}
+
+        {codePlugins.some((item) => item.enabled) && (
+          <div className="space-y-1.5 border-t border-[var(--color-border)] pt-3">
+            <p className="text-[var(--color-muted)]">已启用的代码插件：</p>
+            {codePlugins
+              .filter((item) => item.enabled)
+              .map((item) => (
+                <div key={item.id} className="flex items-center gap-2 text-xs">
+                  <span className="text-[var(--color-fg)]">{item.displayName}</span>
+                  <span className="text-[var(--color-muted)]">
+                    {item.permissions.map((permission) => PERMISSION_LABEL[permission] ?? permission).join('；')}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    className="ml-auto text-[var(--color-muted)] hover:text-red-400 disabled:opacity-40"
+                    onClick={async () => {
+                      setBusy(true);
+                      try {
+                        await disableCodePlugin(item.id);
+                        setMessage(`已停用 ${item.displayName}`);
+                      } finally {
+                        setBusy(false);
+                        void refresh();
+                      }
+                    }}
+                  >
+                    停用
+                  </button>
+                </div>
+              ))}
+          </div>
+        )}
 
         {rejected.length > 0 && (
           <div className="space-y-1.5 border-t border-[var(--color-border)] pt-3">

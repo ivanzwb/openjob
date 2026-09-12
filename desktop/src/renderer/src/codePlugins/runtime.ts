@@ -85,13 +85,12 @@ function loadModule(
   return loaded;
 }
 
-/** 激活全部已安装的代码插件；单个失败不阻断其余（错误进 console 供诊断） */
+/** 激活全部「已确认启用」的代码插件；单个失败不阻断其余（错误进 console 供诊断） */
 export async function activateInstalledCodePlugins(): Promise<void> {
-  const installed = await invoke('plugin:listInstalled', undefined);
-  const codePlugins = installed.filter((plugin) => plugin.main !== null);
+  const codePlugins = await invoke('codePlugin:list', undefined);
   const next: ActiveCodePlugin[] = [];
 
-  for (const plugin of codePlugins) {
+  for (const plugin of codePlugins.filter((item) => item.enabled)) {
     try {
       const entry = await invoke('plugin:getEntrySource', {
         id: plugin.id,
@@ -153,3 +152,15 @@ export function activateOnMount(): void {
 }
 
 export { hub as codePluginEventHub };
+
+/** 启用：主进程落确认记录后，立即重新激活让页签即时出现 */
+export async function enableCodePlugin(id: string): Promise<void> {
+  await invoke('codePlugin:setEnabled', { id, enabled: true });
+  await activateInstalledCodePlugins();
+}
+
+/** 停用：撤贡献断桥，页签即时消失；确认记录保留（再次启用不再重复确认） */
+export async function disableCodePlugin(id: string): Promise<void> {
+  await invoke('codePlugin:setEnabled', { id, enabled: false });
+  await activateInstalledCodePlugins();
+}

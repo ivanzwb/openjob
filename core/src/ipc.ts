@@ -60,6 +60,7 @@ import type {
 } from './plugins/clientView';
 import type { PluginType } from './enums';
 import type { CampaignRuntimeDescriptor, ClientPlatform, RolePack } from './plugins/types';
+import type { PluginPermission } from './plugins/permissions';
 import type {
   EndRolePlayRequest,
   RolePlaySessionView,
@@ -1178,6 +1179,22 @@ export interface IpcInvokeMap {
     req: { pluginId: string; campaignId: string };
     res: CandidateEvidence[];
   };
+  /** 代码插件清单（含启用状态）：设置页展示与激活门槛共用 */
+  'codePlugin:list': {
+    req: void;
+    res: Array<{
+      id: string;
+      version: string;
+      displayName: string;
+      description: string;
+      permissions: PluginPermission[];
+      main: string;
+      api: string;
+      enabled: boolean;
+    }>;
+  };
+  /** 启用/停用：启用要求用户已在界面上确认权限清单 */
+  'codePlugin:setEnabled': { req: { id: string; enabled: boolean }; res: void };
 
   'campaign:list': { req: void; res: CampaignSummary[] };
   'campaign:getOverview': { req: void; res: CampaignOverview };
@@ -1484,6 +1501,8 @@ export const IPC_INVOKE_CHANNELS = [
   'codePlugin:storage.delete',
   'codePlugin:llm.complete',
   'codePlugin:evidence.listConfirmed',
+  'codePlugin:list',
+  'codePlugin:setEnabled',
   'campaign:list',
   'campaign:getOverview',
   'campaign:compare',

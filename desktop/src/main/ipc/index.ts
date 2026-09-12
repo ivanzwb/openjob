@@ -64,6 +64,10 @@ import {
   pluginStorageGet,
   pluginStorageSet,
 } from '../plugins/codePluginStorage';
+import {
+  codePluginEnabled,
+  setCodePluginEnabled,
+} from '../plugins/codePluginState';
 import { completePluginJson } from '../llm/json';
 import { pluginInventoryView } from '../plugins/bootstrap';
 import { installPluginFromFile, uninstallPlugin } from '../plugins/install';
@@ -215,6 +219,21 @@ export function registerIpcHandlers(): void {
   handle('codePlugin:storage.get', ({ pluginId, key }) => pluginStorageGet(pluginId, key));
   handle('codePlugin:storage.set', ({ pluginId, key, value }) => pluginStorageSet(pluginId, key, value));
   handle('codePlugin:storage.delete', ({ pluginId, key }) => pluginStorageDelete(pluginId, key));
+  handle('codePlugin:list', () =>
+    listExternalPlugins()
+      .filter((item) => item.package.manifest.main !== undefined)
+      .map((item) => ({
+        id: item.package.manifest.id,
+        version: item.package.manifest.version,
+        displayName: item.package.manifest.displayName,
+        description: item.package.manifest.description,
+        permissions: item.package.manifest.permissions,
+        main: item.package.manifest.main!,
+        api: item.package.manifest.api!,
+        enabled: codePluginEnabled(item.package.manifest.id),
+      })),
+  );
+  handle('codePlugin:setEnabled', ({ id, enabled }) => setCodePluginEnabled(id, enabled));
   handle('codePlugin:llm.complete', ({ pluginId, version, system, user, role }) => {
     // 门面准入：只服务已安装且声明了 llm:complete 的代码插件
     const entry = listExternalPlugins().find(
