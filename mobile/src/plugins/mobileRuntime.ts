@@ -115,6 +115,48 @@ export function buildMobileRuntimeHtml(plugin: MobileCodePlugin): string {
   };
   new Function('module', 'exports', 'require', mainSource)(module, module.exports, requireShim);
 
+  // 相对引用解析：与桌面共用同一规则（core codePlugin/assets 的 JS 等价实现）
+  function isRelative(ref) {
+    return !/^(https?:|data:|\/\/)/i.test(ref);
+  }
+  function resolvePath(entryPath, ref) {
+    if (!isRelative(ref)) return null;
+    var dir = entryPath.indexOf('/') >= 0 ? entryPath.slice(0, entryPath.lastIndexOf('/') + 1) : '';
+    var parts = (dir + ref).split('/');
+    var out = [];
+    for (var i = 0; i < parts.length; i++) {
+      var part = parts[i];
+      if (part === '' || part === '.') continue;
+      if (part === '..') {
+        if (out.length === 0) return null;
+        out.pop();
+        continue;
+      }
+      out.push(part);
+    }
+    return out.join('/');
+  }
+  function resolveWebviewHtml(entryPath, html) {
+    var result = html.replace(/<script([^>]*?)src\s*=\s*("([^"]*)"|'([^']*)')([^>]*)>\s*<\/script>/gi,
+      function (match, before, raw, q1, q2) {
+        var ref = (q1 || q2 || '').trim();
+        if (!ref || !isRelative(ref)) return match;
+        var path = resolvePath(entryPath, ref);
+        if (path === null || uiAssets[path] === undefined) return match;
+        return '<script' + before + '>' + uiAssets[path] + '</script>';
+      });
+    result = result.replace(/<link([^>]*?)href\s*=\s*("([^"]*)"|'([^']*)')([^>]*)>/gi,
+      function (match, before, raw, q1, q2) {
+        if (!/rel\s*=\s*["']stylesheet["']/i.test(before)) return match;
+        var ref = (q1 || q2 || '').trim();
+        if (!ref || !isRelative(ref)) return match;
+        var path = resolvePath(entryPath, ref);
+        if (path === null || uiAssets[path] === undefined) return match;
+        return '<style>' + uiAssets[path] + '</style>';
+      });
+    return result;
+  }
+
   function renderPage(page) {
     var host = document.getElementById('openjob-pages');
     host.innerHTML = '';
@@ -124,7 +166,8 @@ export function buildMobileRuntimeHtml(plugin: MobileCodePlugin): string {
     frame.style.width = '100%';
     frame.style.height = '100vh';
     host.appendChild(frame);
-    frame.srcdoc = uiAssets[page.webviewPath] || '<p>缺少资源</p>';
+    var html = uiAssets[page.webviewPath] || '<p>缺少资源</p>';
+    frame.srcdoc = resolveWebviewHtml(page.webviewPath, html);
   }
 
   function renderFirst() {

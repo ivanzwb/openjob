@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { LlmRole } from '@core/enums';
+import { resolveWebviewHtml } from '@core/plugins/codePlugin/assets';
 import { invoke, onEvent } from '../ipc';
 import { getUiAssets, onPluginEvent } from '../codePlugins/runtime';
 
@@ -10,7 +11,7 @@ import { getUiAssets, onPluginEvent } from '../codePlugins/runtime';
  * 全部通信走受控桥——页面内 postMessage 一个 `{ openjob: { reqId, method, params } }`，
  * 宿主按白名单方法代为调用 IPC 并回 `{ openjobResponse: { reqId, ... } }`；
  * 宿主事件以 `{ openjobEvent: ... }` 单向推入。越权方法由主进程门面再校验一道。
- * 资源切片：html 与内联脚本都来自签名信封里的 ui/ 资产（slice 1 只支持内联资源）。
+ * 资源切片：html 与相对引用的 ui/ 资产（js/css）都来自签名信封，经解析内联。
  */
 
 const BASE_BRIDGE_METHODS = {
@@ -84,7 +85,9 @@ export function CodePluginWebView({
 }): React.JSX.Element | null {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const assets = getUiAssets(pluginId);
-  const html = assets[webviewPath];
+  const html = assets[webviewPath]
+    ? resolveWebviewHtml(webviewPath, assets[webviewPath], assets)
+    : undefined;
   const methods = bridgeMethods(permissions);
 
   // 宿主事件单向推入沙箱：页面据此刷新，不需要自己实现轮询
