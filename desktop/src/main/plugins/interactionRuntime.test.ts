@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   ROLE_PLAY_SCENARIOS,
-} from '@core/plugins/interactions/rolePlayScenarios';
+} from '@plugins/salesCustomerSuccess/capabilities';
 import { customerConversationInteraction } from '@plugins/salesCustomerSuccess/capabilities';
 import type { PluginPermission } from '@core/plugins/permissions';
 import {

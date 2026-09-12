@@ -40,3 +40,21 @@ export const INTERACTION_TERMINAL_LABELS: Record<InteractionTerminalStatus, stri
   failed: '模型未能继续，已保留记录',
   'permission-revoked': '权限已撤销，已保留记录',
 };
+
+
+/**
+ * customer-conversation 交互协议（§7.9）：类型名与 schema 版本。
+ * 常量属协议层，core 认识协议但不认识声明它的插件；场景素材归声明它的岗位包。
+ */
+export const CUSTOMER_CONVERSATION_TYPE = 'customer-conversation';
+export const CUSTOMER_CONVERSATION_SCHEMA_VERSION = 1;
+
+/** 客户对话场景的结构：宿主运行时消费的最小形状，与声明它的岗位包解耦。 */
+export interface CustomerConversationScenario {
+  id: string;
+  title: string;
+  persona: ReadonlyArray<{ label: string; value: string }>;
+  brief: string;
+  opening: string;
+  objections: readonly string[];
+}

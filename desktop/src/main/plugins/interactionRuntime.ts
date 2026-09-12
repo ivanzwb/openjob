@@ -18,11 +18,11 @@ import {
   type InteractionSessionStatus,
 } from '@core/plugins/interactions/session';
 import type { PluginPermission } from '@core/plugins/permissions';
-import type { HostRenderedInteraction } from '@core/plugins/types';
 import {
   CUSTOMER_CONVERSATION_SCHEMA_VERSION,
-  type RolePlayScenario,
-} from '@core/plugins/interactions/rolePlayScenarios';
+  type CustomerConversationScenario,
+} from '@core/plugins/interactions/session';
+import type { HostRenderedInteraction } from '@core/plugins/types';
 
 /** 生成客户台词所需权限；被撤销后无法继续对练。 */
 const LLM_PERMISSION: PluginPermission = 'llm:complete';
@@ -106,7 +106,7 @@ function reject(
 export interface StartRolePlayInput {
   sessionId: string;
   interaction: HostRenderedInteraction;
-  scenario: RolePlayScenario;
+  scenario: CustomerConversationScenario;
   now: number;
   totalSeconds: number;
   grantedPermissions: readonly PluginPermission[];
@@ -214,7 +214,7 @@ export function submitCandidateTurn(
 export type PersonaTurnGenerator = (context: PersonaTurnContext) => Promise<string>;
 
 export interface PersonaTurnContext {
-  scenario: RolePlayScenario;
+  scenario: CustomerConversationScenario;
   turns: readonly RolePlayTurn[];
   /** 建议抛出的异议；生成器可以采纳也可以自行组织。 */
   suggestedObjection: string | null;
@@ -229,7 +229,7 @@ export interface PersonaTurnContext {
 export async function advanceCustomerTurn(
   state: RolePlayState,
   options: {
-    scenario: RolePlayScenario;
+    scenario: CustomerConversationScenario;
     generate: PersonaTurnGenerator;
     now: number;
     grantedPermissions: readonly PluginPermission[];

@@ -13,9 +13,8 @@ import type { Database } from 'better-sqlite3';
 
 import type { LlmRole } from '@core/enums';
 import { composePrompt, type ComposedPrompt } from '@core/prompts/composer';
-import { CUSTOMER_CONVERSATION_SCHEMA_VERSION } from '@core/plugins/interactions/rolePlayScenarios';
-import { ROLE_PLAY_SCENARIOS, type RolePlayScenario } from '@core/plugins/interactions/rolePlayScenarios';
 import { CORE_CAPABILITIES_PACK_ID } from '@core/plugins/capabilitySuite';
+import { CUSTOMER_CONVERSATION_TYPE, type CustomerConversationScenario } from '@core/plugins/interactions/session';
 import { buildInteractionHostView } from '@core/plugins/interactions/hostView';
 import { listInstalledPlugins } from './runtime';
 import type { PluginPermission } from '@core/plugins/permissions';
@@ -25,20 +24,23 @@ import type {
   RolePack,
 } from '@core/plugins/types';
 
-/** descriptor 缺失时的兜底：交互类型名是协议常量，schema 版本取最新已知值。 */
-const customerConversationFallback: HostRenderedInteraction = {
-  type: 'customer-conversation',
-  schemaVersion: CUSTOMER_CONVERSATION_SCHEMA_VERSION,
-  availability: { desktop: 'full', mobile: 'view-only' },
-  inputSchema: { protocolVersion: 1, fields: [] },
-  resultSchema: { protocolVersion: 1, fields: [] },
-};
-
-/** 从激活岗位包的内嵌声明里取 role-play 的交互 schema；没找到返回 null。 */
-function resolveRolePlayInteraction(rolePack: RolePack | null): HostRenderedInteraction | null {
+/**
+ * 从激活岗位包的内嵌声明解析 role-play 能力：交互声明、schema 版本与场景素材。
+ * 全部来自 descriptor——宿主不持有任何能力素材，也没有任何 @plugins import。
+ */
+function resolveRolePlayCapability(rolePack: RolePack | null): {
+  interaction: HostRenderedInteraction;
+  schemaVersion: number;
+  scenarios: readonly CustomerConversationScenario[];
+} | null {
   for (const declaration of rolePack?.capabilities ?? []) {
     for (const interaction of declaration.interactions ?? []) {
-      if (interaction.type === 'customer-conversation') return interaction;
+      if (interaction.type !== CUSTOMER_CONVERSATION_TYPE) continue;
+      return {
+        interaction,
+        schemaVersion: interaction.schemaVersion,
+        scenarios: (declaration.scenarios ?? []) as unknown as readonly CustomerConversationScenario[],
+      };
     }
   }
   return null;
@@ -100,9 +102,12 @@ export interface RolePlaySessionService {
   end(request: EndRolePlayRequest): RolePlaySessionView;
 }
 
-function findScenario(scenarioId: string | undefined): RolePlayScenario {
-  if (scenarioId === undefined) return ROLE_PLAY_SCENARIOS[0];
-  const scenario = ROLE_PLAY_SCENARIOS.find((item) => item.id === scenarioId);
+function findScenario(
+  scenarioId: string | undefined,
+  scenarios: readonly CustomerConversationScenario[],
+): CustomerConversationScenario {
+  if (scenarioId === undefined) return scenarios[0]!;
+  const scenario = scenarios.find((item) => item.id === scenarioId);
   if (!scenario) {
     throw new RolePlayError('scenario-unknown', `没有这个对练场景：${scenarioId}`);
   }
@@ -174,24 +179,31 @@ export function createRolePlaySessionService(
     const capabilityEnabled = capabilityRef?.enabled === true;
 
     const permissions = grantedPermissions(microphoneAvailable);
+    const capability = resolveRolePlayCapability(runtime.rolePack);
+    if (!capability) {
+      throw new RolePlayError(
+        'format-unavailable',
+        `岗位包 ${runtime.rolePack.manifest.id} 没有声明客户对话能力`,
+      );
+    }
     const view = buildInteractionHostView({
-      interaction: resolveRolePlayInteraction(runtime.rolePack) ?? customerConversationFallback,
+      interaction: capability.interaction,
       platform: 'desktop',
       capabilityEnabled,
       // 能力现在来自单独安装的合编包：本机没装时不渲染，交回 view-only 降级视图。
       // 写死 true 是内置时代的遗留，会让「没装包却出题」被渲染成可交互表单。
       pluginInstalled: isCapabilitySuiteInstalled(),
       externalPlugin: true,
-      knownSchemaVersion: CUSTOMER_CONVERSATION_SCHEMA_VERSION,
+      knownSchemaVersion: capability.schemaVersion,
       grantedPermissions: permissions,
     });
 
-    return { runtime, format, view, permissions, capabilityEnabled };
+    return { runtime, format, capability, view, permissions, capabilityEnabled };
   }
 
   function assemble(
     campaignId: string,
-    scenario: RolePlayScenario,
+    scenario: CustomerConversationScenario,
     state: RolePlayState,
     resolved: ReturnType<typeof resolve>,
     rejection: RolePlaySessionView['rejection'],
@@ -237,7 +249,7 @@ export function createRolePlaySessionService(
   }
 
   function customerRequest(
-    scenario: RolePlayScenario,
+    scenario: CustomerConversationScenario,
     state: RolePlayState,
     suggestedObjection: string | null,
   ): string {
@@ -266,10 +278,10 @@ export function createRolePlaySessionService(
       );
     }
 
-    const scenario = findScenario(request.scenarioId);
+    const scenario = findScenario(request.scenarioId, resolved.capability.scenarios);
     const state = startRolePlaySession({
       sessionId: newId(),
-      interaction: resolveRolePlayInteraction(resolved.runtime.rolePack) ?? customerConversationFallback,
+      interaction: resolved.capability.interaction,
       scenario,
       now: now(),
       totalSeconds: resolved.format.defaultDurationMinutes * 60,
@@ -290,13 +302,13 @@ export function createRolePlaySessionService(
   ): Promise<RolePlaySessionView> {
     const resolved = resolve(request.campaignId, request.microphoneAvailable);
     const restored = load(request.snapshot);
-    const scenario = findScenario(restored.scenarioId);
+    const scenario = findScenario(restored.scenarioId, resolved.capability.scenarios)
 
     const submitted = submitCandidateTurn(restored, {
       reply: request.reply,
       intent: request.intent,
       now: now(),
-      interaction: resolveRolePlayInteraction(resolved.runtime.rolePack) ?? customerConversationFallback,
+      interaction: resolved.capability.interaction,
       grantedPermissions: resolved.permissions,
     });
 
@@ -336,7 +348,7 @@ export function createRolePlaySessionService(
   function end(request: EndRolePlayRequest): RolePlaySessionView {
     const resolved = resolve(request.campaignId, request.microphoneAvailable);
     const restored = load(request.snapshot);
-    const scenario = findScenario(restored.scenarioId);
+    const scenario = findScenario(restored.scenarioId, resolved.capability.scenarios)
     const state =
       request.action === 'cancel'
         ? cancelRolePlaySession(restored, now())

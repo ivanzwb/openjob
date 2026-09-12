@@ -365,6 +365,11 @@ export interface CapabilityDeclaration {
    * manifest.permissions 必须等于 tools/parsers 的 permission 加上这里的并集。
    */
   permissions?: PluginPermission[];
+  /**
+   * 交互的运行时素材（如客户对话的开场白、异议库）。纯数据，随声明分发——
+   * 宿主运行时从 descriptor 的岗位包里取，core 不持有任何具体素材。
+   */
+  scenarios?: ReadonlyArray<Record<string, unknown>>;
 }
 
 export interface CapabilityPlugin {

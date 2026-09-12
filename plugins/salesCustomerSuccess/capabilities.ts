@@ -68,11 +68,50 @@ export const customerConversationInteraction: HostRenderedInteraction = {
   },
 };
 
+export interface RolePlayPersonaFact {
+  label: string;
+  value: string;
+}
+
+export interface RolePlayScenario {
+  id: string;
+  title: string;
+  /** 渲染到 factList 字段的客户人设。 */
+  persona: RolePlayPersonaFact[];
+  /** 渲染到 note 字段的场景与目标。 */
+  brief: string;
+  /** 客户的开场白，保证第一轮无需调用模型也能开始。 */
+  opening: string;
+  /** 客户可能抛出的异议；运行时按对话进展挑选，避免每轮都自由发挥。 */
+  objections: string[];
+}
+
+export const ROLE_PLAY_SCENARIOS: readonly RolePlayScenario[] = [
+  {
+    id: 'renewal-at-risk',
+    title: '续约风险客户',
+    persona: [
+      { label: '角色', value: '中型制造企业的 IT 负责人' },
+      { label: '合作现状', value: '已使用两年，下季度续约待定' },
+      { label: '当前情绪', value: '对上季度的故障处理不满' },
+      { label: '关心的事', value: '稳定性、内部问责、预算合理性' },
+    ],
+    brief: '客户在续约前提出降价并质疑服务质量。你需要先弄清真实顾虑，再谈价值与下一步。',
+    opening: '你们上个季度那次故障，我在管理层会上很难解释。这次续约，价格得给我一个说法。',
+    objections: [
+      '你说的改进，怎么保证不是又一次口头承诺？',
+      '同类产品报价比你们低两成，我为什么不换？',
+    ],
+  },
+];
+
+
 /**
  * 插入点 E：销售岗位内嵌的角色扮演能力。
  *
- * 交互声明归本包所有（随包分发与校验）；宿主运行时按 schema 渲染并生成
- * 客户台词——插件不含可执行逻辑，宿主也不认识「role-play」这个具体 id。
+ * 交互声明与场景素材都归本包：随包分发与校验，随 descriptor 供宿主运行时
+ * 按 schema 渲染、按场景生成客户台词——插件不含可执行逻辑，宿主也不认识
+ * 「role-play」这个具体 id。
  */
 export const capabilities: CapabilityDeclaration[] = [
   {
@@ -80,5 +119,6 @@ export const capabilities: CapabilityDeclaration[] = [
     interactions: [customerConversationInteraction],
     // 交互贡献没有逐项 permission 字段：台词生成走 llm，语音作答走麦克风
     permissions: ['llm:complete', 'microphone:read'],
+    scenarios: ROLE_PLAY_SCENARIOS as unknown as ReadonlyArray<Record<string, unknown>>,
   },
 ];
