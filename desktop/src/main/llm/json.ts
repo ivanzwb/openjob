@@ -266,6 +266,27 @@ async function requestJson<T>(request: JsonRequest): Promise<T> {
  * 传 promptId 而不是直接传 system 文本：文本由 @core/prompts/registry 解析，
  * AB 实验换版本只改注册表，调用点不变。params 只对 build 型 prompt 生效。
  */
+/** 每个插件默认落在 quiz 档之外的主档：插件不参与档位映射的定制 */
+export async function completePluginJson<T>(request: {
+  pluginId: string;
+  /** 与已安装插件 manifest.version 一致，进审计 */
+  version: string;
+  system: string;
+  user: string;
+  role?: LlmRole;
+  signal?: AbortSignal;
+}): Promise<T> {
+  const promptId = `plugin:${request.pluginId}`;
+  return requestJson<T>({
+    role: request.role ?? 'outline',
+    promptId,
+    versionId: `${promptId}@${request.version}`,
+    systemText: request.system,
+    user: request.user,
+    signal: request.signal,
+  });
+}
+
 export async function completeJson<T>(
   role: LlmRole,
   promptId: string,

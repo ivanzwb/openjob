@@ -1168,6 +1168,16 @@ export interface IpcInvokeMap {
   'codePlugin:storage.get': { req: { pluginId: string; key: string }; res: string | null };
   'codePlugin:storage.set': { req: { pluginId: string; key: string; value: string }; res: void };
   'codePlugin:storage.delete': { req: { pluginId: string; key: string }; res: void };
+  /** 代码插件受控 LLM 补全：同网关同审计，promptId 记为 plugin:<id> */
+  'codePlugin:llm.complete': {
+    req: { pluginId: string; version: string; system: string; user: string; role?: LlmRole };
+    res: unknown;
+  };
+  /** 只读指定 Campaign 的已确认证据（需 evidence:read-confirmed 权限） */
+  'codePlugin:evidence.listConfirmed': {
+    req: { pluginId: string; campaignId: string };
+    res: CandidateEvidence[];
+  };
 
   'campaign:list': { req: void; res: CampaignSummary[] };
   'campaign:getOverview': { req: void; res: CampaignOverview };
@@ -1472,6 +1482,8 @@ export const IPC_INVOKE_CHANNELS = [
   'codePlugin:storage.get',
   'codePlugin:storage.set',
   'codePlugin:storage.delete',
+  'codePlugin:llm.complete',
+  'codePlugin:evidence.listConfirmed',
   'campaign:list',
   'campaign:getOverview',
   'campaign:compare',

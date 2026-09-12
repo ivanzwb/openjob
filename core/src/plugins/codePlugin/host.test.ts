@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { CampaignRuntimeDescriptor } from '../types';
 import {
   activateCodePlugin,
+  codePluginNamespaces,
   createEventHub,
   type CodePluginModule,
   type CodePluginServices,
@@ -117,5 +118,42 @@ describe('activateCodePlugin', () => {
     expect(() =>
       activateCodePlugin({ pluginId: 'p', version: '1.0.0', module: boom, services: services(), hub }),
     ).toThrow('初始化失败');
+  });
+});
+
+describe('codePluginNamespaces', () => {
+  it('基础命名空间人人可见，llm/evidence 只对声明权限的插件开放', () => {
+    const base = codePluginNamespaces([]);
+    expect(base).toContain('views');
+    expect(base).toContain('storage');
+    expect(base).not.toContain('llm');
+    expect(base).not.toContain('evidence');
+
+    const full = codePluginNamespaces(['llm:complete', 'evidence:read-confirmed']);
+    expect(full).toContain('llm');
+    expect(full).toContain('evidence');
+  });
+
+  it('ctx 透传 campaign/llm/evidence 服务', async () => {
+    const hub = createEventHub();
+    let seen = false;
+    const plugin: CodePluginModule = {
+      activate(ctx) {
+        seen = typeof ctx.llm?.complete === 'function' && typeof ctx.evidence?.listConfirmed === 'function';
+      },
+    };
+    activateCodePlugin({
+      pluginId: 'p',
+      version: '1.0.0',
+      module: plugin,
+      services: {
+        campaign: { getDescriptor: async () => null },
+        storage: { get: async () => null, set: async () => undefined, delete: async () => undefined },
+        llm: { complete: async () => ({}) },
+        evidence: { listConfirmed: async () => [] },
+      },
+      hub,
+    });
+    expect(seen).toBe(true);
   });
 });

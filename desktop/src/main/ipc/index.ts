@@ -64,6 +64,7 @@ import {
   pluginStorageGet,
   pluginStorageSet,
 } from '../plugins/codePluginStorage';
+import { completePluginJson } from '../llm/json';
 import { pluginInventoryView } from '../plugins/bootstrap';
 import { installPluginFromFile, uninstallPlugin } from '../plugins/install';
 import { getRolePlaySessionService } from '../plugins/rolePlaySession';
@@ -214,6 +215,30 @@ export function registerIpcHandlers(): void {
   handle('codePlugin:storage.get', ({ pluginId, key }) => pluginStorageGet(pluginId, key));
   handle('codePlugin:storage.set', ({ pluginId, key, value }) => pluginStorageSet(pluginId, key, value));
   handle('codePlugin:storage.delete', ({ pluginId, key }) => pluginStorageDelete(pluginId, key));
+  handle('codePlugin:llm.complete', ({ pluginId, version, system, user, role }) => {
+    // 门面准入：只服务已安装且声明了 llm:complete 的代码插件
+    const entry = listExternalPlugins().find(
+      (item) =>
+        item.package.manifest.id === pluginId &&
+        item.package.manifest.version === version &&
+        item.package.manifest.main !== undefined,
+    );
+    if (!entry?.package.manifest.permissions.includes('llm:complete')) {
+      throw new Error(`插件 ${pluginId} 未声明 llm:complete 权限`);
+    }
+    return completePluginJson({ pluginId, version, system, user, role });
+  });
+  handle('codePlugin:evidence.listConfirmed', ({ pluginId, campaignId }) => {
+    const entry = listExternalPlugins().find(
+      (item) =>
+        item.package.manifest.id === pluginId &&
+        item.package.manifest.main !== undefined,
+    );
+    if (!entry?.package.manifest.permissions.includes('evidence:read-confirmed')) {
+      throw new Error(`插件 ${pluginId} 未声明 evidence:read-confirmed 权限`);
+    }
+    return listConfirmedEvidence(getRawDb(), { campaignId });
+  });
   handle('plugin:install', async ({ trustUnknownSigner, overwrite }) => {
     // 弹框放在主进程：渲染层不传路径，也就没有「渲染层指定任意文件让主进程去读」这条路
     const { canceled, filePaths } = await dialog.showOpenDialog({

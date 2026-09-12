@@ -52,6 +52,18 @@ export interface CodePluginServices {
     set(key: string, value: string): Promise<void>;
     delete(key: string): Promise<void>;
   };
+  /** 受控 LLM 补全（同网关同审计）；仅 manifest 声明 llm:complete 时注入 */
+  readonly llm?: {
+    complete(request: {
+      system: string;
+      user: string;
+      role?: 'outline' | 'explain' | 'codeAgent' | 'quiz' | 'resumeOptimize';
+    }): Promise<unknown>;
+  };
+  /** 只读已确认证据；仅 manifest 声明 evidence:read-confirmed 时注入 */
+  readonly evidence?: {
+    listConfirmed(campaignId: string): Promise<unknown>;
+  };
 }
 
 export interface CodePluginContext {
@@ -60,6 +72,10 @@ export interface CodePluginContext {
   readonly campaign: CodePluginServices['campaign'];
   /** 插件私有 KV */
   readonly storage: CodePluginServices['storage'];
+  /** 受控 LLM 补全；未声明 llm:complete 权限时为 undefined */
+  readonly llm: CodePluginServices['llm'];
+  /** 只读已确认证据；未声明 evidence:read-confirmed 权限时为 undefined */
+  readonly evidence: CodePluginServices['evidence'];
   views: {
     registerPage(page: CodePluginPage): { dispose(): void };
   };
@@ -122,6 +138,8 @@ export function activateCodePlugin(input: CodePluginInput): ActiveCodePlugin {
     pluginId,
     campaign: services.campaign,
     storage: services.storage,
+    llm: services.llm,
+    evidence: services.evidence,
     views: {
       registerPage(page: CodePluginPage) {
         guard();
@@ -204,6 +222,17 @@ export function activateCodePlugin(input: CodePluginInput): ActiveCodePlugin {
       }
     },
   };
+}
+
+/**
+ * 门面命名空间可见性：权限即 API 面。基础命名空间人人可见；
+ * llm / evidence 只对 manifest 声明了对应权限的插件注入（渲染层装配时使用）。
+ */
+export function codePluginNamespaces(permissions: readonly string[]): string[] {
+  const namespaces = ['views', 'commands', 'events', 'campaign', 'storage'];
+  if (permissions.includes('llm:complete')) namespaces.push('llm');
+  if (permissions.includes('evidence:read-confirmed')) namespaces.push('evidence');
+  return namespaces;
 }
 
 /** 内存事件总线：桌面的宿主容器与测试都用它；移动端换桥实现即可 */

@@ -12,6 +12,7 @@ import {
   type ActiveCodePlugin,
   type CodePluginModule,
 } from '@core/plugins/codePlugin/host';
+import type { LlmRole } from '@core/enums';
 import { invoke } from '../ipc';
 
 const hub = createEventHub();
@@ -37,9 +38,15 @@ export function getUiAssets(pluginId: string): Record<string, string> {
 }
 
 /** CommonJS 装配：`require('openjob')` 是插件拿到宿主门面的唯一入口 */
-function loadModule(source: string, pluginId: string): CodePluginModule {
+function loadModule(
+  source: string,
+  pluginId: string,
+  version: string,
+  permissions: readonly string[],
+): CodePluginModule {
   const module = { exports: {} as Partial<CodePluginModule> };
-  const facade = {
+  // 权限即 API 面：未声明的命名空间不注入（§7.9）
+  const facade: Record<string, unknown> = {
     storage: {
       get: (key: string) => invoke('codePlugin:storage.get', { pluginId, key }),
       set: (key: string, value: string) => invoke('codePlugin:storage.set', { pluginId, key, value }),
@@ -50,6 +57,22 @@ function loadModule(source: string, pluginId: string): CodePluginModule {
         (await invoke('campaign:getRuntimeDescriptor', { campaignId }))?.descriptor ?? null,
     },
   };
+  if (permissions.includes('llm:complete')) {
+    facade.llm = {
+      complete: (request: { system: string; user: string; role?: LlmRole }) =>
+        invoke('codePlugin:llm.complete', {
+          pluginId,
+          version,
+          ...request,
+        }),
+    };
+  }
+  if (permissions.includes('evidence:read-confirmed')) {
+    facade.evidence = {
+      listConfirmed: (campaignId: string) =>
+        invoke('codePlugin:evidence.listConfirmed', { pluginId, campaignId }),
+    };
+  }
   const requireShim = (id: string): unknown => {
     if (id === 'openjob') return facade;
     throw new Error(`插件只允许 require('openjob')，实际请求了 ${id}`);
@@ -80,7 +103,7 @@ export async function activateInstalledCodePlugins(): Promise<void> {
         activateCodePlugin({
           pluginId: plugin.id,
           version: plugin.version,
-          module: loadModule(entry.source, plugin.id),
+          module: loadModule(entry.source, plugin.id, plugin.version, plugin.permissions),
           services: {
             campaign: {
               getDescriptor: async (campaignId) =>
