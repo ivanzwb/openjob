@@ -435,7 +435,16 @@ export function registerIpcHandlers(): void {
   handle('practice:createSession', (input) => getPracticeService().createSession(input));
   handle('practice:getSession', ({ sessionId }) => getPracticeService().getSession(sessionId));
   handle('practice:nextTurn', (input) => getPracticeService().nextTurn(input));
-  handle('practice:evaluate', (input) => getPracticeService().evaluate(input));
+  handle('practice:evaluate', async (input) => {
+    const result = await getPracticeService().evaluate(input);
+    // 代码插件事件（§7.9）：一次练习评分完成
+    emit('practice:completed', {
+      campaignId: result.campaignId,
+      formatId: result.formatId,
+      totalScore: result.totalScore,
+    });
+    return result;
+  });
   handle('practice:listAttempts', (query) => listPracticeAttempts(query));
   handle('practice:listScores', ({ attemptId }) => listPracticeScores(attemptId));
 

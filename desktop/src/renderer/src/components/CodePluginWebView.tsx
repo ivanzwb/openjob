@@ -101,12 +101,14 @@ export function CodePluginWebView({
     const offDelta = onEvent('stream:delta', forward('stream:delta'));
     const offDone = onEvent('stream:done', forward('stream:done'));
     const offError = onEvent('stream:error', forward('stream:error'));
+    const offPractice = onEvent('practice:completed', forward('practice:completed'));
     return () => {
       offAttached();
       offCapability();
       offDelta();
       offDone();
       offError();
+      offPractice();
     };
   }, []);
 

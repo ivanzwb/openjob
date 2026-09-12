@@ -1444,6 +1444,8 @@ export interface IpcEventMap {
   'campaign:attached': { campaignId: string };
   /** 代码插件事件：能力启停变化 */
   'campaign:capability-changed': { campaignId: string };
+  /** 代码插件事件：一次练习评分完成 */
+  'practice:completed': { campaignId: string; formatId: string; totalScore: number };
   'update:status': UpdateStatus;
   'sync:paired': { deviceId: string; displayName: string };
   'sync:finished': {
@@ -1654,6 +1656,7 @@ export const IPC_EVENT_CHANNELS = [
   'job:progress',
   'campaign:attached',
   'campaign:capability-changed',
+  'practice:completed',
   'update:status',
   'sync:paired',
   'sync:finished',
