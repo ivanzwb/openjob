@@ -79,6 +79,7 @@ function context(overrides: Partial<PlannerContext> = {}): PlannerContext {
     usedMinutes: 0,
     repos: repos(),
     installed: installedWith(productManagerRolePack, softwareEngineeringRolePack),
+    rolePack: softwareEngineeringRolePack,
     ...overrides,
   };
 }

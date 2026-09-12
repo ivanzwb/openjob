@@ -246,6 +246,7 @@ export default function App(): React.JSX.Element {
             const key: Tab = `nav:${entry.id}`;
             if (!mountedTabs.has(key) || !isTabVisible(key)) return null;
             const Page = HOST_PAGES[entry.pageId];
+            if (!Page) return null;
             return (
               <TabPanel key={key} active={activeTab === key} className="overflow-hidden">
                 <Page />

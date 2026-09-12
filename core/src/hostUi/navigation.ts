@@ -14,7 +14,7 @@
  * 未启用对应能力」两种情况。
  */
 
-import type { HostPageId, NavigationEntry } from '../plugins/types';
+import type { NavigationEntry } from '../plugins/types';
 
 export interface NavigationProbe {
   campaignId: string;
@@ -25,7 +25,8 @@ export interface NavigationProbe {
 export interface ResolvedNavEntry {
   id: string;
   label: string;
-  pageId: HostPageId;
+  /** 宿主页面 id；宿主注册表没有实现就不渲染。 */
+  pageId: string;
   requiredCapabilityId?: string;
   degradedHint?: string;
 }

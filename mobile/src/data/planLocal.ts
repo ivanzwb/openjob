@@ -14,7 +14,11 @@ import {
 } from '@core/planner/contributions';
 import type { CampaignRuntimeDescriptor, ResolvedPluginRef } from '@core/plugins/types';
 import { getCampaign } from './campaignLocal';
-import { installedPluginsForCampaign } from './rolePackLocal';
+import { installedPluginsForCampaign,
+  getCachedRolePack,
+  listCachedRolePacks,
+} from './rolePackLocal';
+import type { RolePack } from '@core/plugins/types';
 import { updateCampaignFields } from './nodesLocal';
 import { getDeviceIdentity } from '../sync/identity';
 import { writingAs } from '../sync/triggers';
@@ -120,7 +124,29 @@ export function pluginTaskSupport(
   kind: TaskKind,
 ): PlannedTaskClientView | null {
   const runtime = loadRuntimeDescriptor(db, campaignId);
-  return pluginTaskClientView(runtime, kind, 'mobile', installedPluginsForCampaign(db, runtime));
+  return pluginTaskClientView(
+    runtime,
+    kind,
+    'mobile',
+    installedPluginsForCampaign(db, runtime),
+    resolveCampaignRolePack(db, runtime),
+  );
+}
+
+
+/**
+ * Campaign 岗位包的本机缓存数据：先按 descriptor pin 的精确版本，取不到退回同 id
+ * 最新缓存版本（排程反映「现在缓存着什么」）；都没有返回 null，只走基础任务。
+ */
+function resolveCampaignRolePack(
+  db: SQLiteDatabase,
+  runtime: CampaignRuntimeDescriptor | null,
+): RolePack | null {
+  if (!runtime) return null;
+  const { id, version } = runtime.rolePack;
+  return (
+    getCachedRolePack(db, id, version) ?? listCachedRolePacks(db).find((pack) => pack.manifest.id === id) ?? null
+  );
 }
 
 export async function generatePlan(
@@ -255,6 +281,7 @@ export async function generatePlan(
       usedMinutes: used,
       repos,
       installed: installedPluginsForCampaign(db, runtime),
+      rolePack: resolveCampaignRolePack(db, runtime),
     })) {
       dayTasks.push({
         kind: planned.kind,

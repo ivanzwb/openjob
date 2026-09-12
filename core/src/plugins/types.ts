@@ -143,22 +143,15 @@ export interface TaskTemplate {
 
 export type ResumeModuleKind = 'list' | 'structured' | 'text';
 
-/**
- * 宿主页面注册表：导航入口只能引用这里已实现的页面。
- * 页面组件由各端宿主实现（desktop/renderer 有自己的 component 映射），
- * core 只拥有 id 清单——契约校验据此拒绝引用不存在页面的入口。
- */
-export const HOST_PAGE_IDS = ['source-repository'] as const;
-
-export type HostPageId = (typeof HOST_PAGE_IDS)[number];
-
 export const RESUME_MODULE_KINDS = [
   'list',
   'structured',
   'text',
 ] as const satisfies readonly ResumeModuleKind[];
 
+
 /**
+
  * 插入点 A：导航入口。
  *
  * 入口渲染在主导航的固定能力页签槽位；runtime 决定功能层级而非入口生死——
@@ -169,7 +162,8 @@ export interface NavigationEntry {
   id: string;
   label: string;
   /** 只能引用宿主页面注册表中已实现的页面，插件不能注入组件。 */
-  pageId: HostPageId;
+  /** 宿主页面 id（如 source-repository）；宿主没有实现就不渲染，插件不能注入组件。 */
+  pageId: string;
   /** 入口可见性跟随该能力的启用状态；缺省表示不依赖能力。 */
   requiredCapabilityId?: string;
   /** 功能降级（view-only / 需桌面完成）时的一句说明；缺省用宿主默认文案。 */

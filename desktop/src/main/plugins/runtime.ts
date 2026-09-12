@@ -145,6 +145,16 @@ export function findInstalledRolePack(id: string, version: string): RolePack | n
   return registry.get(id, version);
 }
 
+/**
+ * 同 id 的最新已装版本（不限 descriptor pin 的版本）。
+ *
+ * 供排程使用：descriptor pin 的精确版本只对练习有意义（量规必须逐字一致）；
+ * 排程要回答的是「现在装着的这个包还排不排源码任务」，用最新版本才符合直觉。
+ */
+export function findLatestRolePack(id: string): RolePack | null {
+  return registry.get(id);
+}
+
 export function listExternalPlugins(): readonly PluginInventoryEntry[] {
   return externalEntries;
 }

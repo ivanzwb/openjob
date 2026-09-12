@@ -50,6 +50,7 @@ function context(overrides: Partial<PlannerContext> = {}): PlannerContext {
     usedMinutes: 0,
     repos: repos(),
     installed: installedCapabilitySuiteOnly(),
+    rolePack: softwareEngineeringRolePack,
     ...overrides,
   };
 }

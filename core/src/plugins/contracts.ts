@@ -15,7 +15,7 @@ import type {
   RolePack,
   RubricAnchors,
 } from './types';
-import { HOST_PAGE_IDS, PROMPT_SLOTS, RESUME_MODULE_KINDS } from './types';
+import { PROMPT_SLOTS, RESUME_MODULE_KINDS } from './types';
 
 export interface PluginContractIssue {
   path: string;
@@ -345,14 +345,6 @@ function validateNavigation(entries: NavigationEntry[], issues: PluginContractIs
     const path = `navigation[${index}]`;
     if (!isNonEmpty(entry.label)) {
       issue(issues, `${path}.label`, 'invalid-value', '入口展示名不能为空');
-    }
-    if (!(HOST_PAGE_IDS as readonly string[]).includes(entry.pageId)) {
-      issue(
-        issues,
-        `${path}.pageId`,
-        'missing-reference',
-        `页面不存在于宿主页面注册表：${entry.pageId}`,
-      );
     }
     if (
       entry.requiredCapabilityId !== undefined &&

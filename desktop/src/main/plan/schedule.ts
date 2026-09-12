@@ -11,7 +11,11 @@ import {
 } from '@core/planner/contributions';
 import type { CampaignRuntimeDescriptor } from '@core/plugins/types';
 import { getDb, schema } from '../db';
-import { listInstalledPlugins } from '../plugins/runtime';
+import {
+  findInstalledRolePack,
+  findLatestRolePack,
+  listInstalledPlugins,
+} from '../plugins/runtime';
 import { getCampaignRow, listCampaigns, rowToNode, updateCampaign } from '../campaign/repository';
 import { sortNodesByStudyOrder } from '../campaign/edges';
 import { recordPlanChange, recordPlanDecision } from './session';
@@ -247,7 +251,7 @@ export function generatePlan(
       }
     }
 
-    // 插件任务（源码阅读等）由共享 PlannerContribution 决定，两端不各自判断
+    // 插件任务由岗位包 taskTemplates 派生（共享 PlannerContribution 决定，两端不各自判断）
     for (const planned of collectPlannerContributions(runtime, {
       platform: 'desktop',
       dayIndex: di,
@@ -256,6 +260,12 @@ export function generatePlan(
       usedMinutes: used,
       repos,
       installed: listInstalledPlugins(),
+      // pin 版本不在本机时退回同 id 最新已装包：排程反映「现在装着什么」
+      rolePack:
+        runtime === null
+          ? null
+          : findInstalledRolePack(runtime.rolePack.id, runtime.rolePack.version) ??
+            findLatestRolePack(runtime.rolePack.id),
     })) {
       dayTasks.push({
         kind: planned.kind,

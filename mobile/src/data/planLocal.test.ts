@@ -5,6 +5,7 @@
  * 同一份「插件化之前」的旧算法。两端各自落库后可以按 (date, orderIdx) 对齐。
  */
 import { DatabaseSync } from 'node:sqlite';
+import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -36,14 +37,23 @@ vi.mock('../sync/triggers', () => ({
 }));
 // planLocal 现在引用 rolePackLocal（能力合编包安装判定），后者 import 到 RN 侧模块，
 // 这里整包替换成测试关心的最小面
-vi.mock('./rolePackLocal', () => ({
-  // 排程判定按「桌面装了合编包」给全量清单；能力在手机本就钳到 view-only
-  installedPluginsForCampaign: (db: unknown, descriptor: { capabilities?: Array<{ id: string; enabled?: boolean }> } | null) => {
-    void db;
-    void descriptor;
-    return [{ id: 'openjob-capabilities', version: '1.0.0', type: 'capability', displayName: 'OpenJob 能力包', description: '', runtime: { desktop: 'full', mobile: 'view-only' }, artifactSchemas: {}, interactionSchemas: {}, permissions: [] }];
-  },
-}));
+vi.mock('./rolePackLocal', () => {
+  // 排程判定按「桌面装了合编包」给全量清单；能力在手机本就钳到 view-only。
+  // 贡献现在从岗位包 taskTemplates 派生：mock 提供 SE 包的缓存数据（1.4.0）。
+  const cachedPack = { ...softwareEngineeringRolePack };
+  return {
+    installedPluginsForCampaign: (db: unknown, descriptor: { capabilities?: Array<{ id: string; enabled?: boolean }> } | null) => {
+      void db;
+      void descriptor;
+      return [{ id: 'openjob-capabilities', version: '1.0.0', type: 'capability', displayName: 'OpenJob 能力包', description: '', runtime: { desktop: 'full', mobile: 'view-only' }, artifactSchemas: {}, interactionSchemas: {}, permissions: [] }];
+    },
+    getCachedRolePack: (db: unknown, id: string, version: string) => {
+      void db;
+      return id === cachedPack.manifest.id && version === cachedPack.manifest.version ? cachedPack : null;
+    },
+    listCachedRolePacks: () => [cachedPack],
+  };
+});
 
 const { generatePlan, pluginTaskSupport } = await import('./planLocal');
 

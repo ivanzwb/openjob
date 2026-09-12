@@ -17,9 +17,10 @@ import {
 import { LEGACY_ROLE_PACK_REF } from '../plugins/legacyRoleData';
 import {
   normalizeCapabilityRefs,
-  CORE_CAPABILITIES_PACK_ID,
+
 } from '../plugins/capabilitySuite';
 import { hashRuntimeConfig } from '../plugins/resolver';
+import type { RolePack, TaskTemplate } from '../plugins/types';
 import type { CampaignRuntimeDescriptor, ClientPlatform } from '../plugins/types';
 
 /** 本机跑不动时给用户的提示。内置能力插件的桌面端都是 full，降级只会发生在手机。 */
@@ -50,6 +51,12 @@ export interface PlannerContext {
    * 排任务」，而且不会报错。两端各自取真实安装集合传进来（桌面 runtime、手机角色包缓存）。
    */
   installed: readonly InstalledPlugin[];
+  /**
+   * 该 Campaign 岗位包解析到的本机数据（按 descriptor pin 的版本；pin 版本不在本机时
+   * 退回同 id 最新已装包——排程反映「现在装着什么」，与练习的精确版本要求不同）。
+   * null = 岗位包不在本机：插件任务无从派生，只走基础任务。
+   */
+  rolePack: RolePack | null;
 }
 
 /**
@@ -97,18 +104,6 @@ const AVAILABILITY_RANK: Record<RuntimeAvailability, number> = {
   full: 2,
 };
 
-/**
- * 读源码任务的时长。
- *
- * 原来是从软件工程岗位包的 `se.read-code` 模板里现取；岗位包移出基础包之后排程不能再
- * 依赖某个包装没装——它两端都要跑，而手机端连插件目录都没有。这个数字是那个模板当时的
- * 取值快照，改它会让同一份计划在新旧版本之间排出不同的分钟数。
- *
- * 真正该做的是让排程按 descriptor 里的岗位包读模板，但那需要把岗位包数据也下发到排程
-    10| * 这一层；在那之前，这里保持与历史一致，而不是假装可配置。
- */
-const READ_CODE_MINUTES = 25;
-
 /** 有多个已索引仓库时按 (url, id) 取第一个，保证两端选到同一个仓库。 */
 function defaultRepo(repos: readonly PlannerRepo[]): PlannerRepo | null {
   return (
@@ -119,26 +114,41 @@ function defaultRepo(repos: readonly PlannerRepo[]): PlannerRepo | null {
   );
 }
 
-const readCodeContribution: PlannerContribution = {
-  id: 'source-repository.read-code',
-  capabilityId: CORE_CAPABILITIES_PACK_ID,
-  // 只有软件工程岗排读源码任务：其它岗位包即使启用了同一个能力也不排（见 rolePackIds 注释）
-  rolePackIds: [LEGACY_ROLE_PACK_REF.id],
-  taskKinds: ['readCode'],
-  // 克隆、索引和更新只有桌面能做，手机只能读已同步的快照
-  minimumAvailability: 'full',
-  createTasks(context) {
-    // 隔一天排一次，且当天预算装得下才排——与插件化之前两端的排程节奏一致
-    if (context.dayIndex % 2 !== 1) return [];
-    const repo = defaultRepo(context.repos);
-    if (!repo) return [];
-    const estMinutes = READ_CODE_MINUTES;
-    if (context.usedMinutes + estMinutes > context.budgetMinutes) return [];
-    return [{ kind: 'readCode', nodeId: null, repoId: repo.id, estMinutes }];
-  },
-};
-
-const PLANNER_CONTRIBUTIONS: readonly PlannerContribution[] = [readCodeContribution];
+/**
+ * 岗位包 taskTemplates → 排程贡献。
+ *
+ * 这是「core 认识任务节奏、不认识具体能力」的落点：包声明了带 capabilityId 的
+ * 任务模板（如 se.read-code → source-repository 能力），这里把它变成一个贡献者；
+ * 包没声明就自然没有贡献——换一个没有源码能力的工程包，源码任务自动消失，
+ * core 不需要为任何具体岗位包写一行。
+ *
+ * 调度节奏按 taskKind 由宿主语义决定（目前只有 readCode 有排程节奏：隔天一次、
+ * 选已索引仓库、时长取模板 defaultMinutes）；其它 taskKind 的能力任务暂无节奏
+ * 语义，不排。
+ */
+function contributionsFromRolePack(rolePack: RolePack): readonly PlannerContribution[] {
+  return rolePack.taskTemplates
+    .filter((template): template is TaskTemplate & { capabilityId: string } =>
+      template.capabilityId !== undefined)
+    .map((template) => ({
+      id: template.id,
+      capabilityId: template.capabilityId,
+      rolePackIds: [rolePack.manifest.id],
+      taskKinds: [template.taskKind as TaskKind],
+      // 克隆、索引和更新只有桌面能做，手机只能读已同步的快照
+      minimumAvailability: 'full' as RuntimeAvailability,
+      createTasks(context: PlannerContext): PlannedTaskPayload[] {
+        if (template.taskKind !== 'readCode') return [];
+        // 隔一天排一次，且当天预算装得下才排——与插件化之前两端的排程节奏一致
+        if (context.dayIndex % 2 !== 1) return [];
+        const repo = defaultRepo(context.repos);
+        if (!repo) return [];
+        const estMinutes = template.defaultMinutes;
+        if (context.usedMinutes + estMinutes > context.budgetMinutes) return [];
+        return [{ kind: 'readCode', nodeId: null, repoId: repo.id, estMinutes }];
+      },
+    }));
+}
 
 /**
  * 本机对该能力的判定。
@@ -207,11 +217,12 @@ export function collectPlannerContributions(
   context: PlannerContext,
 ): PlannedTask[] {
   if (!runtime) return [];
+  if (!context.rolePack) return [];
 
   const tasks: PlannedTask[] = [];
   let usedMinutes = context.usedMinutes;
 
-  for (const contribution of PLANNER_CONTRIBUTIONS) {
+  for (const contribution of contributionsFromRolePack(context.rolePack)) {
     const client = activeClientView(runtime, contribution, context.platform, context.installed);
     if (!client) continue;
     for (const payload of contribution.createTasks({ ...context, usedMinutes })) {
@@ -238,10 +249,11 @@ export function pluginTaskClientView(
   taskKind: TaskKind,
   platform: ClientPlatform,
   installed: readonly InstalledPlugin[],
+  rolePack: RolePack | null,
 ): PlannedTaskClientView | null {
   if (!runtime) return null;
 
-  for (const contribution of PLANNER_CONTRIBUTIONS) {
+  for (const contribution of contributionsFromRolePack(rolePack ?? { taskTemplates: [] } as unknown as RolePack)) {
     if (!contribution.taskKinds.includes(taskKind)) continue;
     const client = activeClientView(runtime, contribution, platform, installed);
     if (!client) continue;
