@@ -7,15 +7,17 @@
  * 坏包一律**报出来**而不是静默跳过。一个装了却没生效的插件是最难排查的故障——用户
  * 看到的是「岗位列表里没有它」，而日志里什么都没有。
  */
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  isCodeAssetName,
   PACKAGE_ALLOWED_FILES,
   parsePluginPackage,
   validatePluginPackage,
   type ParsedPluginPackage,
   type PluginPackageFiles,
 } from '@core/plugins/package/contract';
+import { scanPluginSources } from '@core/plugins/codePlugin/scan';
 import { classifyPackageTrust, type PackageTrust } from './package/signature';
 
 /**
@@ -39,6 +41,8 @@ export type PluginRejectionReason =
   | 'untrusted-signer'
   /** 与内置插件或另一个外置包撞了同一个 id@version */
   | 'duplicate'
+  /** 代码插件的静态隔离扫描未通过（§13.4 准入第二层） */
+  | 'isolation-violation'
   /** 读取失败 */
   | 'unreadable';
 
@@ -80,11 +84,11 @@ function readPackageFiles(dir: string): ReadResult {
   const files: Record<string, string> = {};
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (!entry.isFile()) {
-      // 目录名照样交给格式校验去否决：白名单里没有目录
-      files[entry.name] = '';
+      // 目录名照样交给格式校验去否决：白名单里没有目录（ui/ 除外，下面递归读）
+      if (entry.name !== 'ui') files[entry.name] = '';
       continue;
     }
-    if (!PACKAGE_ALLOWED_FILES.includes(entry.name)) {
+    if (!PACKAGE_ALLOWED_FILES.includes(entry.name) && !isCodeAssetName(entry.name)) {
       // 内容不读，但名字要进去，这样白名单校验能报出这个文件
       files[entry.name] = '';
       continue;
@@ -94,6 +98,29 @@ function readPackageFiles(dir: string): ReadResult {
       return { ok: false, error: `${entry.name} 超过 ${MAX_FILE_BYTES} 字节上限` };
     }
     files[entry.name] = readFileSync(path, 'utf8');
+  }
+
+  // 代码插件的 Webview 资源：ui/ 递归读为 ui/<相对路径>
+  const uiDir = join(dir, 'ui');
+  if (existsSync(uiDir)) {
+    const walk = (current: string, prefix: string): string | null => {
+      for (const entry of readdirSync(current, { withFileTypes: true })) {
+        const full = join(current, entry.name);
+        const key = `${prefix}${entry.name}`;
+        if (entry.isDirectory()) {
+          const failed = walk(full, `${key}/`);
+          if (failed) return failed;
+          continue;
+        }
+        if (statSync(full).size > MAX_FILE_BYTES) {
+          return `${key} 超过 ${MAX_FILE_BYTES} 字节上限`;
+        }
+        files[key] = readFileSync(full, 'utf8');
+      }
+      return null;
+    };
+    const failed = walk(uiDir, 'ui/');
+    if (failed) return { ok: false, error: failed };
   }
   return { ok: true, files };
 }
@@ -165,6 +192,21 @@ export function scanPluginInventory(options: ScanOptions): PluginInventory {
 
     const parsed = parsePluginPackage(files);
     const { id, version } = parsed.manifest;
+
+    // 静态隔离扫描（§13.4 第二层）：代码资产带宿主越权访问的包直接拒装
+    if (parsed.codeAssets) {
+      const violations = scanPluginSources(parsed.codeAssets);
+      if (violations.length > 0) {
+        inventory.rejected.push(
+          reject(
+            name,
+            'isolation-violation',
+            violations.map((violation) => `${violation.path}: ${violation.reason}`).join('；'),
+          ),
+        );
+        continue;
+      }
+    }
 
     // 目录名必须自证身份，否则同一个包换个目录名就能装两遍，卸载也找不准
     if (name !== exactKeyOf(id, version)) {

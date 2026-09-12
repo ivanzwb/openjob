@@ -40,6 +40,10 @@ export interface PluginManifest {
   description: string;
   compatibility: PluginCompatibility;
   permissions: PluginPermission[];
+  /** 代码入口（相对包根）。v1 固定为 'main.js'；缺省 = 纯声明式插件，不进入激活生命周期 */
+  main?: string;
+  /** 所需 openjob.* API 版本范围（如 '^1.0'）；与 main 必须成对声明 */
+  api?: string;
   runtime?: PluginRuntimeAvailability;
   /** artifact type → schema version。 */
   artifactSchemas?: Record<string, number>;

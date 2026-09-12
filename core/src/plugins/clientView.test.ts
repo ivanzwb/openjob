@@ -55,6 +55,8 @@ const PIVOT_LAB: InstalledPlugin = {
   runtime: { desktop: 'full', mobile: 'full' },
   artifactSchemas: { 'pivot-table': 2 },
   interactionSchemas: {},
+  main: null,
+  api: null,
   permissions: ['artifact:read'],
 };
 

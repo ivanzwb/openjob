@@ -1159,6 +1159,15 @@ export interface IpcInvokeMap {
    * 不会在任何一端执行。
    */
   'plugin:getRolePack': { req: { id: string; version: string }; res: RolePack | null };
+  /** 代码插件（v3）：取入口源码与 Webview 资产；非代码插件返回 null */
+  'plugin:getEntrySource': {
+    req: { id: string; version: string };
+    res: { source: string; uiAssets: Record<string, string> } | null;
+  };
+  /** 代码插件私有 KV（§7.9 ctx.storage）：与主库物理隔离，按 pluginId 分文件 */
+  'codePlugin:storage.get': { req: { pluginId: string; key: string }; res: string | null };
+  'codePlugin:storage.set': { req: { pluginId: string; key: string; value: string }; res: void };
+  'codePlugin:storage.delete': { req: { pluginId: string; key: string }; res: void };
 
   'campaign:list': { req: void; res: CampaignSummary[] };
   'campaign:getOverview': { req: void; res: CampaignOverview };
@@ -1459,6 +1468,10 @@ export const IPC_INVOKE_CHANNELS = [
   'plugin:install',
   'plugin:uninstall',
   'plugin:getRolePack',
+  'plugin:getEntrySource',
+  'codePlugin:storage.get',
+  'codePlugin:storage.set',
+  'codePlugin:storage.delete',
   'campaign:list',
   'campaign:getOverview',
   'campaign:compare',

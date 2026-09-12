@@ -57,7 +57,13 @@ import {
   getClientCapabilityView,
   listInstalledPlugins,
   setCampaignRoleProfile,
+  listExternalPlugins,
 } from '../plugins/runtime';
+import {
+  pluginStorageDelete,
+  pluginStorageGet,
+  pluginStorageSet,
+} from '../plugins/codePluginStorage';
 import { pluginInventoryView } from '../plugins/bootstrap';
 import { installPluginFromFile, uninstallPlugin } from '../plugins/install';
 import { getRolePlaySessionService } from '../plugins/rolePlaySession';
@@ -193,6 +199,21 @@ export function registerIpcHandlers(): void {
   handle('plugin:listInstalled', () => listInstalledPlugins());
   handle('plugin:inventory', () => pluginInventoryView());
   handle('plugin:getRolePack', ({ id, version }) => findInstalledRolePack(id, version));
+  handle('plugin:getEntrySource', ({ id, version }) => {
+    const entry = listExternalPlugins().find(
+      (item) => item.package.manifest.id === id && item.package.manifest.version === version,
+    );
+    const assets = entry?.package.codeAssets;
+    if (!assets || !assets['main.js']) return null;
+    const uiAssets: Record<string, string> = {};
+    for (const [name, content] of Object.entries(assets)) {
+      if (name.startsWith('ui/')) uiAssets[name] = content;
+    }
+    return { source: assets['main.js'], uiAssets };
+  });
+  handle('codePlugin:storage.get', ({ pluginId, key }) => pluginStorageGet(pluginId, key));
+  handle('codePlugin:storage.set', ({ pluginId, key, value }) => pluginStorageSet(pluginId, key, value));
+  handle('codePlugin:storage.delete', ({ pluginId, key }) => pluginStorageDelete(pluginId, key));
   handle('plugin:install', async ({ trustUnknownSigner, overwrite }) => {
     // 弹框放在主进程：渲染层不传路径，也就没有「渲染层指定任意文件让主进程去读」这条路
     const { canceled, filePaths } = await dialog.showOpenDialog({

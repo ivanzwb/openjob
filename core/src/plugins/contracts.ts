@@ -183,6 +183,18 @@ export function validatePluginManifest(manifest: PluginManifest): PluginContract
     }
   });
 
+  // 代码插件入口（v3）：main 与 api 成对声明，入口名 v1 固定为 main.js
+  if (manifest.main !== undefined) {
+    if (manifest.main !== 'main.js') {
+      issue(issues, 'manifest.main', 'invalid-value', '代码入口 v1 固定为 main.js');
+    }
+    if (manifest.api === undefined || !isSemVerRange(manifest.api)) {
+      issue(issues, 'manifest.api', 'invalid-version', '声明了 main 就必须声明合法的 api 版本范围');
+    }
+  } else if (manifest.api !== undefined) {
+    issue(issues, 'manifest.api', 'invalid-value', 'api 只能与 main 成对声明');
+  }
+
   Object.entries(manifest.artifactSchemas ?? {}).forEach(([artifactType, version]) => {
     if (!isStablePluginId(artifactType)) {
       issue(issues, `manifest.artifactSchemas.${artifactType}`, 'invalid-id', 'artifact type 不合法');

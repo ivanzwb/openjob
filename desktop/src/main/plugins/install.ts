@@ -12,7 +12,9 @@ import {
   PACKAGE_ALLOWED_FILES,
   validatePluginPackage,
   type PluginPackageFiles,
+  parsePluginPackage,
 } from '@core/plugins/package/contract';
+import { scanPluginSources } from '@core/plugins/codePlugin/scan';
 import { getAppPaths } from '../paths';
 import { loadExternalPlugins } from './bootstrap';
 import { exactKeyOf } from './inventory';
@@ -40,7 +42,8 @@ export type InstallFailureCode =
   | 'unsigned'
   | 'untrusted-signer'
   | 'reserved-id'
-  | 'already-installed';
+  | 'already-installed'
+  | 'isolation-violation';
 
 export type InstallResult =
   | { ok: true; id: string; version: string; trust: PackageTrust }
@@ -83,8 +86,12 @@ export function parseBundle(raw: Buffer): { ok: true; files: PluginPackageFiles 
 
   const files: Record<string, string> = {};
   for (const [name, content] of Object.entries(entries)) {
-    // 白名单先行：文件名在这里就被限死成四个常量之一，路径穿越无从谈起
-    if (!PACKAGE_ALLOWED_FILES.includes(name)) {
+    // 白名单先行：标准文件限死成常量；代码插件另允许 main.js 与 ui/<安全文件名>
+    // （是否真的允许由 manifest.main 决定，格式校验里还会再验一遍）。
+    // 名字里不允许路径分隔符或 ..，路径穿越无从谈起
+    const isAllowedCodeAsset =
+      name === 'main.js' || (/^ui\//.test(name) && !name.includes('..'));
+    if (!PACKAGE_ALLOWED_FILES.includes(name) && !isAllowedCodeAsset) {
       return { ok: false, detail: `信封里出现未知文件：${name}` };
     }
     if (typeof content !== 'string') return { ok: false, detail: `${name} 的内容必须是字符串` };
@@ -104,7 +111,10 @@ function writeAtomically(target: string, files: PluginPackageFiles): void {
   const staging = mkdtempSync(join(stagingRoot, 'pkg-'));
   try {
     for (const [name, content] of Object.entries(files)) {
-      writeFileSync(join(staging, name), content, 'utf8');
+      const file = join(staging, name);
+      // ui/ 等子路径资产：先建父目录
+      mkdirSync(join(file, '..'), { recursive: true });
+      writeFileSync(file, content, 'utf8');
     }
     rmSync(target, { recursive: true, force: true });
     renameSync(staging, target);
@@ -159,6 +169,19 @@ export function installPluginBundle(raw: Buffer, options: InstallOptions = {}): 
       'invalid-package',
       issues.map((issue) => `${issue.path}: ${issue.message}`).join('；'),
     );
+  }
+
+  // 静态隔离扫描（§13.4 第二层）：装载期还有同一道，但拒装应该发生在安装时，
+  // 让发布者/用户当场看到违规清单，而不是装完之后发现包被装载扫描拒了
+  const parsedForScan = parsePluginPackage(files);
+  if (parsedForScan.codeAssets) {
+    const violations = scanPluginSources(parsedForScan.codeAssets);
+    if (violations.length > 0) {
+      return fail(
+        'isolation-violation',
+        violations.map((violation) => `${violation.path}: ${violation.reason}`).join('；'),
+      );
+    }
   }
 
   const manifest = JSON.parse(files['manifest.json']!) as { id: string; version: string };

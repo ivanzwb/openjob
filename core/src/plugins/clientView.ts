@@ -41,6 +41,9 @@ export interface InstalledPlugin {
   artifactSchemas: Record<string, number>;
   interactionSchemas: Record<string, number>;
   permissions: PluginPermission[];
+  /** 代码入口（v3）：存在时该插件会进入激活生命周期 */
+  main: string | null;
+  api: string | null;
 }
 
 export interface ArtifactSchemaRef {
@@ -137,6 +140,8 @@ export function toInstalledPlugin(manifest: PluginManifest): InstalledPlugin {
     artifactSchemas: { ...(manifest.artifactSchemas ?? {}) },
     interactionSchemas: { ...(manifest.interactionSchemas ?? {}) },
     permissions: [...manifest.permissions],
+    main: manifest.main ?? null,
+    api: manifest.api ?? null,
   };
 }
 

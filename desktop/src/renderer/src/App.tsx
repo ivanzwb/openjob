@@ -13,6 +13,8 @@ import { bumpDataVersion } from './ipc/dataVersion';
 import { useJobProgress } from './ipc/useJobProgress';
 import { useNavigationTabs } from './ipc/useNavigationTabs';
 import { useBackgroundErrorToast } from './ipc/errorToast';
+import { activateOnMount, useCodePluginTabs } from './codePlugins/runtime';
+import { CodePluginWebView } from './components/CodePluginWebView';
 import { HOST_PAGES } from './hostPages';
 import { nextVisibleTab } from '@core/hostUi';
 
@@ -131,9 +133,15 @@ export default function App(): React.JSX.Element {
 
   // 插入点 A：能力页签槽位来自岗位包声明的 navigation[]，没有任何 Campaign 启用时不出现
   const { tabs: navTabs } = useNavigationTabs();
+  // v3：代码插件（§7.9）注册的 Webview 页面进同一槽位
+  const codePluginTabs = useCodePluginTabs();
+  activateOnMount();
   const navTabsKeys = navTabs.map<Tab>((entry) => `nav:${entry.id}`);
+  const codeTabsKeys = codePluginTabs.flatMap((plugin) =>
+    plugin.pages.map<Tab>((page) => `nav:${page.fullId}`),
+  );
   const isTabVisible = (key: Tab): boolean =>
-    !key.startsWith('nav:') || navTabsKeys.includes(key);
+    !key.startsWith('nav:') || navTabsKeys.includes(key) || codeTabsKeys.includes(key);
   // 门控是异步算出来的，用户可能正停在被藏起来的页签上：渲染期同步换页，
   // 免得看到一个没有选中项的导航栏和一片空白
   const activeTab = nextVisibleTab(tab, isTabVisible, FALLBACK_TAB);
@@ -168,6 +176,12 @@ export default function App(): React.JSX.Element {
             {[
               ...TABS.slice(0, 4),
               ...navTabs.map((entry) => ({ key: `nav:${entry.id}` as Tab, label: entry.label })),
+              ...codePluginTabs.flatMap((plugin) =>
+                plugin.pages.map((page) => ({
+                  key: `nav:${page.fullId}` as Tab,
+                  label: page.title,
+                })),
+              ),
               ...TABS.slice(4),
             ]
               .filter(({ key }) => isTabVisible(key))
@@ -238,6 +252,18 @@ export default function App(): React.JSX.Element {
               </TabPanel>
             );
           })}
+          {/* 代码插件页面（§7.9）：渲染在 Webview 沙箱里，与宿主只经受控桥 */}
+          {codePluginTabs.flatMap((plugin) =>
+            plugin.pages.map((page) => {
+              const key: Tab = `nav:${page.fullId}`;
+              if (!mountedTabs.has(key) || !isTabVisible(key)) return null;
+              return (
+                <TabPanel key={key} active={activeTab === key} className="overflow-hidden">
+                  <CodePluginWebView pluginId={plugin.pluginId} webviewPath={page.webviewPath} />
+                </TabPanel>
+              );
+            }),
+          )}
           {mountedTabs.has('scripts') && (
             <TabPanel active={activeTab === 'scripts'} className="overflow-hidden">
               <Scripts />
