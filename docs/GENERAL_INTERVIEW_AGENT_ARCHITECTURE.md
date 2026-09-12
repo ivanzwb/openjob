@@ -498,8 +498,8 @@ interface CapabilityDeclaration {
 声明式贡献覆盖不了的「行为与 UI」由代码贡献承担。插件入口是一个 ES 模块：
 
 ```js
-// main.js
-export function activate(ctx) {
+// main.js —— CommonJS 形式（进程内函数包装加载，require('openjob') 拿门面）
+module.exports.activate = function activate(ctx) {
   const disposable = ctx.views.registerPage({
     id: 'portfolio-board',
     title: '作品集看板',
@@ -509,7 +509,7 @@ export function activate(ctx) {
   ctx.commands.register('portfolio.score', async (args) => { /* ... */ });
   ctx.events.on('campaign:attached', async ({ campaignId }) => { /* ... */ });
   return () => disposable.dispose(); // deactivate
-}
+};
 ```
 
 **生命周期**：安装（验签）→ 启用（用户确认权限清单）→ 宿主加载入口并调用 `activate(ctx)`；停用/卸载先调用 deactivate 再撤贡献。激活顺序 = 包声明顺序，同 id 幂等。

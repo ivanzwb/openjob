@@ -147,6 +147,8 @@ export async function diagnoseAttachResume(
     if (!resume.parsed || enrichedCached) saveResumeParsed(resumeId, parsed);
 
     updateCampaign({ id: campaignId, resumeId });
+    // 代码插件事件（§7.9）：简历附加完成
+    emit('campaign:attached', { campaignId });
 
     const db = getDb();
     const nodeRows = db

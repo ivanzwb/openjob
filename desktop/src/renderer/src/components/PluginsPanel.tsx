@@ -19,6 +19,7 @@ const TYPE_LABEL: Record<InstalledPlugin['type'], string> = {
   'role-pack': '岗位包',
   'industry-pack': '行业包',
   capability: '能力',
+  plugin: '代码插件',
 };
 
 const TRUST_LABEL: Record<PluginTrust, string> = {

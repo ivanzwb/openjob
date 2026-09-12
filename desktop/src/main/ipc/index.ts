@@ -69,6 +69,7 @@ import {
   setCodePluginEnabled,
 } from '../plugins/codePluginState';
 import { completePluginJson } from '../llm/json';
+import { emit } from '../ipc/bridge';
 import { pluginInventoryView } from '../plugins/bootstrap';
 import { installPluginFromFile, uninstallPlugin } from '../plugins/install';
 import { getRolePlaySessionService } from '../plugins/rolePlaySession';
@@ -287,7 +288,12 @@ export function registerIpcHandlers(): void {
   handle('campaign:getRuntimeDescriptor', ({ campaignId }) =>
     getCampaignRuntime(getRawDb(), campaignId),
   );
-  handle('campaign:setRoleProfile', (input) => setCampaignRoleProfile(getRawDb(), input));
+  handle('campaign:setRoleProfile', (input) => {
+    const view = setCampaignRoleProfile(getRawDb(), input);
+    // 代码插件事件（§7.9）：能力启停变化
+    emit('campaign:capability-changed', { campaignId: input.campaignId });
+    return view;
+  });
   handle('campaign:getClientCapabilityView', (input) =>
     getClientCapabilityView(getRawDb(), input),
   );

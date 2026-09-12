@@ -1,0 +1,73 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body { font-family: system-ui, sans-serif; padding: 16px; color: inherit; background: transparent; }
+      h2 { font-size: 14px; margin: 12px 0 6px; }
+      ul { margin: 0; padding-left: 18px; }
+      li { margin: 2px 0; font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <h2>已确认的证据</h2>
+    <ul id="evidence"><li>附加简历后这里会列出你确认过的经历。</li></ul>
+    <h2>我的备注</h2>
+    <ul id="notes"></ul>
+    <input id="note" placeholder="写一条备注，回车保存" style="width: 70%" />
+    <script>
+      // 受控桥：只能调宿主白名单方法（storage / campaign / evidence），没有其它能力
+      function call(method, params) {
+        return new Promise((resolve) => {
+          const reqId = Date.now() + Math.random();
+          const onReply = (event) => {
+            const reply = event.data && event.data.openjobResponse;
+            if (reply && reply.reqId === reqId) {
+              window.removeEventListener('message', onReply);
+              resolve(reply.error ? { error: reply.error } : reply.result);
+            }
+          };
+          window.addEventListener('message', onReply);
+          window.parent.postMessage({ openjob: { reqId, method, params } }, '*');
+        });
+      }
+
+      function renderList(id, items) {
+        const node = document.getElementById(id);
+        node.innerHTML = '';
+        for (const item of items) {
+          const li = document.createElement('li');
+          li.textContent = typeof item === 'string' ? item : item.title || item.id;
+          node.appendChild(li);
+        }
+      }
+
+      async function refresh() {
+        // campaign 上下文由宿主事件给出；slice 2 页面先用占位 campaignId
+        const evidence = await call('evidence.listConfirmed', { campaignId: window.__campaignId || '' });
+        renderList('evidence', Array.isArray(evidence) ? evidence.map((item) => item.title || item.id) : []);
+        const notes = JSON.parse((await call('storage.get', { key: 'notes' })) || '[]');
+        renderList('notes', notes);
+      }
+
+      document.getElementById('note').addEventListener('keydown', async (event) => {
+        if (event.key !== 'Enter') return;
+        const value = event.target.value.trim();
+        if (!value) return;
+        const notes = JSON.parse((await call('storage.get', { key: 'notes' })) || '[]');
+        notes.push(value);
+        await call('storage.set', { key: 'notes', value: JSON.stringify(notes) });
+        event.target.value = '';
+        renderList('notes', notes);
+      });
+
+      window.addEventListener('message', (event) => {
+        const payload = event.data && event.data.openjobEvent;
+        if (payload && payload.event === 'campaign:attached') {
+          window.__campaignId = payload.campaignId;
+          void refresh();
+        }
+      });
+    </script>
+  </body>
+</html>

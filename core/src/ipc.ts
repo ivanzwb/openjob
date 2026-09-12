@@ -1440,6 +1440,10 @@ export interface IpcEventMap {
   'stream:done': StreamDone;
   'stream:error': StreamError;
   'job:progress': JobProgress;
+  /** 代码插件事件（§7.9）：简历附加完成 */
+  'campaign:attached': { campaignId: string };
+  /** 代码插件事件：能力启停变化 */
+  'campaign:capability-changed': { campaignId: string };
   'update:status': UpdateStatus;
   'sync:paired': { deviceId: string; displayName: string };
   'sync:finished': {
@@ -1648,6 +1652,8 @@ export const IPC_EVENT_CHANNELS = [
   'stream:done',
   'stream:error',
   'job:progress',
+  'campaign:attached',
+  'campaign:capability-changed',
   'update:status',
   'sync:paired',
   'sync:finished',

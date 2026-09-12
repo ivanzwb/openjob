@@ -44,7 +44,7 @@ export const EXAM_FORMS = ['concept', 'coding', 'design', 'scenario'] as const;
 export type ExamForm = (typeof EXAM_FORMS)[number];
 
 /** 插件分类。Role/Industry Pack 只提供声明式配置，Capability 才能申请执行权限。 */
-export const PLUGIN_TYPES = ['role-pack', 'industry-pack', 'capability'] as const;
+export const PLUGIN_TYPES = ['role-pack', 'industry-pack', 'capability', 'plugin'] as const;
 export type PluginType = (typeof PLUGIN_TYPES)[number];
 
 /** 客户端对某项插件能力的本地支持程度。 */

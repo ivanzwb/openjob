@@ -151,6 +151,17 @@ export function activateOnMount(): void {
   }, []);
 }
 
+/** 宿主侧订阅插件事件（把主进程桥接事件转发进 hub 时使用） */
+export function onPluginEvent(
+  event: Parameters<typeof hub.subscribe>[0],
+  handler: (payload: unknown) => void,
+): () => void {
+  const subscription = hub.subscribe(event, '__host__', handler);
+  return () => {
+    subscription.dispose();
+  };
+}
+
 export { hub as codePluginEventHub };
 
 /** 启用：主进程落确认记录后，立即重新激活让页签即时出现 */

@@ -1,0 +1,11 @@
+{
+  "id": "portfolio-board",
+  "version": "1.0.0",
+  "type": "plugin",
+  "displayName": "作品集看板",
+  "description": "把已确认的证据与你的备注整理成一块看板，随讲随看。",
+  "compatibility": { "core": "^1.0.0", "schema": 23 },
+  "permissions": ["evidence:read-confirmed"],
+  "main": "main.js",
+  "api": "^1.0"
+}
