@@ -10,12 +10,14 @@ import { ReposScreen } from '../screens/ReposScreen';
 import { ResumesScreen } from '../screens/ResumesScreen';
 import { SyncScreen } from '../screens/SyncScreen';
 import { MoreScreen } from '../screens/MoreScreen';
+import { CodePluginsScreen } from '../screens/CodePluginsScreen';
 import { AppHeaderTitle } from '../components/AppHeaderTitle';
 import { useRemoteTask } from '../context/RemoteTaskContext';
 import { useTheme } from '../theme';
 
 export type RootTabParamList = {
   Overview: undefined;
+  Plugins: undefined;
   Campaigns: { campaignId?: string; nodeId?: string; focusKey?: number } | undefined;
   Resumes: undefined;
   Design: undefined;
@@ -35,6 +37,7 @@ const TAB_ICONS: Record<string, { active: IoniconName; inactive: IoniconName }> 
   Resumes: { active: 'document-text', inactive: 'document-text-outline' },
   Design: { active: 'mic-circle', inactive: 'mic-circle-outline' },
   More: { active: 'ellipsis-horizontal-circle', inactive: 'ellipsis-horizontal-circle-outline' },
+  Plugins: { active: 'layers', inactive: 'layers-outline' },
   Repos: { active: 'code-slash', inactive: 'code-slash-outline' },
   Scripts: { active: 'chatbubble-ellipses', inactive: 'chatbubble-ellipses-outline' },
   Sync: { active: 'sync', inactive: 'sync-outline' },
@@ -152,6 +155,16 @@ export function RootTabs(): React.JSX.Element {
           title: '更多',
           tabBarLabel: '更多',
           headerTitle: () => <AppHeaderTitle title="更多" icon={TAB_ICONS.More.active} />,
+        }}
+      />
+      <Tab.Screen
+        name="Plugins"
+        component={CodePluginsScreen}
+        options={{
+          title: '插件',
+          tabBarButton: () => null,
+          tabBarItemStyle: { display: 'none' },
+          headerTitle: () => <AppHeaderTitle title="插件" icon={TAB_ICONS.Plugins.active} />,
         }}
       />
       <Tab.Screen

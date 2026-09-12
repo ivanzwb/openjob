@@ -19,7 +19,13 @@ import {
   getClientCapabilityView,
   listInstalledPlugins,
   setCampaignRoleProfile,
+  listExternalPlugins,
 } from '../plugins/runtime';
+import {
+  pluginStorageDelete,
+  pluginStorageGet,
+  pluginStorageSet,
+} from '../plugins/codePluginStorage';
 import { createNode, deleteNode, updateNode } from '../campaign/nodes';
 import { createEdge, deleteEdge, listEdges } from '../campaign/edges';
 import { applyHistorySignals, getCampaignNudges } from '../insights';
@@ -109,6 +115,33 @@ type RpcHandler = (payload: unknown) => Promise<unknown> | unknown;
  */
 const RPC_HANDLERS: Partial<Record<IpcInvokeChannel, RpcHandler>> = {
   'plugin:listInstalled': () => listInstalledPlugins(),
+  // 代码插件桥通道（§12.5）：移动端 WebView 运行时经这些白名单方法
+  // 调用桌面能力；插件权限在安装期已确认，桌面网关逐次校验
+  'plugin:getEntrySource': (p) => {
+    const { id, version } = p as { id: string; version: string };
+    const entry = listExternalPlugins().find(
+      (item) => item.package.manifest.id === id && item.package.manifest.version === version,
+    );
+    const assets = entry?.package.codeAssets;
+    if (!assets || !assets['main.js']) return null;
+    const uiAssets: Record<string, string> = {};
+    for (const [name, content] of Object.entries(assets)) {
+      if (name.startsWith('ui/')) uiAssets[name] = content;
+    }
+    return { source: assets['main.js'], uiAssets };
+  },
+  'codePlugin:storage.get': (p) => {
+    const { pluginId, key } = p as { pluginId: string; key: string };
+    return pluginStorageGet(pluginId, key);
+  },
+  'codePlugin:storage.set': (p) => {
+    const { pluginId, key, value } = p as { pluginId: string; key: string; value: string };
+    pluginStorageSet(pluginId, key, value);
+  },
+  'codePlugin:storage.delete': (p) => {
+    const { pluginId, key } = p as { pluginId: string; key: string };
+    pluginStorageDelete(pluginId, key);
+  },
   // 手机端不装插件包，岗位包只能从这台桌面要一份数据回去（见 rolePackTransfer.ts）
   'plugin:getRolePack': (p) => {
     const { id, version } = p as IpcReq<'plugin:getRolePack'>;

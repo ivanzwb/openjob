@@ -21,6 +21,13 @@ const MORE_ITEMS: {
     route: 'Repos',
   },
   {
+    title: '插件',
+    subtitle: '随岗位包启用的代码插件',
+    icon: 'layers-outline',
+    route: 'Plugins',
+  },
+
+  {
     title: '话术',
     subtitle: '面试时可直接复用的回答片段',
     icon: 'chatbubble-ellipses',
