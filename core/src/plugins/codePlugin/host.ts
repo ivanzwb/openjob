@@ -60,6 +60,20 @@ export interface CodePluginServices {
       role?: 'outline' | 'explain' | 'codeAgent' | 'quiz' | 'resumeOptimize';
     }): Promise<unknown>;
   };
+  /**
+   * 基础流式问答（Agent 编排 + 工具 + 流式增量）。领域问答（如源码问答）
+   * 由插件用「本能力 + 自己的上下文」实现，宿主不为单个领域单开通道。
+   * 仅 manifest 声明 llm:complete 时注入；增量经宿主事件流推送。
+   */
+  readonly agent?: {
+    ask(request: {
+      question: string;
+      role?: 'outline' | 'explain' | 'codeAgent' | 'quiz' | 'resumeOptimize';
+      allowTools?: boolean;
+      repoId?: string;
+      campaignId?: string;
+    }): Promise<{ streamId: string; sessionId: string | null }>;
+  };
   /** 只读已确认证据；仅 manifest 声明 evidence:read-confirmed 时注入 */
   readonly evidence?: {
     listConfirmed(campaignId: string): Promise<unknown>;
@@ -74,6 +88,8 @@ export interface CodePluginContext {
   readonly storage: CodePluginServices['storage'];
   /** 受控 LLM 补全；未声明 llm:complete 权限时为 undefined */
   readonly llm: CodePluginServices['llm'];
+  /** 基础流式问答；未声明 llm:complete 权限时为 undefined */
+  readonly agent: CodePluginServices['agent'];
   /** 只读已确认证据；未声明 evidence:read-confirmed 权限时为 undefined */
   readonly evidence: CodePluginServices['evidence'];
   views: {
@@ -143,6 +159,7 @@ export function activateCodePlugin(input: CodePluginInput): ActiveCodePlugin {
     campaign: services.campaign,
     storage: services.storage,
     llm: services.llm,
+    agent: services.agent,
     evidence: services.evidence,
     views: {
       registerPage(page: CodePluginPage) {
@@ -235,7 +252,7 @@ export function activateCodePlugin(input: CodePluginInput): ActiveCodePlugin {
  */
 export function codePluginNamespaces(permissions: readonly string[]): string[] {
   const namespaces = ['views', 'commands', 'events', 'campaign', 'storage'];
-  if (permissions.includes('llm:complete')) namespaces.push('llm');
+  if (permissions.includes('llm:complete')) namespaces.push('llm', 'agent');
   if (permissions.includes('evidence:read-confirmed')) namespaces.push('evidence');
   return namespaces;
 }

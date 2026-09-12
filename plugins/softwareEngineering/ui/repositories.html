@@ -16,6 +16,12 @@
   <body>
     <h2>仓库</h2>
     <ul id="repos"></ul>
+    <h2>问源码</h2>
+    <p>
+      <input id="question" placeholder="选中仓库后提问，如：登录流程在哪实现？" style="width: 60%" />
+      <button id="ask">提问</button>
+    </p>
+    <pre id="answer" class="muted" style="white-space: pre-wrap; min-height: 40px"></pre>
     <p>
       <input id="url" placeholder="https://github.com/org/repo.git" />
       <button id="add">链接仓库</button>
@@ -38,6 +44,9 @@
         });
       }
 
+      let selectedRepoId = null;
+      let answerStreamId = null;
+
       async function refresh() {
         const repos = await call('repo.list', {});
         const node = document.getElementById('repos');
@@ -47,6 +56,12 @@
           const name = document.createElement('span');
           name.className = 'name';
           name.textContent = repo.name || repo.url;
+          name.style.cursor = 'pointer';
+          name.onclick = () => {
+            selectedRepoId = repo.id;
+            for (const item of node.children) item.style.fontWeight = 'normal';
+            name.style.fontWeight = '700';
+          };
           const meta = document.createElement('span');
           meta.className = 'muted';
           meta.textContent = repo.updatedAt ? new Date(repo.updatedAt).toLocaleString() : '未索引';
@@ -60,6 +75,34 @@
           node.appendChild(li);
         }
       }
+
+      // 基础流式问答（宿主能力）：源码问答 = 基础能力 + 选中仓库上下文
+      document.getElementById('ask').onclick = async () => {
+        const question = document.getElementById('question').value.trim();
+        if (!question || !selectedRepoId) {
+          document.getElementById('msg').textContent = '先选中一个仓库再提问';
+          return;
+        }
+        const answer = document.getElementById('answer');
+        answer.textContent = '';
+        const started = await call('agent.ask', {
+          question,
+          allowTools: true,
+          repoId: selectedRepoId,
+        });
+        answerStreamId = started.streamId;
+      };
+
+      window.addEventListener('message', (event) => {
+        const payload = event.data && event.data.openjobEvent;
+        if (!payload || payload.streamId !== answerStreamId) return;
+        const answer = document.getElementById('answer');
+        if (payload.event === 'stream:delta') {
+          answer.textContent += payload.delta || '';
+        } else if (payload.event === 'stream:error') {
+          answer.textContent += `[错误] ${payload.message || ''}`;
+        }
+      });
 
       document.getElementById('add').onclick = async () => {
         const url = document.getElementById('url').value.trim();

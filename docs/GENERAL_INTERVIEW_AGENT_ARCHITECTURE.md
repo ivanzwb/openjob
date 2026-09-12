@@ -521,7 +521,8 @@ module.exports.activate = function activate(ctx) {
 | `ctx.views` | — | 注册 Webview 页面 / 页签动作；进入固定能力页签槽位 |
 | `ctx.commands` | — | 注册命令，供命令面板与页面内调用 |
 | `ctx.events` | — | 订阅 Campaign 事件（附加简历、能力启停、练习完成） |
-| `ctx.llm` | `llm:complete` | 与宿主同一网关：Prompt 组合、证据校验、审计一应俱全 |
+| `ctx.llm` | `llm:complete` | 受控 JSON 补全：与宿主同一网关、同审计 |
+| `ctx.agent` | `llm:complete` | **基础流式问答**：Agent 编排（工具/检索）+ 流式增量。领域问答（源码问答、案例问答）由插件用「本能力 + 自己的上下文」组合实现，宿主不为单个领域单开通道 |
 | `ctx.evidence` | `evidence:read-confirmed` | 只读已确认证据；新证据只能经 proposal 通道 |
 | `ctx.storage` | `plugin-storage` | 插件私有 KV，与主库物理隔离 |
 | `ctx.campaign` | — | 只读当前 descriptor 与岗位包声明 |

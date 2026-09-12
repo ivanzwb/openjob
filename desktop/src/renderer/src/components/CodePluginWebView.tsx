@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { invoke } from '../ipc';
+import type { LlmRole } from '@core/enums';
+import { invoke, onEvent } from '../ipc';
 import { getUiAssets, onPluginEvent } from '../codePlugins/runtime';
 
 /**
@@ -48,6 +49,27 @@ function bridgeMethods(permissions: readonly string[]) {
     methods['evidence.listConfirmed'] = (_pluginId, params: { campaignId: string }) =>
       invoke('codePlugin:evidence.listConfirmed', { pluginId: _pluginId, campaignId: params.campaignId });
   }
+  if (permissions.includes('llm:complete')) {
+    // 基础流式问答：llm:chat 开流，增量经 stream:* 事件推入沙箱
+    methods['agent.ask'] = (
+      _pluginId,
+      params: {
+        question: string;
+        role?: LlmRole;
+        allowTools?: boolean;
+        repoId?: string;
+        campaignId?: string;
+      },
+    ) =>
+      invoke('llm:chat', {
+        role: params.role ?? 'codeAgent',
+        messages: [{ role: 'user', content: params.question }],
+        allowTools: params.allowTools ?? false,
+        allowWebSearch: false,
+        ...(params.repoId !== undefined ? { repoId: params.repoId } : {}),
+        ...(params.campaignId !== undefined ? { campaignId: params.campaignId } : {}),
+      });
+  }
   return methods;
 }
 
@@ -75,9 +97,16 @@ export function CodePluginWebView({
     };
     const offAttached = onPluginEvent('campaign:attached', forward('campaign:attached'));
     const offCapability = onPluginEvent('campaign:capability-changed', forward('campaign:capability-changed'));
+    // 流式问答增量（stream:*）同属宿主事件，按 streamId 由页面自行过滤
+    const offDelta = onEvent('stream:delta', forward('stream:delta'));
+    const offDone = onEvent('stream:done', forward('stream:done'));
+    const offError = onEvent('stream:error', forward('stream:error'));
     return () => {
       offAttached();
       offCapability();
+      offDelta();
+      offDone();
+      offError();
     };
   }, []);
 

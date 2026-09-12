@@ -66,6 +66,24 @@ function loadModule(
           ...request,
         }),
     };
+    // 基础流式问答：宿主 Agent 编排（工具/检索/流式），领域问答由插件组合实现
+    facade.agent = {
+      ask: (request: {
+        question: string;
+        role?: LlmRole;
+        allowTools?: boolean;
+        repoId?: string;
+        campaignId?: string;
+      }) =>
+        invoke('llm:chat', {
+          role: request.role ?? 'codeAgent',
+          messages: [{ role: 'user', content: request.question }],
+          allowTools: request.allowTools ?? false,
+          allowWebSearch: false,
+          ...(request.repoId !== undefined ? { repoId: request.repoId } : {}),
+          ...(request.campaignId !== undefined ? { campaignId: request.campaignId } : {}),
+        }),
+    };
   }
   if (permissions.includes('evidence:read-confirmed')) {
     facade.evidence = {
