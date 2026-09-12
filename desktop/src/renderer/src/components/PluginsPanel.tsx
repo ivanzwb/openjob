@@ -43,6 +43,7 @@ const REJECTION_LABEL: Record<string, string> = {
   'untrusted-signer': '签名者不受信任，需要重新安装并确认来源',
   duplicate: '与已有插件的 id@version 重复',
   unreadable: '读不出来',
+  'isolation-violation': '静态隔离扫描未通过：插件试图访问宿主受限能力',
 };
 
 const INSTALL_FAILURE_LABEL: Record<string, string> = {
@@ -54,6 +55,7 @@ const INSTALL_FAILURE_LABEL: Record<string, string> = {
   'untrusted-signer': '签名者不在信任列表',
   'reserved-id': '与随应用发布的插件冲突',
   'already-installed': '这个版本已经装过了',
+  'isolation-violation': '静态隔离扫描未通过，已拒绝安装',
 };
 
 function Badge({ children, tone }: { children: string; tone: string }): React.JSX.Element {

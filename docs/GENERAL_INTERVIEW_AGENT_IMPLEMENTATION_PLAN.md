@@ -1,6 +1,7 @@
 # OpenJob v1.0 通用面试 Agent 实施计划
 
-> 状态：Draft for execution  
+> 状态：已归档——本文是 v1.0 的执行计划，T01–T20 的任务拆分与依赖关系保留作历史参考。  
+> 当前设计与实施进度以[架构文档](./GENERAL_INTERVIEW_AGENT_ARCHITECTURE.md)（v3：声明+代码双通道 + 插入点）为准。  
 > 上位设计：[通用面试 Agent 插件化架构](./GENERAL_INTERVIEW_AGENT_ARCHITECTURE.md)  
 > GitHub Feature：[v1.0 通用简历面试准备 Agent](https://github.com/ivanzwb/openjob/issues/2)  
 > 目标：将架构拆成可以由多人并行开发、按独立 PR 交付的任务。
