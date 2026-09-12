@@ -300,7 +300,7 @@ backlog 中的能力缺席时只降级为 disabled，不让岗位解析失败，
 | B 角色 Prompts | `prompts/` 片段文件（见 9.2） | 诊断 / 讲解 / 出题 / 评分 / 辅导 / 复盘 | 使用基础默认 Prompt | 已交付（内联形式，待文件化） |
 | C 检索策略 | `sourcePolicy` | 搜索 config 组装（`SearchRequest.campaignId`）、设置页“岗位包检索策略”段 | 使用全局默认策略 | 已接线 |
 | D 简历模块 | `resumeModules[]` | 简历解析 Prompt、简历页模块卡 | 只解析通用字段 | 已接线 |
-| E 内嵌能力 | `capabilities[]` | 工具注册、交互渲染、artifact 解析、权限网关 | 对应能力 disabled | 已交付（套件引用形式） |
+| E 内嵌能力 | `capabilities[]` | 工具注册、交互渲染、artifact 解析、权限网关 | 对应能力 disabled | 已接线（声明内嵌，合成引用） |
 | F 领域模型 | 能力 / 题型 / 量规 / 任务模板 | 能力图谱、排程、评分 | — | 已交付 |
 
 所有插入点共同遵守五条规则：
@@ -472,20 +472,14 @@ interface ResumeModuleDefinition {
 
 ```ts
 interface CapabilityDeclaration {
+  /** 宿主已知能力 id（source-repository / role-play / analytics-case），契约校验拒绝未知 id */
   id: string;
-  kind: 'tool' | 'interaction' | 'artifact-parser';
-  /** kind = 'tool' 时必填，包内唯一；具体实现仍是宿主内置 */
-  toolName?: string;
-  permission: PluginPermission;
-  inputSchema?: Record<string, unknown>;
-  resultSchema?: Record<string, unknown>;
-  runtime: RuntimeAvailability;
-  /** 功能降级（view-only / 需桌面完成）时的一句说明；缺省用宿主默认文案 */
-  degradedHint?: string;
 }
 ```
 
-能力声明是纯数据，不携带任何可执行代码：工具实现由宿主按 `toolName` 绑定，交互由宿主根据声明式 schema 渲染，文件解析由宿主按声明调用内置提取器。能力不能直接访问数据库、密钥、同步服务或任意 IPC；运行期调用一律经过权限网关（见 9.4 与 13 章）。
+能力声明是纯数据，只表达「本包选用哪个宿主已知能力」：贡献契约（工具定义、交互 schema、解析器类型）与执行实现全部由宿主按 id 重放和绑定，包不复制、也不允许自带实现数据。manifest.permissions 必须等于所声明能力权限的并集（宿主注册表是权限的唯一事实源，契约校验强制）。
+
+运行时形态：resolver 把选中岗位包的内嵌声明合成为 `openjob-capabilities@<包版本>` 的能力引用写进 descriptor——下游（权限网关、能力视图、排程、移动端）的消费方式不变；独立分发的旧套件包仍可安装，为 1.2.0 及更早的岗位包兼容。能力不能直接访问数据库、密钥、同步服务或任意 IPC；运行期调用一律经过权限网关（见 9.4 与 13 章）。
 
 ---
 
