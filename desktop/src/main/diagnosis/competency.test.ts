@@ -8,7 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Database } from 'better-sqlite3';
 import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
-import { newLegacyDb } from '../db/__fixtures__/legacyDb';
+import { newMigratedDb } from '../db/__fixtures__/migratedDb';
 import { installRolePacks } from '../plugins/__fixtures__/installedPlugins';
 import { setCampaignRoleProfile } from '../plugins/runtime';
 import { diagnoseCampaignCompetencies } from './competency';
@@ -27,7 +27,7 @@ const JD_PARSED = {
 function newDb(options: { jdParsed?: unknown } = {}): Database {
   // 岗位包由用户安装，绑定之前先装上
   installRolePacks();
-  const raw = newLegacyDb();
+  const raw = newMigratedDb();
   raw
     .prepare(
       `INSERT INTO campaign (id, company, role_title, jd_raw, jd_parsed, status, created_at, updated_at)
@@ -116,7 +116,7 @@ describe('diagnoseCampaignCompetencies', () => {
   });
 
   it('没有绑定岗位包的 Campaign 停下来报错，不退化到某个默认包', async () => {
-    const raw = newLegacyDb();
+    const raw = newMigratedDb();
     raw
       .prepare(
         `INSERT INTO campaign (id, company, role_title, jd_raw, status, created_at, updated_at)

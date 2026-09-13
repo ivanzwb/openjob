@@ -1,31 +1,25 @@
 /**
  * 桌面排程改由共享 PlannerContribution 决定插件任务后，节奏必须一条不差。
  *
- * 判据是 `__fixtures__/legacyPlan` 里照搬的插件化之前的算法；手机端
+ * 判据是 `__fixtures__/prePluginPlan` 里照搬的插件化之前的算法；手机端
  * `mobile/src/data/planLocal.test.ts` 用同一份输入和同一个判据比对，
  * 两端结果因此可以逐条对齐。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  LEGACY_CAMPAIGN_SCOPE_KIND,
-  legacyRuntimeDescriptor,
+  PRE_PLUGIN_CAMPAIGN_SCOPE_KIND,
+  descriptorFromRolePack,
 } from '@core/planner/contributions';
 import {
   CROSS_CLIENT_PLAN,
-  crossClientLegacyPlan,
-  type LegacyPlanDay,
-} from '@core/planner/__fixtures__/legacyPlan';
+  crossClientPrePluginPlan,
+  type PrePluginPlanDay,
+} from '@core/planner/__fixtures__/prePluginPlan';
 import * as schema from '../db/schema';
 import { installedCapabilitySuiteEntries, installedRolePackEntry } from '../plugins/__fixtures__/installedPlugins';
 import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
 import { setExternalPlugins } from '../plugins/runtime';
-import {
-  LEGACY_CORE_VERSION,
-  LEGACY_REPOSITORY_CAPABILITY_ID,
-  LEGACY_REPOSITORY_CAPABILITY_VERSION,
-  LEGACY_ROLE_PACK_ID,
-  LEGACY_ROLE_PACK_VERSION,
-} from '../db/backfill/pluginRuntime';
+import type { CampaignRuntimeDescriptor } from '@core/plugins/types';
 
 interface PlanDayRow {
   id: string;
@@ -90,7 +84,7 @@ function fakeDb(options: {
   descriptor: Record<string, unknown> | null;
   repos?: Array<{ id: string; url: string; status: string }>;
   /** 是否带「插件化之前就存在」的凭据：决定没有 descriptor 时走不走工程岗兜底 */
-  legacyScoped?: boolean;
+  prePluginScoped?: boolean;
 }): Captured {
   const captured: Captured = { planDays: [], tasks: [] };
   const rowsFor = (table: unknown): unknown[] => {
@@ -109,12 +103,12 @@ function fakeDb(options: {
       return options.descriptor ? [options.descriptor] : [];
     }
     if (table === schema.migrationCheckpoint) {
-      return options.legacyScoped
+      return options.prePluginScoped
         ? [
             {
-              id: `${LEGACY_CAMPAIGN_SCOPE_KIND}:${CROSS_CLIENT_PLAN.campaignId}`,
+              id: `${PRE_PLUGIN_CAMPAIGN_SCOPE_KIND}:${CROSS_CLIENT_PLAN.campaignId}`,
               campaignId: CROSS_CLIENT_PLAN.campaignId,
-              kind: LEGACY_CAMPAIGN_SCOPE_KIND,
+              kind: PRE_PLUGIN_CAMPAIGN_SCOPE_KIND,
               completedAt: 1,
             },
           ]
@@ -153,8 +147,8 @@ function fakeDb(options: {
 function descriptorRow(
   capabilities: unknown = [
     {
-      id: LEGACY_REPOSITORY_CAPABILITY_ID,
-      version: LEGACY_REPOSITORY_CAPABILITY_VERSION,
+      id: 'source-repository',
+      version: '1.0.0',
       enabled: true,
     },
   ],
@@ -163,11 +157,11 @@ function descriptorRow(
     id: 'descriptor-1',
     campaignId: CROSS_CLIENT_PLAN.campaignId,
     revision: 1,
-    coreVersion: LEGACY_CORE_VERSION,
-    rolePack: { id: LEGACY_ROLE_PACK_ID, version: LEGACY_ROLE_PACK_VERSION },
+    coreVersion: '1.0.0',
+    rolePack: { id: 'software-engineering', version: '1.0.0' },
     industryPack: null,
     capabilities,
-    competencyBaselineVersion: LEGACY_ROLE_PACK_VERSION,
+    competencyBaselineVersion: '1.0.0',
     configSnapshotHash: 'hash',
     resolvedAt: 1,
   };
@@ -187,7 +181,7 @@ function flatten(captured: Captured): FlatTask[] {
     .sort((left, right) => left.date.localeCompare(right.date) || left.orderIdx - right.orderIdx);
 }
 
-function expectedTasks(days: LegacyPlanDay[]): FlatTask[] {
+function expectedTasks(days: PrePluginPlanDay[]): FlatTask[] {
   return days
     .flatMap((day) => day.tasks.map((task) => ({ date: day.date, ...task })))
     .sort((left, right) => left.date.localeCompare(right.date) || left.orderIdx - right.orderIdx);
@@ -196,7 +190,7 @@ function expectedTasks(days: LegacyPlanDay[]): FlatTask[] {
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date(`${CROSS_CLIENT_PLAN.today}T09:00:00`));
-  // 排程按本机安装清单判能力：legacy descriptor 归一化后指向能力合编包，
+  // 排程按本机安装清单判能力：pre-plugin descriptor 归一化后指向能力合编包，
   // 装上它 readCode 才会被排进计划（与生产安装链路同构）
   // 排程贡献从岗位包 taskTemplates 派生：岗位包本身也要装上
   setExternalPlugins([installedRolePackEntry(softwareEngineeringRolePack), ...installedCapabilitySuiteEntries()]);
@@ -221,7 +215,7 @@ describe('generatePlan', () => {
       CROSS_CLIENT_PLAN.dailyMinutes,
     );
 
-    const days = crossClientLegacyPlan();
+    const days = crossClientPrePluginPlan();
     expect(result).toEqual({
       daysCreated: days.length,
       tasksCreated: days.reduce((sum, day) => sum + day.tasks.length, 0),
@@ -264,7 +258,7 @@ describe('generatePlan', () => {
     const captured = fakeDb({
       descriptor: descriptorRow([
         {
-          id: LEGACY_REPOSITORY_CAPABILITY_ID,
+          id: 'source-repository',
           enabled: false,
           disabledReason: '用户已关闭源码能力',
         },
@@ -277,7 +271,7 @@ describe('generatePlan', () => {
       CROSS_CLIENT_PLAN.dailyMinutes,
     );
 
-    const withoutPluginTasks = expectedTasks(crossClientLegacyPlan()).filter(
+    const withoutPluginTasks = expectedTasks(crossClientPrePluginPlan()).filter(
       (task) => task.kind !== 'readCode',
     );
     expect(flatten(captured)).toEqual(withoutPluginTasks);
@@ -299,7 +293,7 @@ describe('generatePlan', () => {
   });
 
   it('descriptor 还没回填的旧 Campaign 继续按工程岗位包排源码任务', () => {
-    const captured = fakeDb({ descriptor: null, legacyScoped: true });
+    const captured = fakeDb({ descriptor: null, prePluginScoped: true });
 
     generatePlan(
       CROSS_CLIENT_PLAN.campaignId,
@@ -307,7 +301,7 @@ describe('generatePlan', () => {
       CROSS_CLIENT_PLAN.dailyMinutes,
     );
 
-    expect(flatten(captured)).toEqual(expectedTasks(crossClientLegacyPlan()));
+    expect(flatten(captured)).toEqual(expectedTasks(crossClientPrePluginPlan()));
   });
 
   /**
@@ -323,28 +317,30 @@ describe('generatePlan', () => {
       CROSS_CLIENT_PLAN.dailyMinutes,
     );
 
-    const withoutPluginTasks = expectedTasks(crossClientLegacyPlan()).filter(
+    const withoutPluginTasks = expectedTasks(crossClientPrePluginPlan()).filter(
       (task) => task.kind !== 'readCode',
     );
     expect(flatten(captured)).toEqual(withoutPluginTasks);
   });
 });
 
-describe('legacyRuntimeDescriptor', () => {
-  it('与 T03 的回填默认值一致，回填前后排程不跳变', () => {
-    const fallback = legacyRuntimeDescriptor(CROSS_CLIENT_PLAN.campaignId);
 
-    expect(fallback.coreVersion).toBe(LEGACY_CORE_VERSION);
-    expect(fallback.rolePack).toEqual({
-      id: LEGACY_ROLE_PACK_ID,
-      version: LEGACY_ROLE_PACK_VERSION,
-    });
+/** pre-plugin fallback 的测试替身：与 schedule.ts 同一条 descriptorFromRolePack 路径。 */
+function prePluginFallbackDescriptorForTest(campaignId: string): CampaignRuntimeDescriptor {
+  return descriptorFromRolePack(campaignId, softwareEngineeringRolePack, {
+    coreVersion: '1.0.0',
+    schemaVersion: 23,
+  });
+}
+
+describe('pre-plugin fallback descriptor', () => {
+  it('从已安装的软件工程包构建：插件装上即原功能', () => {
+    const fallback = prePluginFallbackDescriptorForTest(CROSS_CLIENT_PLAN.campaignId);
+
+    expect(fallback.rolePack).toEqual({ id: 'software-engineering', version: '1.4.0' });
+    // 内嵌声明合成的合编包引用随包版本
     expect(fallback.capabilities).toEqual([
-      {
-        id: LEGACY_REPOSITORY_CAPABILITY_ID,
-        version: LEGACY_REPOSITORY_CAPABILITY_VERSION,
-        enabled: true,
-      },
+      { id: 'openjob-capabilities', version: '1.4.0', enabled: true },
     ]);
   });
 });

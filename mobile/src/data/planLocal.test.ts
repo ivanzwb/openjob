@@ -9,14 +9,14 @@ import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  LEGACY_CAMPAIGN_SCOPE_KIND,
+  PRE_PLUGIN_CAMPAIGN_SCOPE_KIND,
   REQUIRES_DESKTOP_REASON,
 } from '@core/planner/contributions';
 import {
   CROSS_CLIENT_PLAN,
-  crossClientLegacyPlan,
-  type LegacyPlanDay,
-} from '@core/planner/__fixtures__/legacyPlan';
+  crossClientPrePluginPlan,
+  type PrePluginPlanDay,
+} from '@core/planner/__fixtures__/prePluginPlan';
 import { MIGRATIONS } from '../db/migrations/bundle';
 
 const ids = vi.hoisted(() => ({ next: 0 }));
@@ -96,7 +96,7 @@ const ENABLED_CAPABILITIES = [{ id: 'source-repository', version: '1.0.0', enabl
 function seed(
   raw: SQLiteDatabase,
   capabilities: unknown[] | null,
-  options: { legacyScoped?: boolean } = {},
+  options: { prePluginScoped?: boolean } = {},
 ): void {
   raw.runSync(
     `INSERT INTO campaign (id, company, role_title, jd_raw, status, created_at, updated_at)
@@ -132,13 +132,13 @@ function seed(
   }
 
   // 插件化迁移那一刻就存在的旧战役才有这个凭据；新建战役没有，因此不走工程岗兜底
-  if (options.legacyScoped) {
+  if (options.prePluginScoped) {
     raw.runSync(
       `INSERT INTO migration_checkpoint (id, campaign_id, kind, completed_at)
        VALUES (?, ?, ?, 1)`,
-      `${LEGACY_CAMPAIGN_SCOPE_KIND}:${CROSS_CLIENT_PLAN.campaignId}`,
+      `${PRE_PLUGIN_CAMPAIGN_SCOPE_KIND}:${CROSS_CLIENT_PLAN.campaignId}`,
       CROSS_CLIENT_PLAN.campaignId,
-      LEGACY_CAMPAIGN_SCOPE_KIND,
+      PRE_PLUGIN_CAMPAIGN_SCOPE_KIND,
     );
   }
 
@@ -181,7 +181,7 @@ function readTasks(raw: SQLiteDatabase): FlatTask[] {
     }));
 }
 
-function expectedTasks(days: LegacyPlanDay[]): FlatTask[] {
+function expectedTasks(days: PrePluginPlanDay[]): FlatTask[] {
   return days
     .flatMap((day) => day.tasks.map((task) => ({ date: day.date, ...task })))
     .sort((left, right) => left.date.localeCompare(right.date) || left.orderIdx - right.orderIdx);
@@ -206,7 +206,7 @@ describe('手机端 generatePlan', () => {
       CROSS_CLIENT_PLAN.dailyMinutes,
     );
 
-    const days = crossClientLegacyPlan();
+    const days = crossClientPrePluginPlan();
     expect(result).toEqual({
       daysCreated: days.length,
       tasksCreated: days.reduce((sum, day) => sum + day.tasks.length, 0),
@@ -261,12 +261,12 @@ describe('手机端 generatePlan', () => {
     );
 
     expect(readTasks(raw)).toEqual(
-      expectedTasks(crossClientLegacyPlan()).filter((task) => task.kind !== 'readCode'),
+      expectedTasks(crossClientPrePluginPlan()).filter((task) => task.kind !== 'readCode'),
     );
   });
 
   it('旧 Campaign 的 descriptor 还没同步过来时继续按工程岗位包排源码任务', async () => {
-    seed(raw, null, { legacyScoped: true });
+    seed(raw, null, { prePluginScoped: true });
 
     await generatePlan(
       raw,
@@ -275,7 +275,7 @@ describe('手机端 generatePlan', () => {
       CROSS_CLIENT_PLAN.dailyMinutes,
     );
 
-    expect(readTasks(raw)).toEqual(expectedTasks(crossClientLegacyPlan()));
+    expect(readTasks(raw)).toEqual(expectedTasks(crossClientPrePluginPlan()));
   });
 
   /**
@@ -293,7 +293,7 @@ describe('手机端 generatePlan', () => {
     );
 
     expect(readTasks(raw)).toEqual(
-      expectedTasks(crossClientLegacyPlan()).filter((task) => task.kind !== 'readCode'),
+      expectedTasks(crossClientPrePluginPlan()).filter((task) => task.kind !== 'readCode'),
     );
   });
 });

@@ -1,23 +1,29 @@
 import { describe, expect, it } from 'vitest';
 import { EXAM_FORMS, TASK_KINDS } from '@core/enums';
-import { LEGACY_EXAM_FORM_TO_FORMAT_ID, SOFTWARE_ENGINEERING_FORMAT_IDS, formatIdForLegacyExamForm } from '@core/plugins/legacyRoleData';
 import { CORE_CAPABILITIES_PACK_ID } from '@core/plugins/capabilitySuite';
+import {
+  SOFTWARE_ENGINEERING_EXAM_FORM_MAPPINGS,
+  SOFTWARE_ENGINEERING_FORMAT_IDS,
+  formatIdForExamForm,
+} from './examForms';
 import { softwareEngineeringRolePack } from './index';
 
-describe('software engineering legacy mappings', () => {
-  it('maps every legacy ExamForm to one stable interview format', () => {
-    expect(LEGACY_EXAM_FORM_TO_FORMAT_ID).toEqual({
+describe('software engineering exam-form mappings', () => {
+  it('declares every ExamForm on the role pack and maps to a stable interview format', () => {
+    expect(softwareEngineeringRolePack.examFormMappings).toEqual({
       concept: 'se.technical-knowledge',
       coding: 'se.coding',
       design: 'se.system-design',
       scenario: 'se.project-technical-deep-dive',
     });
-    expect(Object.keys(LEGACY_EXAM_FORM_TO_FORMAT_ID).sort()).toEqual([...EXAM_FORMS].sort());
+    expect(Object.keys(SOFTWARE_ENGINEERING_EXAM_FORM_MAPPINGS).sort()).toEqual(
+      [...EXAM_FORMS].sort(),
+    );
 
     const registeredIds = new Set(
       softwareEngineeringRolePack.interviewFormats.map((format) => format.id),
     );
-    const mappedIds = EXAM_FORMS.map(formatIdForLegacyExamForm);
+    const mappedIds = EXAM_FORMS.map(formatIdForExamForm);
     expect(new Set(mappedIds).size).toBe(EXAM_FORMS.length);
     for (const formatId of mappedIds) expect(registeredIds.has(formatId)).toBe(true);
   });

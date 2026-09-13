@@ -5,32 +5,15 @@
  * 同一套题型和量规，岗位包升级之后回头复核一次旧评分，也只有精确版本能解释当时的
  * 锚点是什么。查不到就报错停下，不退化到「用个差不多的版本」——那会让 provenance
  * 里记的版本和实际用的文本对不上。
+ *
+ * 读历史那条链路（getCampaignPracticePack）不报错：descriptor 缺包时返回 null，
+ * 让历史投影按空串兜底，而不是让「读旧记录」因为「没装包」炸掉。
  */
 
 import type { Database } from 'better-sqlite3';
-import type { ExamForm } from '@core/enums';
 import { PracticeError } from '@core/practice';
-import { LEGACY_EXAM_FORM_TO_FORMAT_ID } from '@core/plugins/legacyRoleData';
 import type { CampaignRuntimeDescriptor, RolePack } from '@core/plugins/types';
 import { findInstalledRolePack, findLatestRolePack, getCampaignRuntime } from '../plugins/runtime';
-
-/**
- * formatId → 旧 ExamForm 的反向映射。
- *
- * 由正向表推导而不是再写一份：design.case / design.score 这些 build 型 prompt 的
- * 参数仍然按旧的题型取值分支，两张表对不上就会静默取到另一套题目模板。
- */
-const FORMAT_ID_TO_LEGACY_EXAM_FORM: Readonly<Record<string, ExamForm>> = Object.fromEntries(
-  Object.entries(LEGACY_EXAM_FORM_TO_FORMAT_ID).map(([examForm, formatId]) => [
-    formatId,
-    examForm as ExamForm,
-  ]),
-);
-
-/** 岗位包新增的题型没有旧取值时退回 design：build 型 prompt 必须拿到一个合法分支。 */
-export function legacyExamFormForFormatId(formatId: string): ExamForm {
-  return FORMAT_ID_TO_LEGACY_EXAM_FORM[formatId] ?? 'design';
-}
 
 export interface CampaignPracticeRuntime {
   descriptor: CampaignRuntimeDescriptor;
@@ -78,4 +61,17 @@ export function resolveCampaignPracticeRuntime(
     rolePack,
     interviewLanguage: view.roleProfile?.interviewLanguage ?? 'zh',
   };
+}
+
+/**
+ * 读历史用的岗位包解析：descriptor 缺包不报错，返回 null 让投影按空串兜底。
+ *
+ * 与出题链路（resolveCampaignPracticeRuntime）的区别只在缺包行为——读历史不该因为
+ * 「没装包」而炸掉，装了什么就按什么投影，什么都没装就诚实地留空。
+ */
+export function getCampaignPracticePack(raw: Database, campaignId: string): RolePack | null {
+  const view = getCampaignRuntime(raw, campaignId);
+  if (!view) return null;
+  const ref = view.descriptor.rolePack;
+  return findRolePack(ref.id, ref.version) ?? findLatestRolePack(ref.id);
 }

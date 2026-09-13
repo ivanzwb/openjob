@@ -18,12 +18,12 @@ import { listBuiltInPlugins, toInstalledPlugin, type InstalledPlugin } from '../
  * 「装了能力」的，都用这一条，而不是凭空造一个 InstalledPlugin。
  */
 /** 合编包的「本机已装」形态：从 SE 包内嵌声明合成。
- * 同时保留 legacy 1.0.0 版本条目——历史 descriptor pin 的是退役 id@1.0.0，
+ * 同时保留历史 1.0.0 版本条目——历史 descriptor pin 的是退役 id@1.0.0，
  * 归一后要按这个版本判定 installed，否则回填窗口内会误判 plugin-not-installed。 */
 export const CAPABILITY_SUITE_INSTALLED: InstalledPlugin = toInstalledPlugin(
   synthesizeSuiteFromRolePack(softwareEngineeringRolePack)!.manifest,
 );
-export const CAPABILITY_SUITE_LEGACY_INSTALLED: InstalledPlugin = {
+export const CAPABILITY_SUITE_HISTORICAL_INSTALLED: InstalledPlugin = {
   ...CAPABILITY_SUITE_INSTALLED,
   version: '1.0.0',
 };
@@ -32,8 +32,8 @@ export const CAPABILITY_SUITE_LEGACY_INSTALLED: InstalledPlugin = {
 export function installedWith(...packs: readonly RolePack[]): InstalledPlugin[] {
   return [
     ...listBuiltInPlugins(),
-    // legacy 1.0.0 条目：历史 descriptor pin 的是退役 id@1.0.0，归一后按它判 installed
-    CAPABILITY_SUITE_LEGACY_INSTALLED,
+    // 历史 1.0.0 条目：历史 descriptor pin 的是退役 id@1.0.0，归一后按它判 installed
+    CAPABILITY_SUITE_HISTORICAL_INSTALLED,
     CAPABILITY_SUITE_INSTALLED,
     ...packs.flatMap((pack) => {
       // 插入点 E：带内嵌声明的岗位包会为合编包 id 合成一条与包同版本的清单项
@@ -46,5 +46,5 @@ export function installedWith(...packs: readonly RolePack[]): InstalledPlugin[] 
 
 /** 只装了能力合编包、一个岗位包都没有的安装态。 */
 export function installedCapabilitySuiteOnly(): InstalledPlugin[] {
-  return [...listBuiltInPlugins(), CAPABILITY_SUITE_INSTALLED, CAPABILITY_SUITE_LEGACY_INSTALLED];
+  return [...listBuiltInPlugins(), CAPABILITY_SUITE_INSTALLED, CAPABILITY_SUITE_HISTORICAL_INSTALLED];
 }

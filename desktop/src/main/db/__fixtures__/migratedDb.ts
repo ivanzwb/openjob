@@ -71,7 +71,7 @@ export function applyMigrations(raw: Database, options: ApplyMigrationsOptions =
   return applied;
 }
 
-export function newLegacyDb(options: ApplyMigrationsOptions = {}): Database {
+export function newMigratedDb(options: ApplyMigrationsOptions = {}): Database {
   const raw = adaptSqlite(new DatabaseSync(':memory:'));
   raw.exec('PRAGMA foreign_keys = ON');
   applyMigrations(raw, options);

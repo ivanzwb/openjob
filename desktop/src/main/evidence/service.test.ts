@@ -6,7 +6,7 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Database } from 'better-sqlite3';
-import { newLegacyDb } from '../db/__fixtures__/legacyDb';
+import { newMigratedDb } from '../db/__fixtures__/migratedDb';
 import { EvidenceRejectedError, locateInDocument } from '@core/evidence';
 import type { EvidenceProposal } from '@core/evidence';
 import {
@@ -88,7 +88,7 @@ function service(): ReturnType<typeof createEvidenceService> {
 }
 
 beforeEach(() => {
-  raw = newLegacyDb();
+  raw = newMigratedDb();
   seed(raw);
   clock = 100;
 });

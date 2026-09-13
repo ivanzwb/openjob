@@ -165,7 +165,7 @@ export function PracticeRunner({ campaignId }: { campaignId: string }): React.JS
 
   const start = (): void => {
     void runTask(createKey, () =>
-      invoke('practice:createSession', { campaignId, legacyExamForm: examForm }),
+      invoke('practice:createSession', { campaignId, examForm }),
     ).catch(() => undefined);
   };
 

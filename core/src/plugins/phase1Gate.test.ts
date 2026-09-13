@@ -12,7 +12,6 @@ import { describe, expect, it } from 'vitest';
 import { diagnoseCompetencies } from '../competency/diagnose';
 import {
   collectPlannerContributions,
-  legacyRuntimeDescriptor,
   type PlannerContext,
   type PlannerRepo,
 } from '../planner/contributions';
@@ -222,7 +221,7 @@ describe('Phase 1 通用核心闸门', () => {
   });
 
   it('工程战役在同一份核心下没有回归，仍然排得出源码任务', () => {
-    const engineering = legacyRuntimeDescriptor(PHASE0_CAMPAIGN.id);
+    const engineering = prePluginRuntimeDescriptor(PHASE0_CAMPAIGN.id);
     const tasks = collectPlannerContributions(engineering, context());
 
     expect(tasks).toHaveLength(1);
@@ -235,7 +234,7 @@ describe('Phase 1 通用核心闸门', () => {
   });
 
   it('两个岗位包共用同一套内置插件，差异只落在各自的声明上', () => {
-    const engineering = legacyRuntimeDescriptor(PHASE0_CAMPAIGN.id);
+    const engineering = prePluginRuntimeDescriptor(PHASE0_CAMPAIGN.id);
 
     expect(runtime.coreVersion).toBe(engineering.coreVersion);
     // 同一个核心解析出两份不同配置：hash 相同就说明岗位包没真正进入快照
@@ -271,3 +270,4 @@ describe('Phase 1 通用核心闸门', () => {
     expect(views[1].readOnlyCapabilityIds).toEqual([CORE_CAPABILITIES_PACK_ID]);
   });
 });
+import { prePluginRuntimeDescriptor } from '../plugins/__fixtures__/prePluginDescriptor';

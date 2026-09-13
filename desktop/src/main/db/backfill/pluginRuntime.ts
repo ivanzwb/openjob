@@ -1,20 +1,12 @@
 import type { Database } from 'better-sqlite3';
-import { LEGACY_CAMPAIGN_SCOPE_KIND } from '@core/planner/contributions';
-import { LEGACY_ROLE_PACK_REF } from '@core/plugins/legacyRoleData';
-import { hashRuntimeConfig } from '@core/plugins/resolver';
-import type { CampaignRuntimeDescriptor, ResolvedPluginRef } from '@core/plugins/types';
+import { PRE_PLUGIN_CAMPAIGN_SCOPE_KIND, descriptorFromRolePack } from '@core/planner/contributions';
+import { CORE_VERSION, RUNTIME_SCHEMA_VERSION } from '../../plugins/runtime';
+import { synthesizeSuiteFromRolePack } from '@core/plugins/capabilitySuite';
+import type { RolePack } from '@core/plugins/types';
 
-// 回填、兜底描述符与旧数据投影共用同一个引用：三处各写一份字面量时，改错一处的表现是
-// 旧战役的 config_snapshot_hash 跳变，而 hash 对不上会被当成「配置被人动过」
-export const LEGACY_ROLE_PACK_ID = LEGACY_ROLE_PACK_REF.id;
-export const LEGACY_ROLE_PACK_VERSION = LEGACY_ROLE_PACK_REF.version;
-export const LEGACY_REPOSITORY_CAPABILITY_ID = 'source-repository';
-export const LEGACY_REPOSITORY_CAPABILITY_VERSION = '1.0.0';
-export const LEGACY_CORE_VERSION = '1.0.0';
-export const LEGACY_SCHEMA_VERSION = 23;
 export const PLUGIN_RUNTIME_BACKFILL_KIND = 'generic-interview-v1';
 
-interface LegacyCampaign {
+interface PrePluginCampaign {
   id: string;
 }
 
@@ -30,6 +22,12 @@ export interface PluginRuntimeBackfillReport {
 
 export interface PluginRuntimeBackfillOptions {
   now?: () => number;
+  /**
+   * 回填所 pin 的岗位包：调用方从本机安装清单解析（软件工程包）。
+   * 未安装时调用方应跳过本次回填（不写 checkpoint），装包后的下一次启动或安装
+   * 事件会重试——「插件装上才有一模一样的功能」，而不是伪造一份指向不存在版本的 pin。
+   */
+  pack?: RolePack;
   /** 仅供事务回滚测试注入故障。 */
   beforeCheckpoint?: (campaignId: string) => void;
 }
@@ -41,14 +39,14 @@ function stableId(kind: string, campaignId: string, suffix = ''): string {
 /**
  * 为旧 Campaign 建立首个插件 revision。
  *
- * 只处理带 `LEGACY_CAMPAIGN_SCOPE_KIND` 凭据的 Campaign——也就是插件化迁移那一刻
+ * 只处理带 `PRE_PLUGIN_CAMPAIGN_SCOPE_KIND` 凭据的 Campaign——也就是插件化迁移那一刻
  * 就已经存在的那批。新建战役不在其中，它们停在「还没选岗位」的状态等用户自己挑，
  * 不会被冒充成工程岗。
  *
  * 每个 Campaign 独立事务：任何一步失败都不会留下 profile/binding/descriptor，
  * 也不会设置 role_profile_id；凭据还在，下次启动仍会选中并重试。
  */
-export function backfillLegacyCampaignPluginRuntime(
+export function backfillPrePluginCampaignRuntime(
   raw: Database,
   options: PluginRuntimeBackfillOptions = {},
 ): PluginRuntimeBackfillReport {
@@ -56,8 +54,8 @@ export function backfillLegacyCampaignPluginRuntime(
     .prepare(
       `SELECT c.id
        FROM campaign c
-       JOIN migration_checkpoint legacy
-         ON legacy.campaign_id = c.id AND legacy.kind = ?
+       JOIN migration_checkpoint pre
+         ON pre.campaign_id = c.id AND pre.kind = ?
        WHERE c.role_profile_id IS NULL
          AND NOT EXISTS (
            SELECT 1 FROM migration_checkpoint m
@@ -65,41 +63,26 @@ export function backfillLegacyCampaignPluginRuntime(
          )
        ORDER BY c.id`,
     )
-    .all(LEGACY_CAMPAIGN_SCOPE_KIND, PLUGIN_RUNTIME_BACKFILL_KIND) as LegacyCampaign[];
+    .all(PRE_PLUGIN_CAMPAIGN_SCOPE_KIND, PLUGIN_RUNTIME_BACKFILL_KIND) as PrePluginCampaign[];
 
   const report: PluginRuntimeBackfillReport = { completed: 0, failures: [] };
-  const migrateOne = raw.transaction((campaign: LegacyCampaign) => {
+  if (!options.pack) {
+    // 未装岗位包：回填无从谈起（不写 checkpoint），装包后的下一次启动/安装事件重试
+    return report;
+  }
+  const pack = options.pack;
+  const migrateOne = raw.transaction((campaign: PrePluginCampaign) => {
     const timestamp = options.now?.() ?? Date.now();
     const revision = 1;
-    const rolePack: ResolvedPluginRef = {
-      id: LEGACY_ROLE_PACK_ID,
-      version: LEGACY_ROLE_PACK_VERSION,
-    };
-    const capabilities: CampaignRuntimeDescriptor['capabilities'] = [
-      {
-        id: LEGACY_REPOSITORY_CAPABILITY_ID,
-        version: LEGACY_REPOSITORY_CAPABILITY_VERSION,
-        enabled: true,
-      },
-    ];
-    const hashInput = {
-      coreVersion: LEGACY_CORE_VERSION,
-      schemaVersion: LEGACY_SCHEMA_VERSION,
-      rolePack,
-      industryPack: undefined,
-      capabilities,
-      competencyBaselineVersion: LEGACY_ROLE_PACK_VERSION,
-    };
-    const configSnapshotHash = hashRuntimeConfig(hashInput);
-    const descriptor: CampaignRuntimeDescriptor = {
-      campaignId: campaign.id,
-      coreVersion: LEGACY_CORE_VERSION,
-      rolePack,
-      capabilities,
-      competencyBaselineVersion: LEGACY_ROLE_PACK_VERSION,
-      configSnapshotHash,
-      resolvedAt: timestamp,
-    };
+    // descriptor 从已安装岗位包解析：pin 的是真实存在的版本，插件装上即原功能
+    const descriptor = descriptorFromRolePack(campaign.id, pack, {
+      coreVersion: CORE_VERSION,
+      schemaVersion: RUNTIME_SCHEMA_VERSION,
+    });
+    const suite = synthesizeSuiteFromRolePack(pack);
+    const capabilityRef = suite
+      ? { id: suite.manifest.id, version: suite.manifest.version }
+      : null;
 
     raw
       .prepare(
@@ -110,8 +93,8 @@ export function backfillLegacyCampaignPluginRuntime(
       )
       .run(
         stableId('role-profile', campaign.id),
-        LEGACY_ROLE_PACK_ID,
-        LEGACY_ROLE_PACK_ID,
+        pack.manifest.id,
+        pack.manifest.id,
       );
 
     const updated = raw
@@ -129,11 +112,8 @@ export function backfillLegacyCampaignPluginRuntime(
        ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`,
     );
     for (const plugin of [
-      { id: LEGACY_ROLE_PACK_ID, version: LEGACY_ROLE_PACK_VERSION },
-      {
-        id: LEGACY_REPOSITORY_CAPABILITY_ID,
-        version: LEGACY_REPOSITORY_CAPABILITY_VERSION,
-      },
+      { id: pack.manifest.id, version: pack.manifest.version },
+      ...(capabilityRef ? [capabilityRef] : []),
     ]) {
       insertBinding.run(
         stableId('binding', campaign.id, `:${plugin.id}:${revision}`),
@@ -141,7 +121,7 @@ export function backfillLegacyCampaignPluginRuntime(
         plugin.id,
         plugin.version,
         JSON.stringify({ source: 'legacy-backfill' }),
-        configSnapshotHash,
+        descriptor.configSnapshotHash,
         revision,
         timestamp,
       );

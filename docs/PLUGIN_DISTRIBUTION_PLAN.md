@@ -84,8 +84,9 @@ Campaign 里 pin 的仍然是 `id@version`，缺包时沿用现有 `plugin-not-i
 
 旧数据的读取不能依赖「用户装了岗位包」。`quiz_attempt` 与 `design_case` 行里存着当年
 软件工程包的题型和量规 ID，而一台只装了产品岗的机器照样要能翻历史。这些映射被冻结成
-`legacyRoleData.ts` 里的快照，历史投影、计划贡献与 `pluginRuntime` 回填都读同一份常量：
-既让缺包时历史仍然可读，也让老战役的 `configSnapshotHash` 保持不变。
+已安装岗位包的内嵌声明（`RolePack.examFormMappings`），历史投影、计划贡献与
+`pluginRuntime` 回填都读同一份常量：既让缺包时历史仍然可读，也让老战役的
+`configSnapshotHash` 保持不变。
 
 ## 7. 手机端
 

@@ -1,11 +1,12 @@
 import type { Database } from 'better-sqlite3';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { LEGACY_CAMPAIGN_SCOPE_KIND } from '@core/planner/contributions';
+import { PRE_PLUGIN_CAMPAIGN_SCOPE_KIND } from '@core/planner/contributions';
 import {
   PLUGIN_RUNTIME_BACKFILL_KIND,
-  backfillLegacyCampaignPluginRuntime,
+  backfillPrePluginCampaignRuntime,
 } from './pluginRuntime';
-import { applyMigrations, newLegacyDb } from '../__fixtures__/legacyDb';
+import { applyMigrations, newMigratedDb } from '../__fixtures__/migratedDb';
+import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
 import { installSyncTriggers } from '../../sync/triggers';
 
 /** 插件运行时迁移之前的最后一条：旧库就停在这里，Campaign 要在这个 schema 上先存在。 */
@@ -55,11 +56,11 @@ function installTracking(raw: Database): void {
   installSyncTriggers(raw, 'test-device');
 }
 
-describe('legacy Campaign plugin runtime backfill', () => {
+describe('pre-plugin Campaign plugin runtime backfill', () => {
   let raw: Database;
 
   beforeEach(() => {
-    raw = newLegacyDb({ through: PRE_PLUGIN_MIGRATION });
+    raw = newMigratedDb({ through: PRE_PLUGIN_MIGRATION });
   });
 
   it('在单事务中写入 profile、binding、descriptor、关联和 checkpoint', () => {
@@ -68,11 +69,11 @@ describe('legacy Campaign plugin runtime backfill', () => {
     upgradeToPluginSchema(raw);
     installTracking(raw);
 
-    const report = backfillLegacyCampaignPluginRuntime(raw, { now: () => 1234 });
+    const report = backfillPrePluginCampaignRuntime(raw, { pack: softwareEngineeringRolePack, now: () => 1234 });
 
     expect(report).toEqual({ completed: 2, failures: [] });
     expect(count(raw, 'role_profile')).toBe(2);
-    expect(count(raw, 'campaign_plugin_binding')).toBe(4);
+    expect(count(raw, 'campaign_plugin_binding')).toBe(4); // 2 campaigns × (role pack + 合编包)
     expect(count(raw, 'campaign_runtime_descriptor')).toBe(2);
     expect(countKind(raw, PLUGIN_RUNTIME_BACKFILL_KIND)).toBe(2);
     expect(
@@ -117,9 +118,9 @@ describe('legacy Campaign plugin runtime backfill', () => {
   it('checkpoint 使重复执行保持幂等', () => {
     seedCampaign(raw, 'c1');
     upgradeToPluginSchema(raw);
-    expect(backfillLegacyCampaignPluginRuntime(raw).completed).toBe(1);
+    expect(backfillPrePluginCampaignRuntime(raw, { pack: softwareEngineeringRolePack }).completed).toBe(1);
 
-    const second = backfillLegacyCampaignPluginRuntime(raw);
+    const second = backfillPrePluginCampaignRuntime(raw, { pack: softwareEngineeringRolePack });
     expect(second).toEqual({ completed: 0, failures: [] });
     expect(count(raw, 'role_profile')).toBe(1);
     expect(count(raw, 'campaign_plugin_binding')).toBe(2);
@@ -137,7 +138,7 @@ describe('legacy Campaign plugin runtime backfill', () => {
     upgradeToPluginSchema(raw);
     seedCampaign(raw, 'fresh');
 
-    expect(backfillLegacyCampaignPluginRuntime(raw)).toEqual({ completed: 1, failures: [] });
+    expect(backfillPrePluginCampaignRuntime(raw, { pack: softwareEngineeringRolePack })).toEqual({ completed: 1, failures: [] });
 
     expect(
       raw.prepare(`SELECT role_pack_id FROM role_profile`).all(),
@@ -154,7 +155,8 @@ describe('legacy Campaign plugin runtime backfill', () => {
     seedCampaign(raw, 'c1');
     upgradeToPluginSchema(raw);
     installTracking(raw);
-    const failed = backfillLegacyCampaignPluginRuntime(raw, {
+    const failed = backfillPrePluginCampaignRuntime(raw, {
+      pack: softwareEngineeringRolePack,
       beforeCheckpoint: () => {
         throw new Error('injected failure');
       },
@@ -173,13 +175,13 @@ describe('legacy Campaign plugin runtime backfill', () => {
     }
     expect(countKind(raw, PLUGIN_RUNTIME_BACKFILL_KIND)).toBe(0);
     // 旧数据凭据由迁移写下，不属于这笔事务：回滚掉它，下次就再也认不出这是旧战役了
-    expect(countKind(raw, LEGACY_CAMPAIGN_SCOPE_KIND)).toBe(1);
+    expect(countKind(raw, PRE_PLUGIN_CAMPAIGN_SCOPE_KIND)).toBe(1);
     expect(
       raw.prepare(`SELECT role_profile_id FROM campaign WHERE id = 'c1'`).get(),
     ).toEqual({ role_profile_id: null });
     expect(count(raw, 'sync_oplog')).toBe(0);
 
-    expect(backfillLegacyCampaignPluginRuntime(raw).completed).toBe(1);
+    expect(backfillPrePluginCampaignRuntime(raw, { pack: softwareEngineeringRolePack }).completed).toBe(1);
     expect(
       raw
         .prepare(

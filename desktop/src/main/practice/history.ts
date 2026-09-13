@@ -15,12 +15,11 @@ import type {
   PracticeAttemptQuery,
   PracticeDimensionScore,
 } from '@core/practice';
-import type { ExamForm } from '@core/enums';
-import {
-  LEGACY_EXAM_FORM_TO_FORMAT_ID,
-  LEGACY_FORMAT_TO_RUBRIC_ID,
-} from '@core/plugins/legacyRoleData';
+import { EXAM_FORMS, type ExamForm } from '@core/enums';
+import { formatIdForExamForm } from '@core/plugins/examForms';
+import type { RolePack } from '@core/plugins/types';
 import { listPracticeAttemptRows, listScores, rowToPracticeAttempt } from './repository';
+import { getCampaignPracticePack } from './rolePack';
 
 const DEFAULT_LIMIT = 50;
 
@@ -45,18 +44,18 @@ interface DesignRow {
 }
 
 /**
- * 只读投影的量规锚点取 legacyRoleData 里的快照，不查本机装了哪个岗位包。
+ * 量规锚点按 descriptor pin 的岗位包现查，不写死快照。
  *
- * 这两类记录都是插件化之前的软件工程数据，量规在当年就定死了。改成现查已安装岗位包，
- * 同一条历史记录会因为「装了/卸了/换了版本」显示成不同的量规——历史不该随本机装了什么
- * 而变。缺包只影响「能不能照原样再练一次」，不影响「当时按什么评的」。
+ * 用户决策：历史投影跟随已安装岗位包——装了什么就按什么投影（同一批旧记录会
+ * 因为装了/卸了/换了版本显示成不同的量规）；缺包时返回 null，让投影按空串兜底，
+ * 读历史不因为没装包而炸掉。
  */
-function legacyRubricId(formatId: string): string {
-  return LEGACY_FORMAT_TO_RUBRIC_ID[formatId] ?? '';
+function rubricIdForFormat(pack: RolePack | null, formatId: string): string {
+  return pack?.interviewFormats.find((format) => format.id === formatId)?.rubricId ?? '';
 }
 
 function isExamForm(value: string): value is ExamForm {
-  return Object.hasOwn(LEGACY_EXAM_FORM_TO_FORMAT_ID, value);
+  return EXAM_FORMS.includes(value as ExamForm);
 }
 
 /**
@@ -80,8 +79,11 @@ function projectQuizAttempts(
       : raw.prepare(`${sql} AND a.node_id = ?`).all(campaignId, nodeId)
   ) as QuizRow[];
 
-  const formatId = LEGACY_EXAM_FORM_TO_FORMAT_ID.concept;
-  const rubricId = legacyRubricId(formatId);
+  // 题型翻译归岗位包所有（examFormMappings）：concept → formatId 按 descriptor pin 的
+  // 包声明取；包没装/没声明时回退空串，读历史照常工作
+  const pack = getCampaignPracticePack(raw, campaignId);
+  const formatId = pack?.examFormMappings?.concept ?? '';
+  const rubricId = rubricIdForFormat(pack, formatId);
 
   return rows.map((row) => ({
     id: row.id,
@@ -122,10 +124,11 @@ function projectDesignCases(
     )
     .all(campaignId) as DesignRow[];
 
+  const pack = getCampaignPracticePack(raw, campaignId);
   return rows.map((row) => {
     const formatId = isExamForm(row.interview_type)
-      ? LEGACY_EXAM_FORM_TO_FORMAT_ID[row.interview_type]
-      : LEGACY_EXAM_FORM_TO_FORMAT_ID.design;
+      ? formatIdForExamForm(pack, row.interview_type)
+      : formatIdForExamForm(pack, 'design');
     return {
       id: row.id,
       source: 'design' as const,
@@ -133,7 +136,7 @@ function projectDesignCases(
       campaignId,
       nodeId: null,
       formatId,
-      rubricId: legacyRubricId(formatId),
+      rubricId: rubricIdForFormat(pack, formatId),
       competencyIds: [],
       questionMd: [`# ${row.title}`, row.scenario_md].join('\n\n'),
       answerMd: row.user_answer_md ?? '',

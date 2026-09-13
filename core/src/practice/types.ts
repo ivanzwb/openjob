@@ -109,10 +109,10 @@ export interface PracticeSession {
 
 export interface PracticeSessionInput {
   campaignId: string;
-  /** 岗位包声明的题型 ID；与 legacyExamForm 二选一 */
+  /** 岗位包声明的题型 ID；与 examForm 二选一 */
   formatId?: string;
   /** 兼容入口：旧 ExamForm 按岗位包映射成 formatId */
-  legacyExamForm?: ExamForm;
+  examForm?: ExamForm;
   nodeId?: string | null;
   previousAttemptId?: string | null;
   /** 用户本次明确要求，优先级最低 */

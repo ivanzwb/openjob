@@ -7,8 +7,7 @@
  * 用户会背去考场的假经历。
  */
 import { describe, expect, it } from 'vitest';
-import { SOFTWARE_ENGINEERING_FORMAT_IDS } from '../plugins/legacyRoleData';
-import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
+import { SOFTWARE_ENGINEERING_FORMAT_IDS, softwareEngineeringRolePack } from '@plugins/softwareEngineering';
 import { PromptCompositionError, composePrompt } from '../prompts/composer';
 import type { PromptRuntimeSnapshot } from '../prompts/composer';
 import type { CandidateEvidence } from '../entities';

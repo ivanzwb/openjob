@@ -38,7 +38,7 @@ v1.0 引入三个岗位包（软件工程、产品经理、销售/客户成功�
 
 ### 1.2 回填的幂等与断点
 
-`backfillLegacyCampaignPluginRuntime`（`desktop/src/main/db/backfill/pluginRuntime.ts`）
+`backfillPrePluginCampaignRuntime`（`desktop/src/main/db/backfill/pluginRuntime.ts`）
 在单个事务里写 profile、binding、descriptor，最后落一条 `migration_checkpoint`。
 
 - 已有 checkpoint 时第二次执行不做任何写入（幂等）；

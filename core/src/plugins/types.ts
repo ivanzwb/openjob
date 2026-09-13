@@ -1,5 +1,6 @@
 import type {
   CompetencyCategory,
+  ExamForm,
   FollowUpStrategy,
   InterviewProtocol,
   PluginType,
@@ -253,6 +254,15 @@ export interface RolePack {
   competencyTemplates: CompetencyTemplate[];
   interviewStages: InterviewStageTemplate[];
   interviewFormats: InterviewFormatDefinition[];
+  /**
+   * ExamForm（旧题型取值）→ interviewFormat id 的映射，声明本包承认哪些旧题型。
+   *
+   * 插件化之前写入的 knowledge_node.exam_forms / design_case.interview_type 存的是
+   * 旧题型取值；宿主读旧数据时按这份声明翻译成当前包的 interviewFormat id——包装了就
+   * 按声明恢复旧数据投影（装上软件工程包即恢复原功能），没装/没声明时宿主回退空串与
+   * 默认题型。id 必须指向 interviewFormats 里存在的格式（plugin contract test 校验）。
+   */
+  examFormMappings?: Readonly<Partial<Record<ExamForm, string>>>;
   rubrics: RubricDefinition[];
   taskTemplates: TaskTemplate[];
   promptFragments: PromptFragment[];

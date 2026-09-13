@@ -9,7 +9,6 @@
  */
 import type { Database } from 'better-sqlite3';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { legacyRuntimeDescriptor } from '@core/planner/contributions';
 import {
   PHASE0_CAMPAIGN,
   PHASE0_NODES,
@@ -23,16 +22,19 @@ import {
   applyMigrations,
   captureContents,
   captureShapes,
-  newLegacyDb,
+  newMigratedDb,
   type TableShapes,
-} from './__fixtures__/legacyDb';
-import { backfillLegacyCampaignPluginRuntime } from './backfill/pluginRuntime';
+} from './__fixtures__/migratedDb';
+import { backfillPrePluginCampaignRuntime } from './backfill/pluginRuntime';
+import { descriptorFromRolePack } from '@core/planner/contributions';
+import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
+import { CORE_VERSION, RUNTIME_SCHEMA_VERSION } from '../plugins/runtime';
 
 /** 插件运行时迁移之前的最后一条：旧库就停在这里。 */
 const PRE_PLUGIN_MIGRATION = '0022_campaign_resume_backfill';
 const PLUGIN_MIGRATION = '0023_plugin_runtime_persistence';
 
-function seedLegacyCampaign(raw: Database): void {
+function seedPrePluginCampaign(raw: Database): void {
   raw
     .prepare(
       `INSERT INTO campaign (
@@ -115,35 +117,35 @@ function one<T>(raw: Database, sql: string, ...args: unknown[]): T {
 
 describe('Phase 0 旧库兼容性', () => {
   let raw: Database;
-  let legacyShapes: TableShapes;
+  let prePluginShapes: TableShapes;
 
   beforeEach(() => {
-    raw = newLegacyDb({ through: PRE_PLUGIN_MIGRATION });
-    seedLegacyCampaign(raw);
-    legacyShapes = captureShapes(raw);
+    raw = newMigratedDb({ through: PRE_PLUGIN_MIGRATION });
+    seedPrePluginCampaign(raw);
+    prePluginShapes = captureShapes(raw);
   });
 
   it('旧库停在插件化之前，本来就没有插件运行时的表和列', () => {
-    expect(Object.keys(legacyShapes)).not.toContain('campaign_runtime_descriptor');
-    expect(legacyShapes.campaign).not.toContain('role_profile_id');
+    expect(Object.keys(prePluginShapes)).not.toContain('campaign_runtime_descriptor');
+    expect(prePluginShapes.campaign).not.toContain('role_profile_id');
   });
 
   it('升级并回填之后旧数据一个字节都没被重写', () => {
-    const before = captureContents(raw, legacyShapes);
+    const before = captureContents(raw, prePluginShapes);
 
     applyMigrations(raw, { after: PRE_PLUGIN_MIGRATION });
-    expect(backfillLegacyCampaignPluginRuntime(raw, { now: () => 1_700_000_001_000 })).toEqual({
+    expect(backfillPrePluginCampaignRuntime(raw, { pack: softwareEngineeringRolePack, now: () => 1_700_000_001_000 })).toEqual({
       completed: 1,
       failures: [],
     });
 
     // 只比较旧列：新增列不算旧数据被改动，要盯的是旧列的值有没有被悄悄重写
-    expect(captureContents(raw, legacyShapes)).toEqual(before);
+    expect(captureContents(raw, prePluginShapes)).toEqual(before);
   });
 
   it('回填只在 campaign 上补一个 role_profile_id', () => {
     applyMigrations(raw, { after: PRE_PLUGIN_MIGRATION });
-    backfillLegacyCampaignPluginRuntime(raw);
+    backfillPrePluginCampaignRuntime(raw, { pack: softwareEngineeringRolePack });
 
     const campaign = one<{ role_profile_id: string | null }>(
       raw,
@@ -163,7 +165,7 @@ describe('Phase 0 旧库兼容性', () => {
 
   it('回填出的 descriptor hash 与共享层排程用的那份一致', () => {
     applyMigrations(raw, { after: PRE_PLUGIN_MIGRATION });
-    backfillLegacyCampaignPluginRuntime(raw);
+    backfillPrePluginCampaignRuntime(raw, { pack: softwareEngineeringRolePack });
 
     const stored = one<{ config_snapshot_hash: string; revision: number }>(
       raw,
@@ -173,17 +175,21 @@ describe('Phase 0 旧库兼容性', () => {
     );
 
     expect(stored.revision).toBe(1);
-    // 桌面回填和共享层的兜底 descriptor 各自硬编码了一套 legacy 常量。回填前后
-    // 排程结果不许跳变，所以这两套常量算出的 hash 必须相等——这里是唯一会在它们
-    // 漂移时失败的地方。
+    // 回填与共享层排程的兜底走同一条 descriptorFromRolePack（从已安装岗位包解析），
+    // 版本常量统一取 plugins/runtime，避免两处字面量漂移。回填前后排程结果不许跳变，
+    // 所以回填写入的 hash 必须等于排程兜底算出的那份——这里是唯一会在它们漂移时
+    // 失败的地方。
     expect(stored.config_snapshot_hash).toBe(
-      legacyRuntimeDescriptor(PHASE0_CAMPAIGN.id).configSnapshotHash,
+      descriptorFromRolePack(PHASE0_CAMPAIGN.id, softwareEngineeringRolePack, {
+        coreVersion: CORE_VERSION,
+        schemaVersion: RUNTIME_SCHEMA_VERSION,
+      }).configSnapshotHash,
     );
   });
 
   it('升级不影响四种题型的考点和已排好的 readCode', () => {
     applyMigrations(raw, { after: PRE_PLUGIN_MIGRATION });
-    backfillLegacyCampaignPluginRuntime(raw);
+    backfillPrePluginCampaignRuntime(raw, { pack: softwareEngineeringRolePack });
 
     const examForms = new Set(
       (

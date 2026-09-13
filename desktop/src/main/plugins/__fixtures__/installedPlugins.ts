@@ -38,8 +38,8 @@ export function installedCapabilitySuiteEntry(): PluginInventoryEntry {
   };
 }
 
-/** legacy 1.0.0 条目：历史 descriptor pin 退役 id@1.0.0，归一化后按该版本判 installed。 */
-export function legacyCapabilitySuiteEntry(): PluginInventoryEntry {
+/** 历史 1.0.0 条目：历史 descriptor pin 退役 id@1.0.0，归一化后按该版本判 installed。 */
+export function historicalCapabilitySuiteEntry(): PluginInventoryEntry {
   const suite = synthesizeSuiteFromRolePack(softwareEngineeringRolePack);
   if (!suite) throw new Error('SE 包合成套件失败');
   const manifest = { ...suite.manifest, version: '1.0.0' };
@@ -53,9 +53,9 @@ export function legacyCapabilitySuiteEntry(): PluginInventoryEntry {
   };
 }
 
-/** 两个版本一起装：当前 1.4.0 + legacy 1.0.0，与「旧版本仍装着」的生产常态一致。 */
+/** 两个版本一起装：当前 1.4.0 + 历史 1.0.0，与「旧版本仍装着」的生产常态一致。 */
 export function installedCapabilitySuiteEntries(): PluginInventoryEntry[] {
-  return [installedCapabilitySuiteEntry(), legacyCapabilitySuiteEntry()];
+  return [installedCapabilitySuiteEntry(), historicalCapabilitySuiteEntry()];
 }
 
 function collectContributions(suite: CapabilityPlugin): PluginPackageContributions {

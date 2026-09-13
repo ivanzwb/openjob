@@ -1,12 +1,9 @@
 import type { TaskTemplate } from '@core/plugins/types';
 import { EXAM_FORMS, TASK_KINDS } from '@core/enums';
 import { CORE_CAPABILITIES_PACK_ID } from '@core/plugins/capabilitySuite';
-import {
-  SOFTWARE_ENGINEERING_FORMAT_IDS,
-  formatIdForLegacyExamForm,
-} from '@core/plugins/legacyRoleData';
+import { SOFTWARE_ENGINEERING_FORMAT_IDS, formatIdForExamForm } from './examForms';
 
-const allFormatIds = EXAM_FORMS.map(formatIdForLegacyExamForm);
+const allFormatIds = EXAM_FORMS.map(formatIdForExamForm);
 
 export const taskTemplates: TaskTemplate[] = [
   {

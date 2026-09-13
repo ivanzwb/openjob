@@ -4,14 +4,16 @@ import type { DateOnly } from '@core/entities';
 import type { PlanGenerateResult, TaskView, TodayCampaignOption, TodayPlan } from '@core/ipc';
 import type { TaskKind } from '@core/enums';
 import {
-  LEGACY_CAMPAIGN_SCOPE_KIND,
+  PRE_PLUGIN_CAMPAIGN_SCOPE_KIND,
+  descriptorFromRolePack,
   collectPlannerContributions,
-  legacyRuntimeDescriptor,
   type PlannerRepo,
 } from '@core/planner/contributions';
 import type { CampaignRuntimeDescriptor } from '@core/plugins/types';
 import { getDb, schema } from '../db';
 import {
+  CORE_VERSION,
+  RUNTIME_SCHEMA_VERSION,
   findInstalledRolePack,
   findLatestRolePack,
   listInstalledPlugins,
@@ -19,6 +21,9 @@ import {
 import { getCampaignRow, listCampaigns, rowToNode, updateCampaign } from '../campaign/repository';
 import { sortNodesByStudyOrder } from '../campaign/edges';
 import { recordPlanChange, recordPlanDecision } from './session';
+
+// 插件化之前，本应用只有软件工程一个岗位族：pre-plugin 标记的旧战役默认使用它。
+export const PRE_PLUGIN_DEFAULT_ROLE_PACK_ID = 'software-engineering';
 
 function formatLocal(d: Date): DateOnly {
   const y = d.getFullYear();
@@ -59,7 +64,7 @@ function conservativeEst(minutes: number): number {
 }
 
 /** 是否属于插件化迁移那一刻就已存在的那批 Campaign（凭据由 0027 打上） */
-function isLegacyScopedCampaign(campaignId: string): boolean {
+function isPrePluginScopedCampaign(campaignId: string): boolean {
   return (
     getDb()
       .select({ id: schema.migrationCheckpoint.id })
@@ -67,7 +72,7 @@ function isLegacyScopedCampaign(campaignId: string): boolean {
       .where(
         and(
           eq(schema.migrationCheckpoint.campaignId, campaignId),
-          eq(schema.migrationCheckpoint.kind, LEGACY_CAMPAIGN_SCOPE_KIND),
+          eq(schema.migrationCheckpoint.kind, PRE_PLUGIN_CAMPAIGN_SCOPE_KIND),
         ),
       )
       .get() !== undefined
@@ -78,7 +83,7 @@ function isLegacyScopedCampaign(campaignId: string): boolean {
  * 取当前激活的 revision。
  *
  * 没有 descriptor 的两种情况必须分开：插件化之前就存在的旧 Campaign（带
- * `LEGACY_CAMPAIGN_SCOPE_KIND` 凭据）在回填完成前继续走工程岗位包默认值，排程
+ * `PRE_PLUGIN_CAMPAIGN_SCOPE_KIND` 凭据）在回填完成前继续走工程岗位包默认值，排程
  * 结果不跳变；而新建的、还没选岗位的战役返回 null，不排任何插件任务。
  */
 function loadRuntimeDescriptor(campaignId: string): CampaignRuntimeDescriptor | null {
@@ -88,7 +93,17 @@ function loadRuntimeDescriptor(campaignId: string): CampaignRuntimeDescriptor | 
     .where(eq(schema.campaignRuntimeDescriptor.campaignId, campaignId))
     .orderBy(desc(schema.campaignRuntimeDescriptor.revision))
     .get();
-  if (!row) return isLegacyScopedCampaign(campaignId) ? legacyRuntimeDescriptor(campaignId) : null;
+  if (!row) {
+    // 插件化之前的旧战役：默认就是软件工程战役（本应用当时的唯一岗位族）。
+    // descriptor 从「当前安装的岗位包」构建——插件装上即原功能，没装则无插件任务
+    if (!isPrePluginScopedCampaign(campaignId)) return null;
+    const pack = findLatestRolePack(PRE_PLUGIN_DEFAULT_ROLE_PACK_ID);
+    if (!pack) return null;
+    return descriptorFromRolePack(campaignId, pack, {
+      coreVersion: CORE_VERSION,
+      schemaVersion: RUNTIME_SCHEMA_VERSION,
+    });
+  }
 
   return {
     campaignId,

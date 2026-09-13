@@ -23,7 +23,7 @@ import {
 import { planMerge } from '@core/syncMerge';
 import { MIGRATIONS } from '../db/migrations/bundle';
 // 桌面侧一律用真实实现：这条用例的全部价值就在于两端不是同一份代码
-import { newLegacyDb } from '../../../desktop/src/main/db/__fixtures__/legacyDb';
+import { newMigratedDb } from '../../../desktop/src/main/db/__fixtures__/migratedDb';
 import { applyAutoChanges } from '../../../desktop/src/main/sync/apply';
 import { collectChangeSet as collectDesktopChangeSet } from '../../../desktop/src/main/sync/collect';
 import { buildMergeContext } from '../../../desktop/src/main/sync/labels';
@@ -216,7 +216,7 @@ beforeEach(() => {
   installSyncTriggers(phone, PHONE_ID);
   seedPhone();
 
-  desktop = newLegacyDb();
+  desktop = newMigratedDb();
   desktop.prepare(`INSERT INTO sync_meta (key, value) VALUES ('deviceId', ?)`).run(DESKTOP_ID);
   desktop.prepare(`INSERT INTO sync_meta (key, value) VALUES ('displayName', ?)`).run('桌面端');
   installDesktopTriggers(desktop, DESKTOP_ID);

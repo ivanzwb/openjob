@@ -8,7 +8,6 @@ import { describe, expect, it } from 'vitest';
 import {
   REQUIRES_DESKTOP_REASON,
   collectPlannerContributions,
-  legacyRuntimeDescriptor,
   pluginTaskClientView,
   type PlannedTask,
   type PlannerContext,
@@ -16,11 +15,11 @@ import {
 } from './contributions';
 import {
   CROSS_CLIENT_PLAN,
-  crossClientLegacyPlan,
+  crossClientPrePluginPlan,
   dailyBudget,
-  legacyPlan,
-  type LegacyPlanDay,
-} from './__fixtures__/legacyPlan';
+  prePluginPlan,
+  type PrePluginPlanDay,
+} from './__fixtures__/prePluginPlan';
 import type { CampaignRuntimeDescriptor, ClientPlatform } from '../plugins/types';
 import { installedCapabilitySuiteOnly } from '../plugins/__fixtures__/installed';
 import { CORE_CAPABILITIES_PACK_ID } from '../plugins/capabilitySuite';
@@ -31,11 +30,11 @@ const REPOS: PlannerRepo[] = [...CROSS_CLIENT_PLAN.repos];
 function descriptor(
   overrides: Partial<CampaignRuntimeDescriptor> = {},
 ): CampaignRuntimeDescriptor {
-  return { ...legacyRuntimeDescriptor(CROSS_CLIENT_PLAN.campaignId), ...overrides };
+  return { ...prePluginRuntimeDescriptor(CROSS_CLIENT_PLAN.campaignId), ...overrides };
 }
 
 function contextFor(
-  day: LegacyPlanDay,
+  day: PrePluginPlanDay,
   dayCount: number,
   dailyMinutes: number,
   platform: ClientPlatform = 'desktop',
@@ -61,7 +60,7 @@ describe('collectPlannerContributions', () => {
   it('启用 source-repository 且有已索引仓库时，readCode 节奏与插件化之前逐条一致', () => {
     // 覆盖预算刚好装得下、装不下和完全排不进的几档
     for (const dailyMinutes of [40, 60, 90, 120, 180, 240]) {
-      const days = legacyPlan({
+      const days = prePluginPlan({
         today: CROSS_CLIENT_PLAN.today,
         interviewDate: CROSS_CLIENT_PLAN.interviewDate,
         dailyMinutes,
@@ -98,7 +97,7 @@ describe('collectPlannerContributions', () => {
   });
 
   it('插件任务带上贡献者与能力来源，便于审计', () => {
-    const days = crossClientLegacyPlan();
+    const days = crossClientPrePluginPlan();
 
     const tasks = collectPlannerContributions(
       descriptor(),
@@ -125,7 +124,7 @@ describe('collectPlannerContributions', () => {
   });
 
   it('未启用 source-repository 时不生成 readCode', () => {
-    const days = crossClientLegacyPlan();
+    const days = crossClientPrePluginPlan();
     const disabled = descriptor({
       capabilities: [
         {
@@ -145,7 +144,7 @@ describe('collectPlannerContributions', () => {
   });
 
   it('非工程岗位包即使启用了同一能力也不排 readCode', () => {
-    const days = crossClientLegacyPlan();
+    const days = crossClientPrePluginPlan();
     const productManager = descriptor({
       rolePack: { id: 'product-manager', version: '1.0.0' },
     });
@@ -161,7 +160,7 @@ describe('collectPlannerContributions', () => {
   });
 
   it('descriptor pin 的版本不在本机时，按已装同 id 包继续排（插件装上即功能一致）', () => {
-    const days = crossClientLegacyPlan();
+    const days = crossClientPrePluginPlan();
     const pinnedToMissing = descriptor({
       capabilities: [{ id: 'source-repository', version: '9.9.9', enabled: true }],
     });
@@ -177,7 +176,7 @@ describe('collectPlannerContributions', () => {
   });
 
   it('没有已索引仓库时不生成 readCode', () => {
-    const days = crossClientLegacyPlan();
+    const days = crossClientPrePluginPlan();
 
     expect(
       collectPlannerContributions(
@@ -190,7 +189,7 @@ describe('collectPlannerContributions', () => {
   });
 
   it('多个已索引仓库时按 url 定序，两端选到同一个', () => {
-    const days = crossClientLegacyPlan();
+    const days = crossClientPrePluginPlan();
     const shuffled: PlannerRepo[] = [
       { id: 'repo-z', url: 'https://example.com/zeta', status: 'ready' },
       { id: 'repo-a', url: 'https://example.com/alpha', status: 'ready' },
@@ -212,7 +211,7 @@ describe('collectPlannerContributions', () => {
   });
 
   it('两端相同输入产生逐条相同的插件任务，只有本机可执行状态不同', () => {
-    const days = crossClientLegacyPlan();
+    const days = crossClientPrePluginPlan();
 
     for (const day of days) {
       const desktop = collectPlannerContributions(
@@ -246,7 +245,7 @@ describe('collectPlannerContributions', () => {
  */
 describe('还没选岗位的 Campaign', () => {
   it('不排任何插件任务', () => {
-    const days = legacyPlan({
+    const days = prePluginPlan({
       today: CROSS_CLIENT_PLAN.today,
       interviewDate: CROSS_CLIENT_PLAN.interviewDate,
       dailyMinutes: CROSS_CLIENT_PLAN.dailyMinutes,
@@ -310,3 +309,4 @@ describe('pluginTaskClientView', () => {
     ).toBeNull();
   });
 });
+import { prePluginRuntimeDescriptor } from '../plugins/__fixtures__/prePluginDescriptor';

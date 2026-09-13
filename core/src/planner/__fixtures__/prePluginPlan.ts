@@ -7,14 +7,14 @@
 import type { DateOnly } from '../../entities';
 import type { TaskKind } from '../../enums';
 
-export interface LegacyPlanNode {
+export interface PrePluginPlanNode {
   id: string;
   estMinutes: number;
   status: string;
   mastery: number;
 }
 
-export interface LegacyPlanTask {
+export interface PrePluginPlanTask {
   kind: TaskKind;
   nodeId: string | null;
   repoId: string | null;
@@ -22,21 +22,21 @@ export interface LegacyPlanTask {
   orderIdx: number;
 }
 
-export interface LegacyPlanDay {
+export interface PrePluginPlanDay {
   dayIndex: number;
   date: DateOnly;
   /** 插件任务之前已占用的分钟数，插件贡献者按它判断预算 */
   baseMinutes: number;
   plannedMinutes: number;
-  tasks: LegacyPlanTask[];
+  tasks: PrePluginPlanTask[];
 }
 
-export interface LegacyPlanInput {
+export interface PrePluginPlanInput {
   today: DateOnly;
   interviewDate: DateOnly;
   dailyMinutes: number;
   /** 已按备考顺序排好的考点 */
-  nodes: LegacyPlanNode[];
+  nodes: PrePluginPlanNode[];
   defaultRepoId: string | null;
 }
 
@@ -76,17 +76,17 @@ export function conservativeEst(minutes: number): number {
   return Math.max(10, Math.ceil(minutes * 0.75));
 }
 
-export function legacyPlan(input: LegacyPlanInput): LegacyPlanDay[] {
+export function prePluginPlan(input: PrePluginPlanInput): PrePluginPlanDay[] {
   const dates = daysBetween(input.today, input.interviewDate);
   const nodes = input.nodes;
-  const days: LegacyPlanDay[] = [];
+  const days: PrePluginPlanDay[] = [];
   const learnedQueue: string[] = [];
   let nodeIdx = 0;
 
   for (let di = 0; di < dates.length; di += 1) {
     const budget = dailyBudget(input.dailyMinutes);
     let used = 0;
-    const tasks: LegacyPlanTask[] = [];
+    const tasks: PrePluginPlanTask[] = [];
 
     if (di > 0 && learnedQueue.length > 0) {
       const drillId = learnedQueue.shift()!;
@@ -187,7 +187,7 @@ export interface CrossClientRepo {
 
 /**
  * 桌面与手机共用的排程输入。两端各自落库后按 (date, orderIdx) 逐条比对，
- * 必须与 `crossClientLegacyPlan()` 完全一致。
+ * 必须与 `crossClientPrePluginPlan()` 完全一致。
  */
 export const CROSS_CLIENT_PLAN = {
   campaignId: 'c-cross-client',
@@ -210,8 +210,8 @@ export const CROSS_CLIENT_PLAN = {
   })),
 } as const;
 
-export function crossClientLegacyPlan(): LegacyPlanDay[] {
-  return legacyPlan({
+export function crossClientPrePluginPlan(): PrePluginPlanDay[] {
+  return prePluginPlan({
     today: CROSS_CLIENT_PLAN.today,
     interviewDate: CROSS_CLIENT_PLAN.interviewDate,
     dailyMinutes: CROSS_CLIENT_PLAN.dailyMinutes,

@@ -24,7 +24,7 @@ import {
   PHASE1_NODES,
 } from '@core/plugins/__fixtures__/phase1Campaign';
 import type { ComposedPrompt } from '@core/prompts/composer';
-import { newLegacyDb } from '../db/__fixtures__/legacyDb';
+import { newMigratedDb } from '../db/__fixtures__/migratedDb';
 import { installRolePacks } from '../plugins/__fixtures__/installedPlugins';
 import { setCampaignRoleProfile } from '../plugins/runtime';
 import { createPracticeService, type PracticeService } from './service';
@@ -75,7 +75,7 @@ interface Harness {
 function newProductPracticeDb(): Database {
   // 岗位包由用户安装，绑定之前先装上
   installRolePacks();
-  const raw = newLegacyDb();
+  const raw = newMigratedDb();
 
   raw
     .prepare(

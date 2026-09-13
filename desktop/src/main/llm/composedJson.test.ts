@@ -7,8 +7,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type OpenAI from 'openai';
-import { SOFTWARE_ENGINEERING_FORMAT_IDS } from '@core/plugins/legacyRoleData';
-import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
+import { SOFTWARE_ENGINEERING_FORMAT_IDS, softwareEngineeringRolePack } from '@plugins/softwareEngineering';
 import type { ResolvedCapabilityRef } from '@core/plugins/types';
 import { composePrompt } from '@core/prompts/composer';
 import { CORE_PROMPT_POLICY } from '@core/prompts/grounding';

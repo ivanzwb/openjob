@@ -39,13 +39,12 @@ import {
   type PracticeTurnInput,
 } from '@core/practice';
 import { toPromptEvidenceList } from '@core/evidence/promptEvidence';
-import { formatIdForLegacyExamForm } from '@core/plugins/legacyRoleData';
+import { examFormForFormatId, formatIdForExamForm } from '@core/plugins/examForms';
 import { composePrompt, type ComposedPrompt, type PromptEvidence } from '@core/prompts/composer';
 import type { RolePack } from '@core/plugins/types';
 import { listConfirmedEvidence } from '../evidence/repository';
 import { writeMasterySignal } from './mastery';
 import {
-  legacyExamFormForFormatId,
   resolveCampaignPracticeRuntime,
   type CampaignPracticeRuntime,
 } from './rolePack';
@@ -101,7 +100,10 @@ export function createPracticeService(deps: PracticeServiceDeps): PracticeServic
   const newId = (): string => deps.newId?.() ?? randomUUID();
 
   function resolve(campaignId: string, formatId: string): Resolved {
-    const runtime = resolveCampaignPracticeRuntime(raw, campaignId);
+    return resolveWith(resolveCampaignPracticeRuntime(raw, campaignId), formatId);
+  }
+
+  function resolveWith(runtime: CampaignPracticeRuntime, formatId: string): Resolved {
     const { format, rubric } = resolvePracticeFormat(runtime.rolePack, formatId);
     return { ...runtime, formatId, format, rubric };
   }
@@ -115,7 +117,7 @@ export function createPracticeService(deps: PracticeServiceDeps): PracticeServic
    */
   function promptParams(resolved: Resolved): Record<string, string | undefined> {
     return {
-      type: legacyExamFormForFormatId(resolved.formatId),
+      type: examFormForFormatId(resolved.rolePack, resolved.formatId),
       language: resolved.interviewLanguage,
     };
   }
@@ -156,17 +158,20 @@ export function createPracticeService(deps: PracticeServiceDeps): PracticeServic
   }
 
   async function createSession(input: PracticeSessionInput): Promise<PracticeSession> {
+    // 先解岗位包再翻译题型：examForm → formatId 的映射归岗位包所有（examFormMappings），
+    // 缺包时 resolveCampaignPracticeRuntime 直接报 role-pack-unavailable
+    const runtime = resolveCampaignPracticeRuntime(raw, input.campaignId);
     const formatId =
       input.formatId ??
-      (input.legacyExamForm ? formatIdForLegacyExamForm(input.legacyExamForm) : undefined);
+      (input.examForm ? formatIdForExamForm(runtime.rolePack, input.examForm) : undefined);
     if (!formatId) {
       throw new PracticeError(
         'unknown-format',
-        'createSession 必须给出 formatId 或 legacyExamForm',
+        'createSession 必须给出 formatId 或 examForm',
       );
     }
 
-    const resolved = resolve(input.campaignId, formatId);
+    const resolved = resolveWith(runtime, formatId);
     const prompt = questionPrompt(
       resolved,
       resolved.rolePack,

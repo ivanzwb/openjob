@@ -18,10 +18,11 @@ import { createPracticeService, type PracticeService } from './service';
 export { writeMasterySignal } from './mastery';
 export { createPracticeService, type PracticeService } from './service';
 export { listPracticeHistory, getPracticeAttemptScores } from './history';
+export { examFormForFormatId } from '@core/plugins/examForms';
 export {
   resolveCampaignPracticeRuntime,
-  legacyExamFormForFormatId,
   findRolePack,
+  getCampaignPracticePack,
 } from './rolePack';
 
 let service: PracticeService | null = null;

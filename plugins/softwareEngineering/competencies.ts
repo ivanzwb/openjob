@@ -1,5 +1,5 @@
 import type { CompetencyTemplate } from '@core/plugins/types';
-import { SOFTWARE_ENGINEERING_FORMAT_IDS } from '@core/plugins/legacyRoleData';
+import { SOFTWARE_ENGINEERING_FORMAT_IDS } from './examForms';
 
 export const competencyTemplates: CompetencyTemplate[] = [
   {

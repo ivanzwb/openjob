@@ -12,13 +12,11 @@ import { EXAM_FORMS } from '../enums';
 import {
   REQUIRES_DESKTOP_REASON,
   collectPlannerContributions,
-  legacyRuntimeDescriptor,
   type PlannerContext,
   type PlannerRepo,
 } from '../planner/contributions';
 import { composePrompt } from '../prompts/composer';
-import { formatIdForLegacyExamForm } from './legacyRoleData';
-import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
+import { formatIdForExamForm, softwareEngineeringRolePack } from '@plugins/softwareEngineering';
 import {
   capabilityIdResolvedBySuite,
   CORE_CAPABILITIES_PACK_ID,
@@ -75,15 +73,15 @@ function withCapabilityDisabled(
 describe('Phase 0 兼容性闸门', () => {
   it('工程 JD 的四种题型仍然各自组合得出 Prompt', () => {
     // 组合器要求岗位包版本与 descriptor 逐字一致：岗位包换代到 1.1.0 后，
-    // 这里的运行时绑定也按当前包写（legacyRuntimeDescriptor 描述的是历史包，别混用）
+    // 这里的运行时绑定也按当前包写（prePluginRuntimeDescriptor 描述的是历史包，别混用）
     const runtime: CampaignRuntimeDescriptor = {
-      ...legacyRuntimeDescriptor(CAMPAIGN_ID),
+      ...prePluginRuntimeDescriptor(CAMPAIGN_ID),
       rolePack: {
         id: softwareEngineeringRolePack.manifest.id,
         version: softwareEngineeringRolePack.manifest.version,
       },
     };
-    const formatIds = EXAM_FORMS.map(formatIdForLegacyExamForm);
+    const formatIds = EXAM_FORMS.map(formatIdForExamForm);
     expect(new Set(formatIds).size).toBe(EXAM_FORMS.length);
 
     for (const [index, examForm] of EXAM_FORMS.entries()) {
@@ -106,7 +104,7 @@ describe('Phase 0 兼容性闸门', () => {
   });
 
   it('有 ready repo 时仍然排得出 readCode', () => {
-    const tasks = collectPlannerContributions(legacyRuntimeDescriptor(CAMPAIGN_ID), context());
+    const tasks = collectPlannerContributions(prePluginRuntimeDescriptor(CAMPAIGN_ID), context());
 
     expect(tasks).toHaveLength(1);
     expect(tasks[0]).toMatchObject({
@@ -122,7 +120,7 @@ describe('Phase 0 兼容性闸门', () => {
   it('只有未索引仓库时不排 readCode', () => {
     const pendingOnly = repos().filter((repo) => repo.status !== 'ready');
     const tasks = collectPlannerContributions(
-      legacyRuntimeDescriptor(CAMPAIGN_ID),
+      prePluginRuntimeDescriptor(CAMPAIGN_ID),
       context({ repos: pendingOnly }),
     );
 
@@ -130,7 +128,7 @@ describe('Phase 0 兼容性闸门', () => {
   });
 
   it('禁用 source-repository 后既不排任务，也不认这项能力', () => {
-    const disabled = withCapabilityDisabled(legacyRuntimeDescriptor(CAMPAIGN_ID));
+    const disabled = withCapabilityDisabled(prePluginRuntimeDescriptor(CAMPAIGN_ID));
 
     expect(collectPlannerContributions(disabled, context())).toEqual([]);
 
@@ -145,7 +143,7 @@ describe('Phase 0 兼容性闸门', () => {
   });
 
   it('手机把 readCode 标成需桌面完成，而不是少排一条', () => {
-    const runtime = legacyRuntimeDescriptor(CAMPAIGN_ID);
+    const runtime = prePluginRuntimeDescriptor(CAMPAIGN_ID);
     const desktop = collectPlannerContributions(runtime, context({ platform: 'desktop' }));
     const mobile = collectPlannerContributions(runtime, context({ platform: 'mobile' }));
 
@@ -162,7 +160,7 @@ describe('Phase 0 兼容性闸门', () => {
   });
 
   it('本机降级只算视图，不改 descriptor', () => {
-    const runtime = legacyRuntimeDescriptor(CAMPAIGN_ID);
+    const runtime = prePluginRuntimeDescriptor(CAMPAIGN_ID);
     const before = structuredClone(runtime);
 
     const views = (['desktop', 'mobile'] as const).map((platform) =>
@@ -183,3 +181,4 @@ describe('Phase 0 兼容性闸门', () => {
     expect(views[1].readOnlyCapabilityIds).toEqual([CORE_CAPABILITIES_PACK_ID]);
   });
 });
+import { prePluginRuntimeDescriptor } from '../plugins/__fixtures__/prePluginDescriptor';

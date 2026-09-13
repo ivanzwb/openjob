@@ -6,8 +6,7 @@
  * 每次生成都记得住用了哪个版本的插件。删掉其中任何一组，对应的边界就没人守了。
  */
 import { describe, expect, it } from 'vitest';
-import { SOFTWARE_ENGINEERING_FORMAT_IDS } from '../plugins/legacyRoleData';
-import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
+import { SOFTWARE_ENGINEERING_FORMAT_IDS, softwareEngineeringRolePack } from '@plugins/softwareEngineering';
 import type { PromptSlot, ResolvedCapabilityRef, RolePack } from '../plugins/types';
 import {
   PROMPT_LAYER_ORDER,

@@ -32,15 +32,12 @@ import type {
   RolePack,
 } from '@core/plugins/types';
 import type { RoleProfile } from '@core/entities';
-import {
-  LEGACY_CORE_VERSION,
-  LEGACY_SCHEMA_VERSION,
-} from '../db/backfill/pluginRuntime';
+
 import type { PluginInventoryEntry } from './inventory';
 
-/** 与 backfill 共用同一组常量，回填出来的旧 Campaign 与新写入的 hash 才可比。 */
-export const CORE_VERSION = LEGACY_CORE_VERSION;
-export const RUNTIME_SCHEMA_VERSION = LEGACY_SCHEMA_VERSION;
+/** descriptor 写入用的核心版本与 schema 版本（当前值）。 */
+export const CORE_VERSION = '1.0.0';
+export const RUNTIME_SCHEMA_VERSION = 23;
 
 interface DescriptorRow {
   revision: number;

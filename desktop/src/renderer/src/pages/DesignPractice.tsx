@@ -55,12 +55,12 @@ const ANSWER_PLACEHOLDER: Record<MockInterviewKind, Record<MockInterviewLanguage
  * 核心里。计划要求旧通道再可用一个发布周期，所以这里不是替换而是并存——已经存了题目和
  * 作答的用户切回「经典模拟」还能接着做完，不会因为升级一次就丢掉半道题。
  */
-type PracticeMode = 'practice' | 'roleplay' | 'legacy';
+type PracticeMode = 'practice' | 'roleplay' | 'builtin';
 
 const PRACTICE_MODES: Array<{ value: PracticeMode; label: string; hint: string }> = [
   { value: 'practice', label: '通用练习', hint: '按岗位包的题型出题，逐维度量规评分' },
   { value: 'roleplay', label: '客户对话', hint: '由模型扮演客户的角色扮演对练' },
-  { value: 'legacy', label: '经典模拟（旧版）', hint: '核心内置题型，单项总分与推荐答案' },
+  { value: 'builtin', label: '经典模拟（旧版）', hint: '核心内置题型，单项总分与推荐答案' },
 ];
 
 export function DesignPractice(): React.JSX.Element {
@@ -306,7 +306,7 @@ export function DesignPractice(): React.JSX.Element {
           </select>
         </label>
         {/* 题型与语言只属于旧链路：通用练习的题型由岗位包声明，选项在 PracticeRunner 里 */}
-        {mode === 'legacy' && (
+        {mode === 'builtin' && (
           <label className="space-y-1">
             <span className="text-xs text-[var(--color-muted)]">题型</span>
             <select
@@ -329,7 +329,7 @@ export function DesignPractice(): React.JSX.Element {
             {typeHint && <p className="text-[10px] text-[var(--color-muted)]">{typeHint}</p>}
           </label>
         )}
-        {mode === 'legacy' && interviewType === 'selfIntro' && (
+        {mode === 'builtin' && interviewType === 'selfIntro' && (
           <label className="space-y-1">
             <span className="text-xs text-[var(--color-muted)]">面试语言</span>
             <select
@@ -357,7 +357,7 @@ export function DesignPractice(): React.JSX.Element {
 
       {mode === 'roleplay' && campaignId && <RolePlayRunner campaignId={campaignId} />}
 
-      {mode === 'legacy' && (
+      {mode === 'builtin' && (
         <div>
           <button
             type="button"
@@ -373,9 +373,9 @@ export function DesignPractice(): React.JSX.Element {
         </div>
       )}
 
-      {mode === 'legacy' && error && <p className="text-sm text-red-400">{error}</p>}
+      {mode === 'builtin' && error && <p className="text-sm text-red-400">{error}</p>}
 
-      {mode === 'legacy' && designCase && (
+      {mode === 'builtin' && designCase && (
         <section className="space-y-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
           <div>
             <div className="flex flex-wrap items-center gap-2">
@@ -529,7 +529,7 @@ export function DesignPractice(): React.JSX.Element {
         </section>
       )}
 
-      {mode === 'legacy' && elaborationMd !== null && (
+      {mode === 'builtin' && elaborationMd !== null && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-4 sm:items-center">
           <div className="max-h-[80vh] w-full max-w-lg overflow-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
             <div className="mb-3 flex items-center justify-between">
@@ -543,7 +543,7 @@ export function DesignPractice(): React.JSX.Element {
         </div>
       )}
 
-      {mode === 'legacy' && !designCase && !loading && campaigns.length > 0 && (
+      {mode === 'builtin' && !designCase && !loading && campaigns.length > 0 && (
         <p className="text-sm text-[var(--color-muted)]">
           选择 Campaign 和题型后点击「开始模拟」。建议在备考中完成 JD 诊断、关联简历并生成公司情报，题目会更贴近真实面试。
         </p>

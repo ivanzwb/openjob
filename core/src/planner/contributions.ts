@@ -7,17 +7,15 @@
  */
 import type { RuntimeAvailability, TaskKind } from '../enums';
 // readCode 任务的常量：工程岗位包专属，snapshot 值与包 tasks.ts 保持一致
-const SOURCE_REPOSITORY_CAPABILITY_ID = 'source-repository';
 import {
   buildClientCapabilityView,
   type ClientDegradationReason,
   type ClientPluginStatus,
   type InstalledPlugin,
 } from '../plugins/clientView';
-import { LEGACY_ROLE_PACK_REF } from '../plugins/legacyRoleData';
 import {
   normalizeCapabilityRefs,
-
+  synthesizeSuiteFromRolePack,
 } from '../plugins/capabilitySuite';
 import { hashRuntimeConfig } from '../plugins/resolver';
 import type { RolePack, TaskTemplate } from '../plugins/types';
@@ -282,7 +280,7 @@ export function pluginTaskClientView(
  * 0025_legacy_campaign_scope 负责打标，两端排程再据此判断该不该走工程岗兜底。
  * 只按 role_profile_id IS NULL 判断是不够的——新建战役同样是 NULL。
  */
-export const LEGACY_CAMPAIGN_SCOPE_KIND = 'generic-interview-v1:legacy';
+export const PRE_PLUGIN_CAMPAIGN_SCOPE_KIND = 'generic-interview-v1:legacy';
 
 /**
  * 带上述凭据、但 descriptor 还没回填出来的旧 Campaign 继续按工程岗位包执行。
@@ -292,32 +290,32 @@ export const LEGACY_CAMPAIGN_SCOPE_KIND = 'generic-interview-v1:legacy';
  *
  * 这里的 `source-repository@1.0.0` 是**历史事实**：那时它是内置能力。旧战役的
  * binding/descriptor 也 pin 着这个 id，投影与 hash 都按它算——不要跟着合编包改名，
- * 否则旧记录的 config_snapshot_hash 会跳变（同样的理由见 legacyRoleData）。
+ * 否则旧记录的 config_snapshot_hash 会跳变（同样的理由见已安装岗位包声明的
+ * examFormMappings：历史映射是冻结事实，不随合编包改名）。
  */
-export function legacyRuntimeDescriptor(campaignId: string): CampaignRuntimeDescriptor {
-  const coreVersion = '1.0.0';
-  const schemaVersion = 23;
-  const rolePack = { ...LEGACY_ROLE_PACK_REF };
-  const capabilities: CampaignRuntimeDescriptor['capabilities'] = [
-    {
-      id: SOURCE_REPOSITORY_CAPABILITY_ID,
-      version: '1.0.0',
-      enabled: true,
-    },
-  ];
+export function descriptorFromRolePack(
+  campaignId: string,
+  pack: RolePack,
+  options: { coreVersion: string; schemaVersion: number },
+): CampaignRuntimeDescriptor {
+  const suite = synthesizeSuiteFromRolePack(pack);
+  const rolePack = { id: pack.manifest.id, version: pack.manifest.version };
+  const capabilities: CampaignRuntimeDescriptor['capabilities'] = suite
+    ? [{ id: suite.manifest.id, version: suite.manifest.version, enabled: true as const }]
+    : [];
   return {
     campaignId,
-    coreVersion,
+    coreVersion: options.coreVersion,
     rolePack,
     capabilities,
-    competencyBaselineVersion: rolePack.version,
+    competencyBaselineVersion: pack.manifest.version,
     configSnapshotHash: hashRuntimeConfig({
-      coreVersion,
-      schemaVersion,
+      coreVersion: options.coreVersion,
+      schemaVersion: options.schemaVersion,
       rolePack,
       industryPack: undefined,
       capabilities,
-      competencyBaselineVersion: rolePack.version,
+      competencyBaselineVersion: pack.manifest.version,
     }),
     resolvedAt: 0,
   };

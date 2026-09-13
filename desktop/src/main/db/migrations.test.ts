@@ -13,7 +13,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
-import { LEGACY_CAMPAIGN_SCOPE_KIND } from '@core/planner/contributions';
+import { PRE_PLUGIN_CAMPAIGN_SCOPE_KIND } from '@core/planner/contributions';
 
 const MIGRATIONS_DIR = join(__dirname, 'migrations');
 
@@ -258,7 +258,7 @@ describe('plugin runtime persistence migration', () => {
 });
 
 describe('legacy campaign scope migration', () => {
-  const MOBILE_LEGACY_SCOPE = join(
+  const MOBILE_PRE_PLUGIN_SCOPE = join(
     REPO_ROOT,
     'mobile',
     'src',
@@ -271,9 +271,9 @@ describe('legacy campaign scope migration', () => {
     // 常量改了、SQL 没改的话，回填会一条也选不中，而且不会报错——只会静默不干活
     for (const [name, sql] of [
       ['desktop', sqlOf('0027_legacy_campaign_scope')],
-      ['mobile', readFileSync(MOBILE_LEGACY_SCOPE, 'utf8')],
+      ['mobile', readFileSync(MOBILE_PRE_PLUGIN_SCOPE, 'utf8')],
     ] as const) {
-      expect(sql, name).toContain(`'${LEGACY_CAMPAIGN_SCOPE_KIND}'`);
+      expect(sql, name).toContain(`'${PRE_PLUGIN_CAMPAIGN_SCOPE_KIND}'`);
     }
   });
 
@@ -304,7 +304,7 @@ describe('legacy campaign scope migration', () => {
         .prepare(
           `SELECT campaign_id FROM migration_checkpoint WHERE kind = ? ORDER BY campaign_id`,
         )
-        .all(LEGACY_CAMPAIGN_SCOPE_KIND),
+        .all(PRE_PLUGIN_CAMPAIGN_SCOPE_KIND),
     ).toEqual([{ campaign_id: 'legacy' }]);
     db.close();
   });

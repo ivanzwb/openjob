@@ -191,7 +191,7 @@ describe('createSession', () => {
 
     const session = await h.service.createSession({
       campaignId: CAMPAIGN_ID,
-      legacyExamForm: 'concept',
+      examForm: 'concept',
     });
 
     expect(session.formatId).toBe(KNOWLEDGE_FORMAT_ID);

@@ -10,7 +10,10 @@
  * 引用的完整清单（含未被插入点 B 覆盖的宿主流水线 prompt）见
  * SOFTWARE_ENGINEERING_PROMPT_REFS；被插入点 B 引用的只是其中一个子集。
  */
-import { SOFTWARE_ENGINEERING_FORMAT_IDS } from '@core/plugins/legacyRoleData';
+import {
+  SOFTWARE_ENGINEERING_FORMAT_IDS,
+  SOFTWARE_ENGINEERING_EXAM_FORM_MAPPINGS,
+} from './examForms';
 import type { PromptFragment, RolePack } from '@core/plugins/types';
 import { defineRolePack, packRoot } from '../../scripts/pack-authoring';
 import { SOFTWARE_ENGINEERING_ROLE_PACK_ID, SOFTWARE_ENGINEERING_ROLE_PACK_VERSION } from './ids';
@@ -28,6 +31,11 @@ export {
   SOFTWARE_ENGINEERING_ROLE_PACK_ID,
   SOFTWARE_ENGINEERING_ROLE_PACK_VERSION,
 } from './ids';
+export {
+  SOFTWARE_ENGINEERING_FORMAT_IDS,
+  SOFTWARE_ENGINEERING_EXAM_FORM_MAPPINGS,
+  formatIdForExamForm,
+} from './examForms';
 
 /**
  * References into PROMPT_REGISTRY. Values are keys, never copied prompt bodies.
@@ -102,6 +110,7 @@ export const softwareEngineeringRolePack: RolePack = defineRolePack({
   competencyTemplates,
   interviewStages,
   interviewFormats,
+  examFormMappings: SOFTWARE_ENGINEERING_EXAM_FORM_MAPPINGS,
   rubrics: [
     technicalKnowledgeRubric,
     codingRubric,
