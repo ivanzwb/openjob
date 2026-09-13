@@ -175,14 +175,27 @@ function capabilityStatus(
     platform,
     installed,
   });
-  return view.capabilities.find((item) => item.id === contribution.capabilityId) ?? null;
+  const status = view.capabilities.find((item) => item.id === contribution.capabilityId) ?? null;
+  if (
+    status?.reason === 'pinned-version-unavailable' &&
+    installed.some((item) => item.id === status.id)
+  ) {
+    // 插件装上即功能一致（同 id 任意已装版本）：pin 版本缺失不阻断排程，
+    // 按已装版本的运行能力放行；每次 attempt 自带 rubric/prompt 版本，历史仍可解释
+    const current = installed.find((item) => item.id === status.id)!;
+    // InstalledPlugin 的 runtime 声明决定该平台的运行能力（与 clientView 同一事实源）
+    const mode = current.runtime ? current.runtime[platform] : ('full' as RuntimeAvailability);
+    return { ...status, version: current.version, mode, reason: null };
+  }
+  return status;
 }
 
-/** 按架构第 8.6 节，这些降级只保留历史结果，不再生成新的插件任务。 */
+/** 这些降级只保留历史结果，不再生成新的插件任务（§8.6）。
+ * 注意 pinned-version-unavailable 不在此列：插件装上即功能一致（同 id 任意版本），
+ * capabilityStatus 已把这种情况放行为已装版本的运行能力。 */
 const NO_NEW_TASK_REASONS: readonly ClientDegradationReason[] = [
   'capability-disabled',
   'plugin-not-installed',
-  'pinned-version-unavailable',
 ];
 
 /** 返回 null 表示该贡献者当前不排任务；平台能力不足只降级，不停排。 */

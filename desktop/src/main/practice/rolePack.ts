@@ -12,7 +12,7 @@ import type { ExamForm } from '@core/enums';
 import { PracticeError } from '@core/practice';
 import { LEGACY_EXAM_FORM_TO_FORMAT_ID } from '@core/plugins/legacyRoleData';
 import type { CampaignRuntimeDescriptor, RolePack } from '@core/plugins/types';
-import { findInstalledRolePack, getCampaignRuntime } from '../plugins/runtime';
+import { findInstalledRolePack, findLatestRolePack, getCampaignRuntime } from '../plugins/runtime';
 
 /**
  * formatId → 旧 ExamForm 的反向映射。
@@ -62,11 +62,14 @@ export function resolveCampaignPracticeRuntime(
   }
 
   const ref = view.descriptor.rolePack;
-  const rolePack = findRolePack(ref.id, ref.version);
+  // pin 版本优先（复核旧评分要当时的量规）；不在本机时退回同 id 最新已装包——
+  // 插件装上即功能一致，不允许「装了插件还练不了」；每次 attempt 记录
+  // rubric/prompt 版本，历史可解释性由逐条 provenance 承担
+  const rolePack = findRolePack(ref.id, ref.version) ?? findLatestRolePack(ref.id);
   if (!rolePack) {
     throw new PracticeError(
       'role-pack-unavailable',
-      `本机没有岗位包 ${ref.id}@${ref.version}，无法按当时的题型与量规练习`,
+      `本机没有安装岗位包 ${ref.id}，请在插件设置中安装后再练习`,
     );
   }
 

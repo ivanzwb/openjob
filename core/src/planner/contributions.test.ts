@@ -160,18 +160,20 @@ describe('collectPlannerContributions', () => {
     }
   });
 
-  it('descriptor 固定的插件版本已不可用时停止生成新任务', () => {
+  it('descriptor pin 的版本不在本机时，按已装同 id 包继续排（插件装上即功能一致）', () => {
     const days = crossClientLegacyPlan();
     const pinnedToMissing = descriptor({
       capabilities: [{ id: 'source-repository', version: '9.9.9', enabled: true }],
     });
 
-    expect(
-      collectPlannerContributions(
-        pinnedToMissing,
-        contextFor(days[1]!, days.length, CROSS_CLIENT_PLAN.dailyMinutes),
-      ),
-    ).toEqual([]);
+    const tasks = collectPlannerContributions(
+      pinnedToMissing,
+      contextFor(days[1]!, days.length, CROSS_CLIENT_PLAN.dailyMinutes),
+    );
+    // 不再因 pin 版本缺失停排：readCode 照常生成且在桌面可执行；
+    // 历史可解释性由 attempt 自带的 rubric/prompt 版本记录承担
+    expect(tasks.length).toBeGreaterThan(0);
+    expect(tasks[0]).toMatchObject({ kind: 'readCode', client: { executable: true } });
   });
 
   it('没有已索引仓库时不生成 readCode', () => {
