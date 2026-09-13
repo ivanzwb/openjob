@@ -163,7 +163,7 @@ export function useCodePluginTabs(): ActiveCodePlugin[] {
   return active;
 }
 
-export function activateOnMount(): void {
+export function useActivateOnMount(): void {
   useEffect(() => {
     void activateInstalledCodePlugins();
   }, []);

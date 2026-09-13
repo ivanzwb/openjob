@@ -16,7 +16,10 @@
       // better-sqlite3 只需要类型：运行时那边走 node:sqlite 垫片。
       "better-sqlite3": ["./node_modules/@types/better-sqlite3/index.d.ts"],
       "whisper.rn": ["./node_modules/whisper.rn/lib/typescript/index.d.ts"],
-      "whisper.rn/index": ["./node_modules/whisper.rn/lib/typescript/index.d.ts"]
+      "whisper.rn/index": ["./node_modules/whisper.rn/lib/typescript/index.d.ts"],
+      // 桌面端 scripts 链（pack-authoring → esbuild）被岗位包的 @plugins 图拉进手机 typecheck，
+      // 手机端 CI 是脱离工作区的独立 npm ci，把 esbuild 也钉到自己 node_modules（同 better-sqlite3）
+      "esbuild": ["./node_modules/esbuild"]
     }
   },
   "include": ["**/*.ts", "**/*.mts", "**/*.tsx", "../core/src/**/*.ts"],

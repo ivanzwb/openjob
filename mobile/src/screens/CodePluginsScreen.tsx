@@ -2,7 +2,6 @@ import { useCallback, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { WebView } from 'react-native-webview';
-import type { SQLiteDatabase } from 'expo-sqlite';
 import { buildMobileRuntimeHtml, type MobileCodePlugin } from '../plugins/mobileRuntime';
 import { listMobileCodePlugins } from '../data/codePluginLocal';
 import { invokeRemote } from '../remote/rpc';

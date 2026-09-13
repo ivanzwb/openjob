@@ -13,7 +13,7 @@ import { bumpDataVersion } from './ipc/dataVersion';
 import { useJobProgress } from './ipc/useJobProgress';
 import { useNavigationTabs } from './ipc/useNavigationTabs';
 import { useBackgroundErrorToast } from './ipc/errorToast';
-import { activateOnMount, useCodePluginTabs } from './codePlugins/runtime';
+import { useActivateOnMount, useCodePluginTabs } from './codePlugins/runtime';
 import { CodePluginWebView } from './components/CodePluginWebView';
 import { HOST_PAGES } from './hostPages';
 import { nextVisibleTab } from '@core/hostUi';
@@ -135,7 +135,7 @@ export default function App(): React.JSX.Element {
   const { tabs: navTabs } = useNavigationTabs();
   // v3：代码插件（§7.9）注册的 Webview 页面进同一槽位
   const codePluginTabs = useCodePluginTabs();
-  activateOnMount();
+  useActivateOnMount();
   const navTabsKeys = navTabs.map<Tab>((entry) => `nav:${entry.id}`);
   const codeTabsKeys = codePluginTabs.flatMap((plugin) =>
     plugin.pages.map<Tab>((page) => `nav:${page.fullId}`),
