@@ -16,6 +16,15 @@ vi.mock('../paths', () => ({
   getAppPaths: () => paths,
 }));
 
+// 装默认岗位包（software-engineering）后 bootstrap 会立即重跑旧战役回填，回填入口要碰
+// 真实库——单测环境没有库。这个测试文件验证的是 install.ts 的把关与落盘，不是回填逻辑，
+// 因此置顶 mock 让 getRawDb 直接抛错（bootstrap 对回填失败只记 warn，不中断安装）。
+vi.mock('../db', () => ({
+  getRawDb: () => {
+    throw new Error('install.test must not touch the real DB');
+  },
+}));
+
 import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
 import {
   PACKAGE_MANIFEST_FILE,
@@ -208,6 +217,36 @@ describe('installPluginBundle', () => {
     installPluginBundle(bundle(rolePackFiles('demo.role', '2.1.0')));
 
     expect(installedDirs()).toEqual(['demo.role@2.0.0', 'demo.role@2.1.0']);
+  });
+
+  it('默认岗位包之外的角色包：库里有未映射旧战役时先要用户确认', () => {
+    const raw = bundle();
+
+    expect(
+      installPluginBundle(raw, { countPendingPrePluginCampaigns: () => 2 }),
+    ).toMatchObject({ code: 'confirm-data-loss' });
+    expect(installedDirs()).toEqual([]);
+
+    expect(
+      installPluginBundle(raw, {
+        countPendingPrePluginCampaigns: () => 2,
+        confirmDataLoss: true,
+      }),
+    ).toMatchObject({ ok: true, id: 'demo.role' });
+  });
+
+  it('没有待映射旧战役时，非默认岗位包照常安装', () => {
+    expect(
+      installPluginBundle(bundle(), { countPendingPrePluginCampaigns: () => 0 }),
+    ).toMatchObject({ ok: true });
+  });
+
+  it('默认岗位包（软件工程）装上即恢复原功能，不触发数据丢失把关', () => {
+    const files = rolePackFiles('software-engineering', '2.0.0');
+
+    expect(
+      installPluginBundle(bundle(files), { countPendingPrePluginCampaigns: () => 2 }),
+    ).toMatchObject({ ok: true, id: 'software-engineering' });
   });
 });
 

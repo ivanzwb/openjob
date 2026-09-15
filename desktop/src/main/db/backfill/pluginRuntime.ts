@@ -6,6 +6,25 @@ import type { RolePack } from '@core/plugins/types';
 
 export const PLUGIN_RUNTIME_BACKFILL_KIND = 'generic-interview-v1';
 
+/**
+ * 尚未映射岗位的 pre-plugin 旧战役数（带凭据且 role_profile_id 仍为 NULL）。
+ *
+ * 装默认岗位包之外的其它角色包时用它把关：装包本身不动旧数据，但之后若把新岗位
+ * 套用到旧战役，原有面试数据无法保留——安装前据这个数提示用户自行决定是否继续。
+ * 默认岗位包的安装不适用此警告，装上即旧数据恢复原功能。
+ */
+export function countUnmappedPrePluginCampaigns(raw: Database): number {
+  const row = raw
+    .prepare(
+      `SELECT COUNT(*) AS n
+       FROM migration_checkpoint pre
+       JOIN campaign c ON c.id = pre.campaign_id AND c.role_profile_id IS NULL
+       WHERE pre.kind = ?`,
+    )
+    .get(PRE_PLUGIN_CAMPAIGN_SCOPE_KIND) as { n: number };
+  return row.n;
+}
+
 interface PrePluginCampaign {
   id: string;
 }

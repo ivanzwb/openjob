@@ -4,6 +4,7 @@ import { PRE_PLUGIN_CAMPAIGN_SCOPE_KIND } from '@core/planner/contributions';
 import {
   PLUGIN_RUNTIME_BACKFILL_KIND,
   backfillPrePluginCampaignRuntime,
+  countUnmappedPrePluginCampaigns,
 } from './pluginRuntime';
 import { applyMigrations, newMigratedDb } from '../__fixtures__/migratedDb';
 import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
@@ -189,5 +190,19 @@ describe('pre-plugin Campaign plugin runtime backfill', () => {
         )
         .get(),
     ).toEqual({ kind: PLUGIN_RUNTIME_BACKFILL_KIND });
+  });
+
+  it('未映射旧战役计数：只点老数据，不把升级后新建的战役算进去', () => {
+    seedCampaign(raw, 'old1');
+    seedCampaign(raw, 'old2');
+    upgradeToPluginSchema(raw);
+    seedCampaign(raw, 'fresh');
+
+    expect(countUnmappedPrePluginCampaigns(raw)).toBe(2);
+
+    backfillPrePluginCampaignRuntime(raw, { pack: softwareEngineeringRolePack });
+
+    // 回填后旧战役都绑上了岗位，只剩新建的仍未选岗——但新建的不属于旧数据
+    expect(countUnmappedPrePluginCampaigns(raw)).toBe(0);
   });
 });

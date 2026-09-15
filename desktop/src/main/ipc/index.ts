@@ -72,6 +72,7 @@ import { completePluginJson } from '../llm/json';
 import { emit } from '../ipc/bridge';
 import { pluginInventoryView } from '../plugins/bootstrap';
 import { installPluginFromFile, uninstallPlugin } from '../plugins/install';
+import { countUnmappedPrePluginCampaigns } from '../db/backfill/pluginRuntime';
 import { getRolePlaySessionService } from '../plugins/rolePlaySession';
 import { generateExplanation, generateFallbackScript, getExplanation, updateExplanation, elaborateExplanationSelection, rewriteExplanationSelection } from '../explain';
 import { startJob } from '../jobs';
@@ -261,7 +262,7 @@ export function registerIpcHandlers(): void {
     }
     return listConfirmedEvidence(getRawDb(), { campaignId });
   });
-  handle('plugin:install', async ({ trustUnknownSigner, overwrite }) => {
+  handle('plugin:install', async ({ trustUnknownSigner, overwrite, confirmDataLoss }) => {
     // 弹框放在主进程：渲染层不传路径，也就没有「渲染层指定任意文件让主进程去读」这条路
     const { canceled, filePaths } = await dialog.showOpenDialog({
       title: '安装插件包',
@@ -272,7 +273,12 @@ export function registerIpcHandlers(): void {
       ],
     });
     if (canceled || filePaths.length === 0) return null;
-    return installPluginFromFile(filePaths[0]!, { trustUnknownSigner, overwrite });
+    return installPluginFromFile(filePaths[0]!, {
+      trustUnknownSigner,
+      overwrite,
+      confirmDataLoss,
+      countPendingPrePluginCampaigns: () => countUnmappedPrePluginCampaigns(getRawDb()),
+    });
   });
   handle('plugin:uninstall', ({ id, version }) => uninstallPlugin(id, version));
 

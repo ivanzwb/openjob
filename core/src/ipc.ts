@@ -1148,7 +1148,12 @@ export interface IpcInvokeMap {
   'plugin:inventory': { req: void; res: PluginInventoryView };
   /** 主进程弹文件选择框，渲染层不传路径。返回 null 表示用户取消。 */
   'plugin:install': {
-    req: { trustUnknownSigner?: boolean; overwrite?: boolean };
+    req: {
+      trustUnknownSigner?: boolean;
+      overwrite?: boolean;
+      /** 用户在「升级前旧战役数据可能丢失」提示上点了继续，跳过数据丢失把关 */
+      confirmDataLoss?: boolean;
+    };
     res: PluginInstallResult | null;
   };
   'plugin:uninstall': { req: { id: string; version: string }; res: { removed: boolean } };

@@ -56,6 +56,7 @@ const INSTALL_FAILURE_LABEL: Record<string, string> = {
   'reserved-id': '与随应用发布的插件冲突',
   'already-installed': '这个版本已经装过了',
   'isolation-violation': '静态隔离扫描未通过，已拒绝安装',
+  'confirm-data-loss': '升级前的旧战役尚未适配此岗位',
 };
 
 function Badge({ children, tone }: { children: string; tone: string }): React.JSX.Element {
@@ -113,6 +114,18 @@ export function PluginsPanel(): React.JSX.Element {
               '仍然安装？',
           );
           if (proceed) report(await invoke('plugin:install', { trustUnknownSigner: true }));
+        }
+        // 旧战役数据丢失把关：库里还有升级前的软件工程战役未映射岗位，装默认岗位之外
+        // 的角色包前先让用户拍板，装包本身不动旧数据，套用新岗位时才会丢。
+        if (result && !result.ok && result.code === 'confirm-data-loss') {
+          const proceed = window.confirm(
+            `${result.detail}\n\n是否仍要安装？`,
+          );
+          if (proceed) {
+            report(
+              await invoke('plugin:install', { trustUnknownSigner, confirmDataLoss: true }),
+            );
+          }
         }
         await refresh();
       } catch (error) {

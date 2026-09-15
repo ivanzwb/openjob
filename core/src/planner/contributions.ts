@@ -283,6 +283,12 @@ export function pluginTaskClientView(
 export const PRE_PLUGIN_CAMPAIGN_SCOPE_KIND = 'generic-interview-v1:prePlugin';
 
 /**
+ * 插件化之前本应用唯一的岗位族：pre-plugin 标记的旧战役默认按它执行，装上它即恢复
+ * 原功能。装其它岗位包时，若库里有尚未映射岗位的旧战役，安装前要提示数据丢失风险。
+ */
+export const PRE_PLUGIN_DEFAULT_ROLE_PACK_ID = 'software-engineering';
+
+/**
  * 带上述凭据、但 descriptor 还没回填出来的旧 Campaign 继续按工程岗位包执行。
  *
  * 字段与 `src/main/db/backfill/pluginRuntime.ts` 的回填默认值一致，使回填前后的

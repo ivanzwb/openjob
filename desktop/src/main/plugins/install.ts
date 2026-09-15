@@ -14,6 +14,7 @@ import {
   type PluginPackageFiles,
   parsePluginPackage,
 } from '@core/plugins/package/contract';
+import { PRE_PLUGIN_DEFAULT_ROLE_PACK_ID } from '@core/planner/contributions';
 import { scanPluginSources } from '@core/plugins/pluginRuntime/scan';
 import { getAppPaths } from '../paths';
 import { loadExternalPlugins } from './bootstrap';
@@ -43,7 +44,8 @@ export type InstallFailureCode =
   | 'untrusted-signer'
   | 'reserved-id'
   | 'already-installed'
-  | 'isolation-violation';
+  | 'isolation-violation'
+  | 'confirm-data-loss';
 
 export type InstallResult =
   | { ok: true; id: string; version: string; trust: PackageTrust }
@@ -54,6 +56,13 @@ interface InstallOptions {
   trustUnknownSigner?: boolean;
   /** 已装同一个 id@version 时覆盖。 */
   overwrite?: boolean;
+  /** 用户在「升级前旧战役数据可能丢失」提示上点了继续。 */
+  confirmDataLoss?: boolean;
+  /**
+   * 主进程注入：本机尚未映射岗位的插件化之前旧战役数。缺省视为 0，
+   * 不触发数据丢失把关（测试与无库场景不感知 DB）。
+   */
+  countPendingPrePluginCampaigns?: () => number;
 }
 
 function fail(code: InstallFailureCode, detail: string): InstallResult {
@@ -184,11 +193,31 @@ export function installPluginBundle(raw: Buffer, options: InstallOptions = {}): 
     }
   }
 
-  const manifest = JSON.parse(files['manifest.json']!) as { id: string; version: string };
+  const manifest = JSON.parse(files['manifest.json']!) as { id: string; version: string; type?: string };
   const key = exactKeyOf(manifest.id, manifest.version);
 
   if (builtInPluginKeys().has(key)) {
     return fail('reserved-id', `${key} 与内置插件冲突`);
+  }
+
+  // 数据丢失把关：插件化升级前的旧战役全是软件工程语义。装默认岗位包之外的角色包，
+  // 旧数据不会自动变成新岗位——用户若把新岗位套用到旧战役，原面试数据会丢失。库里
+  // 还有这类待映射战役时先让用户确认，而不是装完让用户自己踩坑。
+  // 装默认岗位包（软件工程）不拦：那正是让旧数据恢复原功能的路径。
+  if (
+    !options.confirmDataLoss &&
+    options.countPendingPrePluginCampaigns !== undefined &&
+    manifest.type === 'role-pack' &&
+    manifest.id !== PRE_PLUGIN_DEFAULT_ROLE_PACK_ID
+  ) {
+    const pending = options.countPendingPrePluginCampaigns();
+    if (pending > 0) {
+      return fail(
+        'confirm-data-loss',
+        `本机还有 ${pending} 场插件化升级前的软件工程战役尚未映射岗位。` +
+          '安装这个角色包本身不会改动它们，但之后若把新岗位应用到旧战役，原有面试数据将无法保留。',
+      );
+    }
   }
 
   const target = join(getAppPaths().pluginsDir, key);

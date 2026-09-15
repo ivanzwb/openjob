@@ -5,6 +5,7 @@ import type { PlanGenerateResult, TaskView, TodayCampaignOption, TodayPlan } fro
 import type { TaskKind } from '@core/enums';
 import {
   PRE_PLUGIN_CAMPAIGN_SCOPE_KIND,
+  PRE_PLUGIN_DEFAULT_ROLE_PACK_ID,
   descriptorFromRolePack,
   collectPlannerContributions,
   type PlannerRepo,
@@ -21,9 +22,6 @@ import {
 import { getCampaignRow, listCampaigns, rowToNode, updateCampaign } from '../campaign/repository';
 import { sortNodesByStudyOrder } from '../campaign/edges';
 import { recordPlanChange, recordPlanDecision } from './session';
-
-// 插件化之前，本应用只有软件工程一个岗位族：pre-plugin 标记的旧战役默认使用它。
-export const PRE_PLUGIN_DEFAULT_ROLE_PACK_ID = 'software-engineering';
 
 function formatLocal(d: Date): DateOnly {
   const y = d.getFullYear();

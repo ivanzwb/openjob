@@ -15,7 +15,7 @@ import {
 } from './runtime';
 import { getRawDb } from '../db';
 import { backfillPrePluginCampaignRuntime } from '../db/backfill/pluginRuntime';
-import { PRE_PLUGIN_DEFAULT_ROLE_PACK_ID } from '../plan/schedule';
+import { PRE_PLUGIN_DEFAULT_ROLE_PACK_ID } from '@core/planner/contributions';
 
 let lastInventory: PluginInventory = { entries: [], rejected: [] };
 
