@@ -67,7 +67,7 @@ function normalizeModuleData(
   return entries.length > 0 ? Object.fromEntries(entries) : null;
 }
 
-function deriveFromLegacy(
+function deriveFromPreModule(
   deriveFrom: 'skills' | 'drillableTopics',
   parsed: ResumeParsed,
 ): string[] {
@@ -99,7 +99,7 @@ export function assembleResumeModules(
       continue;
     }
     if (module.deriveFrom === undefined) continue;
-    const data = deriveFromLegacy(module.deriveFrom, parsed);
+    const data = deriveFromPreModule(module.deriveFrom, parsed);
     if (data.length > 0) {
       result[module.id] = { schemaVersion: module.schemaVersion, data };
     }

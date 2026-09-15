@@ -120,7 +120,7 @@ export function backfillPrePluginCampaignRuntime(
         campaign.id,
         plugin.id,
         plugin.version,
-        JSON.stringify({ source: 'legacy-backfill' }),
+        JSON.stringify({ source: 'prePlugin-backfill' }),
         descriptor.configSnapshotHash,
         revision,
         timestamp,

@@ -15,7 +15,7 @@ const PRE_PLUGIN_MIGRATION = '0022_campaign_resume_backfill';
 /**
  * 把库补齐到当前 schema。
  *
- * 0027_legacy_campaign_scope 会在这一步把「此刻还没有岗位意图」的 Campaign 标记成
+ * 0027_pre_plugin_campaign_scope 会在这一步把「此刻还没有岗位意图」的 Campaign 标记成
  * 旧数据，也就是回填唯一认的那批。顺序刻意与生产一致（先迁移，再装同步触发器，
  * 最后回填），否则迁移期的写入会被记进 sync_oplog，和线上行为就不是一回事了。
  */
@@ -134,7 +134,7 @@ describe('pre-plugin Campaign plugin runtime backfill', () => {
    * 盖成工程岗 + source-repository，Repos 页跟着冒出来。
    */
   it('迁移之后新建的 Campaign 不在旧数据集合里，不会被盖成工程岗', () => {
-    seedCampaign(raw, 'legacy');
+    seedCampaign(raw, 'prePlugin');
     upgradeToPluginSchema(raw);
     seedCampaign(raw, 'fresh');
 

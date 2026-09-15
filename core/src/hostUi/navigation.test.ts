@@ -10,7 +10,7 @@ const sourceEntry: NavigationEntry = {
 };
 
 function probe(fullCapabilityIds: string[] | null): NavigationProbe {
-  return { campaignId: fullCapabilityIds === null ? 'legacy' : `c-${fullCapabilityIds.join()}`, fullCapabilityIds };
+  return { campaignId: fullCapabilityIds === null ? 'prePlugin' : `c-${fullCapabilityIds.join()}`, fullCapabilityIds };
 }
 
 describe('entryVisible', () => {

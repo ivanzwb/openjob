@@ -17,7 +17,7 @@ import { buildNodeFollowUpSystem } from '../data/candidateContextLocal';
 import {
   appendFollowUpMessage,
   deleteFollowUpHistory,
-  migrateLegacyFollowUpHistory,
+  migrateOldFollowUpHistory,
   saveSpeechFromNode,
   updateFollowUpSummary,
   type FollowUpMessage,
@@ -102,7 +102,7 @@ export function NodeFollowUpPanel({
 
   const reloadHistory = useCallback(() => {
     const db = getRawDb();
-    void migrateLegacyFollowUpHistory(db, campaignId, nodeId, nodeName).then(() => {
+    void migrateOldFollowUpHistory(db, campaignId, nodeId, nodeName).then(() => {
       setMessages(getNodeFollowUpHistory(db, nodeId));
     });
   }, [campaignId, nodeId, nodeName]);

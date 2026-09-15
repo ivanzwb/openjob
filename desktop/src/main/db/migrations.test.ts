@@ -257,20 +257,20 @@ describe('plugin runtime persistence migration', () => {
   });
 });
 
-describe('legacy campaign scope migration', () => {
+describe('pre-plugin campaign scope migration', () => {
   const MOBILE_PRE_PLUGIN_SCOPE = join(
     REPO_ROOT,
     'mobile',
     'src',
     'db',
     'migrations',
-    '0025_legacy_campaign_scope.sql',
+    '0025_pre_plugin_campaign_scope.sql',
   );
 
   it('两端与共享常量用同一个 kind 字面量', () => {
     // 常量改了、SQL 没改的话，回填会一条也选不中，而且不会报错——只会静默不干活
     for (const [name, sql] of [
-      ['desktop', sqlOf('0027_legacy_campaign_scope')],
+      ['desktop', sqlOf('0027_pre_plugin_campaign_scope')],
       ['mobile', readFileSync(MOBILE_PRE_PLUGIN_SCOPE, 'utf8')],
     ] as const) {
       expect(sql, name).toContain(`'${PRE_PLUGIN_CAMPAIGN_SCOPE_KIND}'`);
@@ -280,14 +280,14 @@ describe('legacy campaign scope migration', () => {
   it('只标记迁移那一刻还没有岗位意图的 Campaign', () => {
     const db = new DatabaseSync(':memory:');
     const entries = journal();
-    const cutoff = entries.findIndex((entry) => entry.tag === '0027_legacy_campaign_scope');
+    const cutoff = entries.findIndex((entry) => entry.tag === '0027_pre_plugin_campaign_scope');
     expect(cutoff).toBeGreaterThan(0);
     entries.slice(0, cutoff).forEach((entry) => applySql(db, sqlOf(entry.tag)));
 
     const insertCampaign = `INSERT INTO campaign (
          id, company, role_title, jd_raw, status, created_at, updated_at
        ) VALUES (?, 'ACME', 'Engineer', 'JD', 'planning', 1, 1)`;
-    db.prepare(insertCampaign).run('legacy');
+    db.prepare(insertCampaign).run('prePlugin');
     db.prepare(insertCampaign).run('profiled');
     db.prepare(
       `INSERT INTO role_profile (
@@ -297,7 +297,7 @@ describe('legacy campaign scope migration', () => {
     ).run();
     db.prepare(`UPDATE campaign SET role_profile_id = 'rp' WHERE id = 'profiled'`).run();
 
-    applySql(db, sqlOf('0027_legacy_campaign_scope'));
+    applySql(db, sqlOf('0027_pre_plugin_campaign_scope'));
 
     expect(
       db
@@ -305,7 +305,7 @@ describe('legacy campaign scope migration', () => {
           `SELECT campaign_id FROM migration_checkpoint WHERE kind = ? ORDER BY campaign_id`,
         )
         .all(PRE_PLUGIN_CAMPAIGN_SCOPE_KIND),
-    ).toEqual([{ campaign_id: 'legacy' }]);
+    ).toEqual([{ campaign_id: 'prePlugin' }]);
     db.close();
   });
 });

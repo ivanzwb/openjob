@@ -276,11 +276,11 @@ export function pluginTaskClientView(
 /**
  * 「插件化迁移那一刻就已存在」的 Campaign 凭据，写在 migration_checkpoint.kind 上。
  *
- * 两端和迁移 SQL 共用这一个字面量：桌面 0027_legacy_campaign_scope 与手机
- * 0025_legacy_campaign_scope 负责打标，两端排程再据此判断该不该走工程岗兜底。
+ * 两端和迁移 SQL 共用这一个字面量：桌面 0027_pre_plugin_campaign_scope 与手机
+ * 0025_pre_plugin_campaign_scope 负责打标，两端排程再据此判断该不该走工程岗兜底。
  * 只按 role_profile_id IS NULL 判断是不够的——新建战役同样是 NULL。
  */
-export const PRE_PLUGIN_CAMPAIGN_SCOPE_KIND = 'generic-interview-v1:legacy';
+export const PRE_PLUGIN_CAMPAIGN_SCOPE_KIND = 'generic-interview-v1:prePlugin';
 
 /**
  * 带上述凭据、但 descriptor 还没回填出来的旧 Campaign 继续按工程岗位包执行。

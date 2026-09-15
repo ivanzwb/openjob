@@ -1321,7 +1321,7 @@ plugins/<pack>/
   prompts/                # 插入点 B：frontmatter + markdown 正文（9.2）
 ```
 
-数据声明用 TypeScript 模块而不是 JSON：能力、题型 ID 需要与 core 枚举保持编译期同一来源（如工程包的 legacy format ID 推导），字面量复制进 JSON 会悄悄断开这条耦合。
+数据声明用 TypeScript 模块而不是 JSON：能力、题型 ID 需要与 core 枚举保持编译期同一来源（如工程包的 formatId 推导），字面量复制进 JSON 会悄悄断开这条耦合。
 
 配套工程设施：
 

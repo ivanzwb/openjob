@@ -208,7 +208,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   },
 };
 
-/** 与磁盘/同步 JSON 合并默认值（不含桌面 legacy 迁移逻辑） */
+/** 与磁盘/同步 JSON 合并默认值（不含桌面旧版配置迁移逻辑） */
 export function mergeAppConfig(loaded: Partial<AppConfig> | null | undefined): AppConfig {
   const base = structuredClone(DEFAULT_CONFIG);
   if (!loaded) return base;

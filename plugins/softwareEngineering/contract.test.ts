@@ -17,7 +17,7 @@ describe('softwareEngineeringRolePack contract', () => {
     expect(validateRolePack(softwareEngineeringRolePack)).toEqual([]);
   });
 
-  it('keeps the legacy runtime identity and role-pack permission boundary', () => {
+  it('keeps the stable runtime identity and role-pack permission boundary', () => {
     expect(softwareEngineeringRolePack.manifest).toMatchObject({
       id: 'software-engineering',
       version: '1.4.0',

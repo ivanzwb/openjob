@@ -14,7 +14,7 @@ function file(): string {
  * 旧版 llm.roles 形态：角色 → {providerId, model, temperature} 配置对象。
  * 新版形态：角色 → 档位名（tier 字符串）。由角色值类型区分。
  */
-type LegacyRoleSlice = {
+type PreTierRoleSlice = {
   outline?: { providerId?: string; model?: string; temperature?: number };
   explain?: { providerId?: string; model?: string; temperature?: number };
   codeAgent?: { providerId?: string; model?: string; temperature?: number };
@@ -22,7 +22,7 @@ type LegacyRoleSlice = {
   embedding?: { providerId?: string; model?: string };
 };
 
-function isLegacyRoles(value: unknown): value is LegacyRoleSlice {
+function isPreTierRoles(value: unknown): value is PreTierRoleSlice {
   if (!value || typeof value !== 'object') return false;
   const first = Object.values(value as Record<string, unknown>)[0];
   return typeof first === 'object' && first !== null;
@@ -35,12 +35,12 @@ function isLegacyRoles(value: unknown): value is LegacyRoleSlice {
 function mergeDefaults(loaded: Partial<AppConfig>): AppConfig {
   const base = structuredClone(DEFAULT_CONFIG);
   const llmLoaded = loaded.llm;
-  const legacyRoles = isLegacyRoles(llmLoaded?.roles) ? (llmLoaded!.roles as unknown as LegacyRoleSlice) : null;
+  const preTierRoles = isPreTierRoles(llmLoaded?.roles) ? (llmLoaded!.roles as unknown as PreTierRoleSlice) : null;
 
   // 旧版把模型配置放在角色对象里：outline 是主力档的默认来源，explain 是便宜档的来源，
   // embedding 角色对应现在的固定配置。已有新结构的 tiers/embedding 优先（用户改过的不能丢）。
-  const legacyMain = legacyRoles?.outline ?? legacyRoles?.codeAgent;
-  const legacyCheap = legacyRoles?.explain;
+  const preTierMain = preTierRoles?.outline ?? preTierRoles?.codeAgent;
+  const preTierCheap = preTierRoles?.explain;
 
   return {
     version: CONFIG_VERSION,
@@ -49,35 +49,35 @@ function mergeDefaults(loaded: Partial<AppConfig>): AppConfig {
       tiers: {
         main: {
           ...base.llm.tiers.main,
-          ...(legacyMain && !llmLoaded?.tiers?.main?.model
+          ...(preTierMain && !llmLoaded?.tiers?.main?.model
             ? {
-                providerId: legacyMain.providerId ?? base.llm.tiers.main.providerId,
-                model: legacyMain.model ?? '',
-                temperature: legacyMain.temperature,
+                providerId: preTierMain.providerId ?? base.llm.tiers.main.providerId,
+                model: preTierMain.model ?? '',
+                temperature: preTierMain.temperature,
               }
             : {}),
           ...llmLoaded?.tiers?.main,
         },
         cheap: {
           ...base.llm.tiers.cheap,
-          ...(legacyCheap && !llmLoaded?.tiers?.cheap?.model
+          ...(preTierCheap && !llmLoaded?.tiers?.cheap?.model
             ? {
-                providerId: legacyCheap.providerId ?? base.llm.tiers.cheap.providerId,
-                model: legacyCheap.model ?? '',
-                temperature: legacyCheap.temperature,
+                providerId: preTierCheap.providerId ?? base.llm.tiers.cheap.providerId,
+                model: preTierCheap.model ?? '',
+                temperature: preTierCheap.temperature,
               }
             : {}),
           ...llmLoaded?.tiers?.cheap,
         },
       },
       // 旧版 roles 是配置对象，无法作为档位映射使用，整体丢弃（其模型配置已提升到 tiers）
-      roles: legacyRoles ? { ...base.llm.roles } : { ...base.llm.roles, ...llmLoaded?.roles },
+      roles: preTierRoles ? { ...base.llm.roles } : { ...base.llm.roles, ...llmLoaded?.roles },
       embedding: {
         ...base.llm.embedding,
-        ...(legacyRoles?.embedding && !llmLoaded?.embedding?.model
+        ...(preTierRoles?.embedding && !llmLoaded?.embedding?.model
           ? {
-              providerId: legacyRoles.embedding.providerId ?? base.llm.embedding.providerId,
-              model: legacyRoles.embedding.model ?? '',
+              providerId: preTierRoles.embedding.providerId ?? base.llm.embedding.providerId,
+              model: preTierRoles.embedding.model ?? '',
             }
           : {}),
         ...llmLoaded?.embedding,

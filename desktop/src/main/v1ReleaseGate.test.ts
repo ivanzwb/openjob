@@ -259,12 +259,12 @@ describe('插件运行时随端间同步一起走', () => {
 
 describe('旧 Campaign 继续可用', () => {
   it('没有岗位画像的战役读运行时不报错，也不写任何一行', () => {
-    newCampaign('c-legacy');
+    newCampaign('c-prePlugin');
     const before = raw
       .prepare(`SELECT count(*) AS n FROM campaign_runtime_descriptor`)
       .get() as { n: number };
 
-    const runtime = getCampaignRuntime(raw, 'c-legacy');
+    const runtime = getCampaignRuntime(raw, 'c-prePlugin');
 
     // 读路径一行都不写：否则升级后第一次打开旧战役就会悄悄生成一份绑定
     expect(runtime?.descriptor ?? null).toBeNull();

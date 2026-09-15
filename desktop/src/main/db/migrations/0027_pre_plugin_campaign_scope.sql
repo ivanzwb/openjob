@@ -12,9 +12,9 @@
 -- completed_at 在这里是「打标时刻」而非「回填完成时刻」：真正的完成凭据是
 -- kind = 'generic-interview-v1' 那条 checkpoint，两者 kind 不同、互不干扰。
 INSERT OR IGNORE INTO migration_checkpoint (id, campaign_id, kind, completed_at)
-SELECT 'generic-interview-v1:legacy:' || c.id,
+SELECT 'generic-interview-v1:prePlugin:' || c.id,
        c.id,
-       'generic-interview-v1:legacy',
+       'generic-interview-v1:prePlugin',
        CAST(strftime('%s', 'now') AS INTEGER) * 1000
 FROM campaign c
 WHERE c.role_profile_id IS NULL;

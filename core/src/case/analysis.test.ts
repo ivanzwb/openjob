@@ -18,8 +18,8 @@ import { TABULAR_DATASET_LIMITS, parseCsvArtifact, type TabularDataset } from '.
 
 const CSV = [
   'week,signups,activated,onboarding_variant',
-  '2025-06-02,1240,486,legacy',
-  '2025-06-09,1310,498,legacy',
+  '2025-06-02,1240,486,baseline',
+  '2025-06-09,1310,498,baseline',
   '2025-06-16,1288,404,new',
   '2025-06-23,1352,398,new',
 ].join('\n');
@@ -53,7 +53,7 @@ function analysis(overrides: Partial<AnalyticsCaseAnalysis> = {}): AnalyticsCase
     recommendations: [
       {
         id: 'r-rollback',
-        action: '对 20% 流量回滚到 legacy 引导两周',
+        action: '对 20% 流量回滚到 baseline 引导两周',
         basedOn: ['h-onboarding'],
         expectedImpact: '若激活率回到 38% 左右即可确认归因',
       },

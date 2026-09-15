@@ -10,7 +10,7 @@ export const DEFAULT_RESUME_PREVIEW_STYLE: ResumePreviewStyle = {
 };
 
 /** 早期版本把「版式 + 主题色」存进 preview_style，这里把旧值折叠到现有模板上。 */
-const LEGACY_TEMPLATE_MAP: Record<string, ResumeTemplateId> = {
+const OLD_TEMPLATE_MAP: Record<string, ResumeTemplateId> = {
   classic: 'standard',
   compact: 'standard',
   modern: 'banner',
@@ -21,7 +21,7 @@ function normalizeTemplate(value: unknown): ResumeTemplateId {
   if ((RESUME_TEMPLATES as readonly string[]).includes(value)) {
     return value as ResumeTemplateId;
   }
-  return LEGACY_TEMPLATE_MAP[value] ?? DEFAULT_RESUME_PREVIEW_STYLE.template;
+  return OLD_TEMPLATE_MAP[value] ?? DEFAULT_RESUME_PREVIEW_STYLE.template;
 }
 
 export function parsePreviewStyle(raw: string | null | undefined): ResumePreviewStyle {

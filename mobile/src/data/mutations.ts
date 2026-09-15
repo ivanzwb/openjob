@@ -9,7 +9,7 @@ import { nextMessageTimestamp, repoQaSessionId, type RepoQaMessage } from './rep
 
 export type FollowUpMessage = { role: 'user' | 'assistant'; text: string };
 
-function legacyFollowUpKey(nodeId: string): string {
+function oldFollowUpKey(nodeId: string): string {
   return `ui.followUpHistory.${nodeId}`;
 }
 
@@ -44,21 +44,21 @@ async function ensureFollowUpSession(
   return id;
 }
 
-export async function migrateLegacyFollowUpHistory(
+export async function migrateOldFollowUpHistory(
   db: SQLiteDatabase,
   campaignId: string,
   nodeId: string,
   nodeName: string,
 ): Promise<void> {
-  const legacy = db.getFirstSync<{ value: string }>(
+  const old = db.getFirstSync<{ value: string }>(
     `SELECT value FROM sync_meta WHERE key = ?`,
-    legacyFollowUpKey(nodeId),
+    oldFollowUpKey(nodeId),
   );
-  if (!legacy?.value) return;
+  if (!old?.value) return;
 
   let messages: FollowUpMessage[];
   try {
-    messages = (JSON.parse(legacy.value) as FollowUpMessage[]).filter(
+    messages = (JSON.parse(old.value) as FollowUpMessage[]).filter(
       (message) =>
         (message.role === 'user' || message.role === 'assistant') &&
         typeof message.text === 'string',
@@ -83,7 +83,7 @@ export async function migrateLegacyFollowUpHistory(
         now + index,
       );
     });
-    db.runSync(`DELETE FROM sync_meta WHERE key = ?`, legacyFollowUpKey(nodeId));
+    db.runSync(`DELETE FROM sync_meta WHERE key = ?`, oldFollowUpKey(nodeId));
   });
 }
 
@@ -119,7 +119,7 @@ export async function deleteFollowUpHistory(
       `DELETE FROM session WHERE node_id = ? AND kind = 'nodeFollowUp'`,
       nodeId,
     );
-    db.runSync(`DELETE FROM sync_meta WHERE key = ?`, legacyFollowUpKey(nodeId));
+    db.runSync(`DELETE FROM sync_meta WHERE key = ?`, oldFollowUpKey(nodeId));
   });
 }
 
