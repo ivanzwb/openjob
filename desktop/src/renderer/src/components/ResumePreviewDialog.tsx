@@ -35,7 +35,9 @@ export function ResumePreviewDialog({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[120] flex justify-center bg-scrim p-6"
+      // 无边框窗口的标题栏区域是原生拖拽区，portal 弹层叠在上面也收不到点击；
+      // 弹层整体标记 no-drag，把拖拽区挖掉，关闭/导出按钮才能点得动
+      className="app-region-no-drag fixed inset-0 z-[120] flex justify-center bg-scrim p-6"
       // 模板下拉是另一个 portal，只在点到遮罩本身时关闭，避免选模板时把弹窗带走
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
