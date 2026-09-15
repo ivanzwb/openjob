@@ -69,9 +69,9 @@ const FIELD_SPECS: Record<string, FieldSpec> = {
   姓名: { control: 'text', placeholder: '张三' },
   求职岗位: { control: 'text', placeholder: '高级前端工程师' },
   性别: { control: 'select', options: ['男', '女'] },
-  年龄: { control: 'number', unit: '岁', min: 16, max: 70, placeholder: '28' },
+  年龄: { control: 'number', unit: '岁', min: 16, max: 70 },
   城市: { control: 'text', placeholder: '上海' },
-  工作年限: { control: 'number', unit: '年', min: 0, max: 45, placeholder: '5' },
+  工作年限: { control: 'number', unit: '年', min: 0, max: 45 },
   电话: { control: 'tel', placeholder: '13800000000' },
   邮箱: { control: 'email', placeholder: 'name@example.com' },
   学历: {
