@@ -71,7 +71,8 @@ import {
 import { completePluginJson } from '../llm/json';
 import { emit } from '../ipc/bridge';
 import { pluginInventoryView } from '../plugins/bootstrap';
-import { installPluginFromFile, uninstallPlugin } from '../plugins/install';
+import { installPluginBundle, installPluginFromFile, uninstallPlugin } from '../plugins/install';
+import { downloadPluginBundle, listAvailablePlugins } from '../plugins/catalog';
 import { countUnmappedPrePluginCampaigns } from '../db/backfill/pluginRuntime';
 import { getRolePlaySessionService } from '../plugins/rolePlaySession';
 import { generateExplanation, generateFallbackScript, getExplanation, updateExplanation, elaborateExplanationSelection, rewriteExplanationSelection } from '../explain';
@@ -281,6 +282,21 @@ export function registerIpcHandlers(): void {
     });
   });
   handle('plugin:uninstall', ({ id, version }) => uninstallPlugin(id, version));
+  // 清单和更新源是同一处，用户改了更新源插件也跟着走（含镜像前缀）
+  handle('plugin:listAvailable', () => listAvailablePlugins({ feedUrl: getConfig().update.feedUrl }));
+  handle('plugin:installFromCatalog', async ({ id, version, trustUnknownSigner, confirmDataLoss }) => {
+    const downloaded = await downloadPluginBundle({
+      id,
+      version,
+      feedUrl: getConfig().update.feedUrl,
+    });
+    if (!downloaded.ok) return { ok: false as const, code: downloaded.code, detail: downloaded.detail };
+    return installPluginBundle(downloaded.raw, {
+      trustUnknownSigner,
+      confirmDataLoss,
+      countPendingPrePluginCampaigns: () => countUnmappedPrePluginCampaigns(getRawDb()),
+    });
+  });
 
   handle('campaign:list', () => listCampaigns());
   handle('campaign:getOverview', () => getCampaignOverview());

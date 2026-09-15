@@ -114,9 +114,46 @@ export interface PluginInventoryView {
   rejected: PluginRejectionView[];
 }
 
+/**
+ * 安装结果。
+ *
+ * 一台设备只装一个插件包，所以 `one-plugin-limit` 表示本机已经装了别的插件：
+ * 调用方要引导用户先卸载，而不是让他在两个包之间反复重试。
+ */
 export type PluginInstallResult =
   | { ok: true; id: string; version: string; trust: PluginTrust }
   | { ok: false; code: string; detail: string };
+
+/**
+ * 更新源里可安装的一个插件包。
+ *
+ * 元数据取自包自己的 manifest.json——权限要在**装之前**就摆给用户看，等装完才知道
+ * 这个包要读什么，等于把确认变成了补告。
+ */
+export interface PluginCatalogEntry {
+  id: string;
+  version: string;
+  /** 只有读到 manifest 才知道类型；没读到时为 null */
+  type: PluginType | null;
+  displayName: string;
+  description: string;
+  permissions: string[];
+  /** 包体字节数；只认得出文件名时为 null */
+  bytes: number | null;
+  /** 从哪个 release 读到的，让用户知道东西来自哪一版 */
+  releaseTag: string | null;
+  /** manifest 是否真的读到了。读不到时 displayName 退化成 id，界面要少说两句而不是编 */
+  described: boolean;
+}
+
+/** 插件清单。error 非空时 entries 为空，message 说明用户能做什么。 */
+export interface PluginCatalogView {
+  /** 实际读取的地址：清单拉不到时，用户能自己核对更新源填得对不对 */
+  source: string;
+  fetchedAt: number;
+  entries: PluginCatalogEntry[];
+  error: { kind: 'unreachable' | 'not-published' | 'malformed'; message: string } | null;
+}
 
 export interface AppPaths {
   userData: string;
@@ -1158,6 +1195,28 @@ export interface IpcInvokeMap {
   };
   'plugin:uninstall': { req: { id: string; version: string }; res: { removed: boolean } };
   /**
+   * 从更新源拉取可安装插件清单。
+   *
+   * 来源与自动更新同一处：更新源填了就用它，留空走官方 GitHub Release。拉不到清单
+   * 是常态（离线、镜像不通、还没发过插件），所以走 PluginCatalogView.error 返回，
+   * 不抛错——面板要把原因说出来，而不是留一片空白。
+   */
+  'plugin:listAvailable': { req: void; res: PluginCatalogView };
+  /**
+   * 从更新源装一个插件包。渲染层只给 id@version，不给地址：下载与校验都在主进程，
+   * 渲染层能指定 URL 的话，主进程就成了任意地址的下载器。
+   */
+  'plugin:installFromCatalog': {
+    req: {
+      id: string;
+      version: string;
+      trustUnknownSigner?: boolean;
+      /** 用户在「升级前旧战役数据可能丢失」提示上点了继续 */
+      confirmDataLoss?: boolean;
+    };
+    res: PluginInstallResult;
+  };
+  /**
    * 按精确版本取一份已安装的岗位包数据，没装返回 null。
    *
    * 存在的理由是手机端：它不安装插件包，岗位包只能从已配对的桌面端要一份过来
@@ -1505,6 +1564,8 @@ export const IPC_INVOKE_CHANNELS = [
   'plugin:inventory',
   'plugin:install',
   'plugin:uninstall',
+  'plugin:listAvailable',
+  'plugin:installFromCatalog',
   'plugin:getRolePack',
   'plugin:getEntrySource',
   'pluginRuntime:storage.get',

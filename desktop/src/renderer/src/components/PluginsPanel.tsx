@@ -1,10 +1,23 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { PluginInstallResult, PluginInventoryView, PluginTrust } from '@core/ipc';
+import type {
+  PluginCatalogEntry,
+  PluginCatalogView,
+  PluginInstallResult,
+  PluginInventoryView,
+  PluginTrust,
+} from '@core/ipc';
 import type { InstalledPlugin } from '@core/plugins/clientView';
+import { compareExactSemVer } from '@core/plugins/registry';
 import { disablePluginRuntime, enablePluginRuntime } from '../pluginRuntimes/runtime';
 import { invoke } from '../ipc';
 
 type PluginRuntimeInfo = Awaited<ReturnType<typeof invoke<'pluginRuntime:list'>>>[number];
+
+/** 安装时用户要拍板的两道确认，两条安装路径（文件、更新源清单）共用同一套问答 */
+interface InstallDecisions {
+  trustUnknownSigner: boolean;
+  confirmDataLoss: boolean;
+}
 
 /** 权限 → 用户能看懂的说明。启用确认框里展示的就是这些话。 */
 const PERMISSION_LABEL: Record<string, string> = {
@@ -55,12 +68,28 @@ const INSTALL_FAILURE_LABEL: Record<string, string> = {
   'untrusted-signer': '签名者不在信任列表',
   'reserved-id': '与随应用发布的插件冲突',
   'already-installed': '这个版本已经装过了',
+  'one-plugin-limit': '本机已经装了一个插件，要先卸载它',
   'isolation-violation': '静态隔离扫描未通过，已拒绝安装',
   'confirm-data-loss': '升级前的旧战役尚未适配此岗位',
+  'catalog-unavailable': '更新源里读不到插件清单',
+  'bundle-not-in-catalog': '更新源里没有这个包了',
+  'download-failed': '包下载失败',
+  'checksum-mismatch': '下载到的内容与清单登记的摘要不符',
+  'bundle-mismatch': '下载回来的包与清单登记的不是同一个',
+};
+
+const CATALOG_ERROR_LABEL: Record<NonNullable<PluginCatalogView['error']>['kind'], string> = {
+  unreachable: '拉不到插件清单',
+  'not-published': '更新源里还没有插件清单',
+  malformed: '清单格式不对',
 };
 
 function Badge({ children, tone }: { children: string; tone: string }): React.JSX.Element {
   return <span className={`rounded px-1.5 py-0.5 text-[10px] ${tone}`}>{children}</span>;
+}
+
+function permissionSummary(permissions: string[]): string {
+  return permissions.map((permission) => PERMISSION_LABEL[permission] ?? permission).join('；');
 }
 
 export function PluginsPanel(): React.JSX.Element {
@@ -68,9 +97,14 @@ export function PluginsPanel(): React.JSX.Element {
   const [inventory, setInventory] = useState<PluginInventoryView | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** 正在装的那一条，用来只在它自己那行显示「安装中…」 */
+  const [pendingKey, setPendingKey] = useState<string | null>(null);
 
   const [pluginRuntimes, setPluginRuntimes] = useState<PluginRuntimeInfo[]>([]);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
+
+  const [catalog, setCatalog] = useState<PluginCatalogView | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const refresh = useCallback(async () => {
     setInstalled(await invoke('plugin:listInstalled', undefined));
@@ -78,63 +112,139 @@ export function PluginsPanel(): React.JSX.Element {
     setPluginRuntimes(await invoke('pluginRuntime:list', undefined));
   }, []);
 
+  /**
+   * 清单每次都重新拉。
+   *
+   * 不复用上一次的结果：这份列表要回答「有没有新版本」，它正是最该新鲜的东西；
+   * 代价只是一次请求，且发生在用户打开设置时。拉不到不抛错——离线、镜像不通、
+   * 还没发过插件都是常态，界面要说出原因而不是留一片空白。
+   */
+  const readCatalog = useCallback(async (): Promise<PluginCatalogView> => {
+    try {
+      return await invoke('plugin:listAvailable', undefined);
+    } catch (error) {
+      return {
+        source: '',
+        fetchedAt: Date.now(),
+        entries: [],
+        error: {
+          kind: 'unreachable',
+          message: error instanceof Error ? error.message : String(error),
+        },
+      };
+    }
+  }, []);
+
+  const loadCatalog = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      setCatalog(await readCatalog());
+    } finally {
+      setRefreshing(false);
+    }
+  }, [readCatalog]);
+
   useEffect(() => {
     void invoke('plugin:listInstalled', undefined).then(setInstalled);
     void invoke('plugin:inventory', undefined).then(setInventory);
-  }, []);
+    // 与上面两条同一个形状：setState 落在 promise 回调里，不在 effect 里同步 setState
+    void readCatalog().then(setCatalog);
+  }, [readCatalog]);
 
   const external = new Map(
     (inventory?.installed ?? []).map((item) => [`${item.id}@${item.version}`, item.trust]),
   );
 
-  const report = useCallback(
-    (result: PluginInstallResult | null): void => {
-      if (result === null) return;
-      setMessage(
-        result.ok
-          ? `已安装 ${result.id} ${result.version}（${TRUST_LABEL[result.trust]}）`
-          : `安装失败：${INSTALL_FAILURE_LABEL[result.code] ?? result.code}\n${result.detail}`,
-      );
+  /** 单独装的插件按 id 归并：同一个 id 的多个版本都算装了同一个插件 */
+  const externalVersions = new Map<string, string[]>();
+  for (const item of inventory?.installed ?? []) {
+    externalVersions.set(item.id, [...(externalVersions.get(item.id) ?? []), item.version]);
+  }
+
+  const report = useCallback((result: PluginInstallResult | null): void => {
+    if (result === null) return;
+    setMessage(
+      result.ok
+        ? `已安装 ${result.id} ${result.version}（${TRUST_LABEL[result.trust]}）`
+        : `安装失败：${INSTALL_FAILURE_LABEL[result.code] ?? result.code}\n${result.detail}`,
+    );
+  }, []);
+
+  /**
+   * 安装，并把两处该问的问出来。
+   *
+   * 陌生签名者（包没被改动，但只有用户能判断发布者可不可信）与升级前的旧战役数据（装包
+   * 本身不动旧数据，套用新岗位时才会丢）都要用户显式拍板。两条安装路径共用这一套问答，
+   * 各写一份迟早会漏掉一边——漏掉的那边会静默地少一道确认。
+   */
+  const install = useCallback(
+    async (run: (decisions: InstallDecisions) => Promise<PluginInstallResult | null>): Promise<void> => {
+      const decisions: InstallDecisions = { trustUnknownSigner: false, confirmDataLoss: false };
+      const attempt = async (): Promise<PluginInstallResult | null> => {
+        const result = await run({ ...decisions });
+        report(result);
+        return result;
+      };
+
+      let result = await attempt();
+      if (
+        result &&
+        !result.ok &&
+        result.code === 'untrusted-signer' &&
+        window.confirm(
+          '这个包的签名者不在信任列表，无法确认它来自谁。\n\n' +
+            '包内容本身是完整的（没有被改动），但只有你自己能判断发布者可不可信。\n\n' +
+            '仍然安装？',
+        )
+      ) {
+        decisions.trustUnknownSigner = true;
+        result = await attempt();
+      }
+      if (
+        result &&
+        !result.ok &&
+        result.code === 'confirm-data-loss' &&
+        window.confirm(`${result.detail}\n\n是否仍要安装？`)
+      ) {
+        decisions.confirmDataLoss = true;
+        await attempt();
+      }
     },
-    [],
+    [report],
   );
 
-  const install = useCallback(
-    async (trustUnknownSigner: boolean) => {
+  const installFromFile = useCallback(async () => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      await install(async (decisions) => invoke('plugin:install', decisions));
+      await refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusy(false);
+    }
+  }, [install, refresh]);
+
+  const installFromCatalog = useCallback(
+    async (entry: PluginCatalogEntry) => {
+      const key = `${entry.id}@${entry.version}`;
       setBusy(true);
+      setPendingKey(key);
       setMessage(null);
       try {
-        const result = await invoke('plugin:install', { trustUnknownSigner });
-        report(result);
-        // 陌生签名者被拒时给出一次显式确认的机会，而不是让用户面对一条无从下手的报错
-        if (result && !result.ok && result.code === 'untrusted-signer') {
-          const proceed = window.confirm(
-            '这个包的签名者不在信任列表，无法确认它来自谁。\n\n' +
-              '包内容本身是完整的（没有被改动），但只有你自己能判断发布者可不可信。\n\n' +
-              '仍然安装？',
-          );
-          if (proceed) report(await invoke('plugin:install', { trustUnknownSigner: true }));
-        }
-        // 旧战役数据丢失把关：库里还有升级前的软件工程战役未映射岗位，装默认岗位之外
-        // 的角色包前先让用户拍板，装包本身不动旧数据，套用新岗位时才会丢。
-        if (result && !result.ok && result.code === 'confirm-data-loss') {
-          const proceed = window.confirm(
-            `${result.detail}\n\n是否仍要安装？`,
-          );
-          if (proceed) {
-            report(
-              await invoke('plugin:install', { trustUnknownSigner, confirmDataLoss: true }),
-            );
-          }
-        }
+        await install(async (decisions) =>
+          invoke('plugin:installFromCatalog', { id: entry.id, version: entry.version, ...decisions }),
+        );
         await refresh();
       } catch (error) {
         setMessage(error instanceof Error ? error.message : String(error));
       } finally {
         setBusy(false);
+        setPendingKey(null);
       }
     },
-    [refresh, report],
+    [install, refresh],
   );
 
   const uninstall = useCallback(
@@ -155,14 +265,29 @@ export function PluginsPanel(): React.JSX.Element {
   );
 
   const rejected = inventory?.rejected ?? [];
+  const hasExternal = externalVersions.size > 0;
+
+  /**
+   * 岗位包排前面。
+   *
+   * 基础包不带岗位，只装个能力包的话面试照样开不了；而清单按 id 排序时「能力包」
+   * （openjob-capabilities）正好在最前，用户第一眼看到的就是它。一个设备只能装一个插件，
+   * 先装上它就得再卸一次才轮得到岗位包。
+   */
+  const entries = [...(catalog?.entries ?? [])].sort(
+    (left, right) =>
+      Number(right.type === 'role-pack') - Number(left.type === 'role-pack') ||
+      (left.id < right.id ? -1 : left.id > right.id ? 1 : 0),
+  );
 
   return (
     <section className="space-y-4">
       <div>
         <h3 className="text-sm font-medium text-[var(--color-muted)]">插件</h3>
         <p className="mt-1 text-xs text-[var(--color-muted)]">
-          岗位包决定面试考什么、怎么评分；能力插件决定可以用哪些工具。随应用发布的那些卸不掉，
-          单独下载的插件包装进来之后与它们同等对待。插件包一律是纯数据，装进来的东西不会在本机执行。
+          岗位包决定面试考什么、怎么评分；能力插件决定可以用哪些工具。插件只装一个：换插件
+          要先卸载现在这个。随应用发布的那些卸不掉，单独装的插件包装进来之后与它们同等对待。
+          插件包一律是纯数据，装进来的东西不会在本机执行。
         </p>
       </div>
 
@@ -170,7 +295,7 @@ export function PluginsPanel(): React.JSX.Element {
         <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={() => void install(false)}
+            onClick={() => void installFromFile()}
             disabled={busy}
             className="rounded border border-[var(--color-border)] px-3 py-1.5 disabled:opacity-40 hover:text-[var(--color-fg)]"
           >
@@ -182,6 +307,11 @@ export function PluginsPanel(): React.JSX.Element {
         </div>
 
         <ul className="space-y-1.5 border-t border-[var(--color-border)] pt-3">
+          {installed.length === 0 && (
+            <li className="text-[var(--color-muted)]">
+              还没装任何插件。岗位包是必需的——从下面的「可安装插件」里挑一个装上，面试才有内容可考。
+            </li>
+          )}
           {installed.map((plugin) => {
             const key = `${plugin.id}@${plugin.version}`;
             const trust = external.get(key);
@@ -223,7 +353,7 @@ export function PluginsPanel(): React.JSX.Element {
                       setConfirmingId(confirmingId === key ? null : key);
                     }}
                     disabled={busy}
-                    className={`ml-auto text-[var(--color-muted)] hover:text-[var(--color-fg)] disabled:opacity-40 ${trust !== undefined ? '' : 'ml-auto'}`}
+                    className={`text-[var(--color-muted)] hover:text-[var(--color-fg)] disabled:opacity-40 ${trust !== undefined ? '' : 'ml-auto'}`}
                   >
                     {pluginRuntimes.find((item) => item.id === plugin.id)?.enabled ? '停用' : '启用…'}
                   </button>
@@ -289,7 +419,7 @@ export function PluginsPanel(): React.JSX.Element {
                 <div key={item.id} className="flex items-center gap-2 text-xs">
                   <span className="text-[var(--color-fg)]">{item.displayName}</span>
                   <span className="text-[var(--color-muted)]">
-                    {item.permissions.map((permission) => PERMISSION_LABEL[permission] ?? permission).join('；')}
+                    {permissionSummary(item.permissions)}
                   </span>
                   <button
                     type="button"
@@ -334,6 +464,117 @@ export function PluginsPanel(): React.JSX.Element {
           <p className="whitespace-pre-line border-t border-[var(--color-border)] pt-3 text-[11px] text-[var(--color-muted)]">
             {message}
           </p>
+        )}
+      </div>
+
+      <div className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-xs">
+        <div className="flex items-center gap-3">
+          <span className="text-[var(--color-fg)]">可安装插件</span>
+          <span className="truncate text-[10px] text-[var(--color-muted)]" title={catalog?.source}>
+            来自更新源：{catalog?.source ?? '读取中…'}
+          </span>
+          <button
+            type="button"
+            onClick={() => void loadCatalog()}
+            disabled={refreshing || busy}
+            className="ml-auto shrink-0 rounded border border-[var(--color-border)] px-3 py-1.5 disabled:opacity-40 hover:text-[var(--color-fg)]"
+          >
+            {refreshing ? '读取中…' : '刷新清单'}
+          </button>
+        </div>
+
+        {hasExternal && (
+          <p className="text-[var(--color-muted)]">
+            本机已经装了 {[...externalVersions.keys()].join('、')}。插件只装一个：换插件要先卸载
+            它。同一个插件的其他版本属于更新或回退，装完再把旧版本卸掉即可。
+          </p>
+        )}
+
+        {catalog?.error && (
+          <div className="space-y-1 border-t border-[var(--color-border)] pt-3">
+            <p className="text-amber-400">{CATALOG_ERROR_LABEL[catalog.error.kind]}</p>
+            <p className="whitespace-pre-line break-all text-[10px] text-[var(--color-muted)]">
+              {catalog.error.message}
+            </p>
+            <p className="text-[10px] text-[var(--color-muted)]">
+              清单跟着更新源走：留空读官方 GitHub Release，也可以在上面「应用更新」里填自建目录。
+            </p>
+          </div>
+        )}
+
+        {catalog === null && (
+          <p className="text-[var(--color-muted)]">正在读取更新源里的插件清单…</p>
+        )}
+
+        {catalog !== null && !catalog.error && entries.length === 0 && (
+          <p className="text-[var(--color-muted)]">
+            更新源里没有可安装的插件。发布方把包挂在更新源目录后这里就会出现。
+          </p>
+        )}
+
+        {entries.length > 0 && (
+          <ul className="space-y-2 border-t border-[var(--color-border)] pt-3">
+            {entries.map((entry) => {
+              const key = `${entry.id}@${entry.version}`;
+              const versions = externalVersions.get(entry.id) ?? [];
+              const installedVersion = versions.includes(entry.version) ? entry.version : undefined;
+              const other = versions.find((version) => version !== entry.version);
+              // 已经装了别的插件就不能再装这一个（宿主也只认一个）。同一个 id 的其他版本
+              // 不在此列：那是更新或回退，且旧版本留着才跑得动 pin 在旧版本上的战役
+              const blocked = !installedVersion && other === undefined && hasExternal;
+              const newer =
+                other !== undefined && compareExactSemVer(entry.version, other) > 0;
+              const label = installedVersion
+                ? '已安装'
+                : newer
+                  ? `更新到 ${entry.version}`
+                  : `安装 ${entry.version}`;
+              return (
+                <li key={key} className="flex items-start gap-3">
+                  <div className="min-w-0 flex-1 space-y-0.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[var(--color-fg)]">{entry.displayName}</span>
+                      {entry.type !== null && (
+                        <Badge tone="bg-[var(--color-bg)] text-[var(--color-muted)]">
+                          {TYPE_LABEL[entry.type]}
+                        </Badge>
+                      )}
+                      {installedVersion === undefined && other !== undefined && (
+                        <Badge tone="bg-emerald-500/10 text-emerald-400">{`已装 ${other}`}</Badge>
+                      )}
+                      {entry.releaseTag !== null && (
+                        <span className="text-[10px] text-[var(--color-muted)]">
+                          来自 {entry.releaseTag}
+                        </span>
+                      )}
+                    </div>
+                    {entry.described ? (
+                      <>
+                        {entry.description !== '' && (
+                          <p className="text-[var(--color-muted)]">{entry.description}</p>
+                        )}
+                        {entry.permissions.length > 0 && (
+                          <p className="text-[var(--color-muted)]">
+                            需要权限：{permissionSummary(entry.permissions)}
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-[var(--color-muted)]">没读到这个包的说明，装完才看得到。</p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    disabled={busy || blocked || installedVersion !== undefined}
+                    onClick={() => void installFromCatalog(entry)}
+                    className="shrink-0 rounded border border-[var(--color-border)] px-3 py-1.5 disabled:opacity-40 hover:text-[var(--color-fg)]"
+                  >
+                    {pendingKey === key ? '安装中…' : blocked ? '先卸载已装的' : label}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
         )}
       </div>
     </section>

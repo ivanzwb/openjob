@@ -1,7 +1,7 @@
 import { app } from 'electron';
 import type { autoUpdater as ElectronAutoUpdater } from 'electron-updater';
 import type { UpdateStatus } from '@core/ipc';
-import { normalizeFeedUrl } from '@core/updateFeed';
+import { OFFICIAL_REPO, normalizeFeedUrl } from '@core/updateFeed';
 import { getConfig } from './config';
 import { emit } from './ipc/bridge';
 
@@ -21,7 +21,11 @@ export { normalizeFeedUrl };
 type Updater = typeof ElectronAutoUpdater;
 
 /** 官方发布渠道，和 electron-builder.yml 的 publish 配置指向同一处 */
-const GITHUB_FEED = { provider: 'github', owner: 'ivanzwb', repo: 'openjob' } as const;
+const GITHUB_FEED = {
+  provider: 'github',
+  owner: OFFICIAL_REPO.owner,
+  repo: OFFICIAL_REPO.repo,
+} as const;
 
 function resolveFeed(): Parameters<Updater['setFeedURL']>[0] {
   const feedUrl = normalizeFeedUrl(getConfig().update.feedUrl);

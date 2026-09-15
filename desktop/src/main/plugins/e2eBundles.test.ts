@@ -1,8 +1,7 @@
 /**
  * 临时端到端验证（阅后即删）：四个 release 附件按真实安装链路装载后，
  * 目录落位、岗位包可解析、能力绑定指向合编包、清单不再有「随应用发布」。
- */
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+ */import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -30,13 +29,19 @@ const paths = { userData: '', pluginsDir: '' };
 vi.mock('../paths', () => ({ getAppPaths: () => paths }));
 
 import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
+import {
+  PACKAGE_CONTRIBUTIONS_FILE,
+  PACKAGE_MANIFEST_FILE,
+  PACKAGE_PACK_FILE,
+  type PluginPackageFiles,
+} from '@core/plugins/package/contract';
 import { synthesizeSuiteFromRolePack } from '@core/plugins/capabilitySuite';
 import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
 
 const coreCapabilitiesSuite = synthesizeSuiteFromRolePack(softwareEngineeringRolePack)!;
 import { signPackageFiles, toBundleJson } from './bundle';
-import { installPluginBundle } from './install';
-import { listInstalledPlugins, setExternalPlugins, findInstalledRolePack } from './runtime';
+import { installPluginBundle, uninstallPlugin } from './install';
+import { listExternalPlugins, listInstalledPlugins, setExternalPlugins, findInstalledRolePack } from './runtime';
 import { loadExternalPlugins } from './bootstrap';
 
 
@@ -45,6 +50,60 @@ const publisher = { privateKey: keys.privateKey };
 const PUBLISHER_PEM = keys.publisherPem;
 
 let DIST = '';
+
+/**
+ * 直接把包目录铺到安装位置。
+ *
+ * 走的是扫描路径而不是安装入口——「一台设备只装一个插件」之后，安装入口到不了
+ * 「多个包同时在场」这个状态，而存量机器就是这样，扫描必须照常装载它们。
+ */
+function layDownPackage(dirName: string, files: PluginPackageFiles): void {
+  const dir = join(paths.pluginsDir, dirName);
+  mkdirSync(dir, { recursive: true });
+  for (const [name, content] of Object.entries(files)) {
+    writeFileSync(join(dir, name), content, 'utf8');
+  }
+}
+
+/** 重打四个 release 附件（与 CI 同一函数），内容取自仓库里的分发数据。 */
+function releaseAttachments(): Array<{ name: string; files: PluginPackageFiles }> {
+  const attachments: Array<{ name: string; files: PluginPackageFiles }> = DISTRIBUTED_ROLE_PACKS.map(
+    (pack) => {
+      const { manifest, ...rest } = pack;
+      return {
+        name: `${manifest.id}@${manifest.version}.openjob.json`,
+        files: {
+          [PACKAGE_MANIFEST_FILE]: JSON.stringify(manifest),
+          [PACKAGE_PACK_FILE]: JSON.stringify(rest),
+        },
+      };
+    },
+  );
+
+  // 能力合编包由 SE 的内嵌声明合成：contributions.json 就是 register() 会推的那些声明
+  const collected: { tools: unknown[]; artifactParsers: unknown[]; interactions: unknown[] } = {
+    tools: [],
+    artifactParsers: [],
+    interactions: [],
+  };
+  coreCapabilitiesSuite.register({
+    registerTool: (t) => collected.tools.push(t),
+    registerArtifactParser: (p) => collected.artifactParsers.push(p),
+    registerInteractionType: (i) => collected.interactions.push(i),
+  });
+  attachments.push({
+    name: `${coreCapabilitiesSuite.manifest.id}@${coreCapabilitiesSuite.manifest.version}.openjob.json`,
+    files: {
+      [PACKAGE_MANIFEST_FILE]: JSON.stringify(coreCapabilitiesSuite.manifest),
+      [PACKAGE_CONTRIBUTIONS_FILE]: JSON.stringify(collected),
+    },
+  });
+
+  return attachments.map((item) => ({
+    name: item.name,
+    files: signPackageFiles(item.files, publisher.privateKey, PUBLISHER_PEM),
+  }));
+}
 
 beforeEach(() => {
   const root = mkdtempSync(join(tmpdir(), 'openjob-e2e-'));
@@ -62,49 +121,49 @@ afterEach(() => {
 });
 
 describe('release 附件端到端', () => {
-  it('四个附件全部装得上，能力包承载全部能力，清单没有随应用发布', () => {
-    // 重打四个附件（与 CI 同一函数），本测试只关心它们装得上
-    const files = [
-      ...DISTRIBUTED_ROLE_PACKS.map((pack) => ({
-        name: `${pack.manifest.id}@${pack.manifest.version}.openjob.json`,
-        files: (() => {
-          const { manifest, ...rest } = pack;
-          return {
-            'manifest.json': JSON.stringify(manifest),
-            'pack.json': JSON.stringify(rest),
-          };
-        })(),
-      })),
-      {
-        name: `${coreCapabilitiesSuite.manifest.id}@${coreCapabilitiesSuite.manifest.version}.openjob.json`,
-        files: {
-          'manifest.json': JSON.stringify(coreCapabilitiesSuite.manifest),
-          'contributions.json': JSON.stringify(
-            (() => {
-              const c: { tools: unknown[]; artifactParsers: unknown[]; interactions: unknown[] } = {
-                tools: [], artifactParsers: [], interactions: [],
-              };
-              coreCapabilitiesSuite.register({
-                registerTool: (t) => c.tools.push(t),
-                registerArtifactParser: (p) => c.artifactParsers.push(p),
-                registerInteractionType: (i) => c.interactions.push(i),
-              });
-              return c;
-            })(),
-          ),
-        },
-      },
-    ];
-    for (const { name, files: packageFiles } of files) {
-      const signed = signPackageFiles(packageFiles, publisher.privateKey, PUBLISHER_PEM);
-      writeFileSync(join(DIST, name), toBundleJson(signed), 'utf8');
+  it('四个附件都能装，装完就能解析', () => {
+    for (const { name, files } of releaseAttachments()) {
+      // 信封写到临时目录：模拟用户从 release 页下载到本地的那份
+      writeFileSync(join(DIST, name), toBundleJson(files), 'utf8');
     }
 
     const bundles = readdirSync(DIST).filter((f) => f.endsWith('.openjob.json'));
     expect(bundles).toHaveLength(4);
+
+    // 一个设备只装一个插件：逐个装、逐个验，装下一个之前先卸掉上一个
     for (const name of bundles) {
       const result = installPluginBundle(readFileSync(join(DIST, name)), {});
       if (!result.ok) throw new Error(`安装失败 ${name}: ${result.code}`);
+
+      const key = name.replace(/\.openjob\.json$/, '');
+      const entry = listExternalPlugins().find(
+        (item) => `${item.package.manifest.id}@${item.package.manifest.version}` === key,
+      );
+      expect(entry, `${key} 装上之后不在装载清单里`).toBeDefined();
+
+      // 清单里没有「随应用发布」的内置条目：装上去的这条就是全部来源
+      const ids = listInstalledPlugins().map((plugin) => plugin.id);
+      expect(ids).not.toContain('source-repository');
+      expect(ids).toContain(entry!.package.manifest.id);
+
+      // 岗位包装上就能按精确 id@version 解析
+      if (entry!.package.manifest.type === 'role-pack') {
+        expect(
+          findInstalledRolePack(entry!.package.manifest.id, entry!.package.manifest.version),
+        ).not.toBeNull();
+      }
+
+      const { id, version } = entry!.package.manifest;
+      uninstallPlugin(id, version);
+    }
+  });
+
+  it('升级前留下的多个插件包全部照常装载：限制挡的是新安装', () => {
+    // 铺目录而不是走安装入口：一台在「只装一个」之前就装过几个包的机器，盘面就是这样。
+    // 升级上来必须照常可用——这条限制只该挡住「再装一个」，不该让已有插件失效。
+    // 安装路径已经到不了这个状态（见上一个用例），扫描路径才是它的来处。
+    for (const { name, files } of releaseAttachments()) {
+      layDownPackage(name.replace(/\.openjob\.json$/, ''), files);
     }
 
     // 扫描装载（与启动同一条入口）

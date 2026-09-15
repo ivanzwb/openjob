@@ -21,7 +21,7 @@ import { loadExternalPlugins } from './bootstrap';
 import { exactKeyOf } from './inventory';
 import { classifyPackageTrust, type PackageTrust } from './package/signature';
 import { loadTrustedPublicKeys } from './package/trustedKeys';
-import { builtInPluginKeys } from './runtime';
+import { builtInPluginKeys, listExternalPlugins } from './runtime';
 
 export const BUNDLE_EXTENSION = '.openjob.json';
 
@@ -29,9 +29,9 @@ export const BUNDLE_EXTENSION = '.openjob.json';
  * 信封解压后的大小上限。
  *
  * gzip 炸弹能用几十 KB 展开成几 GB。zlib 的 maxOutputLength 在超限时直接报错，
- * 不会先把内存吃光。
+ * 不会先把内存吃光。清单下载也复用这个上限：包体从网络来，边界得和本地文件一致。
  */
-const MAX_BUNDLE_BYTES = 8 * 1024 * 1024;
+export const MAX_BUNDLE_BYTES = 8 * 1024 * 1024;
 
 const GZIP_MAGIC = [0x1f, 0x8b];
 
@@ -44,6 +44,7 @@ export type InstallFailureCode =
   | 'untrusted-signer'
   | 'reserved-id'
   | 'already-installed'
+  | 'one-plugin-limit'
   | 'isolation-violation'
   | 'confirm-data-loss';
 
@@ -198,6 +199,18 @@ export function installPluginBundle(raw: Buffer, options: InstallOptions = {}): 
 
   if (builtInPluginKeys().has(key)) {
     return fail('reserved-id', `${key} 与内置插件冲突`);
+  }
+
+  // 一台设备只装一个插件包。这是宿主的产品规则，不是包格式的一部分，所以守卫落在安装这个
+  // 唯一入口上：文件对话框与更新源清单两条路都从这里进，谁都不会绕过去。
+  // 同一个 id 的另一个版本不算「另一个插件」——那是升级或回退，沿用原有的并存行为。
+  const other = listExternalPlugins().find((entry) => entry.package.manifest.id !== manifest.id);
+  if (other) {
+    const current = other.package.manifest;
+    return fail(
+      'one-plugin-limit',
+      `本机已装 ${current.id}@${current.version}。插件只支持装一个：先卸载它，再装这个。`,
+    );
   }
 
   // 数据丢失把关：插件化升级前的旧战役全是软件工程语义。装默认岗位包之外的角色包，

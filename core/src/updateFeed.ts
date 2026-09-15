@@ -8,6 +8,9 @@
 /** GitHub 把最新一版的资产挂在这个相对路径下，latest.yml 也在里面 */
 export const GITHUB_ASSET_PATH = 'releases/latest/download';
 
+/** 官方发布渠道，和 electron-builder.yml 的 publish 配置指向同一处 */
+export const OFFICIAL_REPO = { owner: 'ivanzwb', repo: 'openjob' } as const;
+
 /**
  * 把用户填的更新源规整成 generic provider 的产物目录。
  *
@@ -35,4 +38,18 @@ export function normalizeFeedUrl(raw: string): string {
   if (segments.length !== 2 || segments.some((s) => s === '')) return url;
 
   return `${prefix}${path}/${GITHUB_ASSET_PATH}`;
+}
+
+/**
+ * 更新源的产物目录（绝对 URL）。
+ *
+ * electron-updater 要的是 provider 配置（它自己接 latest.yml），插件清单要的是同一个
+ * 目录下的附件地址——插件清单必须跟着更新源走。各写各的话，用户把更新源指到镜像之后，
+ * 应用从镜像更新、插件清单却回头去 GitHub 拉：一个连不上，另一个装进来的东西和当前
+ * 版本未必对得上。
+ */
+export function resolveFeedDir(raw: string): string {
+  const normalized = normalizeFeedUrl(raw);
+  if (normalized) return normalized;
+  return `https://github.com/${OFFICIAL_REPO.owner}/${OFFICIAL_REPO.repo}/${GITHUB_ASSET_PATH}`;
 }

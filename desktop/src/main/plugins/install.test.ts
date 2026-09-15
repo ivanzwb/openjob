@@ -250,6 +250,61 @@ describe('installPluginBundle', () => {
   });
 });
 
+describe('一个设备只装一个插件', () => {
+  it('已经装了别的插件就拒装，并说清该先卸载谁', () => {
+    installPluginBundle(bundle(rolePackFiles('demo.role', '2.0.0')));
+
+    const result = installPluginBundle(bundle(rolePackFiles('demo.other', '1.0.0')));
+
+    expect(result).toMatchObject({ code: 'one-plugin-limit' });
+    if (!result.ok) expect(result.detail).toContain('demo.role@2.0.0');
+    expect(installedDirs()).toEqual(['demo.role@2.0.0']);
+  });
+
+  it('卸载之后才装得上另一个', () => {
+    installPluginBundle(bundle(rolePackFiles('demo.role', '2.0.0')));
+    uninstallPlugin('demo.role', '2.0.0');
+
+    expect(installPluginBundle(bundle(rolePackFiles('demo.other', '1.0.0')))).toMatchObject({
+      ok: true,
+      id: 'demo.other',
+    });
+    expect(installedDirs()).toEqual(['demo.other@1.0.0']);
+  });
+
+  it('同一个 id 的其它版本不受限制：那是升级或回退', () => {
+    // 旧版本留着，pin 在旧版本上的战役才跑得动。删掉旧版本等于顺手把那些战役变成只读
+    installPluginBundle(bundle(rolePackFiles('demo.role', '2.0.0')));
+
+    expect(installPluginBundle(bundle(rolePackFiles('demo.role', '2.1.0')))).toMatchObject({
+      ok: true,
+    });
+    expect(installedDirs()).toEqual(['demo.role@2.0.0', 'demo.role@2.1.0']);
+  });
+
+  it('坏包先按坏包报，而不是先让人去卸载', () => {
+    // 顺序反过来的话，用户卸完已装的插件才发现包本身也是坏的
+    installPluginBundle(bundle(rolePackFiles('demo.role', '2.0.0')));
+    const tampered = signPackageFiles(rolePackFiles('demo.other'), publisher.privateKey, PUBLISHER_PEM);
+
+    expect(
+      installPluginBundle(
+        Buffer.from(toBundleJson({ ...tampered, [PACKAGE_PACK_FILE]: '{"competencyTemplates":[]}' })),
+      ),
+    ).toMatchObject({ code: 'tampered' });
+  });
+
+  it('挡住装不进去这件事优先于数据丢失确认：两道都拦时先说要卸载', () => {
+    installPluginBundle(bundle(rolePackFiles('demo.role', '2.0.0')));
+
+    expect(
+      installPluginBundle(bundle(rolePackFiles('demo.other', '1.0.0')), {
+        countPendingPrePluginCampaigns: () => 2,
+      }),
+    ).toMatchObject({ code: 'one-plugin-limit' });
+  });
+});
+
 describe('uninstallPlugin', () => {
   it('删掉目录并报告删过', () => {
     installPluginBundle(bundle());
