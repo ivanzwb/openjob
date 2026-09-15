@@ -25,7 +25,7 @@ import {
   pluginStorageDelete,
   pluginStorageGet,
   pluginStorageSet,
-} from '../plugins/codePluginStorage';
+} from '../plugins/pluginRuntimeStorage';
 import { createNode, deleteNode, updateNode } from '../campaign/nodes';
 import { createEdge, deleteEdge, listEdges } from '../campaign/edges';
 import { applyHistorySignals, getCampaignNudges } from '../insights';
@@ -130,15 +130,15 @@ const RPC_HANDLERS: Partial<Record<IpcInvokeChannel, RpcHandler>> = {
     }
     return { source: assets['main.js'], uiAssets };
   },
-  'codePlugin:storage.get': (p) => {
+  'pluginRuntime:storage.get': (p) => {
     const { pluginId, key } = p as { pluginId: string; key: string };
     return pluginStorageGet(pluginId, key);
   },
-  'codePlugin:storage.set': (p) => {
+  'pluginRuntime:storage.set': (p) => {
     const { pluginId, key, value } = p as { pluginId: string; key: string; value: string };
     pluginStorageSet(pluginId, key, value);
   },
-  'codePlugin:storage.delete': (p) => {
+  'pluginRuntime:storage.delete': (p) => {
     const { pluginId, key } = p as { pluginId: string; key: string };
     pluginStorageDelete(pluginId, key);
   },

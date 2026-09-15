@@ -5,9 +5,9 @@
  * 擦除，运行时只依赖 require('openjob')）。页面跑在 Webview 沙箱里，仓库能力
  * 经受控桥调用宿主通道（宿主按 repository:read 权限与岗位网关逐次校验）。
  */
-import type { CodePluginContext } from '@core/plugins/codePlugin/host';
+import type { PluginRuntimeContext } from '@core/plugins/pluginRuntime/host';
 
-export function activate(ctx: CodePluginContext): () => void {
+export function activate(ctx: PluginRuntimeContext): () => void {
   ctx.views.registerPage({
     id: 'source-repository',
     title: '源码',

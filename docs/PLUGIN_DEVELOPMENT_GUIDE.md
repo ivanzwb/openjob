@@ -217,9 +217,9 @@ export const capabilities: CapabilityDeclaration[] = [
 ```ts
 // main.ts —— 推荐用 TypeScript 编写；打包期由 esbuild 编译为 CJS 的 main.js 入信封。
 // import type 会被擦除：运行时只依赖 require('openjob')，对宿主模块零依赖。
-import type { CodePluginContext } from '@core/plugins/codePlugin/host';
+import type { PluginRuntimeContext } from '@core/plugins/pluginRuntime/host';
 
-export function activate(ctx: CodePluginContext): () => void {
+export function activate(ctx: PluginRuntimeContext): () => void {
   ctx.views.registerPage({
     id: 'board',
     title: '作品集看板',

@@ -4,9 +4,9 @@
  * 打包期由 esbuild 编译为 CJS 的 main.js；运行时（桌面渲染进程 / 移动端 WebView）
  * 只提供 require('openjob') 门面，同一份编译产物两端激活。
  */
-import type { CodePluginContext } from '@core/plugins/codePlugin/host';
+import type { PluginRuntimeContext } from '@core/plugins/pluginRuntime/host';
 
-export function activate(ctx: CodePluginContext): () => void {
+export function activate(ctx: PluginRuntimeContext): () => void {
   let attachedCampaignId: string | null = null;
 
   ctx.events.on('campaign:attached', (payload) => {

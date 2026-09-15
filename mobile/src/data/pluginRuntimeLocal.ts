@@ -8,7 +8,7 @@
  * 2. 岗位包类型的代码入口随岗位启用（选岗即确认），独立 plugin 类型目前
  *    没有移动端确认通道，不上屏；
  * 3. 把 main.js 声明的页面（WebView shim 运行时收集）与 ui 资产配好对，
- *    交给 CodePluginsScreen 的 WebView 运行时。
+ *    交给 PluginRuntimesScreen 的 WebView 运行时。
  *
  * 桥协议与桌面同构：页面内 postMessage → RN onMessage → invokeRemote 转发
  * 桌面白名单通道。桌面侧权限网关仍逐次校验，移动端只是传输层。
@@ -16,7 +16,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { listCachedRolePacks } from './rolePackLocal';
 
-export interface MobileCodePluginPage {
+export interface MobilePluginRuntimePage {
   pluginId: string;
   fullId: string;
   id: string;
@@ -24,12 +24,12 @@ export interface MobileCodePluginPage {
   webviewPath: string;
 }
 
-export interface MobileCodePlugin {
+export interface MobilePluginRuntime {
   pluginId: string;
   version: string;
   displayName: string;
   permissions: string[];
-  pages: MobileCodePluginPage[];
+  pages: MobilePluginRuntimePage[];
   uiAssets: Record<string, string>;
   mainSource: string;
 }
@@ -50,7 +50,7 @@ interface RolePackWithCode {
   codeAssets?: RawCodeAssets;
 }
 
-function isMobileCodePlugin(pack: unknown): pack is RolePackWithCode & { codeAssets: Record<string, string> } {
+function isMobilePluginRuntime(pack: unknown): pack is RolePackWithCode & { codeAssets: Record<string, string> } {
   if (typeof pack !== 'object' || pack === null) return false;
   const candidate = pack as RolePackWithCode;
   return (
@@ -60,9 +60,9 @@ function isMobileCodePlugin(pack: unknown): pack is RolePackWithCode & { codeAss
 }
 
 /** 从缓存里找出代码插件。main.js 缺失的声明视为坏包，跳过不炸列表。 */
-export function listMobileCodePlugins(db: SQLiteDatabase): MobileCodePlugin[] {
+export function listMobilePluginRuntimes(db: SQLiteDatabase): MobilePluginRuntime[] {
   return listCachedRolePacks(db)
-    .filter(isMobileCodePlugin)
+    .filter(isMobilePluginRuntime)
     .map((pack) => {
       const codeAssets = pack.codeAssets as Record<string, string>;
       const uiAssets: Record<string, string> = {};
@@ -74,7 +74,7 @@ export function listMobileCodePlugins(db: SQLiteDatabase): MobileCodePlugin[] {
         version: pack.manifest.version,
         displayName: pack.manifest.displayName,
         permissions: [...pack.manifest.permissions],
-        pages: [] as MobileCodePluginPage[],
+        pages: [] as MobilePluginRuntimePage[],
         uiAssets,
         mainSource: codeAssets['main.js'],
       };

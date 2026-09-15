@@ -7,7 +7,7 @@
  * main.js 与 ui/ 资产——差别只在桥的传输实现与本机能力判定。
  */
 
-export interface MobileCodePlugin {
+export interface MobilePluginRuntime {
   pluginId: string;
   version: string;
   displayName: string;
@@ -28,7 +28,7 @@ export function replyScript(reqId: number, result: unknown, error: string | null
  * 结构：openjob 门面（postMessage 桥）→ CommonJS 装配 main.js → 收集注册的
  * 页面 → 渲染第一个页面（iframe srcDoc 内嵌 ui 资产，二层桥直通 RN）。
  */
-export function buildMobileRuntimeHtml(plugin: MobileCodePlugin): string {
+export function buildMobileRuntimeHtml(plugin: MobilePluginRuntime): string {
   const mainSource = JSON.stringify(plugin.mainSource);
   const uiAssets = JSON.stringify(plugin.uiAssets);
   const pluginId = JSON.stringify(plugin.pluginId);
@@ -115,7 +115,7 @@ export function buildMobileRuntimeHtml(plugin: MobileCodePlugin): string {
   };
   new Function('module', 'exports', 'require', mainSource)(module, module.exports, requireShim);
 
-  // 相对引用解析：与桌面共用同一规则（core codePlugin/assets 的 JS 等价实现）
+  // 相对引用解析：与桌面共用同一规则（core pluginRuntime/assets 的 JS 等价实现）
   function isRelative(ref) {
     return !/^(https?:|data:|\/\/)/i.test(ref);
   }

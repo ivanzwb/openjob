@@ -10,7 +10,7 @@ import { ReposScreen } from '../screens/ReposScreen';
 import { ResumesScreen } from '../screens/ResumesScreen';
 import { SyncScreen } from '../screens/SyncScreen';
 import { MoreScreen } from '../screens/MoreScreen';
-import { CodePluginsScreen } from '../screens/CodePluginsScreen';
+import { PluginRuntimesScreen } from '../screens/PluginRuntimesScreen';
 import { AppHeaderTitle } from '../components/AppHeaderTitle';
 import { useRemoteTask } from '../context/RemoteTaskContext';
 import { useTheme } from '../theme';
@@ -159,7 +159,7 @@ export function RootTabs(): React.JSX.Element {
       />
       <Tab.Screen
         name="Plugins"
-        component={CodePluginsScreen}
+        component={PluginRuntimesScreen}
         options={{
           title: '插件',
           tabBarButton: () => null,

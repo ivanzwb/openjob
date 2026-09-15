@@ -500,7 +500,7 @@ interface CapabilityDeclaration {
 ```ts
 // main.ts —— 作者语言是 TypeScript；打包期由 esbuild 编译为 CJS 的 main.js 入信封
 // （签名与隔离扫描针对编译产物），运行时 require('openjob') 拿门面。
-export function activate(ctx: CodePluginContext) {
+export function activate(ctx: PluginRuntimeContext) {
   const disposable = ctx.views.registerPage({
     id: 'portfolio-board',
     title: '作品集看板',

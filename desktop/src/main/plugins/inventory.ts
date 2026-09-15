@@ -17,7 +17,7 @@ import {
   type ParsedPluginPackage,
   type PluginPackageFiles,
 } from '@core/plugins/package/contract';
-import { scanPluginSources } from '@core/plugins/codePlugin/scan';
+import { scanPluginSources } from '@core/plugins/pluginRuntime/scan';
 import { classifyPackageTrust, type PackageTrust } from './package/signature';
 
 /**

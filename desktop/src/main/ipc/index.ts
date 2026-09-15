@@ -63,11 +63,11 @@ import {
   pluginStorageDelete,
   pluginStorageGet,
   pluginStorageSet,
-} from '../plugins/codePluginStorage';
+} from '../plugins/pluginRuntimeStorage';
 import {
-  codePluginEnabled,
-  setCodePluginEnabled,
-} from '../plugins/codePluginState';
+  pluginRuntimeEnabled,
+  setPluginRuntimeEnabled,
+} from '../plugins/pluginRuntimeState';
 import { completePluginJson } from '../llm/json';
 import { emit } from '../ipc/bridge';
 import { pluginInventoryView } from '../plugins/bootstrap';
@@ -217,10 +217,10 @@ export function registerIpcHandlers(): void {
     }
     return { source: assets['main.js'], uiAssets };
   });
-  handle('codePlugin:storage.get', ({ pluginId, key }) => pluginStorageGet(pluginId, key));
-  handle('codePlugin:storage.set', ({ pluginId, key, value }) => pluginStorageSet(pluginId, key, value));
-  handle('codePlugin:storage.delete', ({ pluginId, key }) => pluginStorageDelete(pluginId, key));
-  handle('codePlugin:list', () =>
+  handle('pluginRuntime:storage.get', ({ pluginId, key }) => pluginStorageGet(pluginId, key));
+  handle('pluginRuntime:storage.set', ({ pluginId, key, value }) => pluginStorageSet(pluginId, key, value));
+  handle('pluginRuntime:storage.delete', ({ pluginId, key }) => pluginStorageDelete(pluginId, key));
+  handle('pluginRuntime:list', () =>
     listExternalPlugins()
       .filter((item) => item.package.manifest.main !== undefined)
       .map((item) => ({
@@ -233,11 +233,11 @@ export function registerIpcHandlers(): void {
         api: item.package.manifest.api!,
         // 岗位包的代码入口随岗位启用（选岗即确认）；独立 plugin 类型才需要逐个确认
         enabled:
-          item.package.manifest.type === 'role-pack' || codePluginEnabled(item.package.manifest.id),
+          item.package.manifest.type === 'role-pack' || pluginRuntimeEnabled(item.package.manifest.id),
       })),
   );
-  handle('codePlugin:setEnabled', ({ id, enabled }) => setCodePluginEnabled(id, enabled));
-  handle('codePlugin:llm.complete', ({ pluginId, version, system, user, role }) => {
+  handle('pluginRuntime:setEnabled', ({ id, enabled }) => setPluginRuntimeEnabled(id, enabled));
+  handle('pluginRuntime:llm.complete', ({ pluginId, version, system, user, role }) => {
     // 门面准入：只服务已安装且声明了 llm:complete 的代码插件
     const entry = listExternalPlugins().find(
       (item) =>
@@ -250,7 +250,7 @@ export function registerIpcHandlers(): void {
     }
     return completePluginJson({ pluginId, version, system, user, role });
   });
-  handle('codePlugin:evidence.listConfirmed', ({ pluginId, campaignId }) => {
+  handle('pluginRuntime:evidence.listConfirmed', ({ pluginId, campaignId }) => {
     const entry = listExternalPlugins().find(
       (item) =>
         item.package.manifest.id === pluginId &&

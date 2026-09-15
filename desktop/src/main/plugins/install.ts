@@ -14,7 +14,7 @@ import {
   type PluginPackageFiles,
   parsePluginPackage,
 } from '@core/plugins/package/contract';
-import { scanPluginSources } from '@core/plugins/codePlugin/scan';
+import { scanPluginSources } from '@core/plugins/pluginRuntime/scan';
 import { getAppPaths } from '../paths';
 import { loadExternalPlugins } from './bootstrap';
 import { exactKeyOf } from './inventory';

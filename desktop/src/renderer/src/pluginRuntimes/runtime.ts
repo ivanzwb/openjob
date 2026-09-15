@@ -7,16 +7,16 @@
  */
 import { useEffect, useState } from 'react';
 import {
-  activateCodePlugin,
+  activatePluginRuntime,
   createEventHub,
-  type ActiveCodePlugin,
-  type CodePluginModule,
-} from '@core/plugins/codePlugin/host';
+  type ActivePluginRuntime,
+  type PluginRuntimeModule,
+} from '@core/plugins/pluginRuntime/host';
 import type { LlmRole } from '@core/enums';
 import { invoke } from '../ipc';
 
 const hub = createEventHub();
-let active: ActiveCodePlugin[] = [];
+let active: ActivePluginRuntime[] = [];
 const uiAssetsByPlugin = new Map<string, Record<string, string>>();
 const listeners = new Set<() => void>();
 
@@ -24,12 +24,12 @@ function notify(): void {
   for (const listener of listeners) listener();
 }
 
-export function subscribeCodePlugins(listener: () => void): () => void {
+export function subscribePluginRuntimes(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
 }
 
-export function getActiveCodePlugins(): ActiveCodePlugin[] {
+export function getActivePluginRuntimes(): ActivePluginRuntime[] {
   return active;
 }
 
@@ -43,14 +43,14 @@ function loadModule(
   pluginId: string,
   version: string,
   permissions: readonly string[],
-): CodePluginModule {
-  const module = { exports: {} as Partial<CodePluginModule> };
+): PluginRuntimeModule {
+  const module = { exports: {} as Partial<PluginRuntimeModule> };
   // 权限即 API 面：未声明的命名空间不注入（§7.9）
   const facade: Record<string, unknown> = {
     storage: {
-      get: (key: string) => invoke('codePlugin:storage.get', { pluginId, key }),
-      set: (key: string, value: string) => invoke('codePlugin:storage.set', { pluginId, key, value }),
-      delete: (key: string) => invoke('codePlugin:storage.delete', { pluginId, key }),
+      get: (key: string) => invoke('pluginRuntime:storage.get', { pluginId, key }),
+      set: (key: string, value: string) => invoke('pluginRuntime:storage.set', { pluginId, key, value }),
+      delete: (key: string) => invoke('pluginRuntime:storage.delete', { pluginId, key }),
     },
     campaign: {
       getDescriptor: async (campaignId: string) =>
@@ -60,7 +60,7 @@ function loadModule(
   if (permissions.includes('llm:complete')) {
     facade.llm = {
       complete: (request: { system: string; user: string; role?: LlmRole }) =>
-        invoke('codePlugin:llm.complete', {
+        invoke('pluginRuntime:llm.complete', {
           pluginId,
           version,
           ...request,
@@ -88,7 +88,7 @@ function loadModule(
   if (permissions.includes('evidence:read-confirmed')) {
     facade.evidence = {
       listConfirmed: (campaignId: string) =>
-        invoke('codePlugin:evidence.listConfirmed', { pluginId, campaignId }),
+        invoke('pluginRuntime:evidence.listConfirmed', { pluginId, campaignId }),
     };
   }
   const requireShim = (id: string): unknown => {
@@ -96,7 +96,7 @@ function loadModule(
     throw new Error(`插件只允许 require('openjob')，实际请求了 ${id}`);
   };
   new Function('module', 'exports', 'require', source)(module, module.exports, requireShim);
-  const loaded = module.exports as CodePluginModule;
+  const loaded = module.exports as PluginRuntimeModule;
   if (typeof loaded?.activate !== 'function') {
     throw new Error(`插件 ${pluginId} 的入口缺少 activate(ctx)`);
   }
@@ -104,11 +104,11 @@ function loadModule(
 }
 
 /** 激活全部「已确认启用」的代码插件；单个失败不阻断其余（错误进 console 供诊断） */
-export async function activateInstalledCodePlugins(): Promise<void> {
-  const codePlugins = await invoke('codePlugin:list', undefined);
-  const next: ActiveCodePlugin[] = [];
+export async function activateInstalledPluginRuntimes(): Promise<void> {
+  const pluginRuntimes = await invoke('pluginRuntime:list', undefined);
+  const next: ActivePluginRuntime[] = [];
 
-  for (const plugin of codePlugins.filter((item) => item.enabled)) {
+  for (const plugin of pluginRuntimes.filter((item) => item.enabled)) {
     try {
       const entry = await invoke('plugin:getEntrySource', {
         id: plugin.id,
@@ -117,7 +117,7 @@ export async function activateInstalledCodePlugins(): Promise<void> {
       if (!entry) continue;
       uiAssetsByPlugin.set(plugin.id, entry.uiAssets);
       next.push(
-        activateCodePlugin({
+        activatePluginRuntime({
           pluginId: plugin.id,
           version: plugin.version,
           module: loadModule(entry.source, plugin.id, plugin.version, plugin.permissions),
@@ -127,17 +127,17 @@ export async function activateInstalledCodePlugins(): Promise<void> {
                 (await invoke('campaign:getRuntimeDescriptor', { campaignId }))?.descriptor ?? null,
             },
             storage: {
-              get: (key) => invoke('codePlugin:storage.get', { pluginId: plugin.id, key }),
+              get: (key) => invoke('pluginRuntime:storage.get', { pluginId: plugin.id, key }),
               set: (key, value) =>
-                invoke('codePlugin:storage.set', { pluginId: plugin.id, key, value }),
-              delete: (key) => invoke('codePlugin:storage.delete', { pluginId: plugin.id, key }),
+                invoke('pluginRuntime:storage.set', { pluginId: plugin.id, key, value }),
+              delete: (key) => invoke('pluginRuntime:storage.delete', { pluginId: plugin.id, key }),
             },
           },
           hub,
         }),
       );
     } catch (error) {
-      console.error(`[codePlugin] 激活失败：${plugin.id}@${plugin.version}`, error);
+      console.error(`[pluginRuntime] 激活失败：${plugin.id}@${plugin.version}`, error);
     }
   }
 
@@ -151,7 +151,7 @@ export async function activateInstalledCodePlugins(): Promise<void> {
 }
 
 /** React 订阅：代码插件页签 */
-export function useCodePluginTabs(): ActiveCodePlugin[] {
+export function usePluginRuntimeTabs(): ActivePluginRuntime[] {
   const [, setVersion] = useState(0);
   useEffect(() => {
     const listener = () => setVersion((v) => v + 1);
@@ -165,7 +165,7 @@ export function useCodePluginTabs(): ActiveCodePlugin[] {
 
 export function useActivateOnMount(): void {
   useEffect(() => {
-    void activateInstalledCodePlugins();
+    void activateInstalledPluginRuntimes();
   }, []);
 }
 
@@ -180,16 +180,16 @@ export function onPluginEvent(
   };
 }
 
-export { hub as codePluginEventHub };
+export { hub as pluginRuntimeEventHub };
 
 /** 启用：主进程落确认记录后，立即重新激活让页签即时出现 */
-export async function enableCodePlugin(id: string): Promise<void> {
-  await invoke('codePlugin:setEnabled', { id, enabled: true });
-  await activateInstalledCodePlugins();
+export async function enablePluginRuntime(id: string): Promise<void> {
+  await invoke('pluginRuntime:setEnabled', { id, enabled: true });
+  await activateInstalledPluginRuntimes();
 }
 
 /** 停用：撤贡献断桥，页签即时消失；确认记录保留（再次启用不再重复确认） */
-export async function disableCodePlugin(id: string): Promise<void> {
-  await invoke('codePlugin:setEnabled', { id, enabled: false });
-  await activateInstalledCodePlugins();
+export async function disablePluginRuntime(id: string): Promise<void> {
+  await invoke('pluginRuntime:setEnabled', { id, enabled: false });
+  await activateInstalledPluginRuntimes();
 }

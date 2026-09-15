@@ -2,8 +2,8 @@ import { useCallback, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { WebView } from 'react-native-webview';
-import { buildMobileRuntimeHtml, type MobileCodePlugin } from '../plugins/mobileRuntime';
-import { listMobileCodePlugins } from '../data/codePluginLocal';
+import { buildMobileRuntimeHtml, type MobilePluginRuntime } from '../plugins/mobileRuntime';
+import { listMobilePluginRuntimes } from '../data/pluginRuntimeLocal';
 import { invokeRemote } from '../remote/rpc';
 import { getRawDb } from '../db';
 import { useTheme } from '../theme';
@@ -28,16 +28,16 @@ function bridgeMethod(
 ): Promise<unknown> {
   switch (method) {
     case 'storage.get':
-      return invokeRemote('codePlugin:storage.get', { key: String(params.key ?? '') }).then(
+      return invokeRemote('pluginRuntime:storage.get', { key: String(params.key ?? '') }).then(
         (r) => r.result,
       );
     case 'storage.set':
-      return invokeRemote('codePlugin:storage.set', {
+      return invokeRemote('pluginRuntime:storage.set', {
         key: String(params.key ?? ''),
         value: String(params.value ?? ''),
       }).then(() => undefined);
     case 'storage.delete':
-      return invokeRemote('codePlugin:storage.delete', { key: String(params.key ?? '') }).then(
+      return invokeRemote('pluginRuntime:storage.delete', { key: String(params.key ?? '') }).then(
         () => undefined,
       );
     case 'campaign.getDescriptor':
@@ -59,7 +59,7 @@ function bridgeMethod(
   }
 }
 
-function PluginRuntimeView({ plugin }: { plugin: MobileCodePlugin }): React.JSX.Element {
+function PluginRuntimeView({ plugin }: { plugin: MobilePluginRuntime }): React.JSX.Element {
   const theme = useTheme();
   const webRef = useRef<WebView>(null);
 
@@ -110,14 +110,14 @@ function PluginRuntimeView({ plugin }: { plugin: MobileCodePlugin }): React.JSX.
   );
 }
 
-export function CodePluginsScreen(): React.JSX.Element {
+export function PluginRuntimesScreen(): React.JSX.Element {
   const theme = useTheme();
-  const [plugins, setPlugins] = useState<MobileCodePlugin[] | null>(null);
-  const [selected, setSelected] = useState<MobileCodePlugin | null>(null);
+  const [plugins, setPlugins] = useState<MobilePluginRuntime[] | null>(null);
+  const [selected, setSelected] = useState<MobilePluginRuntime | null>(null);
 
   useFocusEffect(
     useCallback(() => {
-      setPlugins(listMobileCodePlugins(getRawDb()));
+      setPlugins(listMobilePluginRuntimes(getRawDb()));
     }, []),
   );
 

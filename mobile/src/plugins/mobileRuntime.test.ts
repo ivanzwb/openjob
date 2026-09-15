@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { buildMobileRuntimeHtml, type MobileCodePlugin } from './mobileRuntime';
+import { buildMobileRuntimeHtml, type MobilePluginRuntime } from './mobileRuntime';
 
-const plugin: MobileCodePlugin = {
+const plugin: MobilePluginRuntime = {
   pluginId: 'portfolio-board',
   version: '1.0.0',
   displayName: '作品集看板',

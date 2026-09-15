@@ -36,7 +36,7 @@ const publisher = { privateKey: keys.privateKey };
 let root = '';
 
 beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), 'openjob-code-plugin-'));
+  root = mkdtempSync(join(tmpdir(), 'openjob-plugin-runtime-'));
   paths.userData = root;
   paths.pluginsDir = join(root, 'plugins');
 });
@@ -65,7 +65,7 @@ export function activate(ctx) {
 }
 `;
 
-function codePluginFiles(mainSource: string): Record<string, string> {
+function pluginRuntimeFiles(mainSource: string): Record<string, string> {
   return {
     'manifest.json': JSON.stringify(CLEAN_MANIFEST),
     'main.js': mainSource,
@@ -75,7 +75,7 @@ function codePluginFiles(mainSource: string): Record<string, string> {
 
 describe('代码插件主进程链路', () => {
   it('干净代码插件装得上，装载后代码资产被保留', () => {
-    const signed = signPackageFiles(codePluginFiles(CLEAN_MAIN), publisher.privateKey, keys.publisherPem);
+    const signed = signPackageFiles(pluginRuntimeFiles(CLEAN_MAIN), publisher.privateKey, keys.publisherPem);
     const result = installPluginBundle(Buffer.from(toBundleJson(signed)), {});
     if (!result.ok) console.error('install fail:', result.code, result.detail);
     expect(result).toMatchObject({ ok: true, id: 'portfolio-board' });
@@ -89,7 +89,7 @@ describe('代码插件主进程链路', () => {
   });
 
   it('带宿主越权访问的包在安装期就被隔离扫描拒下', () => {
-    const rogue = codePluginFiles("export function activate(ctx) { require('node:fs'); }");
+    const rogue = pluginRuntimeFiles("export function activate(ctx) { require('node:fs'); }");
     const signed = signPackageFiles(rogue, publisher.privateKey, keys.publisherPem);
     const result = installPluginBundle(Buffer.from(toBundleJson(signed)), {});
     expect(result).toMatchObject({ ok: false, code: 'isolation-violation' });

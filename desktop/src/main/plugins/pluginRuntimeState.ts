@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { getAppPaths } from '../paths';
 import { isStablePluginId } from '@core/plugins/contracts';
 
-export interface CodePluginEnablement {
+export interface PluginRuntimeEnablement {
   enabled: boolean;
   /** 用户确认权限清单的时间；未确认过的插件不在表里 */
   confirmedAt: number;
@@ -19,29 +19,29 @@ function file(): string {
   return join(getAppPaths().userData, 'plugin-state.json');
 }
 
-function readAll(): Record<string, CodePluginEnablement> {
+function readAll(): Record<string, PluginRuntimeEnablement> {
   const path = file();
   if (!existsSync(path)) return {};
   try {
     const parsed = JSON.parse(readFileSync(path, 'utf8')) as unknown;
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {};
-    return parsed as Record<string, CodePluginEnablement>;
+    return parsed as Record<string, PluginRuntimeEnablement>;
   } catch {
     return {};
   }
 }
 
-function writeAll(map: Record<string, CodePluginEnablement>): void {
+function writeAll(map: Record<string, PluginRuntimeEnablement>): void {
   writeFileSync(file(), JSON.stringify(map, null, 2), 'utf8');
 }
 
 /** 默认停用：没确认过权限的代码插件一律不激活 */
-export function codePluginEnabled(pluginId: string): boolean {
+export function pluginRuntimeEnabled(pluginId: string): boolean {
   if (!isStablePluginId(pluginId)) return false;
   return readAll()[pluginId]?.enabled === true;
 }
 
-export function setCodePluginEnabled(pluginId: string, enabled: boolean): void {
+export function setPluginRuntimeEnabled(pluginId: string, enabled: boolean): void {
   if (!isStablePluginId(pluginId)) throw new Error(`插件 id 不合法：${pluginId}`);
   const map = readAll();
   map[pluginId] = { enabled, confirmedAt: Date.now() };

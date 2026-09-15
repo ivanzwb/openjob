@@ -1,8 +1,8 @@
 import { useEffect, useRef } from 'react';
 import type { LlmRole } from '@core/enums';
-import { resolveWebviewHtml } from '@core/plugins/codePlugin/assets';
+import { resolveWebviewHtml } from '@core/plugins/pluginRuntime/assets';
 import { invoke, onEvent } from '../ipc';
-import { getUiAssets, onPluginEvent } from '../codePlugins/runtime';
+import { getUiAssets, onPluginEvent } from '../pluginRuntimes/runtime';
 
 /**
  * 代码插件的 Webview 沙箱页面（§7.9）。
@@ -16,11 +16,11 @@ import { getUiAssets, onPluginEvent } from '../codePlugins/runtime';
 
 const BASE_BRIDGE_METHODS = {
   'storage.get': (pluginId: string, params: { key: string }) =>
-    invoke('codePlugin:storage.get', { pluginId, key: params.key }),
+    invoke('pluginRuntime:storage.get', { pluginId, key: params.key }),
   'storage.set': (pluginId: string, params: { key: string; value: string }) =>
-    invoke('codePlugin:storage.set', { pluginId, key: params.key, value: params.value }),
+    invoke('pluginRuntime:storage.set', { pluginId, key: params.key, value: params.value }),
   'storage.delete': (pluginId: string, params: { key: string }) =>
-    invoke('codePlugin:storage.delete', { pluginId, key: params.key }),
+    invoke('pluginRuntime:storage.delete', { pluginId, key: params.key }),
   'campaign.getDescriptor': (_pluginId: string, params: { campaignId: string }) =>
     invoke('campaign:getRuntimeDescriptor', { campaignId: params.campaignId }),
 };
@@ -48,7 +48,7 @@ function bridgeMethods(permissions: readonly string[]) {
   }
   if (permissions.includes('evidence:read-confirmed')) {
     methods['evidence.listConfirmed'] = (_pluginId, params: { campaignId: string }) =>
-      invoke('codePlugin:evidence.listConfirmed', { pluginId: _pluginId, campaignId: params.campaignId });
+      invoke('pluginRuntime:evidence.listConfirmed', { pluginId: _pluginId, campaignId: params.campaignId });
   }
   if (permissions.includes('llm:complete')) {
     // 基础流式问答：llm:chat 开流，增量经 stream:* 事件推入沙箱
@@ -74,7 +74,7 @@ function bridgeMethods(permissions: readonly string[]) {
   return methods;
 }
 
-export function CodePluginWebView({
+export function PluginRuntimeWebView({
   pluginId,
   webviewPath,
   permissions,

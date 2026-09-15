@@ -1,14 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { CampaignRuntimeDescriptor } from '../types';
 import {
-  activateCodePlugin,
-  codePluginNamespaces,
+  activatePluginRuntime,
+  pluginRuntimeNamespaces,
   createEventHub,
-  type CodePluginModule,
-  type CodePluginServices,
+  type PluginRuntimeModule,
+  type PluginRuntimeServices,
 } from './host';
 
-function services(): CodePluginServices {
+function services(): PluginRuntimeServices {
   return {
     campaign: { getDescriptor: async () => null as CampaignRuntimeDescriptor | null },
     storage: {
@@ -19,11 +19,11 @@ function services(): CodePluginServices {
   };
 }
 
-describe('activateCodePlugin', () => {
+describe('activatePluginRuntime', () => {
   it('注册的页面带插件命名空间， deactivate 后全部撤干净', () => {
     const hub = createEventHub();
     const handler = vi.fn();
-    const plugin: CodePluginModule = {
+    const plugin: PluginRuntimeModule = {
       activate(ctx) {
         ctx.views.registerPage({ id: 'board', title: '看板', webviewPath: 'ui/index.html' });
         ctx.commands.register('refresh', () => undefined);
@@ -32,7 +32,7 @@ describe('activateCodePlugin', () => {
       },
     };
 
-    const active = activateCodePlugin({
+    const active = activatePluginRuntime({
       pluginId: 'portfolio',
       version: '1.0.0',
       module: plugin,
@@ -65,71 +65,71 @@ describe('activateCodePlugin', () => {
 
   it('命名空间与路径规则', () => {
     const hub = createEventHub();
-    const plugin: CodePluginModule = {
+    const plugin: PluginRuntimeModule = {
       activate(ctx) {
         ctx.views.registerPage({ id: '大写', title: 'x', webviewPath: 'ui/index.html' });
       },
     };
     expect(() =>
-      activateCodePlugin({ pluginId: 'p', version: '1.0.0', module: plugin, services: services(), hub }),
+      activatePluginRuntime({ pluginId: 'p', version: '1.0.0', module: plugin, services: services(), hub }),
     ).toThrow('视图 id 不合法');
 
-    const badPath: CodePluginModule = {
+    const badPath: PluginRuntimeModule = {
       activate(ctx) {
         ctx.views.registerPage({ id: 'ok', title: 'x', webviewPath: '../secret.html' });
       },
     };
     expect(() =>
-      activateCodePlugin({ pluginId: 'p', version: '1.0.0', module: badPath, services: services(), hub }),
+      activatePluginRuntime({ pluginId: 'p', version: '1.0.0', module: badPath, services: services(), hub }),
     ).toThrow('webview 路径必须在 ui/ 下');
   });
 
   it('重复注册与未开放事件都被拒', () => {
     const hub = createEventHub();
-    const duplicate: CodePluginModule = {
+    const duplicate: PluginRuntimeModule = {
       activate(ctx) {
         ctx.views.registerPage({ id: 'a', title: 'x', webviewPath: 'ui/a.html' });
         ctx.views.registerPage({ id: 'a', title: 'y', webviewPath: 'ui/b.html' });
       },
     };
     expect(() =>
-      activateCodePlugin({ pluginId: 'p', version: '1.0.0', module: duplicate, services: services(), hub }),
+      activatePluginRuntime({ pluginId: 'p', version: '1.0.0', module: duplicate, services: services(), hub }),
     ).toThrow('视图重复注册');
 
-    const rogue: CodePluginModule = {
+    const rogue: PluginRuntimeModule = {
       activate(ctx) {
         // @ts-expect-error 故意订阅未开放的事件
         ctx.events.on('node:fs', () => undefined);
       },
     };
     expect(() =>
-      activateCodePlugin({ pluginId: 'p', version: '1.0.0', module: rogue, services: services(), hub }),
+      activatePluginRuntime({ pluginId: 'p', version: '1.0.0', module: rogue, services: services(), hub }),
     ).toThrow('未开放的事件');
   });
 
   it('activate 抛错则整个插件不处于激活态', () => {
     const hub = createEventHub();
-    const boom: CodePluginModule = {
+    const boom: PluginRuntimeModule = {
       activate(ctx) {
         ctx.views.registerPage({ id: 'a', title: 'x', webviewPath: 'ui/a.html' });
         throw new Error('初始化失败');
       },
     };
     expect(() =>
-      activateCodePlugin({ pluginId: 'p', version: '1.0.0', module: boom, services: services(), hub }),
+      activatePluginRuntime({ pluginId: 'p', version: '1.0.0', module: boom, services: services(), hub }),
     ).toThrow('初始化失败');
   });
 });
 
-describe('codePluginNamespaces', () => {
+describe('pluginRuntimeNamespaces', () => {
   it('基础命名空间人人可见，llm/evidence 只对声明权限的插件开放', () => {
-    const base = codePluginNamespaces([]);
+    const base = pluginRuntimeNamespaces([]);
     expect(base).toContain('views');
     expect(base).toContain('storage');
     expect(base).not.toContain('llm');
     expect(base).not.toContain('evidence');
 
-    const full = codePluginNamespaces(['llm:complete', 'evidence:read-confirmed']);
+    const full = pluginRuntimeNamespaces(['llm:complete', 'evidence:read-confirmed']);
     expect(full).toContain('llm');
     expect(full).toContain('evidence');
   });
@@ -137,12 +137,12 @@ describe('codePluginNamespaces', () => {
   it('ctx 透传 campaign/llm/evidence 服务', async () => {
     const hub = createEventHub();
     let seen = false;
-    const plugin: CodePluginModule = {
+    const plugin: PluginRuntimeModule = {
       activate(ctx) {
         seen = typeof ctx.llm?.complete === 'function' && typeof ctx.evidence?.listConfirmed === 'function';
       },
     };
-    activateCodePlugin({
+    activatePluginRuntime({
       pluginId: 'p',
       version: '1.0.0',
       module: plugin,

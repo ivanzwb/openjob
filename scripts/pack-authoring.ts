@@ -25,7 +25,7 @@ import {
   type ResumeModuleDefinition,
   type RolePack,
 } from '@core/plugins/types';
-import { scanPluginSources } from '@core/plugins/codePlugin/scan';
+import { scanPluginSources } from '@core/plugins/pluginRuntime/scan';
 import { assertPluginFragmentSafe } from '@core/prompts/composer';
 
 export class PackAuthoringError extends Error {

@@ -1166,21 +1166,21 @@ export interface IpcInvokeMap {
     res: { source: string; uiAssets: Record<string, string> } | null;
   };
   /** 代码插件私有 KV（§7.9 ctx.storage）：与主库物理隔离，按 pluginId 分文件 */
-  'codePlugin:storage.get': { req: { pluginId: string; key: string }; res: string | null };
-  'codePlugin:storage.set': { req: { pluginId: string; key: string; value: string }; res: void };
-  'codePlugin:storage.delete': { req: { pluginId: string; key: string }; res: void };
+  'pluginRuntime:storage.get': { req: { pluginId: string; key: string }; res: string | null };
+  'pluginRuntime:storage.set': { req: { pluginId: string; key: string; value: string }; res: void };
+  'pluginRuntime:storage.delete': { req: { pluginId: string; key: string }; res: void };
   /** 代码插件受控 LLM 补全：同网关同审计，promptId 记为 plugin:<id> */
-  'codePlugin:llm.complete': {
+  'pluginRuntime:llm.complete': {
     req: { pluginId: string; version: string; system: string; user: string; role?: LlmRole };
     res: unknown;
   };
   /** 只读指定 Campaign 的已确认证据（需 evidence:read-confirmed 权限） */
-  'codePlugin:evidence.listConfirmed': {
+  'pluginRuntime:evidence.listConfirmed': {
     req: { pluginId: string; campaignId: string };
     res: CandidateEvidence[];
   };
   /** 代码插件清单（含启用状态）：设置页展示与激活门槛共用 */
-  'codePlugin:list': {
+  'pluginRuntime:list': {
     req: void;
     res: Array<{
       id: string;
@@ -1194,7 +1194,7 @@ export interface IpcInvokeMap {
     }>;
   };
   /** 启用/停用：启用要求用户已在界面上确认权限清单 */
-  'codePlugin:setEnabled': { req: { id: string; enabled: boolean }; res: void };
+  'pluginRuntime:setEnabled': { req: { id: string; enabled: boolean }; res: void };
 
   'campaign:list': { req: void; res: CampaignSummary[] };
   'campaign:getOverview': { req: void; res: CampaignOverview };
@@ -1502,13 +1502,13 @@ export const IPC_INVOKE_CHANNELS = [
   'plugin:uninstall',
   'plugin:getRolePack',
   'plugin:getEntrySource',
-  'codePlugin:storage.get',
-  'codePlugin:storage.set',
-  'codePlugin:storage.delete',
-  'codePlugin:llm.complete',
-  'codePlugin:evidence.listConfirmed',
-  'codePlugin:list',
-  'codePlugin:setEnabled',
+  'pluginRuntime:storage.get',
+  'pluginRuntime:storage.set',
+  'pluginRuntime:storage.delete',
+  'pluginRuntime:llm.complete',
+  'pluginRuntime:evidence.listConfirmed',
+  'pluginRuntime:list',
+  'pluginRuntime:setEnabled',
   'campaign:list',
   'campaign:getOverview',
   'campaign:compare',

@@ -13,19 +13,19 @@
 
 import type { CampaignRuntimeDescriptor } from '../types';
 
-export type CodePluginEventName =
+export type PluginRuntimeEventName =
   | 'campaign:attached'
   | 'campaign:capability-changed'
   | 'practice:completed';
 
-export const CODE_PLUGIN_EVENTS: readonly CodePluginEventName[] = [
+export const PLUGIN_RUNTIME_EVENTS: readonly PluginRuntimeEventName[] = [
   'campaign:attached',
   'campaign:capability-changed',
   'practice:completed',
 ];
 
 /** 插件注册的 Webview 页面：资源路径相对包根，渲染进 Webview 沙箱 */
-export interface CodePluginPage {
+export interface PluginRuntimePage {
   /** 插件内唯一；宿主侧完整 id 为 `<pluginId>:<id>` */
   id: string;
   title: string;
@@ -33,7 +33,7 @@ export interface CodePluginPage {
   webviewPath: string;
 }
 
-export interface RegisteredCodePluginPage extends CodePluginPage {
+export interface RegisteredPluginRuntimePage extends PluginRuntimePage {
   pluginId: string;
   /** 宿主侧完整 id：`<pluginId>:<id>` */
   fullId: string;
@@ -41,7 +41,7 @@ export interface RegisteredCodePluginPage extends CodePluginPage {
 
 export type CommandHandler = (args: unknown) => Promise<unknown> | unknown;
 
-export interface CodePluginServices {
+export interface PluginRuntimeServices {
   /** 只读指定 Campaign 的 descriptor；无 descriptor 时为 null */
   readonly campaign: {
     readonly getDescriptor: (campaignId: string) => Promise<CampaignRuntimeDescriptor | null>;
@@ -80,58 +80,58 @@ export interface CodePluginServices {
   };
 }
 
-export interface CodePluginContext {
+export interface PluginRuntimeContext {
   readonly pluginId: string;
   /** 只读指定 Campaign 的 descriptor；无 descriptor 时为 null */
-  readonly campaign: CodePluginServices['campaign'];
+  readonly campaign: PluginRuntimeServices['campaign'];
   /** 插件私有 KV */
-  readonly storage: CodePluginServices['storage'];
+  readonly storage: PluginRuntimeServices['storage'];
   /** 受控 LLM 补全；未声明 llm:complete 权限时为 undefined */
-  readonly llm: CodePluginServices['llm'];
+  readonly llm: PluginRuntimeServices['llm'];
   /** 基础流式问答；未声明 llm:complete 权限时为 undefined */
-  readonly agent: CodePluginServices['agent'];
+  readonly agent: PluginRuntimeServices['agent'];
   /** 只读已确认证据；未声明 evidence:read-confirmed 权限时为 undefined */
-  readonly evidence: CodePluginServices['evidence'];
+  readonly evidence: PluginRuntimeServices['evidence'];
   views: {
-    registerPage(page: CodePluginPage): { dispose(): void };
+    registerPage(page: PluginRuntimePage): { dispose(): void };
   };
   commands: {
     register(id: string, handler: CommandHandler): { dispose(): void };
   };
   events: {
-    on(event: CodePluginEventName, handler: (payload: unknown) => void): { dispose(): void };
+    on(event: PluginRuntimeEventName, handler: (payload: unknown) => void): { dispose(): void };
   };
 }
 
-export interface CodePluginModule {
-  activate(ctx: CodePluginContext): void | (() => void);
+export interface PluginRuntimeModule {
+  activate(ctx: PluginRuntimeContext): void | (() => void);
   deactivate?(): void;
 }
 
-export interface ActiveCodePlugin {
+export interface ActivePluginRuntime {
   pluginId: string;
   version: string;
   /** 声明的权限：宿主据此决定暴露给页面的桥方法 */
   permissions: readonly string[];
-  pages: RegisteredCodePluginPage[];
+  pages: RegisteredPluginRuntimePage[];
   commands: string[];
   deactivate(): void;
 }
 
-export interface CodePluginInput {
+export interface PluginRuntimeInput {
   pluginId: string;
   version: string;
   /** 信息性字段：记录激活时的声明权限 */
   permissions?: readonly string[];
-  module: CodePluginModule;
-  services: CodePluginServices;
+  module: PluginRuntimeModule;
+  services: PluginRuntimeServices;
   /** 事件分发器：宿主在事件发生时调用，把 payload 投给所有已激活插件的订阅者 */
   hub: EventHub;
 }
 
 export interface EventHub {
   subscribe(
-    event: CodePluginEventName,
+    event: PluginRuntimeEventName,
     pluginId: string,
     handler: (payload: unknown) => void,
   ): { dispose(): void };
@@ -143,9 +143,9 @@ const ID_RE = /^[a-z0-9][a-z0-9.-]*$/;
  * 激活一个代码插件。贡献被逐项校验并登记；activate 抛错或登记冲突都会让整个
  * 插件回滚到未激活态——不允许「半个插件」活着。
  */
-export function activateCodePlugin(input: CodePluginInput): ActiveCodePlugin {
+export function activatePluginRuntime(input: PluginRuntimeInput): ActivePluginRuntime {
   const { pluginId, version, permissions, module, services, hub } = input;
-  const pages: RegisteredCodePluginPage[] = [];
+  const pages: RegisteredPluginRuntimePage[] = [];
   const commands: string[] = [];
   const cleanups: Array<() => void> = [];
   let deactivated = false;
@@ -154,7 +154,7 @@ export function activateCodePlugin(input: CodePluginInput): ActiveCodePlugin {
     if (deactivated) throw new Error(`插件 ${pluginId} 已停用，不能再注册贡献`);
   };
 
-  const ctx: CodePluginContext = {
+  const ctx: PluginRuntimeContext = {
     pluginId,
     campaign: services.campaign,
     storage: services.storage,
@@ -162,7 +162,7 @@ export function activateCodePlugin(input: CodePluginInput): ActiveCodePlugin {
     agent: services.agent,
     evidence: services.evidence,
     views: {
-      registerPage(page: CodePluginPage) {
+      registerPage(page: PluginRuntimePage) {
         guard();
         if (!ID_RE.test(page.id)) throw new Error(`视图 id 不合法：${page.id}`);
         if (!page.webviewPath?.startsWith('ui/')) {
@@ -172,7 +172,7 @@ export function activateCodePlugin(input: CodePluginInput): ActiveCodePlugin {
         if (pages.some((existing) => existing.fullId === fullId)) {
           throw new Error(`视图重复注册：${fullId}`);
         }
-        const registered: RegisteredCodePluginPage = {
+        const registered: RegisteredPluginRuntimePage = {
           pluginId,
           fullId,
           id: page.id,
@@ -201,9 +201,9 @@ export function activateCodePlugin(input: CodePluginInput): ActiveCodePlugin {
       },
     },
     events: {
-      on(event: CodePluginEventName, handler: (payload: unknown) => void) {
+      on(event: PluginRuntimeEventName, handler: (payload: unknown) => void) {
         guard();
-        if (!CODE_PLUGIN_EVENTS.includes(event)) {
+        if (!PLUGIN_RUNTIME_EVENTS.includes(event)) {
           throw new Error(`未开放的事件：${String(event)}`);
         }
         if (typeof handler !== 'function') throw new Error('事件处理器必须是函数');
@@ -250,7 +250,7 @@ export function activateCodePlugin(input: CodePluginInput): ActiveCodePlugin {
  * 门面命名空间可见性：权限即 API 面。基础命名空间人人可见；
  * llm / evidence 只对 manifest 声明了对应权限的插件注入（渲染层装配时使用）。
  */
-export function codePluginNamespaces(permissions: readonly string[]): string[] {
+export function pluginRuntimeNamespaces(permissions: readonly string[]): string[] {
   const namespaces = ['views', 'commands', 'events', 'campaign', 'storage'];
   if (permissions.includes('llm:complete')) namespaces.push('llm', 'agent');
   if (permissions.includes('evidence:read-confirmed')) namespaces.push('evidence');
@@ -259,7 +259,7 @@ export function codePluginNamespaces(permissions: readonly string[]): string[] {
 
 /** 内存事件总线：桌面的宿主容器与测试都用它；移动端换桥实现即可 */
 export function createEventHub(): EventHub & {
-  emit(event: CodePluginEventName, payload?: unknown): void;
+  emit(event: PluginRuntimeEventName, payload?: unknown): void;
 } {
   const listeners = new Map<string, Set<(payload: unknown) => void>>();
   return {

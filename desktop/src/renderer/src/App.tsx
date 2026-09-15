@@ -13,8 +13,8 @@ import { bumpDataVersion } from './ipc/dataVersion';
 import { useJobProgress } from './ipc/useJobProgress';
 import { useNavigationTabs } from './ipc/useNavigationTabs';
 import { useBackgroundErrorToast } from './ipc/errorToast';
-import { useActivateOnMount, useCodePluginTabs } from './codePlugins/runtime';
-import { CodePluginWebView } from './components/CodePluginWebView';
+import { useActivateOnMount, usePluginRuntimeTabs } from './pluginRuntimes/runtime';
+import { PluginRuntimeWebView } from './components/PluginRuntimeWebView';
 import { HOST_PAGES } from './hostPages';
 import { nextVisibleTab } from '@core/hostUi';
 
@@ -134,10 +134,10 @@ export default function App(): React.JSX.Element {
   // 插入点 A：能力页签槽位来自岗位包声明的 navigation[]，没有任何 Campaign 启用时不出现
   const { tabs: navTabs } = useNavigationTabs();
   // v3：代码插件（§7.9）注册的 Webview 页面进同一槽位
-  const codePluginTabs = useCodePluginTabs();
+  const pluginRuntimeTabs = usePluginRuntimeTabs();
   useActivateOnMount();
   const navTabsKeys = navTabs.map<Tab>((entry) => `nav:${entry.id}`);
-  const codeTabsKeys = codePluginTabs.flatMap((plugin) =>
+  const codeTabsKeys = pluginRuntimeTabs.flatMap((plugin) =>
     plugin.pages.map<Tab>((page) => `nav:${page.fullId}`),
   );
   const isTabVisible = (key: Tab): boolean =>
@@ -176,7 +176,7 @@ export default function App(): React.JSX.Element {
             {[
               ...TABS.slice(0, 4),
               ...navTabs.map((entry) => ({ key: `nav:${entry.id}` as Tab, label: entry.label })),
-              ...codePluginTabs.flatMap((plugin) =>
+              ...pluginRuntimeTabs.flatMap((plugin) =>
                 plugin.pages.map((page) => ({
                   key: `nav:${page.fullId}` as Tab,
                   label: page.title,
@@ -254,13 +254,13 @@ export default function App(): React.JSX.Element {
             );
           })}
           {/* 代码插件页面（§7.9）：渲染在 Webview 沙箱里，与宿主只经受控桥 */}
-          {codePluginTabs.flatMap((plugin) =>
+          {pluginRuntimeTabs.flatMap((plugin) =>
             plugin.pages.map((page) => {
               const key: Tab = `nav:${page.fullId}`;
               if (!mountedTabs.has(key) || !isTabVisible(key)) return null;
               return (
                 <TabPanel key={key} active={activeTab === key} className="overflow-hidden">
-                  <CodePluginWebView
+                  <PluginRuntimeWebView
                     pluginId={plugin.pluginId}
                     webviewPath={page.webviewPath}
                     permissions={plugin.permissions}
