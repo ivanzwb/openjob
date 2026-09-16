@@ -43,6 +43,9 @@ importers:
       '@huggingface/transformers':
         specifier: ^4.2.0
         version: 4.2.0
+      '@napi-rs/canvas':
+        specifier: 0.1.80
+        version: 0.1.80
       '@openjob/core':
         specifier: workspace:*
         version: link:../core
@@ -159,6 +162,18 @@ importers:
       '@img/sharp-win32-x64':
         specifier: 0.34.5
         version: 0.34.5
+      '@napi-rs/canvas-darwin-arm64':
+        specifier: 0.1.80
+        version: 0.1.80
+      '@napi-rs/canvas-darwin-x64':
+        specifier: 0.1.80
+        version: 0.1.80
+      '@napi-rs/canvas-linux-x64-gnu':
+        specifier: 0.1.80
+        version: 0.1.80
+      '@napi-rs/canvas-win32-x64-msvc':
+        specifier: 0.1.80
+        version: 0.1.80
 
   plugins/productManager:
     dependencies:
