@@ -137,12 +137,28 @@ importers:
       tree-sitter-wasms:
         specifier: ^0.1.13
         version: 0.1.13
-
-  plugins:
-    dependencies:
-      '@openjob/core':
-        specifier: workspace:*
-        version: link:../core
+    optionalDependencies:
+      '@img/sharp-darwin-arm64':
+        specifier: 0.34.5
+        version: 0.34.5
+      '@img/sharp-darwin-x64':
+        specifier: 0.34.5
+        version: 0.34.5
+      '@img/sharp-libvips-darwin-arm64':
+        specifier: 1.2.4
+        version: 1.2.4
+      '@img/sharp-libvips-darwin-x64':
+        specifier: 1.2.4
+        version: 1.2.4
+      '@img/sharp-libvips-linux-x64':
+        specifier: 1.2.4
+        version: 1.2.4
+      '@img/sharp-linux-x64':
+        specifier: 0.34.5
+        version: 0.34.5
+      '@img/sharp-win32-x64':
+        specifier: 0.34.5
+        version: 0.34.5
 
   plugins/productManager:
     dependencies:

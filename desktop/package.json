@@ -51,6 +51,16 @@
     "web-tree-sitter": "^0.25.10",
     "word-extractor": "^1.0.4"
   },
+  "//": "sharp 的平台二进制（@img/sharp-*）是它的 optionalDependencies，electron-builder 26.x 不会收集传递级 optionalDependencies（github.com/electron-userland/electron-builder/issues/9737），直接导致打包后缺 sharp 运行时。把构建矩阵需要的平台包声明为应用自身的 optionalDependencies：pnpm 按 os/cpu 只在对应平台安装匹配包，electron-builder 才会把它们收进安装包。版本必须与 sharp@0.34.5 的 optionalDependencies 精确一致。",
+  "optionalDependencies": {
+    "@img/sharp-libvips-darwin-arm64": "1.2.4",
+    "@img/sharp-libvips-darwin-x64": "1.2.4",
+    "@img/sharp-libvips-linux-x64": "1.2.4",
+    "@img/sharp-darwin-arm64": "0.34.5",
+    "@img/sharp-darwin-x64": "0.34.5",
+    "@img/sharp-linux-x64": "0.34.5",
+    "@img/sharp-win32-x64": "0.34.5"
+  },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
     "@types/better-sqlite3": "^9.6.0",
