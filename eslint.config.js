@@ -48,6 +48,22 @@ export default tseslint.config(
   },
 
   {
+    // 声明文件（.d.ts）里 `consistent-type-imports` 与 `no-var` 两条规则在语义上不适用：
+    //   - 引用「值 + 类型同名导出」的构造器类型（如 @napi-rs/canvas 的 DOMMatrix 既是
+    //     interface 又是 const）时，`import type` 只会绑定到 interface（实例类型），
+    //     `typeof` 取不到值的语义，只有 `import()` 类型注解能表达——规则本身无解；
+    //   - globalThis 上可赋值的全局（`declare var DOMMatrix`）只能写 `var`：
+    //     `let`/`const` 不创建 globalThis 属性，`const` 还不可赋值。
+    // .d.ts 不参与运行时打包，这里按文件类别放行这两条，与下方 scripts/tests 的
+    // 按类别覆盖是同一套做法。
+    files: ['**/*.d.ts'],
+    rules: {
+      '@typescript-eslint/consistent-type-imports': 'off',
+      'no-var': 'off',
+    },
+  },
+
+  {
     // 构建脚本跑在 Node 里，不走 tsconfig 的 lib 配置
     files: ['scripts/**/*.mjs', 'desktop/scripts/**/*.mjs', 'eslint.config.js'],
     languageOptions: {

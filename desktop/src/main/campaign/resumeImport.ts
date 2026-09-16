@@ -1,7 +1,6 @@
 import { dialog } from 'electron';
 import { readFile } from 'node:fs/promises';
 import { basename, extname } from 'node:path';
-import { PDFParse } from 'pdf-parse';
 import mammoth from 'mammoth';
 import WordExtractor from 'word-extractor';
 import type { ResumeImportResult } from '@core/ipc';
@@ -10,12 +9,48 @@ import { createResume } from './repository';
 
 const SUPPORTED_EXTENSIONS = ['pdf', 'doc', 'docx', 'txt', 'md'];
 
+/**
+ * 在加载 pdf-parse 之前确保全局存在 DOMMatrix 构造器。
+ *
+ * pdf-parse → pdfjs-dist 的 legacy 构建在模块顶层执行 `new DOMMatrix()`
+ * （pdf.mjs:15620 SCALE_MATRIX），Node/Electron 主进程没有 DOM API，
+ * 缺了它会直接 ReferenceError。官方 polyfill 依赖 @napi-rs/canvas 的原生绑定，
+ * 但打包后原生绑定在 asar.unpacked / 平台包里，polyfill 落空就会抛
+ * "ReferenceError: DOMMatrix is not defined"。
+ * 这里优先用 @napi-rs/canvas 的原生实现，拿不到（打包缺绑定）时退回
+ * @napi-rs/canvas/geometry（纯 JS 的 geometry-polyfill，deps 为空的 Node 内建 util，
+ * dev / 打包一致可用），在导入 PDF 解析器之前把 DOMMatrix 先装到 globalThis 上。
+ */
+async function ensureDOMMatrix(): Promise<void> {
+  if (typeof globalThis.DOMMatrix !== 'undefined') return;
+
+  try {
+    const canvas = await import('@napi-rs/canvas');
+    if (canvas.DOMMatrix) {
+      globalThis.DOMMatrix = canvas.DOMMatrix;
+      return;
+    }
+  } catch {
+    // 打包环境缺原生绑定（.node 未随包分发），退回纯 JS 实现
+  }
+
+  // @napi-rs/canvas 无 exports 字段，Node ESM 要求带 .js 后缀才能解析子路径
+  const geometry = await import('@napi-rs/canvas/geometry.js');
+  if (!geometry.DOMMatrix) {
+    throw new Error('无法加载 DOMMatrix polyfill（@napi-rs/canvas/geometry.js 未导出 DOMMatrix）');
+  }
+  globalThis.DOMMatrix = geometry.DOMMatrix;
+}
+
 /** 从简历文件中提取纯文本（pdf 走 pdf-parse，docx 走 mammoth，其余按 utf-8 读取） */
 async function extractResumeText(filePath: string): Promise<string> {
   const ext = extname(filePath).toLowerCase().replace(/^\./, '');
   const buffer = await readFile(filePath);
 
   if (ext === 'pdf') {
+    // pdf-parse 顶层会 new DOMMatrix()，必须先把 polyfill 装上（见 ensureDOMMatrix 注释）
+    await ensureDOMMatrix();
+    const { PDFParse } = await import('pdf-parse');
     const parser = new PDFParse({ data: buffer });
     try {
       const result = await parser.getText();
