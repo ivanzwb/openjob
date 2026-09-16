@@ -394,6 +394,26 @@ export function deleteResume(id: string): void {
   db.delete(schema.resume).where(eq(schema.resume.id, id)).run();
 }
 
+/** 复制一份：正文/模板/寸照原样保留，名字加「副本」；不重跑模型归类，打开即用 */
+export function duplicateResume(id: string): Resume {
+  const db = getDb();
+  const source = db.select().from(schema.resume).where(eq(schema.resume.id, id)).get();
+  if (!source) throw new Error('简历不存在');
+  const now = Date.now();
+  const row = {
+    id: randomUUID(),
+    label: source.label.trim() ? `${source.label.trim()} 副本` : '简历副本',
+    rawText: source.rawText,
+    parsed: source.parsed,
+    previewStyle: source.previewStyle,
+    photo: source.photo,
+    createdAt: now,
+    updatedAt: now,
+  };
+  db.insert(schema.resume).values(row).run();
+  return rowToResume(row);
+}
+
 export function saveJdParsed(campaignId: string, parsed: JdParsed): void {
   getDb()
     .update(schema.campaign)

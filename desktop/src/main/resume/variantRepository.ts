@@ -151,6 +151,29 @@ export function deleteResumeVariant(id: string): void {
   getDb().delete(schema.resumeVariant).where(eq(schema.resumeVariant.id, id)).run();
 }
 
+/** 复制一份优化版：内容/模板/寸照与来源关系原样保留，名字加「副本」 */
+export function duplicateResumeVariant(id: string): ResumeVariantView {
+  const db = getDb();
+  const source = db.select().from(schema.resumeVariant).where(eq(schema.resumeVariant.id, id)).get();
+  if (!source) throw new Error('优化简历不存在');
+  const now = Date.now();
+  const row = {
+    id: randomUUID(),
+    sourceResumeId: source.sourceResumeId,
+    jobTargetId: source.jobTargetId,
+    label: source.label.trim() ? `${source.label.trim()} 副本` : '优化版副本',
+    contentMd: source.contentMd,
+    changelogMd: source.changelogMd,
+    previewStyle: source.previewStyle,
+    photo: source.photo,
+    isUserEdited: source.isUserEdited,
+    createdAt: now,
+    updatedAt: now,
+  };
+  db.insert(schema.resumeVariant).values(row).run();
+  return getResumeVariant(row.id);
+}
+
 export function getSourceResumeText(sourceResumeId: string): string {
   return getResumeRow(sourceResumeId).rawText;
 }

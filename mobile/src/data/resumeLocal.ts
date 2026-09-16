@@ -227,3 +227,77 @@ export async function deleteResumeEntry(
     db.runSync(`DELETE FROM resume_variant WHERE id = ?`, id);
   });
 }
+
+/** 复制一份：正文/模板/寸照原样保留，名字加「副本」；不走 LLM，返回新条目的 id */
+export async function duplicateResumeEntry(
+  db: SQLiteDatabase,
+  kind: ResumeEntryKind,
+  id: string,
+): Promise<string> {
+  const identity = await getDeviceIdentity(db);
+  const newId = Crypto.randomUUID();
+  const now = Date.now();
+
+  writingAs(db, identity.deviceId, () => {
+    if (kind === 'resume') {
+      const source = db.getFirstSync<{
+        label: string;
+        raw_text: string;
+        parsed: string | null;
+        preview_style: string | null;
+        photo: string | null;
+      }>(`SELECT label, raw_text, parsed, preview_style, photo FROM resume WHERE id = ?`, id);
+      if (!source) throw new Error('简历不存在');
+      const label = source.label.trim() ? `${source.label.trim()} 副本` : '简历副本';
+      db.runSync(
+        `INSERT INTO resume (id, label, raw_text, parsed, preview_style, photo, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        newId,
+        label,
+        source.raw_text,
+        source.parsed,
+        source.preview_style,
+        source.photo,
+        now,
+        now,
+      );
+      return;
+    }
+
+    const source = db.getFirstSync<{
+      source_resume_id: string | null;
+      job_target_id: string;
+      label: string;
+      content_md: string;
+      changelog_md: string | null;
+      preview_style: string | null;
+      photo: string | null;
+      is_user_edited: number;
+    }>(
+      `SELECT source_resume_id, job_target_id, label, content_md, changelog_md,
+              preview_style, photo, is_user_edited
+         FROM resume_variant WHERE id = ?`,
+      id,
+    );
+    if (!source) throw new Error('优化简历不存在');
+    const label = source.label.trim() ? `${source.label.trim()} 副本` : '优化版副本';
+    db.runSync(
+      `INSERT INTO resume_variant (id, source_resume_id, job_target_id, label, content_md,
+                                   changelog_md, preview_style, photo, is_user_edited, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      newId,
+      source.source_resume_id,
+      source.job_target_id,
+      label,
+      source.content_md,
+      source.changelog_md,
+      source.preview_style,
+      source.photo,
+      source.is_user_edited,
+      now,
+      now,
+    );
+  });
+
+  return newId;
+}

@@ -7,6 +7,7 @@ import {
   createResume,
   deleteCampaign,
   deleteResume,
+  duplicateResume,
   getCampaignDetail,
   listCampaigns,
   listResumes,
@@ -25,6 +26,7 @@ import { exportResumePdf } from '../resume/pdf';
 import { polishResumeSection, structureResumeWithLlm } from '../resume/ai';
 import {
   deleteResumeVariant,
+  duplicateResumeVariant,
   getResumeVariant,
   listResumeVariants,
   updateResumeVariant,
@@ -333,6 +335,8 @@ export function registerIpcHandlers(): void {
   handle('resume:delete', ({ id }) => {
     deleteResume(id);
   });
+  // 复制一份：正文/模板/寸照原样保留，不走模型重排，打开即用
+  handle('resume:duplicate', ({ id }) => duplicateResume(id));
   handle('resume:exportPdf', (input) => exportResumePdf(input));
   handle('resume:aiStructure', (input) => structureResumeWithLlm(input.contentMd));
   handle('resume:aiPolish', async (input) => ({
@@ -365,6 +369,8 @@ export function registerIpcHandlers(): void {
   handle('resumeVariant:delete', ({ id }) => {
     deleteResumeVariant(id);
   });
+  // 复制一份优化版：内容/模板/寸照与来源关系原样保留
+  handle('resumeVariant:duplicate', ({ id }) => duplicateResumeVariant(id));
 
   handle('diagnosis:fromJd', ({ campaignId }) => ({
     jobId: startJob('JD 诊断', (jobId) => diagnoseFromJd(campaignId, jobId)),
