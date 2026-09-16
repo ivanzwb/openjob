@@ -2,7 +2,7 @@
   "expo": {
     "name": "OpenJob",
     "slug": "mobile",
-    "version": "1.0.0-rc.5",
+    "version": "1.0.0-rc.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",

@@ -1,6 +1,6 @@
 {
   "name": "@openjob/desktop",
-  "version": "1.0.0-rc.5",
+  "version": "1.0.0-rc.1",
   "description": "OpenJob 桌面端（Electron）",
   "license": "Apache-2.0",
   "author": "OpenJob <ivan.zwb@gmail.com>",
