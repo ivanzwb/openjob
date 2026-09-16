@@ -4,6 +4,11 @@
   "description": "OpenJob 桌面端（Electron）",
   "license": "Apache-2.0",
   "author": "OpenJob <ivan.zwb@gmail.com>",
+  "//": "electron-builder 从 desktop/ 目录打包时找不到仓库根目录的 .git/config，发布到 GitHub Release 必须靠这里显式声明仓库（否则报 \"Cannot detect repository\"）",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ivanzwb/openjob.git"
+  },
   "private": true,
   "type": "module",
   "main": "./out/main/index.js",
