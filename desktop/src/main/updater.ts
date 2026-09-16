@@ -1,9 +1,11 @@
 import { app } from 'electron';
 import type { autoUpdater as ElectronAutoUpdater } from 'electron-updater';
 import type { UpdateStatus } from '@core/ipc';
-import { OFFICIAL_REPO, normalizeFeedUrl } from '@core/updateFeed';
+import { OFFICIAL_REPO, normalizeFeedUrl, parseGitHubUrl } from '@core/updateFeed';
+import { compareVersions, pickUpdateTarget } from '@core/version';
 import { getConfig } from './config';
 import { emit } from './ipc/bridge';
+import { listGitHubReleaseTags } from './releaseList';
 
 // 共享层的更新源规整规则，桌面端与手机端必须用同一份判断
 export { normalizeFeedUrl };
@@ -31,6 +33,53 @@ function resolveFeed(): Parameters<Updater['setFeedURL']>[0] {
   const feedUrl = normalizeFeedUrl(getConfig().update.feedUrl);
   if (!feedUrl) return GITHUB_FEED;
   return { provider: 'generic', url: feedUrl };
+}
+
+/**
+ * 同大版本线优先的选版：
+ *
+ * - 官方 GitHub 源（feedUrl 为空）和「填 GitHub 仓库地址 / gh-proxy 镜像地址」
+ *   都能枚举 Releases 列表，先把正式版 tag 拉下来，优先挑同 major.minor 线内
+ *   的最新补丁；线上没有同线新版本时才允许跨线（取全局最新）。
+ * - 选中的目标如果就是全局最新，或线上根本没有比当前更新的版本，就走默认
+ *   feed（latest 行为不变）；只有「同线内还有更高补丁但全局有更新的线」时，
+ *   才把 generic 源钉到 `releases/download/<tag>` 的资产目录，让 electron-updater
+ *   只看这一条。
+ * - 自建目录（非 GitHub 地址）没有版本列表可枚举，维持 resolveFeed 原行为。
+ * - 列表拉不到（断网、限流、仓库不存在）不能把更新检查搞挂：降级成默认
+ *   latest 行为，让 electron-updater 报它自己的错。
+ */
+async function resolvePreferredFeed(): Promise<Parameters<Updater['setFeedURL']>[0]> {
+  const raw = getConfig().update.feedUrl;
+  const parsed = parseGitHubUrl(raw);
+  const fallback = resolveFeed();
+
+  // 自建目录（非 GitHub 地址）没有版本列表可枚举，维持原行为
+  if (raw && !parsed) return fallback;
+
+  // 默认官方源 owner/repo 固定；填了 GitHub 地址（含镜像前缀）则用地址里的
+  const owner = parsed?.owner ?? GITHUB_FEED.owner;
+  const repo = parsed?.repo ?? GITHUB_FEED.repo;
+
+  let tags: string[];
+  try {
+    tags = await listGitHubReleaseTags(owner, repo);
+  } catch {
+    return fallback;
+  }
+
+  const target = pickUpdateTarget(app.getVersion(), tags);
+  // 没有更新可升，或选中的就是全局最新（跨线场景）：交给 electron-updater
+  // 走默认 latest 逻辑即可
+  if (target == null) return fallback;
+  const latest = [...tags].sort((a, b) => compareVersions(b, a))[0];
+  if (latest == null || compareVersions(target, latest) === 0) return fallback;
+
+  // 同线内选中的补丁不是全局最新：钉到该 tag 的资产目录
+  const base = parsed
+    ? `${parsed.prefix}${parsed.owner}/${parsed.repo}/releases/download/${target}`
+    : `https://github.com/${GITHUB_FEED.owner}/${GITHUB_FEED.repo}/releases/download/${target}`;
+  return { provider: 'generic', url: base };
 }
 
 /**
@@ -133,7 +182,7 @@ export async function checkForUpdates(): Promise<UpdateStatus> {
       setStatus({ state: 'disabled', message: '开发模式下不检查更新' });
       return status;
     }
-    updater.setFeedURL(resolveFeed());
+    updater.setFeedURL(await resolvePreferredFeed());
     await updater.checkForUpdates();
   } catch (err) {
     setStatus({ state: 'error', message: updateErrorMessage(err) });

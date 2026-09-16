@@ -34,6 +34,32 @@ export function compareVersions(a: string, b: string): number {
   return 0;
 }
 
+/**
+ * 自动更新「同大版本线优先」的选版纯函数。
+ *
+ * 输入当前版本和正式版 tag 列表，返回应该安装的版本 tag。
+ * 优先挑同 major.minor 线内最高补丁；线内无更新时允许跨线取全局最高；
+ * 没有比当前更新的返回 null，由调用方走默认行为。
+ *
+ * 返回原始 tag（保留 `v` 前缀），外部可直接拼成下载路径。
+ */
+export function pickUpdateTarget(
+  currentVersion: string,
+  tags: string[],
+): string | null {
+  const currentLine = normalizeVersion(currentVersion);
+  const lineParts = currentLine.split('.').slice(0, 2);
+  const lineKey = lineParts.join('.');
+
+  const newer = tags.filter((t) => compareVersions(t, currentVersion) > 0);
+  if (newer.length === 0) return null;
+
+  const inLine = newer.filter((t) => normalizeVersion(t).startsWith(`${lineKey}.`));
+  const pool = inLine.length > 0 ? inLine : newer;
+
+  return pool.sort((a, b) => compareVersions(b, a))[0] ?? null;
+}
+
 /** 同步失败原因里唯一需要被两端代码识别的一种，用于换成专门的提示界面 */
 export const SYNC_VERSION_MISMATCH = 'versionMismatch';
 

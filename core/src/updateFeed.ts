@@ -12,6 +12,30 @@ export const GITHUB_ASSET_PATH = 'releases/latest/download';
 export const OFFICIAL_REPO = { owner: 'ivanzwb', repo: 'openjob' } as const;
 
 /**
+ * 从更新源 URL 里识别 GitHub 仓库地址（可带 gh-proxy 之类镜像前缀），
+ * 拆出 owner / repo 和镜像前缀。认不出来返回 null。
+ */
+export function parseGitHubUrl(
+  raw: string,
+): { prefix: string; owner: string; repo: string } | null {
+  const url = raw.trim();
+  const marker = url.toLowerCase().lastIndexOf('github.com/');
+  if (marker < 0) return null;
+
+  const prefix = url.slice(0, marker + 'github.com/'.length);
+  const path = url
+    .slice(prefix.length)
+    .replace(/\/+$/, '')
+    .replace(/\.git$/, '');
+  const segments = path.split('/');
+  if (segments.length !== 2 || segments.some((s) => s === '')) return null;
+
+  const [owner = '', repo = ''] = segments;
+  if (!owner || !repo) return null;
+  return { prefix, owner, repo };
+}
+
+/**
  * 把用户填的更新源规整成 generic provider 的产物目录。
  *
  * generic provider 只会把 latest.yml 接在这个 URL 后面（newBaseUrl 先补尾斜杠，
@@ -25,19 +49,9 @@ export const OFFICIAL_REPO = { owner: 'ivanzwb', repo: 'openjob' } as const;
  * 目录下，所以「填 GitHub 仓库地址 → 指向 releases/latest/download」对两端都成立。
  */
 export function normalizeFeedUrl(raw: string): string {
-  const url = raw.trim();
-  const marker = url.toLowerCase().lastIndexOf('github.com/');
-  if (marker < 0) return url;
-
-  const prefix = url.slice(0, marker + 'github.com/'.length);
-  const path = url
-    .slice(prefix.length)
-    .replace(/\/+$/, '')
-    .replace(/\.git$/, '');
-  const segments = path.split('/');
-  if (segments.length !== 2 || segments.some((s) => s === '')) return url;
-
-  return `${prefix}${path}/${GITHUB_ASSET_PATH}`;
+  const parsed = parseGitHubUrl(raw);
+  if (!parsed) return raw.trim();
+  return `${parsed.prefix}${parsed.owner}/${parsed.repo}/${GITHUB_ASSET_PATH}`;
 }
 
 /**

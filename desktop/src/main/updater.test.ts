@@ -13,7 +13,8 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockUpdater, state } = vi.hoisted(() => {
+const { mockListReleases, mockUpdater, state } = vi.hoisted(() => {
+  const mockListReleases = vi.fn();
   const mockUpdater = {
     autoDownload: true,
     autoInstallOnAppQuit: true,
@@ -24,8 +25,16 @@ const { mockUpdater, state } = vi.hoisted(() => {
     on: vi.fn(),
   };
   return {
+    mockListReleases,
     mockUpdater,
-    state: { failInit: false, isPackaged: true, feedUrl: '' },
+    state: {
+      failInit: false,
+      isPackaged: true,
+      feedUrl: '',
+      appVersion: '1.2.3',
+      releases: [] as string[],
+      releasesError: null as string | null,
+    },
   };
 });
 
@@ -45,7 +54,7 @@ vi.mock('electron', () => ({
     get isPackaged() {
       return state.isPackaged;
     },
-    getVersion: () => '1.2.3',
+    getVersion: () => state.appVersion,
   },
 }));
 
@@ -57,6 +66,13 @@ vi.mock('./ipc/bridge', () => ({
   emit: vi.fn(),
 }));
 
+// Releases 列表查询独立成模块：单测里 mock 掉，不打 GitHub API。
+// 默认返回空列表（= 没有任何可升级版本），既有行为不变；
+// 具体用例通过 state.releases / state.releasesError 控制。
+vi.mock('./releaseList', () => ({
+  listGitHubReleaseTags: mockListReleases,
+}));
+
 import type * as UpdaterModule from './updater';
 let updater: typeof UpdaterModule;
 
@@ -64,6 +80,14 @@ beforeEach(async () => {
   state.failInit = false;
   state.isPackaged = true;
   state.feedUrl = '';
+  state.appVersion = '1.2.3';
+  state.releases = [];
+  state.releasesError = null;
+  mockListReleases.mockReset();
+  mockListReleases.mockImplementation(async () => {
+    if (state.releasesError) throw new Error(state.releasesError);
+    return state.releases;
+  });
   mockUpdater.autoDownload = true;
   mockUpdater.autoInstallOnAppQuit = true;
   mockUpdater.setFeedURL.mockReset();
@@ -145,6 +169,115 @@ describe('getUpdater 的 ESM-CJS 互操作', () => {
       provider: 'generic',
       url: 'https://gh-proxy.org/https://github.com/ivanzwb/openjob/releases/latest/download',
     });
+  });
+});
+
+/**
+ * 同大版本线优先：当前在 0.6 线时，线上已有 0.7.0 也不跨，先升到 0.6 线内
+ * 最新的补丁；0.6 线内升无可升了才允许跨到全局最新。
+ */
+describe('同大版本线优先选版', () => {
+  it('同线内还有更高补丁时，把 generic 源钉到该 tag 的资产目录', async () => {
+    state.appVersion = '0.6.29';
+    state.releases = ['v0.6.30', 'v0.7.0'];
+    await updater.checkForUpdates();
+
+    // 0.6.30 是同线最新但全局有 0.7.0：钉到 releases/download/v0.6.30，
+    // 让 electron-updater 只看这一条，而不是默认拉全局最新
+    expect(mockUpdater.setFeedURL).toHaveBeenCalledWith({
+      provider: 'generic',
+      url: 'https://github.com/ivanzwb/openjob/releases/download/v0.6.30',
+    });
+    expect(mockUpdater.checkForUpdates).toHaveBeenCalledTimes(1);
+  });
+
+  it('镜像前缀在钉 tag 时原样保留', async () => {
+    state.feedUrl = 'https://gh-proxy.org/https://github.com/ivanzwb/openjob';
+    state.appVersion = '0.6.29';
+    state.releases = ['v0.6.30', 'v0.7.0'];
+    await updater.checkForUpdates();
+
+    expect(mockUpdater.setFeedURL).toHaveBeenCalledWith({
+      provider: 'generic',
+      url: 'https://gh-proxy.org/https://github.com/ivanzwb/openjob/releases/download/v0.6.30',
+    });
+  });
+
+  it('同线内升无可升时跨线到全局最新（走默认 latest 行为）', async () => {
+    state.appVersion = '0.6.31';
+    state.releases = ['v0.6.30', 'v0.7.0'];
+    await updater.checkForUpdates();
+
+    // 选中目标就是全局最新：不必钉 tag，默认 github 源这次会拉到 v0.7.0
+    expect(mockUpdater.setFeedURL).toHaveBeenCalledWith({
+      provider: 'github',
+      owner: 'ivanzwb',
+      repo: 'openjob',
+    });
+  });
+
+  it('当前已停在线内最新补丁号、且线内无更新时，允许跨线升到别的线（走默认 latest 行为）', async () => {
+    state.appVersion = '0.6.30';
+    state.releases = ['v0.6.30', 'v0.7.0'];
+    await updater.checkForUpdates();
+
+    expect(mockUpdater.setFeedURL).toHaveBeenCalledWith({
+      provider: 'github',
+      owner: 'ivanzwb',
+      repo: 'openjob',
+    });
+  });
+
+  it('线上没有任何比当前新的版本时走默认 latest 检查', async () => {
+    state.appVersion = '1.2.3';
+    state.releases = ['v1.2.2'];
+    await updater.checkForUpdates();
+
+    expect(mockUpdater.setFeedURL).toHaveBeenCalledWith({
+      provider: 'github',
+      owner: 'ivanzwb',
+      repo: 'openjob',
+    });
+    expect(mockUpdater.checkForUpdates).toHaveBeenCalledTimes(1);
+  });
+
+  it('Releases 列表拉不到（断网/限流）时降级成默认 latest 行为，不把检查搞挂', async () => {
+    state.releasesError = 'rate limit exceeded';
+    state.appVersion = '0.6.29';
+    await updater.checkForUpdates();
+
+    expect(mockUpdater.setFeedURL).toHaveBeenCalledWith({
+      provider: 'github',
+      owner: 'ivanzwb',
+      repo: 'openjob',
+    });
+    expect(mockUpdater.checkForUpdates).toHaveBeenCalledTimes(1);
+    expect(updater.getUpdateStatus().state).not.toBe('error');
+  });
+
+  it('自建目录（非 GitHub 地址）不枚举版本，直接按原行为走', async () => {
+    state.feedUrl = 'https://example.com/updates/';
+    state.appVersion = '0.6.29';
+    state.releases = ['v0.6.30', 'v0.7.0'];
+    await updater.checkForUpdates();
+
+    expect(mockListReleases).not.toHaveBeenCalled();
+    expect(mockUpdater.setFeedURL).toHaveBeenCalledWith({
+      provider: 'generic',
+      url: 'https://example.com/updates/',
+    });
+  });
+
+  it('解析失败（列表接口报错）时还能回到出错的默认源让错误提示可见', async () => {
+    state.releasesError = '537';
+    await updater.checkForUpdates();
+    const handler = mockUpdater.on.mock.calls.find(([e]) => e === 'error')?.[1] as
+      | ((err: Error) => void)
+      | undefined;
+    handler?.(Object.assign(new Error('537 "method: GET url: ..."'), { statusCode: 537 }));
+
+    expect(updater.getUpdateStatus().state).toBe('error');
+    expect(updater.getUpdateStatus().message).toContain('537');
   });
 });
 

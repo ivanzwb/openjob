@@ -1,7 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { compareVersions, isSyncCompatible, normalizeVersion, versionMismatchMessage } from './version';
+import {
+  compareVersions,
+  isSyncCompatible,
+  normalizeVersion,
+  pickUpdateTarget,
+  versionMismatchMessage,
+} from './version';
 
 describe('normalizeVersion', () => {
   it('去掉 tag 的 v 前缀', () => {
@@ -82,6 +88,42 @@ describe('versionMismatchMessage', () => {
   it('都说明本次没有同步数据', () => {
     expect(versionMismatchMessage('0.7.0', '0.6.0')).toContain('不同步');
     expect(versionMismatchMessage('0.7.0', null)).toContain('不同步');
+  });
+});
+
+describe('pickUpdateTarget', () => {
+  it('同线内还有更高补丁时优先选同线，不跨线', () => {
+    expect(pickUpdateTarget('0.6.29', ['v0.6.30', 'v0.7.0'])).toBe('v0.6.30');
+  });
+
+  it('同线内有多个候选时选最高的', () => {
+    expect(pickUpdateTarget('0.6.28', ['v0.6.29', 'v0.6.30', 'v0.7.0'])).toBe('v0.6.30');
+  });
+
+  it('同线内升无可升时跨线到全局最新', () => {
+    expect(pickUpdateTarget('0.6.31', ['v0.6.30', 'v0.7.0'])).toBe('v0.7.0');
+  });
+
+  it('线上没有任何比当前新的版本时返回 null', () => {
+    expect(pickUpdateTarget('0.7.0', ['v0.6.30'])).toBeNull();
+    expect(pickUpdateTarget('1.2.3', [])).toBeNull();
+  });
+
+  it('tags 全是旧版本时返回 null', () => {
+    expect(pickUpdateTarget('2.0.0', ['v0.6.30', 'v0.7.0', 'v1.0.0'])).toBeNull();
+  });
+
+  it('保留原始 tag 的 v 前缀', () => {
+    expect(pickUpdateTarget('0.6.29', ['0.6.30'])).toBe('0.6.30');
+    expect(pickUpdateTarget('0.6.29', ['v0.6.30'])).toBe('v0.6.30');
+  });
+
+  it('次版本不同不算同线：0.6 线内无更新时允许跨到 0.7', () => {
+    expect(pickUpdateTarget('0.6.31', ['v0.6.30', 'v0.7.1', 'v0.8.0'])).toBe('v0.8.0');
+  });
+
+  it('无 v 前缀的版本号也能正确比较', () => {
+    expect(pickUpdateTarget('0.6.29', ['0.6.30', '0.7.0'])).toBe('0.6.30');
   });
 });
 
