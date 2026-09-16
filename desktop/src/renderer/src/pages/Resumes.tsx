@@ -130,8 +130,7 @@ export function Resumes(): React.JSX.Element {
       if (r[0]) return { kind: 'resume', id: r[0].id };
       return null;
     });
-    if (!optimizeTargetId && t[0]) setOptimizeTargetId(t[0].id);
-  }, [optimizeTargetId]);
+  }, []);
 
   useEffect(() => {
     // refreshAll 为 async，所有 setState 均在 await 之后，非同步 setState，属规则误报
@@ -241,6 +240,7 @@ export function Resumes(): React.JSX.Element {
     setListSelection({ kind: 'resume', id: NEW_RESUME_DRAFT_ID });
     setSelectedResumeId(null);
     setOptimizeBaseResumeId('');
+    setOptimizeTargetId('');
     setTab('resumes');
   };
 
@@ -732,7 +732,7 @@ export function Resumes(): React.JSX.Element {
                       onChange={(e) => setOptimizeTargetId(e.target.value)}
                       className="min-w-[200px] rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1.5 text-sm"
                     >
-                      {targets.length === 0 && <option value="">暂无目标岗位</option>}
+                      <option value="">未选择</option>
                       {targets.map((t) => (
                         <option key={t.id} value={t.id}>{t.company} · {t.roleTitle}</option>
                       ))}
