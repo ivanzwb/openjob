@@ -166,6 +166,28 @@ jobs:
             libfuse2 \
             rpm
 
+      # macos-latest 是 arm64 runner，但 electron-builder.yml 的 dmg arch 是 [arm64, x64]；
+      # pnpm 默认只装匹配当前 os/cpu 的 optionalDependencies，darwin-x64 平台包不会进
+      # node_modules，交叉打出的 x64 dmg 会缺 sharp 原生二进制（electron-builder 不收集
+      # 传递级 optionalDependencies，github.com/electron-userland/electron-builder/issues/9737）。
+      # 注入 supportedArchitectures 让 pnpm 额外安装 darwin-x64（+ libvips 对应变体），
+      # 两个 dmg 各自带全用户 CPU 的二进制。仅 mac job 注入，其余平台不背载荷。
+      # 必须发生在 pnpm install 之前，install 才会读取到这个配置。
+      - name: Enable cross-arch sharp binaries (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          cat >> pnpm-workspace.yaml <<'EOF'
+
+supportedArchitectures:
+  os:
+    - current
+    - darwin
+  cpu:
+    - current
+    - x64
+    - arm64
+EOF
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
