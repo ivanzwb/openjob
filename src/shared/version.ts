@@ -56,6 +56,26 @@ export function isSyncCompatible(a: string, b: string): boolean {
   return compareVersions(a, b) === 0;
 }
 
+/**
+ * 自动更新选版：优先同一大版本线（major.minor）内的最新补丁，只有线上
+ * 没有任何同线新版本时才允许跨线（取全局最新）。`tags` 应由调用方先过滤
+ * 掉 draft / prerelease；返回的是原 tag（带不带 v 前缀以传入为准），
+ * 没有比当前更新的版本时返回 null。
+ */
+export function pickUpdateTarget(currentVersion: string, tags: string[]): string | null {
+  const lineOf = (v: string): string => {
+    const [major = 0, minor = 0] = segments(v);
+    return `${major}.${minor}`;
+  };
+  const currentLine = lineOf(currentVersion);
+  const newer = tags.filter((tag) => compareVersions(tag, currentVersion) > 0);
+  if (newer.length === 0) return null;
+
+  const inLine = newer.filter((tag) => lineOf(tag) === currentLine);
+  const pool = inLine.length > 0 ? inLine : newer;
+  return pool.sort((a, b) => compareVersions(b, a))[0];
+}
+
 /** 谁落后了。两端拿同一份文案，避免各写一句、说法还不一样 */
 export function versionMismatchMessage(desktopVersion: string, peerVersion: string | null): string {
   if (!peerVersion) {
