@@ -177,16 +177,15 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: |
           cat >> pnpm-workspace.yaml <<'EOF'
-
-supportedArchitectures:
-  os:
-    - current
-    - darwin
-  cpu:
-    - current
-    - x64
-    - arm64
-EOF
+          supportedArchitectures:
+            os:
+              - current
+              - darwin
+            cpu:
+              - current
+              - x64
+              - arm64
+          EOF
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
