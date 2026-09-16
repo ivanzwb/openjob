@@ -82,6 +82,9 @@ dmg:
   sign: false
 
 linux:
+  # electron-builder 26 默认从 package.json 的 name（@openjob/desktop）推导 executableName，
+  # 得到 "@openjobdesktop"，含 @ 字符无法用于 AppImage/deb 内部可执行文件名。显式固定。
+  executableName: OpenJob
   target:
     - AppImage
     - deb
