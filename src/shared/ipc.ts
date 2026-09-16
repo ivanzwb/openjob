@@ -1036,6 +1036,8 @@ export interface IpcInvokeMap {
   'resume:create': { req: CreateResumeInput; res: ResumeImportResult };
   'resume:update': { req: UpdateResumeInput; res: Resume };
   'resume:delete': { req: { id: string }; res: void };
+  /** 复制一份：正文/模板/寸照原样保留，名字加「副本」，不走模型重排 */
+  'resume:duplicate': { req: { id: string }; res: Resume };
   /** 弹出文件选择框导入简历（pdf/docx/txt/md），取消或失败时返回 null */
   'resume:importFile': { req: void; res: ResumeImportResult | null };
   'resume:exportPdf': { req: ResumeExportInput; res: ResumeExportResult };
@@ -1058,6 +1060,8 @@ export interface IpcInvokeMap {
   'resumeVariant:optimize': { req: OptimizeResumeInput; res: ResumeVariantView };
   'resumeVariant:update': { req: UpdateResumeVariantInput; res: ResumeVariantView };
   'resumeVariant:delete': { req: { id: string }; res: void };
+  /** 复制一份优化版：内容/模板/寸照原样保留，名字加「副本」 */
+  'resumeVariant:duplicate': { req: { id: string }; res: ResumeVariantView };
 
   /** 解析 JD 并生成两层知识点树，进度通过 job:progress 推送 */
   'diagnosis:fromJd': { req: { campaignId: string }; res: DiagnosisJobStarted };
@@ -1262,6 +1266,7 @@ export const IPC_INVOKE_CHANNELS = [
   'resume:create',
   'resume:update',
   'resume:delete',
+  'resume:duplicate',
   'resume:importFile',
   'resume:exportPdf',
   'resume:aiStructure',
@@ -1276,6 +1281,7 @@ export const IPC_INVOKE_CHANNELS = [
   'resumeVariant:optimize',
   'resumeVariant:update',
   'resumeVariant:delete',
+  'resumeVariant:duplicate',
   'diagnosis:fromJd',
   'diagnosis:attachResume',
   'diagnosis:expandNode',

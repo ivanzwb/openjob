@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { Copy, Plus, Trash2 } from 'lucide-react';
 import type { JobTarget, Resume } from '@shared/entities';
 import type { ResumeImportResult, ResumeVariantView } from '@shared/ipc';
 import type { ResumeEditorSavePayload } from '../components/ResumeEditorPane';
@@ -417,6 +417,37 @@ export function Resumes(): React.JSX.Element {
       .catch(() => undefined);
   };
 
+  /** 复制一份：任务返回新副本信息，成功后选中副本并提示 */
+  const copyEntry = (entry: SidebarEntry): void => {
+    setMessage(null);
+    void runTask(`resume:copy:${entry.id}`, async () => {
+      const copy = await invoke(
+        entry.kind === 'variant' ? 'resumeVariant:duplicate' : 'resume:duplicate',
+        { id: entry.id },
+      );
+      await refreshAll();
+      return copy;
+    })
+      .then((copy) => {
+        if (!copy) return;
+        if (entry.kind === 'variant') {
+          const v = copy as ResumeVariantView;
+          setSelectedResumeId(v.sourceResumeId);
+          setActiveVariantId(v.id);
+          setOptimizeTargetId(v.jobTargetId);
+          setListSelection({ kind: 'variant', id: v.id });
+        } else {
+          const r = copy as Resume;
+          setSelectedResumeId(r.id);
+          setListSelection({ kind: 'resume', id: r.id });
+        }
+        setResumeFormOpen(false);
+        setResumeForm({ label: '', rawText: '' });
+        setMessage('已复制一份');
+      })
+      .catch(() => undefined);
+  };
+
   return (
     <PageShell className="flex h-full min-h-0 flex-col gap-4">
       <header>
@@ -630,21 +661,32 @@ export function Resumes(): React.JSX.Element {
                       </div>
                     </button>
                     {entry.id !== NEW_RESUME_DRAFT_ID && (
-                      <TaskButton
-                        taskKey={
-                          entry.kind === 'variant'
-                            ? `resumeVariant:delete:${entry.id}`
-                            : `resume:delete:${entry.id}`
-                        }
-                        onClick={() =>
-                          entry.kind === 'variant' ? deleteVariant(entry.id) : deleteResume(entry.id)
-                        }
-                        runningLabel={<Spinner />}
-                        title="删除简历"
-                        className="absolute right-2 top-2 rounded p-1 text-[var(--color-muted)] transition-colors hover:bg-red-500/10 hover:text-red-400 disabled:opacity-40"
-                      >
-                        <Trash2 size={14} aria-hidden />
-                      </TaskButton>
+                      <>
+                        <TaskButton
+                          taskKey={`resume:copy:${entry.id}`}
+                          onClick={() => copyEntry(entry)}
+                          runningLabel={<Spinner />}
+                          title="复制一份"
+                          className="absolute right-9 top-2 rounded p-1 text-[var(--color-muted)] transition-colors hover:bg-[var(--color-accent)]/10 hover:text-[var(--color-accent)] disabled:opacity-40"
+                        >
+                          <Copy size={14} aria-hidden />
+                        </TaskButton>
+                        <TaskButton
+                          taskKey={
+                            entry.kind === 'variant'
+                              ? `resumeVariant:delete:${entry.id}`
+                              : `resume:delete:${entry.id}`
+                          }
+                          onClick={() =>
+                            entry.kind === 'variant' ? deleteVariant(entry.id) : deleteResume(entry.id)
+                          }
+                          runningLabel={<Spinner />}
+                          title="删除简历"
+                          className="absolute right-2 top-2 rounded p-1 text-[var(--color-muted)] transition-colors hover:bg-red-500/10 hover:text-red-400 disabled:opacity-40"
+                        >
+                          <Trash2 size={14} aria-hidden />
+                        </TaskButton>
+                      </>
                     )}
                   </div>
                 ))

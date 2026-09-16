@@ -14,6 +14,7 @@ import { getRawDb } from '../db';
 import {
   createResumeFromText,
   deleteResumeEntry,
+  duplicateResumeEntry,
   listResumeEntries,
   type ResumeEntry,
 } from '../data/resumeLocal';
@@ -29,19 +30,23 @@ function entryKey(entry: ResumeEntry): string {
 
 const CREATE_KEY = 'resume:create';
 const deleteKeyOf = (entry: ResumeEntry): string => `resume:delete:${entryKey(entry)}`;
+const copyKeyOf = (entry: ResumeEntry): string => `resume:copy:${entryKey(entry)}`;
 
 /** 删除是按简历计的任务，单独成组件才能各自显示「删除中…」 */
 function ResumeRow({
   entry,
   onOpen,
+  onCopy,
   onDelete,
 }: {
   entry: ResumeEntry;
   onOpen: () => void;
+  onCopy: () => void;
   onDelete: () => void;
 }): React.JSX.Element {
   const theme = useTheme();
   const { running: removing } = useTaskState(deleteKeyOf(entry));
+  const { running: copying } = useTaskState(copyKeyOf(entry));
 
   return (
     <View
@@ -85,6 +90,28 @@ function ResumeRow({
         <Text style={{ color: theme.muted, fontSize: 11 }} numberOfLines={1}>
           {entry.subtitle}
         </Text>
+      </Pressable>
+      <Pressable
+        onPress={onCopy}
+        disabled={copying}
+        accessibilityRole="button"
+        accessibilityLabel={`复制${entry.label}`}
+        style={{
+          alignItems: 'center',
+          justifyContent: 'center',
+          paddingHorizontal: 14,
+          borderWidth: 1,
+          borderColor: theme.border,
+          borderRadius: 10,
+          backgroundColor: theme.surface,
+          opacity: copying ? 0.5 : 1,
+        }}
+      >
+        {copying ? (
+          <ActivityIndicator size="small" color={theme.muted} />
+        ) : (
+          <Ionicons name="copy-outline" size={18} color={theme.accent} />
+        )}
       </Pressable>
       <Pressable
         onPress={onDelete}
@@ -182,6 +209,22 @@ export function ResumesScreen(): React.JSX.Element {
     );
   };
 
+  /** 复制一份：正文/模板/寸照原样保留，名字加「副本」；不出对话框，直接执行 */
+  const copy = (entry: ResumeEntry): void => {
+    void runTask(
+      copyKeyOf(entry),
+      '复制简历',
+      async () => {
+        await duplicateResumeEntry(getRawDb(), entry.kind, entry.id);
+        // 先刷新列表让新副本出现，再补一次同步
+        notifyDataChanged();
+        await triggerSync();
+        return entryKey(entry);
+      },
+      { successMessage: '已复制一份' },
+    ).catch(() => undefined);
+  };
+
   if (opened) {
     return (
       <ResumeEditor
@@ -226,6 +269,7 @@ export function ResumesScreen(): React.JSX.Element {
               key={entryKey(entry)}
               entry={entry}
               onOpen={() => setOpenedKey(entryKey(entry))}
+              onCopy={() => copy(entry)}
               onDelete={() => remove(entry)}
             />
           ))
