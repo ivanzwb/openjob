@@ -72,8 +72,10 @@ import {
   setPluginRuntimeEnabled,
 } from '../plugins/pluginRuntimeState';
 import { permissionGateway } from '../plugins/permissionGateway';
+// 远端拉取（§11.2）：比其它原语多一道 network:fetch 授权，实现在插件工作区模块里
 import {
   workspaceDelete,
+  workspaceFetch,
   workspaceGlob,
   workspaceGrep,
   workspaceList,
@@ -329,6 +331,10 @@ export function registerIpcHandlers(): void {
   // 符号提取（§11.4）：解析在宿主侧常驻的 tree-sitter 引擎里跑，包只拿结果
   handle('pluginRuntime:workspace.symbols', ({ pluginId, paths, digests }) =>
     workspaceSymbols(pluginId, { paths, digests }, { permissionGateway }),
+  );
+  // 远端拉取（§11.2）：固定 argv、只放行公开 https 地址，见 plugins/pluginWorkspace.ts
+  handle('pluginRuntime:workspace.fetch', ({ pluginId, url, dir }) =>
+    workspaceFetch(pluginId, { url, dir }, { permissionGateway }),
   );
   // artifact 原语（分发计划 §11.2）：请求里没有路径——选择器弹在主进程，
   // 渲染层拿不到也就传不了本机路径；每次调用都经 permissionGateway 校验 artifact:read

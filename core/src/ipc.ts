@@ -65,6 +65,7 @@ import type { PluginPermission } from './plugins/permissions';
 import type {
   PluginArtifact,
   WorkspaceEntry,
+  WorkspaceFetchResult,
   WorkspaceGrepMatch,
   WorkspaceSnapshot,
   WorkspaceSymbolsResult,
@@ -1307,6 +1308,15 @@ export interface IpcInvokeMap {
     req: { pluginId: string; pattern: string; path?: string };
     res: WorkspaceGrepMatch[];
   };
+  /**
+   * 工作区原语的**远端拉取**（分发计划 §11.2）：把公开的 https 仓库拉到本包工作区。
+   * 需要 `network:fetch` 与 `filesystem:workspace` 两项声明；目标目录已存在时的更新语义
+   * 见 `ctx.workspace.fetch` 的说明。
+   */
+  'pluginRuntime:workspace.fetch': {
+    req: { pluginId: string; url: string; dir?: string };
+    res: WorkspaceFetchResult;
+  };
   'pluginRuntime:workspace.snapshot': {
     req: { pluginId: string; path: string };
     res: WorkspaceSnapshot | null;
@@ -1672,6 +1682,7 @@ export const IPC_INVOKE_CHANNELS = [
   'pluginRuntime:workspace.glob',
   'pluginRuntime:workspace.grep',
   'pluginRuntime:workspace.snapshot',
+  'pluginRuntime:workspace.fetch',
   'pluginRuntime:workspace.symbols',
   'pluginRuntime:artifact.read',
   'pluginRuntime:list',

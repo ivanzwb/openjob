@@ -56,6 +56,8 @@ function workspaceService(pluginId: string): PluginWorkspaceService {
     snapshot: (path) => invoke('pluginRuntime:workspace.snapshot', { pluginId, path }),
     symbols: (paths, options) =>
       invoke('pluginRuntime:workspace.symbols', { pluginId, paths, ...(options ?? {}) }),
+    fetch: (input) =>
+      invoke('pluginRuntime:workspace.fetch', { pluginId, url: input.url, dir: input.dir }),
   };
 }
 

@@ -103,6 +103,15 @@ export function desktopBridgePrimitives(pluginId: string): PluginBridgePrimitive
         return invoke('pluginRuntime:workspace.symbols', { pluginId, paths, digests });
       },
     },
+    // 拉取比其它工作区原语多一项声明：网络出口（network:fetch）与落盘（filesystem:workspace）
+    // 是两种能力，宿主侧两项都要过；桥这边按「区分性更强的那一项」申报
+    'workspace.fetch': {
+      permission: 'network:fetch',
+      invoke: (params) => {
+        const { url, dir } = params as { url: string; dir?: string };
+        return invoke('pluginRuntime:workspace.fetch', { pluginId, url, dir });
+      },
+    },
     'artifact.read': {
       permission: 'artifact:read',
       invoke: () => invoke('pluginRuntime:artifact.read', { pluginId }),

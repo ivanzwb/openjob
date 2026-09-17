@@ -536,7 +536,7 @@ export function activate(ctx: PluginRuntimeContext) {
 | `ctx.agent` | `llm:complete` | **基础流式问答**：Agent 编排（工具/检索）+ 流式增量。领域问答（源码问答、案例问答）由插件用「本能力 + 自己的上下文」组合实现，宿主不为单个领域单开通道 |
 | `ctx.evidence` | `evidence:read-confirmed` | 只读已确认证据；新证据只能经 proposal 通道 |
 | `ctx.storage` | `plugin-storage` | 插件私有 KV，与主库物理隔离 |
-| `ctx.workspace` | `filesystem:workspace` | **通用原语**：本包工作区内的读 / 写 / 删 / 遍历 / glob / grep / 文本快照；可从远端 git 拉取到该目录。路径规范化后越出本包目录即拒 |
+| `ctx.workspace` | `filesystem:workspace` | **通用原语**：本包工作区内的读 / 写 / 删 / 遍历 / glob / grep / 文本快照 / 批量符号提取（解析在宿主侧的常驻 tree-sitter 引擎里做）；`fetch(url, { dir? })` 从远端拉取公开的 https 仓库到本包目录（**另需 `network:fetch`**，只下载、不带凭据、不指向内网、深度 1、有体积上限）。路径规范化后越出本包目录即拒 |
 | `ctx.artifact` | `artifact:read` | **通用原语**：读用户显式选择的文件（表格 / 文档） |
 | `ctx.campaign` | — | 只读当前 descriptor 与岗位包声明 |
 

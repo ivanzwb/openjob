@@ -123,6 +123,20 @@ export interface WorkspaceSymbolsResult {
   truncated: boolean;
 }
 
+/** 一次从远端拉取的结果（`workspace.fetch`）。 */
+export interface WorkspaceFetchResult {
+  /** 相对本包工作区的目标目录 */
+  dir: string;
+  /** 这次是新建检出还是就地更新 */
+  mode: 'clone' | 'update';
+  /** 拉到的提交 */
+  commit: string;
+  /** 当前分支；detached 时为 null */
+  branch: string | null;
+  bytes: number;
+  fileCount: number;
+}
+
 /**
  * 工作区原语（分发计划 §11.2）：本包工作区内的读 / 写 / 删 / 遍历 / glob / grep / 文本快照。
  *
@@ -149,6 +163,17 @@ export interface PluginWorkspaceService {
     paths: string[],
     options?: { digests?: Record<string, string> },
   ): Promise<WorkspaceSymbolsResult>;
+  /**
+   * 从远端 git 仓库拉取到本包工作区（§11.2 工作区原语的最后一行）。
+   *
+   * 需要 `network:fetch` **与** `filesystem:workspace` 两项声明：前者是网络出口，后者是落盘，
+   * 缺任何一项都在碰文件系统之前拒。只接受公开的 https 地址（不带凭据、不指向本机/内网），
+   * 固定深度 1、无 submodule、无 LFS，体积与文件数有上限。
+   *
+   * 目标目录已存在时：是检出就**更新到最新**（相当于 fetch + 硬重置，**丢弃该目录里的本地改动**
+   * ——那是包的临时检出，不是用户的工作副本）；非空又不是检出就拒，不覆盖包自己的数据。
+   */
+  fetch(input: { url: string; dir?: string }): Promise<WorkspaceFetchResult>;
 }
 
 /** 用户显式提供的文件读入结果（§11.2 artifact 原语）：对包是只读数据。 */

@@ -17,6 +17,10 @@
  * （`src/main/symbols/treeSitter.ts`）——**包沙箱里不跑解析器**，包只拿解析结果，语法文件
  * 缺失或语言不支持时如实回空符号而不是报错。
  *
+ * 远端拉取（`workspaceFetch`）是本层**唯一离开这台机器**的动作：只放行公开的 https 地址、
+ * 固定 argv、不传凭据、不读用户 git 配置（实现在 `src/main/workspace/`），且要额外声明
+ * `network:fetch`。除它之外，这一层只碰本包工作区目录。
+ *
  * 这一层不 import `plugins/package/(contract|replay)`，也不含任何代码执行入口。
  */
 import { createHash } from 'node:crypto';
@@ -36,11 +40,21 @@ import { app } from 'electron';
 import { isStablePluginId } from '@core/plugins/contracts';
 import type {
   WorkspaceEntry,
+  WorkspaceFetchResult,
   WorkspaceGrepMatch,
   WorkspaceSnapshot,
   WorkspaceSymbolsFile,
   WorkspaceSymbolsResult,
 } from '@core/plugins/pluginRuntime/host';
+import { runGit } from '../workspace/git';
+import {
+  FETCH_LIMITS,
+  deriveDirName,
+  runFetch,
+  validateFetchUrl,
+  type FetchErrorCode,
+  type GitRunner,
+} from '../workspace/gitFetch';
 import { extractSymbolsAst, grammarForExt } from '../symbols/treeSitter';
 import type { PluginPermissionGateway } from './permissionGateway';
 
@@ -91,7 +105,13 @@ export type WorkspaceErrorCode =
   | 'glob-limit'
   | 'grep-limit'
   | 'list-limit'
-  | 'symbols-limit';
+  | 'symbols-limit'
+  | 'fetch-invalid-url'
+  | 'fetch-dir-occupied'
+  | 'fetch-origin-mismatch'
+  | 'fetch-limit'
+  | 'fetch-unavailable'
+  | 'fetch-failed';
 
 export class WorkspaceError extends Error {
   constructor(
@@ -407,11 +427,13 @@ export function createWorkspaceFileSystem(root: string): WorkspaceFileSystem {
   };
 }
 
-/** 服务层入参：网关每次调用都过一道；`root` 是测试用的夹具覆盖。 */
+/** 服务层入参：网关每次调用都过一道；`root` 与 `gitRun` 是测试用的夹具覆盖。 */
 export interface PluginWorkspaceAccess {
   permissionGateway: PluginPermissionGateway;
   /** Test seam；生产按 pluginId 解析到 userData 下的本包工作区 */
   root?: string;
+  /** Test seam；生产用宿主侧收紧过的 git 管道（`src/main/workspace/git.ts`） */
+  gitRun?: GitRunner;
 }
 
 /** 逐次校验权限，返回本包工作区根（已 resolve）。 */
@@ -605,4 +627,65 @@ export async function workspaceSymbols(
   }
 
   return { files, truncated };
+}
+
+/** 拉取会真的跑 git，命令可能很慢；探针类命令不该跟着一起等两分钟。 */
+const SLOW_GIT_STEPS = new Set(['clone', 'fetch', 'reset']);
+
+const defaultGitRunner: GitRunner = (args) =>
+  runGit(args, {
+    timeoutMs: args.some((arg) => SLOW_GIT_STEPS.has(arg))
+      ? FETCH_LIMITS.timeoutMs
+      : FETCH_LIMITS.probeTimeoutMs,
+  });
+
+/** 拉取失败的原因码 → 原语错误码：包侧只认一套码，不必知道 git 的退出码语义 */
+const FETCH_ERROR_CODES: Record<FetchErrorCode, WorkspaceErrorCode> = {
+  'invalid-url': 'fetch-invalid-url',
+  'dir-occupied': 'fetch-dir-occupied',
+  'origin-mismatch': 'fetch-origin-mismatch',
+  'git-unavailable': 'fetch-unavailable',
+  'limit-exceeded': 'fetch-limit',
+  failed: 'fetch-failed',
+};
+
+/**
+ * 从远端拉取到本包工作区（分发计划 §11.2 工作区原语的最后一行）。
+ *
+ * 两项声明都要：`filesystem:workspace`（落盘）与 `network:fetch`（网络出口）。两次授权都发生在
+ * **建目录之前**——留一个「先建了目录再发现没授权」的窗口，等于让未授权的调用改了工作区状态。
+ *
+ * 目标目录同样过工作区约束（绝对路径 / `..` / 符号链接逸出一致处理），所以包拿到的是「本包目录
+ * 里的一个相对位置」，不是任意磁盘路径；`dir` 省略时由地址推导（只可能是 `[a-z0-9._-]`）。
+ */
+export async function workspaceFetch(
+  pluginId: string,
+  request: { url: unknown; dir?: unknown },
+  access: PluginWorkspaceAccess,
+): Promise<WorkspaceFetchResult> {
+  const root = authorizedRoot(pluginId, access);
+  const network = access.permissionGateway.authorizePlugin({
+    pluginId,
+    permission: 'network:fetch',
+  });
+  if (!network.allowed) throw new WorkspaceAccessDeniedError(network.code);
+
+  const url = validateFetchUrl(request.url);
+  if (!url.ok) throw new WorkspaceError('fetch-invalid-url', url.reason);
+
+  const dir = request.dir === undefined ? deriveDirName(url.url) : request.dir;
+  if (typeof dir !== 'string' || dir.length === 0) {
+    throw new WorkspaceError('invalid-input', 'dir 必须是非空字符串');
+  }
+
+  mkdirSync(root, { recursive: true });
+  const target = confine(root, dir);
+
+  const result = await runFetch({ url: url.url, dir: target }, access.gitRun ?? defaultGitRunner);
+  if (!result.ok) throw new WorkspaceError(FETCH_ERROR_CODES[result.code], result.detail);
+
+  return {
+    dir: relative(root, target).split(sep).join('/') || '.',
+    ...result.outcome,
+  };
 }

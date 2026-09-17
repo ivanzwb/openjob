@@ -15,6 +15,8 @@ const state = { userData: '' };
 vi.mock('electron', () => ({ app: { getPath: () => state.userData } }));
 
 import type { PluginPermissionGateway } from './permissionGateway';
+import type { GitRunResult } from '../workspace/git';
+import type { GitRunner } from '../workspace/gitFetch';
 import {
   SYMBOLS_LIMITS,
   WORKSPACE_LIMITS,
@@ -22,6 +24,7 @@ import {
   WorkspaceError,
   createWorkspaceFileSystem,
   pluginWorkspaceRoot,
+  workspaceFetch,
   workspaceGlob,
   workspaceRead,
   workspaceSymbols,
@@ -334,5 +337,117 @@ describe('符号提取（workspace.symbols）', () => {
     await expect(
       workspaceSymbols('demo.pack', { paths: ['greeter.ts'] }, { permissionGateway: DENY, root }),
     ).rejects.toThrowError(WorkspaceAccessDeniedError);
+  });
+});
+
+describe('远端拉取（workspace.fetch）', () => {
+  const gitOk = (stdout = ''): GitRunResult => ({ code: 0, stdout, stderr: '', timedOut: false });
+
+  /** 只允许工作区、不声明网络的网关：用来证明「两项声明都要」 */
+  const WORKSPACE_ONLY: PluginPermissionGateway = {
+    authorizePlugin: ({ permission }) =>
+      permission === 'filesystem:workspace'
+        ? { allowed: true, pluginId: 'demo.pack', permission: 'filesystem:workspace' }
+        : {
+            allowed: false,
+            code: 'permission-undeclared',
+            message: 'Capability did not declare the requested permission.',
+          },
+  };
+
+  /** 假 git：clone 时真的建出检出目录（流程会去统计体积），其余命令给固定回答 */
+  const fakeGit = (options: { origin?: string } = {}): GitRunner => {
+    return async (args) => {
+      if (args[0] === 'clone') {
+        const target = String(args.at(-1));
+        mkdirSync(target, { recursive: true });
+        writeFileSync(join(target, 'main.ts'), 'export {};');
+        return gitOk();
+      }
+      if (args.includes('get-url')) return gitOk(options.origin ?? '');
+      if (args.includes('--abbrev-ref')) return gitOk('main');
+      if (args.includes('rev-parse')) return gitOk('commit-sha');
+      return gitOk();
+    };
+  };
+
+  it('声明了工作区但没有 network:fetch 时拒，而且是在建目录之前', async () => {
+    const missingRoot = join(root, 'never-created');
+
+    await expect(
+      workspaceFetch('demo.pack', { url: 'https://github.com/org/repo.git' }, {
+        permissionGateway: WORKSPACE_ONLY,
+        root: missingRoot,
+        gitRun: fakeGit(),
+      }),
+    ).rejects.toThrowError(WorkspaceAccessDeniedError);
+
+    expect(existsSync(missingRoot)).toBe(false);
+  });
+
+  it('地址不合法时拒，同样在建目录之前', async () => {
+    const missingRoot = join(root, 'never-created');
+
+    await expect(
+      workspaceFetch('demo.pack', { url: 'ext::sh -c whoami' }, {
+        permissionGateway: ALLOW,
+        root: missingRoot,
+        gitRun: fakeGit(),
+      }),
+    ).rejects.toMatchObject({ code: 'fetch-invalid-url' });
+
+    expect(existsSync(missingRoot)).toBe(false);
+  });
+
+  it('目标目录受工作区约束：`..` 逸出照拒', async () => {
+    const escapeName = `openjob-fetch-escape-${process.pid}`;
+    const outside = join(root, '..', escapeName);
+    rmSync(outside, { recursive: true, force: true });
+
+    await expect(
+      workspaceFetch('demo.pack', { url: 'https://github.com/org/repo.git', dir: `../${escapeName}` }, {
+        permissionGateway: ALLOW,
+        root,
+        gitRun: fakeGit(),
+      }),
+    ).rejects.toMatchObject({ code: 'path-escape' });
+
+    expect(existsSync(outside)).toBe(false);
+  });
+
+  it('省略 dir 时由地址推导，结果回相对目录与提交', async () => {
+    const result = await workspaceFetch('demo.pack', { url: 'https://github.com/org/repo.git' }, {
+      permissionGateway: ALLOW,
+      root,
+      gitRun: fakeGit(),
+    });
+
+    expect(result).toMatchObject({
+      dir: 'org-repo',
+      mode: 'clone',
+      commit: 'commit-sha',
+      branch: 'main',
+      fileCount: 1,
+    });
+    expect(existsSync(join(root, 'org-repo', 'main.ts'))).toBe(true);
+  });
+
+  it('已有检出且 origin 一致时走更新（fetch + 硬重置），不一致时拒', async () => {
+    mkdirSync(join(root, 'org-repo', '.git'), { recursive: true });
+
+    const updated = await workspaceFetch('demo.pack', { url: 'https://github.com/org/repo.git' }, {
+      permissionGateway: ALLOW,
+      root,
+      gitRun: fakeGit({ origin: 'https://github.com/org/repo.git' }),
+    });
+    expect(updated.mode).toBe('update');
+
+    await expect(
+      workspaceFetch('demo.pack', { url: 'https://github.com/org/repo.git' }, {
+        permissionGateway: ALLOW,
+        root,
+        gitRun: fakeGit({ origin: 'https://github.com/other/thing.git' }),
+      }),
+    ).rejects.toMatchObject({ code: 'fetch-origin-mismatch' });
   });
 });
