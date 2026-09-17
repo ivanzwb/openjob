@@ -42,6 +42,47 @@ export interface RegisteredPluginRuntimePage extends PluginRuntimePage {
 
 export type CommandHandler = (args: unknown) => Promise<unknown> | unknown;
 
+/** 工作区目录项；`path` 是相对本包工作区根的 POSIX 路径。 */
+export interface WorkspaceEntry {
+  path: string;
+  type: 'file' | 'dir';
+  /** 目录为 null */
+  size: number | null;
+}
+
+/** grep 命中：相对路径 + 1 起行号 + 命中行文本。 */
+export interface WorkspaceGrepMatch {
+  path: string;
+  line: number;
+  text: string;
+}
+
+/** 文本快照：整文件内容 + 摘要，供包侧做差量与引用。 */
+export interface WorkspaceSnapshot {
+  path: string;
+  sha256: string;
+  bytes: number;
+  text: string;
+}
+
+/**
+ * 工作区原语（分发计划 §11.2）：本包工作区内的读 / 写 / 删 / 遍历 / glob / grep / 文本快照。
+ *
+ * 语义边界写死在这里，实现（主进程）必须照做：
+ * - 路径一律相对本包工作区根；解析后越出（绝对路径、`..` 逸出、符号链接逸出）即拒；
+ * - 只做文本与字节，**不执行、不解压、不建符号链接**；
+ * - 单次读 / 单次写 / glob 结果数 / grep 命中数都有上限，超限报错而不是静默截断。
+ */
+export interface PluginWorkspaceService {
+  read(path: string, options?: { startLine?: number; endLine?: number }): Promise<string>;
+  write(path: string, content: string): Promise<void>;
+  delete(path: string): Promise<void>;
+  list(path?: string): Promise<WorkspaceEntry[]>;
+  glob(pattern: string): Promise<string[]>;
+  grep(pattern: string, options?: { path?: string }): Promise<WorkspaceGrepMatch[]>;
+  snapshot(path: string): Promise<WorkspaceSnapshot | null>;
+}
+
 export interface PluginRuntimeServices {
   /** 只读指定 Campaign 的 descriptor；无 descriptor 时为 null */
   readonly campaign: {
@@ -79,6 +120,8 @@ export interface PluginRuntimeServices {
   readonly evidence?: {
     listConfirmed(campaignId: string): Promise<unknown>;
   };
+  /** 本包工作区原语；仅 manifest 声明 filesystem:workspace 时注入 */
+  readonly workspace?: PluginWorkspaceService;
 }
 
 export interface PluginRuntimeContext {
@@ -93,6 +136,8 @@ export interface PluginRuntimeContext {
   readonly agent: PluginRuntimeServices['agent'];
   /** 只读已确认证据；未声明 evidence:read-confirmed 权限时为 undefined */
   readonly evidence: PluginRuntimeServices['evidence'];
+  /** 工作区原语；未声明 filesystem:workspace 权限时为 undefined */
+  readonly workspace: PluginRuntimeServices['workspace'];
   views: {
     registerPage(page: PluginRuntimePage): { dispose(): void };
   };
@@ -162,6 +207,7 @@ export function activatePluginRuntime(input: PluginRuntimeInput): ActivePluginRu
     llm: services.llm,
     agent: services.agent,
     evidence: services.evidence,
+    workspace: services.workspace,
     views: {
       registerPage(page: PluginRuntimePage) {
         guard();
@@ -253,6 +299,7 @@ export function activatePluginRuntime(input: PluginRuntimeInput): ActivePluginRu
  */
 export function pluginRuntimeNamespaces(permissions: readonly string[]): string[] {
   const namespaces = ['views', 'commands', 'events', 'campaign', 'storage'];
+  if (permissions.includes('filesystem:workspace')) namespaces.push('workspace');
   if (permissions.includes('llm:complete')) namespaces.push('llm', 'agent');
   if (permissions.includes('evidence:read-confirmed')) namespaces.push('evidence');
   return namespaces;

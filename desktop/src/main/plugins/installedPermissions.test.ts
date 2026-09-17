@@ -19,6 +19,7 @@ import type { RolePack } from '@core/plugins/types';
 import type { PluginInventoryEntry } from './inventory';
 import {
   DefaultDenyPermissionGateway,
+  installedCodePluginPermissions,
   installedPermissionContracts,
   type CampaignCapabilityScope,
 } from './permissionGateway';
@@ -168,5 +169,39 @@ describe('installedPermissionContracts', () => {
       allowed: false,
       code: 'permission-undeclared',
     });
+  });
+});
+
+describe('installedCodePluginPermissions（代码包原语契约）', () => {
+  it('带 main 的代码包按 manifest 声明授权，纯声明包不进名单', () => {
+    setExternalPlugins([
+      entry({
+        id: 'demo.code',
+        permissions: ['filesystem:workspace'],
+        main: 'desktop/main.js',
+        api: '^1.0',
+      }),
+      // 没有代码入口的纯声明包够不到工作区原语，不进原语契约
+      entry({ id: 'demo.decl', permissions: ['filesystem:workspace'] }),
+    ]);
+
+    const contracts = installedCodePluginPermissions();
+    expect(contracts.get('demo.code')?.has('filesystem:workspace')).toBe(true);
+    expect(contracts.has('demo.decl')).toBe(false);
+  });
+
+  it('卸载后原语契约立即失效', () => {
+    setExternalPlugins([
+      entry({
+        id: 'demo.code',
+        permissions: ['filesystem:workspace'],
+        main: 'desktop/main.js',
+        api: '^1.0',
+      }),
+    ]);
+    expect(installedCodePluginPermissions().has('demo.code')).toBe(true);
+
+    setExternalPlugins([]);
+    expect(installedCodePluginPermissions().has('demo.code')).toBe(false);
   });
 });

@@ -11,6 +11,7 @@ import {
   createEventHub,
   type ActivePluginRuntime,
   type PluginRuntimeModule,
+  type PluginWorkspaceService,
 } from '@core/plugins/pluginRuntime/host';
 import type { LlmRole } from '@core/enums';
 import { invoke } from '../ipc';
@@ -35,6 +36,24 @@ export function getActivePluginRuntimes(): ActivePluginRuntime[] {
 
 export function getUiAssets(pluginId: string): Record<string, string> {
   return uiAssetsByPlugin.get(pluginId) ?? {};
+}
+
+/**
+ * 工作区原语的门面（§11.2）：包侧只拿相对路径，越界与上限判定全在主进程。
+ * 每次调用都是一条 IPC，主进程的网关逐次校验 `filesystem:workspace`。
+ */
+function workspaceService(pluginId: string): PluginWorkspaceService {
+  return {
+    read: (path, options) =>
+      invoke('pluginRuntime:workspace.read', { pluginId, path, ...(options ?? {}) }),
+    write: (path, content) => invoke('pluginRuntime:workspace.write', { pluginId, path, content }),
+    delete: (path) => invoke('pluginRuntime:workspace.delete', { pluginId, path }),
+    list: (path = '.') => invoke('pluginRuntime:workspace.list', { pluginId, path }),
+    glob: (pattern) => invoke('pluginRuntime:workspace.glob', { pluginId, pattern }),
+    grep: (pattern, options) =>
+      invoke('pluginRuntime:workspace.grep', { pluginId, pattern, path: options?.path }),
+    snapshot: (path) => invoke('pluginRuntime:workspace.snapshot', { pluginId, path }),
+  };
 }
 
 /** CommonJS 装配：`require('openjob')` 是插件拿到宿主门面的唯一入口 */
@@ -93,6 +112,10 @@ function loadModule(
         invoke('pluginRuntime:evidence.listConfirmed', { pluginId, campaignId }),
     };
   }
+  // 权限即 API 面：未声明 filesystem:workspace 时门面上没有 workspace
+  if (permissions.includes('filesystem:workspace')) {
+    facade.workspace = workspaceService(pluginId);
+  }
   const requireShim = (id: string): unknown => {
     if (id === 'openjob') return facade;
     throw new Error(`插件只允许 require('openjob')，实际请求了 ${id}`);
@@ -142,6 +165,10 @@ export async function activateInstalledPluginRuntimes(): Promise<void> {
                 invoke('pluginRuntime:storage.set', { pluginId: plugin.id, key, value }),
               delete: (key) => invoke('pluginRuntime:storage.delete', { pluginId: plugin.id, key }),
             },
+            // 工作区原语；未声明 filesystem:workspace 时为 undefined（ctx.workspace 不存在）
+            workspace: plugin.permissions.includes('filesystem:workspace')
+              ? workspaceService(plugin.id)
+              : undefined,
           },
           hub,
         }),

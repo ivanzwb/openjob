@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { PluginPermission } from '@core/plugins';
 
 vi.mock('../db', () => ({
   getDb: vi.fn(),
@@ -104,5 +105,33 @@ describe('DefaultDenyPermissionGateway', () => {
 
     expect(decision).toMatchObject({ allowed: false, code: 'resource-out-of-scope' });
     expect(JSON.stringify(decision)).not.toContain('repo-secret-a');
+  });
+});
+
+describe('DefaultDenyPermissionGateway.authorizePlugin（原语准入）', () => {
+  /** 代码包原语契约按「包 id → 声明权限」注入；能力契约这里用不到，给空表。 */
+  function pluginGateway(declared: Record<string, PluginPermission[]>) {
+    return new DefaultDenyPermissionGateway(
+      { resolve: () => allowedScope },
+      () => new Map(),
+      () => new Map(Object.entries(declared).map(([id, perms]) => [id, new Set(perms)])),
+    );
+  }
+
+  it('声明了 filesystem:workspace 的代码包放行', () => {
+    const subject = pluginGateway({ 'demo.pack': ['filesystem:workspace'] });
+    expect(
+      subject.authorizePlugin({ pluginId: 'demo.pack', permission: 'filesystem:workspace' }),
+    ).toEqual({ allowed: true, pluginId: 'demo.pack', permission: 'filesystem:workspace' });
+  });
+
+  it('未声明的包与没装的包都被判 permission-undeclared', () => {
+    const subject = pluginGateway({ 'demo.pack': ['artifact:read'] });
+    expect(
+      subject.authorizePlugin({ pluginId: 'demo.pack', permission: 'filesystem:workspace' }),
+    ).toMatchObject({ allowed: false, code: 'permission-undeclared' });
+    expect(
+      subject.authorizePlugin({ pluginId: 'never.installed', permission: 'filesystem:workspace' }),
+    ).toMatchObject({ allowed: false, code: 'permission-undeclared' });
   });
 });

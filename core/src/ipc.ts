@@ -63,6 +63,11 @@ import type { PluginType } from './enums';
 import type { CampaignRuntimeDescriptor, ClientPlatform, RolePack } from './plugins/types';
 import type { PluginPermission } from './plugins/permissions';
 import type {
+  WorkspaceEntry,
+  WorkspaceGrepMatch,
+  WorkspaceSnapshot,
+} from './plugins/pluginRuntime/host';
+import type {
   EndRolePlayRequest,
   RolePlaySessionView,
   StartRolePlayRequest,
@@ -1279,6 +1284,31 @@ export interface IpcInvokeMap {
     req: { pluginId: string; campaignId: string };
     res: CandidateEvidence[];
   };
+  /**
+   * 代码插件的**工作区原语**（分发计划 §11.2）：本包工作区内的读 / 写 / 删 / 遍历 /
+   * glob / grep / 文本快照。宿主实现在主进程，每次调用都经权限网关校验 `filesystem:workspace`；
+   * 路径解析后越出本包工作区根即拒（绝对路径 / `..` / 符号链接逸出一致处理）。
+   * 只传相对路径，主进程不接收调用方给的绝对路径。
+   */
+  'pluginRuntime:workspace.read': {
+    req: { pluginId: string; path: string; startLine?: number; endLine?: number };
+    res: string;
+  };
+  'pluginRuntime:workspace.write': {
+    req: { pluginId: string; path: string; content: string };
+    res: void;
+  };
+  'pluginRuntime:workspace.delete': { req: { pluginId: string; path: string }; res: void };
+  'pluginRuntime:workspace.list': { req: { pluginId: string; path: string }; res: WorkspaceEntry[] };
+  'pluginRuntime:workspace.glob': { req: { pluginId: string; pattern: string }; res: string[] };
+  'pluginRuntime:workspace.grep': {
+    req: { pluginId: string; pattern: string; path?: string };
+    res: WorkspaceGrepMatch[];
+  };
+  'pluginRuntime:workspace.snapshot': {
+    req: { pluginId: string; path: string };
+    res: WorkspaceSnapshot | null;
+  };
   /** 代码插件清单（含启用状态）：设置页展示与激活门槛共用 */
   'pluginRuntime:list': {
     req: void;
@@ -1615,6 +1645,13 @@ export const IPC_INVOKE_CHANNELS = [
   'pluginRuntime:storage.delete',
   'pluginRuntime:llm.complete',
   'pluginRuntime:evidence.listConfirmed',
+  'pluginRuntime:workspace.read',
+  'pluginRuntime:workspace.write',
+  'pluginRuntime:workspace.delete',
+  'pluginRuntime:workspace.list',
+  'pluginRuntime:workspace.glob',
+  'pluginRuntime:workspace.grep',
+  'pluginRuntime:workspace.snapshot',
   'pluginRuntime:list',
   'pluginRuntime:setEnabled',
   'campaign:list',

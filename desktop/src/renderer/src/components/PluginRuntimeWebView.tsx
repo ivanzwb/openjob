@@ -72,6 +72,30 @@ function bridgeMethods(permissions: readonly string[]) {
         ...(params.campaignId !== undefined ? { campaignId: params.campaignId } : {}),
       });
   }
+  if (permissions.includes('filesystem:workspace')) {
+    // 工作区原语（§11.2）：页面走同一座桥。路径越界 / 上限判定全在宿主主进程，
+    // 桥这里只把相对路径透传过去，不接收页面给的绝对路径
+    methods['workspace.read'] = (
+      _pluginId: string,
+      params: { path: string; startLine?: number; endLine?: number },
+    ) => invoke('pluginRuntime:workspace.read', { pluginId: _pluginId, ...params });
+    methods['workspace.write'] = (
+      _pluginId: string,
+      params: { path: string; content: string },
+    ) => invoke('pluginRuntime:workspace.write', { pluginId: _pluginId, ...params });
+    methods['workspace.delete'] = (_pluginId: string, params: { path: string }) =>
+      invoke('pluginRuntime:workspace.delete', { pluginId: _pluginId, ...params });
+    methods['workspace.list'] = (_pluginId: string, params: { path?: string }) =>
+      invoke('pluginRuntime:workspace.list', { pluginId: _pluginId, path: params.path ?? '.' });
+    methods['workspace.glob'] = (_pluginId: string, params: { pattern: string }) =>
+      invoke('pluginRuntime:workspace.glob', { pluginId: _pluginId, ...params });
+    methods['workspace.grep'] = (
+      _pluginId: string,
+      params: { pattern: string; path?: string },
+    ) => invoke('pluginRuntime:workspace.grep', { pluginId: _pluginId, ...params });
+    methods['workspace.snapshot'] = (_pluginId: string, params: { path: string }) =>
+      invoke('pluginRuntime:workspace.snapshot', { pluginId: _pluginId, ...params });
+  }
   return methods;
 }
 

@@ -71,6 +71,16 @@ import {
   pluginRuntimeEnabled,
   setPluginRuntimeEnabled,
 } from '../plugins/pluginRuntimeState';
+import { permissionGateway } from '../plugins/permissionGateway';
+import {
+  workspaceDelete,
+  workspaceGlob,
+  workspaceGrep,
+  workspaceList,
+  workspaceRead,
+  workspaceSnapshot,
+  workspaceWrite,
+} from '../plugins/pluginWorkspace';
 import { completePluginJson } from '../llm/json';
 import { emit } from '../ipc/bridge';
 import { pluginInventoryView } from '../plugins/bootstrap';
@@ -291,6 +301,29 @@ export function registerIpcHandlers(): void {
     }
     return listConfirmedEvidence(getRawDb(), { campaignId });
   });
+  // 工作区原语（分发计划 §11.2）：每次调用都经 permissionGateway 校验 filesystem:workspace，
+  // 再由主进程实现把操作约束在本包工作区目录内（越界 / 超限在实现里抛错）
+  handle('pluginRuntime:workspace.read', ({ pluginId, path, startLine, endLine }) =>
+    workspaceRead(pluginId, { path, startLine, endLine }, { permissionGateway }),
+  );
+  handle('pluginRuntime:workspace.write', ({ pluginId, path, content }) =>
+    workspaceWrite(pluginId, { path, content }, { permissionGateway }),
+  );
+  handle('pluginRuntime:workspace.delete', ({ pluginId, path }) =>
+    workspaceDelete(pluginId, { path }, { permissionGateway }),
+  );
+  handle('pluginRuntime:workspace.list', ({ pluginId, path }) =>
+    workspaceList(pluginId, { path }, { permissionGateway }),
+  );
+  handle('pluginRuntime:workspace.glob', ({ pluginId, pattern }) =>
+    workspaceGlob(pluginId, { pattern }, { permissionGateway }),
+  );
+  handle('pluginRuntime:workspace.grep', ({ pluginId, pattern, path }) =>
+    workspaceGrep(pluginId, { pattern, path }, { permissionGateway }),
+  );
+  handle('pluginRuntime:workspace.snapshot', ({ pluginId, path }) =>
+    workspaceSnapshot(pluginId, { path }, { permissionGateway }),
+  );
   handle('plugin:install', async ({ trustUnknownSigner, overwrite, confirmDataLoss }) => {
     // 弹框放在主进程：渲染层不传路径，也就没有「渲染层指定任意文件让主进程去读」这条路
     const { canceled, filePaths } = await dialog.showOpenDialog({

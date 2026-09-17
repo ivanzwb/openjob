@@ -1,7 +1,7 @@
 import { and, desc, eq } from 'drizzle-orm';
 import type { PluginPermission } from '@core/plugins';
 import { getDb, schema } from '../db';
-import { listInstalledPlugins } from './runtime';
+import { listExternalPlugins, listInstalledPlugins } from './runtime';
 
 export interface CapabilityResource {
   kind: 'repository';
@@ -41,6 +41,26 @@ export interface PermissionGateway {
 }
 
 /**
+ * 代码插件调用宿主**通用原语**的请求（分发计划 §11.2，如 `filesystem:workspace`）。
+ *
+ * 与上面的能力网关刻意分开：能力网关管「本次 Campaign 有没有启用这个能力、资源在不在
+ * 射程内」，那要查 descriptor；原语是**包的私有资源**（工作区目录按 pluginId 分），
+ * 与本 Campaign 无关，所以这里只判「这个包自己声明的权限里有没有这一项」。
+ */
+export interface PluginPermissionRequest {
+  pluginId: string;
+  permission: PluginPermission;
+}
+
+export type PluginPermissionDecision =
+  | { allowed: true; pluginId: string; permission: PluginPermission }
+  | { allowed: false; code: PermissionDenialCode; message: string };
+
+export interface PluginPermissionGateway {
+  authorizePlugin(request: PluginPermissionRequest): PluginPermissionDecision;
+}
+
+/**
  * 授权判断需要的全部事实。
  *
  * 刻意不含 rolePackId：网关一旦看得见岗位包，就会有人写出「只有工程岗能用」
@@ -72,7 +92,7 @@ function deny(code: PermissionDenialCode): PermissionDecision {
   return { allowed: false, code, message: SAFE_DENIAL_MESSAGES[code] };
 }
 
-export class DefaultDenyPermissionGateway implements PermissionGateway {
+export class DefaultDenyPermissionGateway implements PermissionGateway, PluginPermissionGateway {
   /**
    * contracts 是取值函数而不是快照：外置插件可以在运行期装上或卸掉，快照会让刚装好的
    * 能力一直被判成「没声明」，或者更糟——卸掉之后权限还在。
@@ -80,6 +100,8 @@ export class DefaultDenyPermissionGateway implements PermissionGateway {
   constructor(
     private readonly scopes: PermissionScopeProvider,
     private readonly contracts: () => CapabilityPermissionContracts,
+    /** 代码包（含岗位包入口）的原语契约；默认按本机已安装清单推导 */
+    private readonly pluginContracts: () => CapabilityPermissionContracts = installedCodePluginPermissions,
   ) {}
 
   authorize(request: CapabilityRequest): PermissionDecision {
@@ -98,6 +120,24 @@ export class DefaultDenyPermissionGateway implements PermissionGateway {
       capabilityId: request.capabilityId,
       permission: request.permission,
     };
+  }
+
+  /**
+   * 原语准入（分发计划 §11.2）：只看**本机已安装的代码包自己声明的权限**。
+   *
+   * 与能力网关同一条默认拒绝的方向：未声明在读任何状态之前就被拒，拒绝理由也不带出
+   * 调用方给的任何路径或资源标识。
+   */
+  authorizePlugin(request: PluginPermissionRequest): PluginPermissionDecision {
+    const declared = this.pluginContracts().get(request.pluginId);
+    if (!declared?.has(request.permission)) {
+      return {
+        allowed: false,
+        code: 'permission-undeclared',
+        message: SAFE_DENIAL_MESSAGES['permission-undeclared'],
+      };
+    }
+    return { allowed: true, pluginId: request.pluginId, permission: request.permission };
   }
 }
 
@@ -221,10 +261,56 @@ export function installedPermissionContracts(): CapabilityPermissionContracts {
   return contracts;
 }
 
-export const permissionGateway: PermissionGateway = new DefaultDenyPermissionGateway(
-  new DatabasePermissionScopeProvider(),
-  installedPermissionContracts,
-);
+/**
+ * 代码包的原语契约（分发计划 §11.2）：按**本机已安装**清单推导，与能力契约同一套取值
+ * 规则，但取值对象换成「带代码入口的包」——岗位包（内嵌能力）与独立 plugin 都在此列。
+ *
+ * 为什么不能复用 `installedPermissionContracts`：那份刻意只收 `type === 'capability'`
+ * 的条目（岗位包 permissions 恒为空，多收一层就多一条越权路径）。而原语是包自己的资源，
+ * 恰恰只对带 `main` 的代码包有意义，两者收的集合本来就不一样。
+ *
+ * 同一个 id 装了多个版本时取**交集**，理由同能力契约：拿不到 pin 的版本，歧义只能往
+ * 窄的一边收。
+ */
+export function installedCodePluginPermissions(): CapabilityPermissionContracts {
+  const contracts = new Map<string, Set<PluginPermission>>();
+  const ambiguous = new Set<string>();
+
+  for (const plugin of listExternalPlugins()) {
+    const manifest = plugin.package.manifest;
+    // 只有桌面代码入口才可能是工作区原语的调用方；纯声明包没有入口
+    if (manifest.main === undefined) continue;
+    const declared = new Set(manifest.permissions);
+    const existing = contracts.get(manifest.id);
+    if (!existing) {
+      contracts.set(manifest.id, declared);
+      continue;
+    }
+    for (const permission of existing) {
+      if (!declared.has(permission)) {
+        existing.delete(permission);
+        ambiguous.add(manifest.id);
+      }
+    }
+    for (const permission of declared) {
+      if (!existing.has(permission)) ambiguous.add(manifest.id);
+    }
+  }
+
+  if (ambiguous.size > 0) {
+    console.warn(
+      '以下代码插件装了多个版本且权限声明不一致，已按交集授权：',
+      [...ambiguous].sort(),
+    );
+  }
+  return contracts;
+}
+
+export const permissionGateway: PermissionGateway & PluginPermissionGateway =
+  new DefaultDenyPermissionGateway(
+    new DatabasePermissionScopeProvider(),
+    installedPermissionContracts,
+  );
 
 export class PermissionDeniedError extends Error {
   constructor(readonly decision: Extract<PermissionDecision, { allowed: false }>) {
