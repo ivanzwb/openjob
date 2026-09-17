@@ -42,7 +42,7 @@ const coreCapabilitiesSuite = synthesizeSuiteFromRolePack(softwareEngineeringRol
 import { signPackageFiles, toBundleJson } from './bundle';
 import { installPluginBundle, uninstallPlugin } from './install';
 import { listExternalPlugins, listInstalledPlugins, setExternalPlugins, findInstalledRolePack } from './runtime';
-import { loadExternalPlugins } from './bootstrap';
+import { loadExternalPlugins, pluginInventoryView } from './bootstrap';
 
 
 // 签名与信任用同一把钥匙（mock 的第一方公钥就是它）
@@ -178,5 +178,17 @@ describe('release 附件端到端', () => {
         p.version === '1.4.0',
     );
     expect(seInline!.permissions).toEqual(['repository:read']);
+
+    // 设置页的「已装」列表只看盘上有什么：合成条目不是用户装的包（它的内容本来就归岗位包
+    // 所有），列出来会让「装一个包」看起来像装了两个
+    const view = pluginInventoryView();
+    expect(view.installed.map((item) => `${item.id}@${item.version}`)).toEqual([
+      'product-manager@1.3.0',
+      'sales-customer-success@1.3.0',
+      'software-engineering@1.4.0',
+    ]);
+    expect(view.installed.map((item) => item.displayName)).toContain('软件工程');
+    expect(view.installed.find((item) => item.id === 'software-engineering')?.main).toBe('main.js');
+    expect(view.rejected).toEqual([]);
   });
 });

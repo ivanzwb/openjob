@@ -6,7 +6,7 @@ import type {
   PluginInventoryView,
   PluginTrust,
 } from '@core/ipc';
-import type { InstalledPlugin } from '@core/plugins/clientView';
+import type { PluginType } from '@core/enums';
 import { compareExactSemVer } from '@core/plugins/registry';
 import {
   activateInstalledPluginRuntimes,
@@ -32,7 +32,7 @@ const PERMISSION_LABEL: Record<string, string> = {
   'microphone:read': '使用麦克风（语音作答）',
 };
 
-const TYPE_LABEL: Record<InstalledPlugin['type'], string> = {
+const TYPE_LABEL: Record<PluginType, string> = {
   'role-pack': '岗位包',
   'industry-pack': '行业包',
   capability: '能力',
@@ -105,7 +105,6 @@ function permissionSummary(permissions: string[]): string {
 export function PluginsPanel({
   onPluginsChanged,
 }: { onPluginsChanged?: () => void } = {}): React.JSX.Element {
-  const [installed, setInstalled] = useState<InstalledPlugin[]>([]);
   const [inventory, setInventory] = useState<PluginInventoryView | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -119,7 +118,6 @@ export function PluginsPanel({
   const [refreshing, setRefreshing] = useState(false);
 
   const refresh = useCallback(async () => {
-    setInstalled(await invoke('plugin:listInstalled', undefined));
     setInventory(await invoke('plugin:inventory', undefined));
     setPluginRuntimes(await invoke('pluginRuntime:list', undefined));
     // 代码插件的页签由激活产生，而激活只在应用挂载与启用/停用开关时发生：装、卸、删目录
@@ -161,19 +159,23 @@ export function PluginsPanel({
   }, [readCatalog]);
 
   useEffect(() => {
-    void invoke('plugin:listInstalled', undefined).then(setInstalled);
     void invoke('plugin:inventory', undefined).then(setInventory);
-    // 与上面两条同一个形状：setState 落在 promise 回调里，不在 effect 里同步 setState
+    // 与上面那条同一个形状：setState 落在 promise 回调里，不在 effect 里同步 setState
     void readCatalog().then(setCatalog);
   }, [readCatalog]);
 
-  const external = new Map(
-    (inventory?.installed ?? []).map((item) => [`${item.id}@${item.version}`, item.trust]),
-  );
+  /**
+   * 「已装」列表直接来自盘上的扫描结果。
+   *
+   * 不用 plugin:listInstalled：那份清单里还会带上按岗位包内嵌声明合成出来的能力条目
+   * （openjob-capabilities@<包版本>），它是运行时解析能力引用与权限契约用的，内容本来就
+   * 归岗位包所有——列在这里会让「装一个包」看起来像装了两个。
+   */
+  const packages = inventory?.installed ?? [];
 
   /** 单独装的插件按 id 归并：同一个 id 的多个版本都算装了同一个插件 */
   const externalVersions = new Map<string, string[]>();
-  for (const item of inventory?.installed ?? []) {
+  for (const item of packages) {
     externalVersions.set(item.id, [...(externalVersions.get(item.id) ?? []), item.version]);
   }
 
@@ -330,8 +332,8 @@ export function PluginsPanel({
         <h3 className="text-sm font-medium text-[var(--color-muted)]">插件</h3>
         <p className="mt-1 text-xs text-[var(--color-muted)]">
           岗位包决定面试考什么、怎么评分；能力插件决定可以用哪些工具。插件只装一个：换插件
-          要先卸载现在这个。随应用发布的那些卸不掉，单独装的插件包装进来之后与它们同等对待。
-          插件包一律是纯数据，装进来的东西不会在本机执行。
+          要先卸载现在这个。带代码入口的包（代码插件或内嵌了页面的岗位包）装上后要在启用前
+          确认权限，跑在 Webview 沙箱里，拿不到主库与宿主 Node 能力。
         </p>
       </div>
 
@@ -345,20 +347,17 @@ export function PluginsPanel({
           >
             从文件安装…
           </button>
-          <span className="text-[var(--color-muted)]">
-            已装 {installed.length} 个{external.size > 0 && `，其中 ${external.size} 个是单独安装的`}
-          </span>
+          <span className="text-[var(--color-muted)]">已装 {packages.length} 个</span>
         </div>
 
         <ul className="space-y-1.5 border-t border-[var(--color-border)] pt-3">
-          {installed.length === 0 && (
+          {packages.length === 0 && (
             <li className="text-[var(--color-muted)]">
               还没装任何插件。岗位包是必需的——从下面的「可安装插件」里挑一个装上，面试才有内容可考。
             </li>
           )}
-          {installed.map((plugin) => {
+          {packages.map((plugin) => {
             const key = `${plugin.id}@${plugin.version}`;
-            const trust = external.get(key);
             return (
               <li key={key} className="flex items-center gap-2">
                 <span className="text-[var(--color-fg)]">{plugin.displayName}</span>
@@ -366,29 +365,23 @@ export function PluginsPanel({
                   {TYPE_LABEL[plugin.type]}
                 </Badge>
                 <span className="text-[var(--color-muted)]">{plugin.version}</span>
-                {trust === undefined ? (
-                  <Badge tone="bg-[var(--color-bg)] text-[var(--color-muted)]">随应用发布</Badge>
-                ) : (
-                  <Badge
-                    tone={
-                      trust === 'first-party'
-                        ? 'bg-emerald-500/10 text-emerald-400'
-                        : 'bg-amber-500/10 text-amber-400'
-                    }
-                  >
-                    {TRUST_LABEL[trust]}
-                  </Badge>
-                )}
-                {trust !== undefined && (
-                  <button
-                    type="button"
-                    onClick={() => void uninstall(plugin.id, plugin.version)}
-                    disabled={busy}
-                    className="ml-auto text-[var(--color-muted)] hover:text-red-400 disabled:opacity-40"
-                  >
-                    卸载
-                  </button>
-                )}
+                <Badge
+                  tone={
+                    plugin.trust === 'first-party'
+                      ? 'bg-emerald-500/10 text-emerald-400'
+                      : 'bg-amber-500/10 text-amber-400'
+                  }
+                >
+                  {TRUST_LABEL[plugin.trust]}
+                </Badge>
+                <button
+                  type="button"
+                  onClick={() => void uninstall(plugin.id, plugin.version)}
+                  disabled={busy}
+                  className="ml-auto text-[var(--color-muted)] hover:text-red-400 disabled:opacity-40"
+                >
+                  卸载
+                </button>
                 {plugin.main !== null && (
                   <button
                     type="button"
@@ -397,7 +390,7 @@ export function PluginsPanel({
                       setConfirmingId(confirmingId === key ? null : key);
                     }}
                     disabled={busy}
-                    className={`text-[var(--color-muted)] hover:text-[var(--color-fg)] disabled:opacity-40 ${trust !== undefined ? '' : 'ml-auto'}`}
+                    className="text-[var(--color-muted)] hover:text-[var(--color-fg)] disabled:opacity-40"
                   >
                     {pluginRuntimes.find((item) => item.id === plugin.id)?.enabled ? '停用' : '启用…'}
                   </button>

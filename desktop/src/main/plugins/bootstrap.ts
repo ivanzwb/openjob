@@ -57,14 +57,20 @@ export function getPluginInventory(): PluginInventory {
   return lastInventory;
 }
 
-/** 渲染层视图：装上了什么、以及装不上的包和原因。 */
+/**
+ * 渲染层视图：盘上装了什么、以及装不上的包和原因。
+ *
+ * 只反映扫描结果（真有那几个目录），不掺运行时合成的能力条目——后者不是用户装的包。
+ */
 export function pluginInventoryView(): PluginInventoryView {
   return {
     installed: lastInventory.entries.map((entry) => ({
       id: entry.package.manifest.id,
       version: entry.package.manifest.version,
       type: entry.package.manifest.type,
+      displayName: entry.package.manifest.displayName,
       trust: entry.trust,
+      main: entry.package.manifest.main ?? null,
     })),
     rejected: lastInventory.rejected.map((item) => ({
       dir: item.dir,

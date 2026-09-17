@@ -111,7 +111,21 @@ export interface PluginRejectionView {
 }
 
 export interface PluginInventoryView {
-  installed: Array<{ id: string; version: string; type: PluginType; trust: PluginTrust }>;
+  /**
+   * 盘上真正装着的包（userData/plugins 下扫到的）。
+   *
+   * 刻意**不含**按岗位包内嵌声明合成出来的能力条目：那条是运行时拿来做能力引用与权限
+   * 契约的视图，内容本来就归岗位包所有，所以展示时并进对应的岗位包，不单独成一个包。
+   */
+  installed: Array<{
+    id: string;
+    version: string;
+    type: PluginType;
+    displayName: string;
+    trust: PluginTrust;
+    /** 代码入口；为空表示纯声明式，没有启用/停用这回事 */
+    main: string | null;
+  }>;
   rejected: PluginRejectionView[];
 }
 
