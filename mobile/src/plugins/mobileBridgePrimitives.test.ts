@@ -5,10 +5,11 @@
  * 包声明了也如实拒绝（`unavailable`），不假装能执行。
  */
 import { describe, expect, it, vi } from 'vitest';
-import { createPluginBridge } from '@core/plugins/pluginRuntime/bridge';
+import { createPluginBridge, type PluginBridgeGate } from '@core/plugins/pluginRuntime/bridge';
 import { MOBILE_UNAVAILABLE_METHODS, mobileBridgePrimitives } from './mobileBridgePrimitives';
 
-const allowAll = { authorize: () => ({ allowed: true }) };
+// 标注类型：不标的话 `{ allowed: true }` 会被推成 `{ allowed: boolean }`，与网关的判别联合对不上
+const allowAll: PluginBridgeGate = { authorize: () => ({ allowed: true }) };
 
 describe('移动端桥原语表', () => {
   it('只收本端有的通用原语；桌面才有的能力不在表里', () => {

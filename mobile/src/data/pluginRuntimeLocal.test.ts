@@ -5,9 +5,15 @@
  * 移动端拿 mobile/，剥前缀后两端同构（插件源码里的 webviewPath 仍是 ui/xxx.html）。
  */
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { RolePack } from '@core/plugins/types';
 import { listMobilePluginRuntimes } from './pluginRuntimeLocal';
+
+/**
+ * `listCachedRolePacks` 那条链会经 `../remote/rpc` 把 react-native 的原生模块拖进来，node 里
+ * 解析不了 Flow 源码。这一组只喂缓存行、不需要真转发，照 rolePackLocal.test.ts 的做法挡掉。
+ */
+vi.mock('../remote/rpc', () => ({ invokeRemote: () => Promise.resolve({ result: null }) }));
 
 /** listCachedRolePacks 只走 getAllSync 一条查询；用最小的 fake 注入缓存行。 */
 function dbWith(packs: RolePack[]): SQLiteDatabase {

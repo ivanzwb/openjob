@@ -15,7 +15,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import { capabilityEntriesFromRolePack } from '@core/plugins/capabilityEntries';
 import { listBuiltInPlugins, toInstalledPlugin, type InstalledPlugin } from '@core/plugins/clientView';
 import { parseTransferredRolePack } from '@core/plugins/package/rolePackTransfer';
-import type { CampaignRuntimeDescriptor, ResolvedPluginRef, RolePack } from '@core/plugins/types';
+import type { ResolvedPluginRef, RolePack } from '@core/plugins/types';
 import { invokeRemote } from '../remote/rpc';
 
 export interface RolePackRef {

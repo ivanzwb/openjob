@@ -12,13 +12,16 @@ import {
   type PlannedTaskClientView,
   type PlannerRepo,
 } from '@core/planner/contributions';
-import type { CampaignRuntimeDescriptor, ResolvedPluginRef } from '@core/plugins/types';
+import type {
+  CampaignRuntimeDescriptor,
+  ResolvedPluginRef,
+  RolePack,
+} from '@core/plugins/types';
 import { getCampaign } from './campaignLocal';
 import { installedPluginsForCampaign,
   getCachedRolePack,
   listCachedRolePacks,
 } from './rolePackLocal';
-import type { RolePack } from '@core/plugins/types';
 import { updateCampaignFields } from './nodesLocal';
 import { getDeviceIdentity } from '../sync/identity';
 import { writingAs } from '../sync/triggers';
