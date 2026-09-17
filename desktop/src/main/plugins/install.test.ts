@@ -4,7 +4,7 @@
  * 用真实临时 userData：这一层的价值是「盘上最终留下了什么」，mock 掉文件系统就没了。
  */
 import { generateKeyPairSync } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
@@ -57,6 +57,7 @@ function writeTrustedKey(): void {
 }
 
 let keyFileExisted = false;
+let keyFileBackup: string | null = null;
 let resourcesDirExisted = false;
 
 beforeEach(() => {
@@ -65,12 +66,17 @@ beforeEach(() => {
   paths.pluginsDir = join(root, 'plugins');
   resourcesDirExisted = existsSync(RESOURCES_DIR);
   keyFileExisted = existsSync(KEY_FILE);
+  // 仓库里那份是随包分发的第一方公钥：从 desktop/ 起 vitest 时它就在这条路径上，
+  // 覆盖后就等于把真公钥换成测试密钥，跑完必须原样还回去
+  keyFileBackup = keyFileExisted ? readFileSync(KEY_FILE, 'utf8') : null;
   writeTrustedKey();
 });
 
 afterEach(() => {
   rmSync(paths.userData, { recursive: true, force: true });
-  if (!keyFileExisted) rmSync(KEY_FILE, { force: true });
+  if (keyFileBackup !== null) writeFileSync(KEY_FILE, keyFileBackup);
+  else if (!keyFileExisted) rmSync(KEY_FILE, { force: true });
+  keyFileBackup = null;
   // 自己建的目录自己收拾，别在仓库里留个空 resources/
   if (!resourcesDirExisted) rmSync(RESOURCES_DIR, { recursive: true, force: true });
   setExternalPlugins([]);
