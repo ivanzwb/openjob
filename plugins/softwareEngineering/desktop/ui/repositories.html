@@ -4,31 +4,42 @@
     <meta charset="utf-8" />
     <style>
       body { font-family: system-ui, sans-serif; padding: 16px; color: inherit; background: transparent; }
-      h2 { font-size: 14px; margin: 12px 0 6px; }
-      ul { margin: 0; padding-left: 18px; }
+      h2 { font-size: 14px; margin: 14px 0 6px; }
+      ul { margin: 0; padding-left: 0; list-style: none; }
       li { margin: 4px 0; font-size: 13px; display: flex; gap: 8px; align-items: baseline; }
-      .name { font-weight: 600; }
+      .name { font-weight: 600; cursor: pointer; }
+      .selected { font-weight: 700; text-decoration: underline; }
       .muted { opacity: 0.65; }
       button { font-size: 12px; }
       input { width: 60%; font-size: 13px; }
+      pre { white-space: pre-wrap; }
     </style>
   </head>
   <body>
     <h2>仓库</h2>
-    <ul id="repos"></ul>
-    <h2>问源码</h2>
-    <p>
-      <input id="question" placeholder="选中仓库后提问，如：登录流程在哪实现？" style="width: 60%" />
-      <button id="ask">提问</button>
-    </p>
-    <pre id="answer" class="muted" style="white-space: pre-wrap; min-height: 40px"></pre>
     <p>
       <input id="url" placeholder="https://github.com/org/repo.git" />
-      <button id="add">链接仓库</button>
+      <button id="link">链接仓库</button>
       <span id="msg" class="muted"></span>
     </p>
+    <p class="muted" style="font-size: 12px">
+      仓库拉进本包自己的工作区（只放行公开的 https 地址，深度 1、不带凭据）；重复链接同一地址即为更新。
+    </p>
+    <ul id="repos"></ul>
+
+    <h2>概览</h2>
+    <pre id="overview" class="muted">选中仓库后点「概览」</pre>
+
+    <h2>问源码</h2>
+    <p>
+      <input id="question" placeholder="选中仓库后提问，如：登录流程在哪实现？" />
+      <button id="ask">提问</button>
+    </p>
+    <pre id="answer" class="muted" style="min-height: 40px"></pre>
+
     <script>
-      // 受控桥：只能调宿主白名单方法（repo:* 会在宿主侧按权限与网关再校验）
+      // 受控桥：只能调本包声明过的方法（见 desktop/main.ts），未声明的调用落到「未开放的桥方法」。
+      // 工作区的路径约束与容量上限判定全在宿主主进程，页面这里只传相对路径。
       function call(method, params) {
         return new Promise((resolve, reject) => {
           const reqId = Date.now() + Math.random();
@@ -44,54 +55,175 @@
         });
       }
 
-      let selectedRepoId = null;
+      const STORAGE_KEY = 'repositories';
+      const SOURCE_EXTENSIONS = /\.(c|cc|cpp|cs|go|h|hpp|java|js|jsx|kt|php|py|rb|rs|scala|swift|ts|tsx|vue)$/i;
+
+      let repos = [];
+      let selected = null;
       let answerStreamId = null;
 
-      async function refresh() {
-        const repos = await call('repo.list', {});
+      const msg = (text) => { document.getElementById('msg').textContent = text; };
+
+      async function load() {
+        const raw = await call('storage.get', { key: STORAGE_KEY });
+        repos = raw ? JSON.parse(raw) : [];
+        selected = repos[0] ? repos[0].dir : null;
+      }
+
+      async function save() {
+        await call('storage.set', { key: STORAGE_KEY, value: JSON.stringify(repos) });
+      }
+
+      /** 把一次拉取的结果记进登记表：同一个目录只留最新一条 */
+      function remember(url, result) {
+        repos = repos.filter((entry) => entry.dir !== result.dir);
+        repos.unshift({
+          url,
+          dir: result.dir,
+          branch: result.branch,
+          commit: result.commit,
+          fileCount: result.fileCount,
+          bytes: result.bytes,
+          fetchedAt: Date.now(),
+        });
+        selected = result.dir;
+      }
+
+      function render() {
         const node = document.getElementById('repos');
         node.innerHTML = '';
-        for (const repo of repos) {
+        for (const entry of repos) {
           const li = document.createElement('li');
+
           const name = document.createElement('span');
-          name.className = 'name';
-          name.textContent = repo.name || repo.url;
-          name.style.cursor = 'pointer';
-          name.onclick = () => {
-            selectedRepoId = repo.id;
-            for (const item of node.children) item.style.fontWeight = 'normal';
-            name.style.fontWeight = '700';
-          };
+          name.className = entry.dir === selected ? 'name selected' : 'name';
+          name.textContent = entry.dir;
+          name.onclick = () => { selected = entry.dir; render(); };
+
           const meta = document.createElement('span');
           meta.className = 'muted';
-          meta.textContent = repo.updatedAt ? new Date(repo.updatedAt).toLocaleString() : '未索引';
+          const when = new Date(entry.fetchedAt).toLocaleString();
+          meta.textContent = `${entry.branch || 'detached'}@${entry.commit.slice(0, 7)} · ${entry.fileCount} 文件 · ${when}`;
+
+          const overview = document.createElement('button');
+          overview.textContent = '概览';
+          overview.onclick = () => run(() => showOverview(entry));
+
           const update = document.createElement('button');
-          update.textContent = '更新索引';
-          update.onclick = async () => {
-            await call('repo.update', { id: repo.id });
-            document.getElementById('msg').textContent = '已开始更新索引';
-          };
-          li.append(name, meta, update);
+          update.textContent = '更新';
+          update.onclick = () => run(async () => {
+            msg('正在更新…');
+            // 同一个目录再拉一次就是更新（宿主侧核对 origin 后才允许）
+            const result = await call('workspace.fetch', { url: entry.url, dir: entry.dir });
+            remember(entry.url, result);
+            await save();
+            msg('已更新到 ' + result.commit.slice(0, 7));
+            render();
+          });
+
+          const remove = document.createElement('button');
+          remove.textContent = '删除';
+          remove.onclick = () => run(async () => {
+            await call('workspace.delete', { path: entry.dir });
+            repos = repos.filter((item) => item.dir !== entry.dir);
+            if (selected === entry.dir) selected = repos[0] ? repos[0].dir : null;
+            await save();
+            msg('已删除本地检出');
+            render();
+          });
+
+          li.append(name, meta, overview, update, remove);
           node.appendChild(li);
         }
       }
 
-      // 基础流式问答（宿主能力）：源码问答 = 基础能力 + 选中仓库上下文
-      document.getElementById('ask').onclick = async () => {
-        const question = document.getElementById('question').value.trim();
-        if (!question || !selectedRepoId) {
-          document.getElementById('msg').textContent = '先选中一个仓库再提问';
-          return;
+      async function run(action) {
+        try {
+          await action();
+        } catch (error) {
+          msg(error.message);
         }
+      }
+
+      /** 概览：文件数按语言分档 + 符号数。glob 单次上限 200 条，超了就如实写明只看了一部分。 */
+      async function showOverview(entry) {
+        const out = document.getElementById('overview');
+        out.textContent = '正在扫描…';
+        const files = await call('workspace.glob', { pattern: entry.dir + '/**/*' });
+        const sources = files.filter((path) => SOURCE_EXTENSIONS.test(path));
+
+        const byExtension = {};
+        for (const path of sources) {
+          const ext = path.slice(path.lastIndexOf('.') + 1).toLowerCase();
+          byExtension[ext] = (byExtension[ext] || 0) + 1;
+        }
+        const languages = Object.entries(byExtension)
+          .sort((a, b) => b[1] - a[1])
+          .map(([ext, count]) => `${ext}: ${count}`)
+          .join('  ');
+
+        let symbolLines = '未提符号（没有可识别的源文件）';
+        if (sources.length > 0) {
+          const extracted = await call('workspace.symbols', { paths: sources });
+          const total = extracted.files.reduce((sum, file) => sum + file.symbols.length, 0);
+          const parsed = extracted.files.filter((file) => file.language).length;
+          const top = extracted.files
+            .flatMap((file) => file.symbols.map((symbol) => symbol.name))
+            .slice(0, 12)
+            .join('  ');
+          symbolLines =
+            `符号 ${total} 个（解析 ${parsed}/${sources.length} 个文件` +
+            `${extracted.truncated ? '，已到预算上限' : ''}）` +
+            (top ? `\n${top}` : '');
+        }
+
+        out.textContent =
+          `文件 ${files.length} 个${files.length >= 200 ? '（单次上限 200，可能只看到一部分）' : ''}\n` +
+          `源码 ${sources.length} 个  ${languages}\n` +
+          symbolLines;
+      }
+
+      /** 从问题里挑几个标识符去本包工作区里搜，命中片段作为上下文——上下文由包自己拼，宿主不做 */
+      async function gatherContext(entry, question) {
+        const identifiers = [...new Set(question.match(/[A-Za-z_][A-Za-z0-9_]{2,}/g) || [])].slice(0, 4);
+        const lines = [];
+        for (const identifier of identifiers) {
+          const matches = await call('workspace.grep', { pattern: identifier, path: entry.dir });
+          for (const match of matches.slice(0, 5)) {
+            lines.push(`${match.path}:${match.line}: ${match.text.trim().slice(0, 200)}`);
+          }
+          if (lines.length >= 20) break;
+        }
+        return lines.slice(0, 20);
+      }
+
+      document.getElementById('link').onclick = () => run(async () => {
+        const url = document.getElementById('url').value.trim();
+        if (!url) return;
+        msg('正在拉取…');
+        const result = await call('workspace.fetch', { url });
+        document.getElementById('url').value = '';
+        remember(url, result);
+        await save();
+        msg(`已拉到 ${result.dir}（${result.fileCount} 文件）`);
+        render();
+      });
+
+      document.getElementById('ask').onclick = () => run(async () => {
+        const question = document.getElementById('question').value.trim();
+        if (!question) return;
+        if (!selected) throw new Error('先选中一个仓库再提问');
+        const entry = repos.find((item) => item.dir === selected);
         const answer = document.getElementById('answer');
+        answer.textContent = '正在检索本包工作区…';
+        const context = await gatherContext(entry, question);
         answer.textContent = '';
-        const started = await call('agent.ask', {
-          question,
-          allowTools: true,
-          repoId: selectedRepoId,
-        });
+        const prompt = context.length
+          ? `${question}\n\n以下是本包工作区里的相关片段（格式 路径:行号: 内容）：\n${context.join('\n')}`
+          : question;
+        const started = await call('agent.ask', { question: prompt, role: 'codeAgent', allowTools: false });
         answerStreamId = started.streamId;
-      };
+      });
 
       window.addEventListener('message', (event) => {
         const payload = event.data && event.data.openjobEvent;
@@ -104,20 +236,10 @@
         }
       });
 
-      document.getElementById('add').onclick = async () => {
-        const url = document.getElementById('url').value.trim();
-        if (!url) return;
-        try {
-          await call('repo.add', { url });
-          document.getElementById('url').value = '';
-          document.getElementById('msg').textContent = '已开始克隆与索引';
-          await refresh();
-        } catch (err) {
-          document.getElementById('msg').textContent = err.message;
-        }
-      };
-
-      void refresh();
+      void run(async () => {
+        await load();
+        render();
+      });
     </script>
   </body>
 </html>

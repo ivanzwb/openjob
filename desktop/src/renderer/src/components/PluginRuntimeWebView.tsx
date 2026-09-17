@@ -1,11 +1,10 @@
 import { useEffect, useRef } from 'react';
-import type { LlmRole } from '@core/enums';
 import { resolveWebviewHtml } from '@core/plugins/pluginRuntime/assets';
 import {
   createPluginBridge,
   declaredPermissionBridgeGate,
 } from '@core/plugins/pluginRuntime/bridge';
-import { invoke, onEvent } from '../ipc';
+import { onEvent } from '../ipc';
 import { getUiAssets, onPluginEvent } from '../pluginRuntimes/runtime';
 import { desktopBridgePrimitives } from '../pluginRuntimes/bridgePrimitives';
 
@@ -17,98 +16,12 @@ import { desktopBridgePrimitives } from '../pluginRuntimes/bridgePrimitives';
  * 宿主按白名单方法代为调用 IPC 并回 `{ openjobResponse: { reqId, ... } }`；
  * 宿主事件以 `{ openjobEvent: ... }` 单向推入。越权方法由主进程门面再校验一道。
  * 资源切片：html 与相对引用的 ui/ 资产（js/css）都来自签名信封，经解析内联。
+ *
+ * 桥方法只有**一个来源**：包自己声明的（§11.2 桥自注册），实现在
+ * `pluginRuntimes/bridgePrimitives.ts` 的通用原语表里，放行由权限网关判。这里不再有
+ * 「按权限整段放行」的硬编码表——那正是岗位簇方法曾经进宿主 UI 的通道，也是「未声明
+ * 即够不到」名不副实的原因。
  */
-
-const BASE_BRIDGE_METHODS = {
-  'storage.get': (pluginId: string, params: { key: string }) =>
-    invoke('pluginRuntime:storage.get', { pluginId, key: params.key }),
-  'storage.set': (pluginId: string, params: { key: string; value: string }) =>
-    invoke('pluginRuntime:storage.set', { pluginId, key: params.key, value: params.value }),
-  'storage.delete': (pluginId: string, params: { key: string }) =>
-    invoke('pluginRuntime:storage.delete', { pluginId, key: params.key }),
-  'campaign.getDescriptor': (_pluginId: string, params: { campaignId: string }) =>
-    invoke('campaign:getRuntimeDescriptor', { campaignId: params.campaignId }),
-};
-
-/** 权限 → 额外桥方法。repo:* 通道在宿主侧还有权限网关逐次校验 */
-function bridgeMethods(permissions: readonly string[]) {
-  const methods: Record<string, (pluginId: string, params: never) => Promise<unknown>> = {
-    ...BASE_BRIDGE_METHODS,
-  };
-  if (permissions.includes('repository:read')) {
-    methods['repo.list'] = (pluginId) => invoke('repo:list', undefined).then((r) => {
-      void pluginId;
-      return r;
-    });
-    methods['repo.gitStatus'] = (pluginId) => invoke('repo:gitStatus', undefined).then((r) => {
-      void pluginId;
-      return r;
-    });
-    methods['repo.add'] = (_pluginId, params: { url: string }) =>
-      invoke('repo:add', { url: params.url });
-    methods['repo.update'] = (_pluginId, params: { id: string }) =>
-      invoke('repo:update', { id: params.id });
-    methods['repo.delete'] = (_pluginId, params: { id: string }) =>
-      invoke('repo:delete', { id: params.id });
-  }
-  if (permissions.includes('evidence:read-confirmed')) {
-    methods['evidence.listConfirmed'] = (_pluginId, params: { campaignId: string }) =>
-      invoke('pluginRuntime:evidence.listConfirmed', { pluginId: _pluginId, campaignId: params.campaignId });
-  }
-  if (permissions.includes('llm:complete')) {
-    // 基础流式问答：llm:chat 开流，增量经 stream:* 事件推入沙箱
-    methods['agent.ask'] = (
-      _pluginId,
-      params: {
-        question: string;
-        role?: LlmRole;
-        allowTools?: boolean;
-        repoId?: string;
-        campaignId?: string;
-      },
-    ) =>
-      invoke('llm:chat', {
-        // 不给默认角色：带 repoId 的请求由宿主按源码能力声明的角色提升，其余落 main 档
-        ...(params.role !== undefined ? { role: params.role } : {}),
-        messages: [{ role: 'user', content: params.question }],
-        allowTools: params.allowTools ?? false,
-        allowWebSearch: false,
-        ...(params.repoId !== undefined ? { repoId: params.repoId } : {}),
-        ...(params.campaignId !== undefined ? { campaignId: params.campaignId } : {}),
-      });
-  }
-  if (permissions.includes('filesystem:workspace')) {
-    // 工作区原语（§11.2）：页面走同一座桥。路径越界 / 上限判定全在宿主主进程，
-    // 桥这里只把相对路径透传过去，不接收页面给的绝对路径
-    methods['workspace.read'] = (
-      _pluginId: string,
-      params: { path: string; startLine?: number; endLine?: number },
-    ) => invoke('pluginRuntime:workspace.read', { pluginId: _pluginId, ...params });
-    methods['workspace.write'] = (
-      _pluginId: string,
-      params: { path: string; content: string },
-    ) => invoke('pluginRuntime:workspace.write', { pluginId: _pluginId, ...params });
-    methods['workspace.delete'] = (_pluginId: string, params: { path: string }) =>
-      invoke('pluginRuntime:workspace.delete', { pluginId: _pluginId, ...params });
-    methods['workspace.list'] = (_pluginId: string, params: { path?: string }) =>
-      invoke('pluginRuntime:workspace.list', { pluginId: _pluginId, path: params.path ?? '.' });
-    methods['workspace.glob'] = (_pluginId: string, params: { pattern: string }) =>
-      invoke('pluginRuntime:workspace.glob', { pluginId: _pluginId, ...params });
-    methods['workspace.grep'] = (
-      _pluginId: string,
-      params: { pattern: string; path?: string },
-    ) => invoke('pluginRuntime:workspace.grep', { pluginId: _pluginId, ...params });
-    methods['workspace.snapshot'] = (_pluginId: string, params: { path: string }) =>
-      invoke('pluginRuntime:workspace.snapshot', { pluginId: _pluginId, ...params });
-  }
-  if (permissions.includes('artifact:read')) {
-    // artifact 原语（§11.2）：请求里没有路径——选择器弹在主进程，页面只能发起
-    // 「请用户选个文件」。没有用户选择就拒；主进程网关逐次校验 artifact:read
-    methods['artifact.read'] = (_pluginId: string) =>
-      invoke('pluginRuntime:artifact.read', { pluginId: _pluginId });
-  }
-  return methods;
-}
 
 export function PluginRuntimeWebView({
   pluginId,
@@ -127,10 +40,10 @@ export function PluginRuntimeWebView({
   const html = assets[webviewPath]
     ? resolveWebviewHtml(webviewPath, assets[webviewPath], assets)
     : undefined;
-  const methods = bridgeMethods(permissions);
-  // 桥自注册（§11.2 / §6 判据三）：包声明了哪些桥方法，宿主就放行哪些——声明只决定
-  // 「能不能到网关」，放行与否交给权限网关（这里端侧判一次，主进程网关权威判一次）。
-  // 声明了但本端原语表里没有的方法不进 methods，页面调用时落到「未开放的桥方法」。
+  // 桥方法 = 包声明 ∩ 本端通用原语表（§11.2 桥自注册）：声明了哪些就放行哪些，未声明
+  // 的页面够不到。声明只决定「能不能到网关」，放行与否交给权限网关（端侧判一次，
+  // 主进程网关权威判一次）；声明了但原语表里没有的方法不进 methods。
+  const methods: Record<string, (pluginId: string, params: never) => Promise<unknown>> = {};
   const declaredBridge = createPluginBridge({
     pluginId,
     declared: declaredBridgeMethods,

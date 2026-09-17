@@ -194,6 +194,9 @@ describe('岗位包声明的 LLM 角色', () => {
         ],
       },
     ];
+    // 夹具的 manifest 必须与它自己的声明一致（权限并集由 contracts 强制），
+    // 否则报的是权限不一致，测不到「角色不会凭空出现」这条
+    pack.manifest.permissions = ['repository:read'];
 
     setExternalPlugins([externalEntry(pack)]);
     expect(declaredLlmRole('source-repository')).toBeUndefined();

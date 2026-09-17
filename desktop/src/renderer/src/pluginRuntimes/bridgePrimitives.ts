@@ -116,5 +116,34 @@ export function desktopBridgePrimitives(pluginId: string): PluginBridgePrimitive
       permission: 'artifact:read',
       invoke: () => invoke('pluginRuntime:artifact.read', { pluginId }),
     },
+    // 基础流式问答（§7.9）：编排与工具在宿主，**领域上下文由包自己拼**——这里刻意没有
+    // 「指定哪个仓库」这类岗位参数，包要问源码就自己用工作区原语取出片段再问。
+    'agent.ask': {
+      permission: 'llm:complete',
+      invoke: (params) => {
+        const { question, role, allowTools, campaignId } = params as {
+          question: string;
+          role?: string;
+          allowTools?: boolean;
+          campaignId?: string;
+        };
+        return invoke('llm:chat', {
+          ...(role !== undefined ? { role } : {}),
+          messages: [{ role: 'user', content: question }],
+          allowTools: allowTools ?? false,
+          allowWebSearch: false,
+          ...(campaignId !== undefined ? { campaignId } : {}),
+        });
+      },
+    },
+    // 已确认证据只读（§13.4）：新证据只能经 proposal 通道
+    'evidence.listConfirmed': {
+      permission: 'evidence:read-confirmed',
+      invoke: (params) =>
+        invoke('pluginRuntime:evidence.listConfirmed', {
+          pluginId,
+          campaignId: (params as { campaignId: string }).campaignId,
+        }),
+    },
   };
 }

@@ -18,7 +18,7 @@ import { useTheme } from '../theme';
  *
  * 列出本机缓存里带移动端实现的岗位包；点开后用 WebView 运行时激活入口——
  * 岗位包的 mobile/ 那份 main.js 与 ui 资产，桥走 invokeRemote 转发桌面白名单通道
- * （storage / campaign / repo / evidence），桌面权限网关逐次校验。
+ * （storage / campaign / 仓库 / evidence），桌面权限网关逐次校验。
  * 功能可降级：桥调用失败把错误文本直接渲染在页面里，不静默吞。
  */
 
@@ -59,12 +59,6 @@ function bridgeMethod(
       return invokeRemote('campaign:getRuntimeDescriptor', {
         campaignId: String(params.campaignId ?? ''),
       }).then((r) => r.result);
-    case 'repo.list':
-      return invokeRemote('repo:list').then((r) => r.result);
-    case 'repo.add':
-      return invokeRemote('repo:add', { url: String(params.url ?? '') }).then((r) => r.result);
-    case 'repo.update':
-      return invokeRemote('repo:update', { id: String(params.id ?? '') }).then((r) => r.result);
     case 'evidence.listConfirmed':
       return invokeRemote('evidence:listConfirmed', {
         campaignId: String(params.campaignId ?? ''),

@@ -339,7 +339,6 @@ const FROZEN_OFFENDERS: Readonly<Record<string, readonly (readonly [string, numb
     ['desktop/src/main/sync/rpc.ts', 15],
     ['desktop/src/main/sync/tables.ts', 2],
     ['desktop/src/renderer/src/components/CodePanel.tsx', 10],
-    ['desktop/src/renderer/src/components/PluginRuntimeWebView.tsx', 16],
     ['desktop/src/renderer/src/components/ReadCodePanel.tsx', 11],
     ['desktop/src/renderer/src/components/RepoWorkspace.tsx', 24],
     ['desktop/src/renderer/src/components/StudyPlanCalendarPopover.tsx', 1],
@@ -366,7 +365,6 @@ const FROZEN_OFFENDERS: Readonly<Record<string, readonly (readonly [string, numb
     ['mobile/src/llm/agentChat.ts', 17],
     ['mobile/src/navigation/RootTabs.tsx', 4],
     ['mobile/src/screens/MoreScreen.tsx', 1],
-    ['mobile/src/screens/PluginRuntimesScreen.tsx', 7],
     ['mobile/src/screens/ReposScreen.tsx', 48],
     ['mobile/src/screens/SyncScreen.tsx', 4],
     ['mobile/src/sync/repoFilePartition.ts', 9],
@@ -434,7 +432,6 @@ const FROZEN_OFFENDERS: Readonly<Record<string, readonly (readonly [string, numb
   repositoryPermission: [
     ['core/src/plugins/permissions.ts', 1],
     ['desktop/src/main/repo/tools.ts', 6],
-    ['desktop/src/renderer/src/components/PluginRuntimeWebView.tsx', 1],
     ['desktop/src/renderer/src/components/PluginsPanel.tsx', 1],
   ],
 
@@ -444,9 +441,7 @@ const FROZEN_OFFENDERS: Readonly<Record<string, readonly (readonly [string, numb
     ['desktop/src/main/ipc/index.ts', 7],
     ['desktop/src/main/sync/rpc.ts', 9],
     ['desktop/src/renderer/src/components/CodePanel.tsx', 1],
-    ['desktop/src/renderer/src/components/PluginRuntimeWebView.tsx', 5],
     ['desktop/src/renderer/src/components/ReadCodePanel.tsx', 1],
-    ['mobile/src/screens/PluginRuntimesScreen.tsx', 3],
   ],
   codeRefChannel: [
     ['core/src/ipc.ts', 2],
@@ -547,11 +542,9 @@ const FROZEN_OFFENDERS: Readonly<Record<string, readonly (readonly [string, numb
     ['mobile/src/data/queries.ts', 4],
   ],
 
-  // 判据三 · 渲染层桥方法表
-  bridgeMethodEntry: [
-    ['desktop/src/renderer/src/components/PluginRuntimeWebView.tsx', 5],
-    ['mobile/src/screens/PluginRuntimesScreen.tsx', 3],
-  ],
+  // 判据三 · 渲染层桥方法表：**已清空**。桥方法只剩下「包声明 ∩ 本端通用原语表」这一条
+  // 来源，渲染层不再按权限整段放行岗位簇方法。
+  bridgeMethodEntry: [],
 };
 
 const FROZEN_HITS: readonly Hit[] = Object.entries(FROZEN_OFFENDERS).flatMap(([rule, entries]) =>

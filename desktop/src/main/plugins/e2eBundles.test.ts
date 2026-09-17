@@ -155,10 +155,16 @@ describe('release 附件端到端', () => {
       expect(findInstalledRolePack(pack.manifest.id, pack.manifest.version)).not.toBeNull();
     }
 
-    // 能力条目的权限取各自声明：SE 的源码能力只要 repository:read
+    // 能力条目的权限取各自声明：SE 的源码能力现在自己声明通用原语（工作区 / 远端拉取）与
+    // 基础问答；`repository:read` 还是宿主侧旧工具实现要用的，随那块下线一起退掉
     const repo = installed.find((p) => p.id === 'source-repository');
     expect(repo).toMatchObject({ version: '1.4.0', type: 'capability' });
-    expect(repo!.permissions).toEqual(['repository:read']);
+    expect(repo!.permissions).toEqual([
+      'filesystem:workspace',
+      'llm:complete',
+      'network:fetch',
+      'repository:read',
+    ]);
 
     // 每条内嵌声明都派生出一条条目，id 由声明自己决定
     for (const pack of DISTRIBUTED_ROLE_PACKS) {

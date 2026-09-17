@@ -237,7 +237,7 @@ GitHub 接口不通（限额、镜像没代理 `api.github.com`）时退回读 `
 |------|--------|------|
 | 工作区 | `filesystem:workspace`（词汇已存在） | 本包工作区内的读 / 写 / 删 / 遍历 / glob / grep / 文本快照 / 批量符号提取；从远端 git 拉取到该目录（另需 `network:fetch`，见 §11.5） |
 | artifact | `artifact:read`（`artifact:write` 词汇已存在） | 用户显式提供的文件读入（表格 / 文档） |
-| 桥自注册 | — | 包声明自己的桥方法，宿主按声明放行（替代渲染层硬编码的 `repo.*`） |
+| 桥自注册 | — | 包声明自己的桥方法，宿主按声明放行。**已落地**：渲染层那张「按权限整段放行」的表已删除，桥方法只剩「包声明 ∩ 通用原语表」一条来源（见 §11.6） |
 | 数据面 | — | 包声明需要跨端的数据集合，宿主建通用承载表并沿用既有同步；内容对宿主不透明 |
 
 `repository:read` 是岗位味词汇，退掉，改用 `filesystem:workspace`。
@@ -248,7 +248,7 @@ GitHub 接口不通（限额、镜像没代理 `api.github.com`）时退回读 `
 |------|------|------|
 | 0 | 落地 §6 的三条判据为关卡（预期先红，红的就是 §11.1 那张表）；文档同步 | **已完成**：关卡 `core/src/hostUi/roleNeutralGate.test.ts` 把 §11.1 越界点冻结成名单，列出全部越界点 |
 | 1 | 原语层骨架（工作区 / artifact / 桥自注册）+ 权限接线 + 手机端如实降级 | **已完成**：三类边界用例（路径越界、未授权、上限）就位，手机端按声明如实拒绝。「从远端 git 拉取到工作区」也已落地为 `workspace.fetch`（§11.5） |
-| 2 | 软件工程试点：实现搬进 SE 包，宿主 `repo` 模块、`llm` 的 repo 分支、`repo:*` 通道、宿主 UI 一并下线；planner 去 `readCode` 特判，任务面板改通用视图槽位 | 装 SE 包后源码能力与插件化之前等价；卸载后基础包无源码痕迹；索引性能基准通过。**进行中**：先补上包侧原本够不到的能力——`workspace.fetch`（§11.5）已落地；接着是包侧自建索引与问答、再收宿主那几块 |
+| 2 | 软件工程试点：实现搬进 SE 包，宿主 `repo` 模块、`llm` 的 repo 分支、`repo:*` 通道、宿主 UI 一并下线；planner 去 `readCode` 特判，任务面板改通用视图槽位 | 装 SE 包后源码能力与插件化之前等价；卸载后基础包无源码痕迹；索引性能基准通过。**进行中**：包侧原本够不到的能力已补齐（`workspace.fetch`，§11.5），SE 包页面也已改走通用原语、宿主不再为它留岗位桥（§11.6）；剩下的是包侧自建索引与问答继续加固，再把宿主那几块（`repo/*`、`repo:*` 通道、宿主 UI、`llm` 的 repo 分支）收掉 |
 | 3 | 数据面：`repo_file` / `code_ref` 迁出主库，改为包声明的通用数据面与同步 | 跨端同步用例通过；历史数据一次性迁移且可回滚 |
 | 4 | 清扫产品经理与销售，以及跨岗的枚举取值、文案与兜底常量 | §6 三条判据全绿 |
 
@@ -369,3 +369,27 @@ parse 的长尾在单文件体积上：<4 KB 0.76 ms、4–16 KB 1.46 ms、**>16
 clone / 更新 / 占用 / 超限 / 超时五条流程）；`desktop/src/main/workspace/git.test.ts`（加固环境与
 加固参数逐项钉住）；`pluginWorkspace.test.ts` 的「远端拉取」一组（两项声明都要、非法地址不建目录、
 越界照拒、推导目录名、origin 不一致拒）。
+
+### 11.6 落地记录：SE 包页面改走通用原语，宿主删掉岗位桥
+
+`repository:read` 是 §11.2 点名要退掉的岗位味词汇，当时它有两处用途：宿主侧旧工具实现的逐次授权，
+以及**渲染层那张桥表**——`PluginRuntimeWebView` 按 `permissions.includes('repository:read')` 整段放行
+`repo.list / gitStatus / add / update / delete`，包连声明都不用就能调。这次两边一起动：
+
+- **包侧**：`source-repository` 能力补声明 `filesystem:workspace` / `network:fetch` / `llm:complete`
+  （manifest 权限 = 声明并集且按字典序，所以能力声明、manifest、契约用例三处同步）。两个入口
+  （desktop / mobile）用 `ctx.bridge.declare` 声明本包要用的桥方法——桌面九条（工作区六个 + storage
+  两个 + `agent.ask`），移动端一条（`storage.get`）。
+- **页面**：仓库拉进本包工作区（`workspace.fetch`），登记表存在插件私有存储里，文件与符号走
+  `workspace.glob` / `workspace.symbols`，问答先用 `workspace.grep` 拼出片段再问（`agent.ask` 带
+  `role: 'codeAgent'`）——**上下文由包自己组合**，宿主不再有「问源码」这条专用路径。
+- **宿主**：`PluginRuntimeWebView` 里那张按权限整段放行的表整块删除，桥方法只剩「包声明 ∩
+  `bridgePrimitives.ts` 通用原语表」。顺带把 `agent.ask` 与 `evidence.listConfirmed` 补进通用原语表
+  （实现仍在宿主，但参数里不再有「指定哪个仓库」这类岗位味字段）。`roleNeutralGate` 判据三的名单随之
+  清空（`bridgeMethodEntry: []`），另有 6 条冻结条目因命中归零被删——这正是名单该有的收缩方向。
+
+**手机端如实降级**：工作区与远端拉取只在桌面存在，所以手机页面只读本包存储（两端共用一份，桌面拉下来
+的仓库在手机上能看到），并写明「链接与更新在桌面端做」。与 §11.4 的取舍一致，但要记一笔：**这是一处
+能力回退**——此前手机能经 `repo:add` / `repo:update`（远程 job 通道）让桌面去克隆与建索引。要不要给
+配对设备开放「远程执行通用原语」（`workspace.fetch` 之类经 `sync/rpc.ts` 转发到桌面、由桌面自己的
+权限网关判），是一次独立的信任边界决策，不混在这次搬迁里。
