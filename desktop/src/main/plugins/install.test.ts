@@ -33,7 +33,7 @@ import {
 } from '@core/plugins/package/contract';
 import type { RolePack } from '@core/plugins/types';
 import { signPackageFiles, toBundleJson } from './bundle';
-import { installPluginBundle, parseBundle, uninstallPlugin } from './install';
+import { installPluginBundle, parseBundle, removeRejectedPluginDir, uninstallPlugin } from './install';
 import { setExternalPlugins } from './runtime';
 
 const publisher = generateKeyPairSync('ed25519');
@@ -337,5 +337,36 @@ describe('uninstallPlugin', () => {
     uninstallPlugin('demo.role', '2.0.0');
 
     expect(installedDirs()).toEqual(['demo.role@2.1.0']);
+  });
+});
+
+describe('removeRejectedPluginDir', () => {
+  it('按目录名删掉一个没通过扫描的包目录', () => {
+    // 这种目录进不了安装清单，没有 id@version 可以交给 uninstallPlugin
+    const rogue = join(paths.pluginsDir, 'rogue@1.0.0');
+    mkdirSync(rogue, { recursive: true });
+    writeFileSync(join(rogue, 'manifest.json'), '{"id":"rogue"}', 'utf8');
+
+    expect(removeRejectedPluginDir('rogue@1.0.0')).toEqual({ removed: true });
+    expect(installedDirs()).toEqual([]);
+
+    // 幂等：目录不在也算成功
+    expect(removeRejectedPluginDir('rogue@1.0.0')).toEqual({ removed: false });
+  });
+
+  it('只删指定的那一个，不动旁边的插件目录', () => {
+    installPluginBundle(bundle());
+    const rogue = join(paths.pluginsDir, 'rogue@1.0.0');
+    mkdirSync(rogue, { recursive: true });
+
+    removeRejectedPluginDir('rogue@1.0.0');
+
+    expect(installedDirs()).toEqual(['demo.role@2.0.0']);
+  });
+
+  it('渲染层只能传目录名：带路径的一律拒绝', () => {
+    for (const bad of ['', '.', '..', '../elsewhere', 'a/b', 'a\\b']) {
+      expect(() => removeRejectedPluginDir(bad), bad).toThrow('不合法的插件目录名');
+    }
   });
 });

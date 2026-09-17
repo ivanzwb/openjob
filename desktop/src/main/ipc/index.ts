@@ -73,7 +73,12 @@ import {
 import { completePluginJson } from '../llm/json';
 import { emit } from '../ipc/bridge';
 import { pluginInventoryView } from '../plugins/bootstrap';
-import { installPluginBundle, installPluginFromFile, uninstallPlugin } from '../plugins/install';
+import {
+  installPluginBundle,
+  installPluginFromFile,
+  removeRejectedPluginDir,
+  uninstallPlugin,
+} from '../plugins/install';
 import { downloadPluginBundle, listAvailablePlugins } from '../plugins/catalog';
 import { countUnmappedPrePluginCampaigns } from '../db/backfill/pluginRuntime';
 import { getRolePlaySessionService } from '../plugins/rolePlaySession';
@@ -284,6 +289,8 @@ export function registerIpcHandlers(): void {
     });
   });
   handle('plugin:uninstall', ({ id, version }) => uninstallPlugin(id, version));
+  // 扫描拒掉的包不在安装清单里，卸载入口够不着它，只能按目录名删
+  handle('plugin:removeRejectedDir', ({ dir }) => removeRejectedPluginDir(dir));
   // 清单和更新源是同一处，用户改了更新源插件也跟着走（含镜像前缀）
   handle('plugin:listAvailable', () => listAvailablePlugins({ feedUrl: getConfig().update.feedUrl }));
   handle('plugin:installFromCatalog', async ({ id, version, trustUnknownSigner, confirmDataLoss }) => {

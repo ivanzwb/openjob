@@ -261,3 +261,24 @@ export function uninstallPlugin(id: string, version: string): { removed: boolean
   loadExternalPlugins();
   return { removed: existed };
 }
+
+/**
+ * 删掉一个扫描没通过的插件目录。
+ *
+ * 被 scanPluginInventory 拒掉的包不进安装清单，因此没有 id@version 可以走 uninstallPlugin；
+ * 而目录还占着盘，设置页会一直列在「装在本机但没有生效」里报错。删除只按目录名走，名字
+ * 必须先自证是 pluginsDir 的直接子目录（不含分隔符、不是 . / ..）——渲染层若能传路径，
+ * 这里就成了任意目录删除器。
+ *
+ * 幂等：目录不在也算成功，与 uninstallPlugin 一致。
+ */
+export function removeRejectedPluginDir(dir: string): { removed: boolean } {
+  if (dir === '' || dir === '.' || dir === '..' || /[\\/]/.test(dir)) {
+    throw new Error(`不合法的插件目录名：${dir}`);
+  }
+  const target = join(getAppPaths().pluginsDir, dir);
+  const existed = existsSync(target);
+  rmSync(target, { recursive: true, force: true });
+  loadExternalPlugins();
+  return { removed: existed };
+}

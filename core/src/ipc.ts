@@ -1195,6 +1195,15 @@ export interface IpcInvokeMap {
   };
   'plugin:uninstall': { req: { id: string; version: string }; res: { removed: boolean } };
   /**
+   * 删掉一个「装在本机但没有生效」的插件目录。
+   *
+   * 扫描拒掉的包（签名者不受信任、被改动、读不出来……）不进安装清单，于是没有
+   * id@version 可以走 plugin:uninstall，但目录还留在盘上、设置页会一直报错。这里只传
+   * 目录名，主进程再自证它确实是 pluginsDir 的直接子目录——渲染层能传路径的话，
+   * 主进程就成了任意目录删除器。
+   */
+  'plugin:removeRejectedDir': { req: { dir: string }; res: { removed: boolean } };
+  /**
    * 从更新源拉取可安装插件清单。
    *
    * 来源与自动更新同一处：更新源填了就用它，留空走官方 GitHub Release。拉不到清单
@@ -1568,6 +1577,7 @@ export const IPC_INVOKE_CHANNELS = [
   'plugin:inventory',
   'plugin:install',
   'plugin:uninstall',
+  'plugin:removeRejectedDir',
   'plugin:listAvailable',
   'plugin:installFromCatalog',
   'plugin:getRolePack',

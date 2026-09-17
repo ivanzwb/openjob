@@ -268,6 +268,34 @@ export function PluginsPanel(): React.JSX.Element {
   const hasExternal = externalVersions.size > 0;
 
   /**
+   * 删掉一个没通过扫描的包目录。
+   *
+   * 这类包不在安装清单里，走不了 plugin:uninstall（拿不到 id@version），但它们还占着盘，
+   * 而且一直挂在下面的报错清单里——没有这个入口，用户就卡在「装不上也删不掉」。
+   */
+  const removeRejected = useCallback(
+    async (dir: string): Promise<void> => {
+      if (
+        !window.confirm(
+          `删除 ${dir}？\n\n这个包装在本机但没有生效，删掉的只是磁盘上这个目录；` +
+            '已经用过它的战役会保留历史结果。',
+        )
+      ) {
+        return;
+      }
+      setBusy(true);
+      try {
+        await invoke('plugin:removeRejectedDir', { dir });
+        setMessage(`已删除 ${dir}`);
+        await refresh();
+      } finally {
+        setBusy(false);
+      }
+    },
+    [refresh],
+  );
+
+  /**
    * 岗位包排前面。
    *
    * 基础包不带岗位，只装个能力包的话面试照样开不了；而清单按 id 排序时「能力包」
@@ -453,6 +481,14 @@ export function PluginsPanel(): React.JSX.Element {
                   <span className="shrink-0 text-[var(--color-muted)]">
                     {REJECTION_LABEL[item.reason] ?? item.reason}
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => void removeRejected(item.dir)}
+                    disabled={busy}
+                    className="ml-auto shrink-0 text-[var(--color-muted)] hover:text-red-400 disabled:opacity-40"
+                  >
+                    删除
+                  </button>
                 </div>
                 <p className="break-all text-[10px] text-[var(--color-muted)]">{item.detail}</p>
               </div>
