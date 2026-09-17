@@ -210,10 +210,12 @@ GitHub 接口不通（限额、镜像没代理 `api.github.com`）时退回读 `
 
 ## 11. 岗位簇实现的搬迁（进行中）
 
-§6 的三条判据现在还有不少地方不满足：基础包里仍然留着若干**岗位簇的实现**，那不是基础设施，
-是插件化之前就地留下的旧功能。本节是盘点与计划，按阶段推进。
+基础包只装面试 Agent 的基础设施：跨岗位闭环、不认岗位的机制、通用原语。§6 的三条判据是这条边界的
+可执行形态——岗位簇的功能实现、领域概念、专属表、专属通道与专属文案都归各自的岗位包。本节给出目标
+形态（§11.2）、搬迁顺序（§11.3）、仍在基础包里的实现清单（§11.1），以及原语层的决策与用法
+（§11.4–§11.6）。
 
-### 11.1 现状盘点（越界清单）
+### 11.1 仍在基础包里的岗位簇实现
 
 | 岗位簇 | 位置 | 规模（估） |
 |--------|------|-----------|
@@ -237,18 +239,19 @@ GitHub 接口不通（限额、镜像没代理 `api.github.com`）时退回读 `
 |------|--------|------|
 | 工作区 | `filesystem:workspace`（词汇已存在） | 本包工作区内的读 / 写 / 删 / 遍历 / glob / grep / 文本快照 / 批量符号提取；从远端 git 拉取到该目录（另需 `network:fetch`，见 §11.5） |
 | artifact | `artifact:read`（`artifact:write` 词汇已存在） | 用户显式提供的文件读入（表格 / 文档） |
-| 桥自注册 | — | 包声明自己的桥方法，宿主按声明放行。**已落地**：渲染层那张「按权限整段放行」的表已删除，桥方法只剩「包声明 ∩ 通用原语表」一条来源（见 §11.6） |
+| 桥自注册 | — | **页面能调的桥方法 = 包声明 ∩ 本机通用原语表**。包在入口代码里逐条 `ctx.bridge.declare('workspace.glob')`；未声明的方法页面够不到，声明了但本机没有该原语同样够不到。每个原语自带权限项，放行由权限网关判（端侧一次、主进程一次） |
 | 数据面 | — | 包声明需要跨端的数据集合，宿主建通用承载表并沿用既有同步；内容对宿主不透明 |
 
-`repository:read` 是岗位味词汇，退掉，改用 `filesystem:workspace`。
+工作区原语用 `filesystem:workspace` 授权。SE 包内嵌的旧工具声明里仍带 `repository:read`，它只服务于
+宿主侧的工具实现（§11.1），包的页面不经过它。
 
 ### 11.3 阶段
 
 | 阶段 | 内容 | 验收 |
 |------|------|------|
-| 0 | 落地 §6 的三条判据为关卡（预期先红，红的就是 §11.1 那张表）；文档同步 | **已完成**：关卡 `core/src/hostUi/roleNeutralGate.test.ts` 把 §11.1 越界点冻结成名单，列出全部越界点 |
-| 1 | 原语层骨架（工作区 / artifact / 桥自注册）+ 权限接线 + 手机端如实降级 | **已完成**：三类边界用例（路径越界、未授权、上限）就位，手机端按声明如实拒绝。「从远端 git 拉取到工作区」也已落地为 `workspace.fetch`（§11.5） |
-| 2 | 软件工程试点：实现搬进 SE 包，宿主 `repo` 模块、`llm` 的 repo 分支、`repo:*` 通道、宿主 UI 一并下线；planner 去 `readCode` 特判，任务面板改通用视图槽位 | 装 SE 包后源码能力与插件化之前等价；卸载后基础包无源码痕迹；索引性能基准通过。**进行中**：包侧原本够不到的能力已补齐（`workspace.fetch`，§11.5），SE 包页面也已改走通用原语、宿主不再为它留岗位桥（§11.6）；剩下的是包侧自建索引与问答继续加固，再把宿主那几块（`repo/*`、`repo:*` 通道、宿主 UI、`llm` 的 repo 分支）收掉 |
+| 0 | 落地 §6 的三条判据为关卡；文档同步 | **已完成**：`core/src/hostUi/roleNeutralGate.test.ts` 把三条判据固化成关卡，命中清单与 §11.1 一一对应 |
+| 1 | 原语层骨架（工作区 / artifact / 桥自注册）+ 权限接线 + 手机端如实降级 | **已完成**：工作区、artifact、桥自注册三类原语可用，边界用例（路径越界 / 未授权 / 超限）就位，手机端按声明如实拒绝；远端拉取见 §11.5 |
+| 2 | 软件工程试点：实现搬进 SE 包，宿主 `repo` 模块、`llm` 的 repo 分支、`repo:*` 通道、宿主 UI 一并下线；planner 去 `readCode` 特判，任务面板改通用视图槽位 | 装 SE 包后源码能力与插件化之前等价；卸载后基础包无源码痕迹；索引性能基准通过。**进行中**：SE 包的页面已用 §11.6 那套原语跑通，宿主侧 `repo/*`、`repo:*` 通道、宿主 UI 与 `llm` 的 repo 分支还在拆 |
 | 3 | 数据面：`repo_file` / `code_ref` 迁出主库，改为包声明的通用数据面与同步 | 跨端同步用例通过；历史数据一次性迁移且可回滚 |
 | 4 | 清扫产品经理与销售，以及跨岗的枚举取值、文案与兜底常量 | §6 三条判据全绿 |
 
@@ -257,8 +260,8 @@ GitHub 接口不通（限额、镜像没代理 `api.github.com`）时退回读 `
 隔离只能靠签名与用户确认。若将来要走，是一次独立的安全决策，不混在这条搬迁里。
 
 **已知使能缺口**：tree-sitter 在宿主侧（`web-tree-sitter` + `symbols/treeSitter.ts`），包的沙箱既
-`require` 不到它，静态扫描也禁 `new Function` / `fetch`，所以符号提取只能由宿主做成语言无关的
-通用原语（`workspace.symbols`）。已在 §11.4 定案，并已落地（见 §11.4 末尾的落地记录）。
+`require` 不到它，静态扫描也禁 `new Function` / `fetch`，所以符号提取由宿主做成语言无关的通用原语
+（`workspace.symbols`），决策见 §11.4。
 
 ### 11.4 决策记录：`workspace.symbols` 与索引基准
 
@@ -303,16 +306,15 @@ parse 的长尾在单文件体积上：<4 KB 0.76 ms、4–16 KB 1.46 ms、**>16
 7. **不放进原语的**：跨文件引用图、语料索引、排序与检索、落盘持久化——那是包的实现加上阶段 3 的
    数据面。宿主现在也不落盘符号（`find_symbol` 是查询时现扫），保持一致。
 
-**落地记录（阶段 1）**
+**实现分布**
 
-实现分布：契约在 `core/src/plugins/pluginRuntime/host.ts`（`WORKSPACE_SYMBOL_KINDS` 是 kind 的闭
-集合，`WorkspaceSymbolsResult` 是产物形状），宿主实现在 `desktop/src/main/plugins/pluginWorkspace.ts`
-（`workspaceSymbols`，与读 / glob 共用同一条路径约束），解析引擎搬到
-`desktop/src/main/symbols/treeSitter.ts`——**搬出 `repo/` 是这次搬迁的一部分**：扩展名映射、节点
-类型映射与 AST 遍历都不认岗位，`repo/symbols.ts`（源码能力的符号骨架）现在反过来 import 它。
-`roleNeutralGate.test.ts` 的冻结名单里随之删掉了 `desktop/src/main/repo/treeSitter.ts` 那条。
+契约在 `core/src/plugins/pluginRuntime/host.ts`（`WORKSPACE_SYMBOL_KINDS` 是 kind 的闭集合，
+`WorkspaceSymbolsResult` 是产物形状），实现在 `desktop/src/main/plugins/pluginWorkspace.ts`
+（`workspaceSymbols`，与读 / glob 共用同一条路径约束），解析引擎在
+`desktop/src/main/symbols/treeSitter.ts`：扩展名映射、节点类型映射与 AST 遍历都不认岗位，属于基础
+设施——`repo/symbols.ts`（源码能力的符号骨架）也 import 它。
 
-与上面决策的差异，都是落地时才看清的，记在这里而不是改决策：
+与上面决策的差异，都是实现时才看清的，记在这里而不是改决策：
 
 - **摘要字段叫 `sha256` 不叫 `digest`**：与工作区原语的 `snapshot().sha256`、artifact 的 `sha256`
   同名同算法，包侧拿到两个摘要能直接比，不用记「哪个接口用哪个名字」。
@@ -370,26 +372,28 @@ clone / 更新 / 占用 / 超限 / 超时五条流程）；`desktop/src/main/wor
 加固参数逐项钉住）；`pluginWorkspace.test.ts` 的「远端拉取」一组（两项声明都要、非法地址不建目录、
 越界照拒、推导目录名、origin 不一致拒）。
 
-### 11.6 落地记录：SE 包页面改走通用原语，宿主删掉岗位桥
+### 11.6 通用原语怎么用（以软件工程包为例）
 
-`repository:read` 是 §11.2 点名要退掉的岗位味词汇，当时它有两处用途：宿主侧旧工具实现的逐次授权，
-以及**渲染层那张桥表**——`PluginRuntimeWebView` 按 `permissions.includes('repository:read')` 整段放行
-`repo.list / gitStatus / add / update / delete`，包连声明都不用就能调。这次两边一起动：
+**准入三层，逐层拒绝**。包在入口代码里用 `ctx.bridge.declare('workspace.glob')` 逐条声明要用的桥
+方法（`plugins/softwareEngineering/desktop/main.ts` 就是本包的全部请求面）；宿主取「该声明 ∩ 本机通用
+原语表」构成这座桥，未声明的方法页面够不到，声明了但本机没有该原语也够不到；每个原语自带权限项，最后
+过一次权限网关（端侧判一次、主进程权威判一次）。两层信息共同决定包能做什么：它声明了什么，以及它要的
+权限用户批准了什么——声明本身不带权限，也不能把权限转给别的包。
 
-- **包侧**：`source-repository` 能力补声明 `filesystem:workspace` / `network:fetch` / `llm:complete`
-  （manifest 权限 = 声明并集且按字典序，所以能力声明、manifest、契约用例三处同步）。两个入口
-  （desktop / mobile）用 `ctx.bridge.declare` 声明本包要用的桥方法——桌面九条（工作区六个 + storage
-  两个 + `agent.ask`），移动端一条（`storage.get`）。
-- **页面**：仓库拉进本包工作区（`workspace.fetch`），登记表存在插件私有存储里，文件与符号走
-  `workspace.glob` / `workspace.symbols`，问答先用 `workspace.grep` 拼出片段再问（`agent.ask` 带
-  `role: 'codeAgent'`）——**上下文由包自己组合**，宿主不再有「问源码」这条专用路径。
-- **宿主**：`PluginRuntimeWebView` 里那张按权限整段放行的表整块删除，桥方法只剩「包声明 ∩
-  `bridgePrimitives.ts` 通用原语表」。顺带把 `agent.ask` 与 `evidence.listConfirmed` 补进通用原语表
-  （实现仍在宿主，但参数里不再有「指定哪个仓库」这类岗位味字段）。`roleNeutralGate` 判据三的名单随之
-  清空（`bridgeMethodEntry: []`），另有 6 条冻结条目因命中归零被删——这正是名单该有的收缩方向。
+**SE 包的页面只编排原语**（`plugins/softwareEngineering/desktop/ui/repositories.html`）：
 
-**手机端如实降级**：工作区与远端拉取只在桌面存在，所以手机页面只读本包存储（两端共用一份，桌面拉下来
-的仓库在手机上能看到），并写明「链接与更新在桌面端做」。与 §11.4 的取舍一致，但要记一笔：**这是一处
-能力回退**——此前手机能经 `repo:add` / `repo:update`（远程 job 通道）让桌面去克隆与建索引。要不要给
-配对设备开放「远程执行通用原语」（`workspace.fetch` 之类经 `sync/rpc.ts` 转发到桌面、由桌面自己的
-权限网关判），是一次独立的信任边界决策，不混在这次搬迁里。
+| 页面动作 | 用到的原语 | 权限 |
+|---------|-----------|------|
+| 链接仓库 / 更新 | `workspace.fetch` | `filesystem:workspace` + `network:fetch` |
+| 删除本地检出 | `workspace.delete` | `filesystem:workspace` |
+| 概览：文件与符号 | `workspace.glob` → `workspace.symbols` | `filesystem:workspace` |
+| 问源码 | 先 `workspace.grep` 取片段，再 `agent.ask`（`role: 'codeAgent'`） | `filesystem:workspace` + `llm:complete` |
+| 仓库登记表 | `storage.get` / `storage.set`（包私有存储） | —（无需权限项） |
+
+仓库落在包工作区 `userData/plugin-workspace/<pluginId>/`，登记表存在包私有存储里。问答的领域上下文由
+页面自己组合：拿问题里的标识符在**本包工作区**里 grep，把命中行拼成片段随问题一起发出——`agent.ask`
+的参数里没有「指定哪个仓库」这类岗位概念，模型编排与证据校验仍在宿主。
+
+**同一个包、两端两个页面**。`mobile/ui/repositories.html` 读同一份私有存储（存储两端共用），列出已
+拉下来的仓库及其分支、提交、文件数；链接、更新、概览、问源码在桌面做，因为工作区与远端拉取这两类原语
+只在桌面存在。手机上不摆按下去会失败的按钮——外置能力在手机端 view-only 这条上限（§7）与此一致。
