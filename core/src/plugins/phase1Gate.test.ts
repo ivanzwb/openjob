@@ -18,14 +18,13 @@ import {
 import { composePrompt } from '../prompts/composer';
 import type { PromptSlot } from '../prompts/registry';
 import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
-import { synthesizeSuiteFromRolePack } from './capabilitySuite';
 import {
+  ANALYTICS_CASE_CAPABILITY_ID,
   PRODUCT_MANAGER_FORMAT_IDS,
   PRODUCT_MANAGER_ROLE_PACK_ID,
   productManagerRolePack,
 } from '@plugins/productManager';
-import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
-import { CORE_CAPABILITIES_PACK_ID } from './capabilitySuite';
+import { SOURCE_REPOSITORY_CAPABILITY_ID, softwareEngineeringRolePack } from '@plugins/softwareEngineering';
 import { buildClientCapabilityView } from './clientView';
 import { installedWith } from './__fixtures__/installed';
 import { BuiltInPluginRegistry } from './registry';
@@ -47,14 +46,12 @@ const PM_FORMAT_IDS = Object.values(PRODUCT_MANAGER_FORMAT_IDS);
  */
 function phase1Runtime(): CampaignRuntimeDescriptor {
   const registry = new BuiltInPluginRegistry();
+  // 内置清单已清空：能力随岗位包分发，注册表里注册的包就是本机装的包
   DISTRIBUTED_ROLE_PACKS.forEach((pack) => registry.register(pack));
-  // 内置清单已清空：能力由合编包承载，测试里的「已安装」与生产一样走注册表
-  const suite = synthesizeSuiteFromRolePack(softwareEngineeringRolePack);
-  if (suite) registry.registerCapability(suite);
 
   const resolved = new DeterministicRuntimeResolver(registry).resolve({
     coreVersion: '1.0.0',
-    schemaVersion: 23,
+    schemaVersion: 24,
     rolePackId: PRODUCT_MANAGER_ROLE_PACK_ID,
     capabilityIds: [],
   });
@@ -227,8 +224,8 @@ describe('Phase 1 通用核心闸门', () => {
     expect(tasks).toHaveLength(1);
     expect(tasks[0]).toMatchObject({
       kind: 'readCode',
-      // 贡献的实现由合编包承载：旧 descriptor 的退役 id 归一化后按新 id 归属
-      capabilityId: CORE_CAPABILITIES_PACK_ID,
+      // 任务声明的就是能力自己的 id：能力随岗位包分发，没有中间层
+      capabilityId: SOURCE_REPOSITORY_CAPABILITY_ID,
     });
     expect(tasks[0].client.executable).toBe(true);
   });
@@ -263,11 +260,10 @@ describe('Phase 1 通用核心闸门', () => {
     expect(views[0].capabilities.map((item) => item.id)).toEqual(
       views[1].capabilities.map((item) => item.id),
     );
-    // analytics-case 是产品岗的可选依赖，装上了就自动生效；手机端没有表格读入，只读
-    // analytics-case 已并入能力合编包：PM 包的可选依赖装上即生效，手机只读
-    expect(views[0].enabledCapabilityIds).toContain(CORE_CAPABILITIES_PACK_ID);
-    expect(views[1].enabledCapabilityIds).not.toContain(CORE_CAPABILITIES_PACK_ID);
-    expect(views[1].readOnlyCapabilityIds).toEqual([CORE_CAPABILITIES_PACK_ID]);
+    // analytics-case 是本包内嵌的可选能力：装上本包就自动生效；手机端没有表格读入，只读
+    expect(views[0].enabledCapabilityIds).toContain(ANALYTICS_CASE_CAPABILITY_ID);
+    expect(views[1].enabledCapabilityIds).not.toContain(ANALYTICS_CASE_CAPABILITY_ID);
+    expect(views[1].readOnlyCapabilityIds).toEqual([ANALYTICS_CASE_CAPABILITY_ID]);
   });
 });
 import { prePluginRuntimeDescriptor } from '../plugins/__fixtures__/prePluginDescriptor';

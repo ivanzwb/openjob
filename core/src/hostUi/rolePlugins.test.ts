@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { installedWith } from '../plugins/__fixtures__/installed';
 import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
-import { SOFTWARE_ENGINEERING_ROLE_PACK_ID } from '@plugins/softwareEngineering';
-import { CORE_CAPABILITIES_PACK_ID } from '../plugins/capabilitySuite';
+import {
+  SOURCE_REPOSITORY_CAPABILITY_ID,
+  SOFTWARE_ENGINEERING_ROLE_PACK_ID,
+} from '@plugins/softwareEngineering';
 import { buildCapabilityView, buildDescriptor, buildRuntimeView, CAMPAIGN_ID } from './__fixtures__/runtime';
 import {
   buildCapabilityRows,
@@ -46,10 +48,13 @@ describe('listPluginOptions', () => {
     expect(listPluginOptions(installed, 'capability').map((option) => option.id).sort()).toEqual(
       [...installedCapabilityIds].sort(),
     );
-    // 能力列表里只有合编包一个 id（内置清单已清空）；内嵌声明的合成条目与独立
-    // 套件同 id 不同版本并存，所以条目数 ≥ 1 但 id 集合恒为一个
-    expect(installedCapabilityIds.length).toBeGreaterThanOrEqual(1);
-    expect(new Set(installedCapabilityIds)).toEqual(new Set([CORE_CAPABILITIES_PACK_ID]));
+    // 能力不是独立的包：清单里每个能力条目都来自某个岗位包的内嵌声明，
+    // 所以能力 id 的集合恰好等于三个包声明的能力并集
+    const declaredCapabilityIds = DISTRIBUTED_ROLE_PACKS.flatMap((pack) =>
+      (pack.capabilities ?? []).map((declaration) => declaration.id),
+    );
+    expect(installedCapabilityIds.length).toBeGreaterThan(0);
+    expect(new Set(installedCapabilityIds)).toEqual(new Set(declaredCapabilityIds));
     expect(listPluginOptions(installed, 'industry-pack')).toEqual([]);
   });
 });
@@ -64,7 +69,7 @@ describe('draftFromRuntime', () => {
       industryPackId: '',
       location: '上海',
       interviewLanguage: 'zh',
-      capabilityIds: [CORE_CAPABILITIES_PACK_ID],
+      capabilityIds: [SOURCE_REPOSITORY_CAPABILITY_ID],
     });
   });
 
@@ -91,7 +96,7 @@ describe('toSetRoleProfileInput', () => {
     industryPackId: '',
     location: '  ',
     interviewLanguage: 'en',
-    capabilityIds: [CORE_CAPABILITIES_PACK_ID],
+    capabilityIds: [SOURCE_REPOSITORY_CAPABILITY_ID],
   };
 
   it('走这条路径的每一次写入都是用户按下确认，userConfirmed 恒为 true', () => {
@@ -105,7 +110,7 @@ describe('toSetRoleProfileInput', () => {
       interviewLanguage: 'en',
       confidence: 1,
       userConfirmed: true,
-      capabilityIds: [CORE_CAPABILITIES_PACK_ID],
+      capabilityIds: [SOURCE_REPOSITORY_CAPABILITY_ID],
     });
   });
 
@@ -161,20 +166,20 @@ describe('reconcileCapabilitySelection', () => {
   const descriptor = buildDescriptor();
 
   it('岗位包依赖强制打开的能力会被指出来', () => {
-    expect(enabledCapabilityIds(descriptor)).toContain(CORE_CAPABILITIES_PACK_ID);
+    expect(enabledCapabilityIds(descriptor)).toContain(SOURCE_REPOSITORY_CAPABILITY_ID);
 
     const reconciliation = reconcileCapabilitySelection([], descriptor);
 
-    expect(reconciliation.forcedOn).toEqual([CORE_CAPABILITIES_PACK_ID]);
+    expect(reconciliation.forcedOn).toEqual([SOURCE_REPOSITORY_CAPABILITY_ID]);
     expect(reconciliation.rejected).toEqual([]);
     expect(reconciliationNotices(reconciliation, (id) => id)).toEqual([
-      `${CORE_CAPABILITIES_PACK_ID}：岗位包把它声明为依赖，本次仍然启用，无法单独关闭`,
+      `${SOURCE_REPOSITORY_CAPABILITY_ID}：岗位包把它声明为依赖，本次仍然启用，无法单独关闭`,
     ]);
   });
 
   it('勾了却没能启用时带上 resolver 给的原因', () => {
     const reconciliation = reconcileCapabilitySelection(
-      [CORE_CAPABILITIES_PACK_ID, 'not-installed'],
+      [SOURCE_REPOSITORY_CAPABILITY_ID, 'not-installed'],
       descriptor,
     );
 
@@ -199,7 +204,7 @@ describe('reconcileCapabilitySelection', () => {
 
   it('勾选与生效完全一致时没有任何需要解释的差异', () => {
     expect(
-      reconcileCapabilitySelection([CORE_CAPABILITIES_PACK_ID], descriptor),
+      reconcileCapabilitySelection([SOURCE_REPOSITORY_CAPABILITY_ID], descriptor),
     ).toEqual({ forcedOn: [], rejected: [] });
   });
 });
@@ -216,9 +221,9 @@ describe('buildCapabilityRows', () => {
 
     // 只针对 descriptor 真的启用了的那条断言；本机还装着别的能力插件，
     // 它们没进这场备考，状态本就不该是「可用」。
-    const row = rows.find((item) => item.id === CORE_CAPABILITIES_PACK_ID);
+    const row = rows.find((item) => item.id === SOURCE_REPOSITORY_CAPABILITY_ID);
     expect(row).toMatchObject({
-      id: CORE_CAPABILITIES_PACK_ID,
+      id: SOURCE_REPOSITORY_CAPABILITY_ID,
       enabledInCampaign: true,
       disabledReason: null,
       localMode: 'full',
@@ -236,7 +241,7 @@ describe('buildCapabilityRows', () => {
       installed,
     });
 
-    const row = rows.find((item) => item.id === CORE_CAPABILITIES_PACK_ID);
+    const row = rows.find((item) => item.id === SOURCE_REPOSITORY_CAPABILITY_ID);
     expect(row).toMatchObject({ localMode: 'view-only', enabledInCampaign: true });
     expect(row!.localDetail).toBeTruthy();
   });

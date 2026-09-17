@@ -21,6 +21,10 @@ import {
   SALES_CUSTOMER_SUCCESS_ROLE_PACK_ID,
   SALES_CUSTOMER_SUCCESS_ROLE_PACK_VERSION,
 } from './ids';
+import {
+  CUSTOMER_CONVERSATION_INTERACTION,
+  CUSTOMER_CONVERSATION_SCHEMA_VERSION,
+} from './capabilities';
 import { salesCustomerSuccessMatchers } from './matchers';
 import { competencyTemplates } from './competencies';
 import { interviewFormats, interviewStages } from './formats';
@@ -50,6 +54,11 @@ export const salesCustomerSuccessRolePack: RolePack = defineRolePack({
     compatibility: { core: '^1.0.0', schema: 23 },
     // 内嵌 role-play：权限 = 其声明的并集（llm:complete 生成台词，microphone:read 语音作答）
     permissions: ['llm:complete', 'microphone:read'],
+    // 内嵌声明贡献的交互版本：manifest 是宿主判定「认不认得这份交互」的唯一事实源，
+    // 声明归包所有，版本也就得由包自己写清楚
+    interactionSchemas: {
+      [CUSTOMER_CONVERSATION_INTERACTION]: CUSTOMER_CONVERSATION_SCHEMA_VERSION,
+    },
     dependencies: [],
   },
   roleMatchers: salesCustomerSuccessMatchers,

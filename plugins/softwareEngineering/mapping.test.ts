@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { EXAM_FORMS, TASK_KINDS } from '@core/enums';
-import { CORE_CAPABILITIES_PACK_ID } from '@core/plugins/capabilitySuite';
+import { SOURCE_REPOSITORY_CAPABILITY_ID } from './ids';
 import {
   SOFTWARE_ENGINEERING_EXAM_FORM_MAPPINGS,
   SOFTWARE_ENGINEERING_FORMAT_IDS,
@@ -55,7 +55,7 @@ describe('software engineering exam-form mappings', () => {
     expect(readCode).toMatchObject({
       id: 'se.read-code',
       defaultMinutes: 25,
-      capabilityId: CORE_CAPABILITIES_PACK_ID,
+      capabilityId: SOURCE_REPOSITORY_CAPABILITY_ID,
     });
     expect(
       softwareEngineeringRolePack.taskTemplates

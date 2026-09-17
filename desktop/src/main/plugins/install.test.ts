@@ -195,15 +195,8 @@ describe('installPluginBundle', () => {
     expect(installedDirs()).toEqual([]);
   });
 
-  it('退役的旧能力 id@version 拒装（reserved 名册防抢注）', () => {
-    // 能力合编包换了新 id；三个旧 id@1.0.0 被保留名册占住，防止第三方包
-    // 顶替存量战役 descriptor 里 pin 的身份
-    const files = rolePackFiles('source-repository', '1.0.0');
-
-    expect(installPluginBundle(bundle(files))).toMatchObject({ code: 'reserved-id' });
-  });
-
-  it('官方岗位包的 id@version 不被内置清单占用', () => {
+  it('官方岗位包的 id@version 不被任何名册占用', () => {
+    // 基础包里没有任何插件，也没有保留名册：官方包的 id@version 必须装得进来
     const pack = DISTRIBUTED_ROLE_PACKS[0]!.manifest;
     const files = rolePackFiles(pack.id, pack.version);
 

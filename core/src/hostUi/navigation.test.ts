@@ -6,7 +6,7 @@ const sourceEntry: NavigationEntry = {
   id: 'se.source-repository',
   label: '源码',
   pageId: 'source-repository',
-  requiredCapabilityId: 'openjob-capabilities',
+  requiredCapabilityId: 'source-repository',
 };
 
 function probe(fullCapabilityIds: string[] | null): NavigationProbe {
@@ -21,7 +21,7 @@ describe('entryVisible', () => {
 
   it('任一 Campaign 启用对应能力即可见（跨 Campaign 并集）', () => {
     expect(
-      entryVisible(sourceEntry, [probe([]), probe(['openjob-capabilities'])]),
+      entryVisible(sourceEntry, [probe([]), probe(['source-repository'])]),
     ).toBe(true);
   });
 
@@ -45,7 +45,7 @@ describe('resolveVisibleNavigation', () => {
   it('按声明顺序输出去重后的入口', () => {
     const resolved = resolveVisibleNavigation(
       [sourceEntry, { ...sourceEntry, label: '重复' }],
-      [probe(['openjob-capabilities'])],
+      [probe(['source-repository'])],
       { probed: true, lastKnownIds: null },
     );
     expect(resolved.map((entry) => entry.id)).toEqual(['se.source-repository']);
@@ -69,7 +69,7 @@ describe('resolveVisibleNavigation', () => {
   it('probed 后按各入口的能力启用情况过滤', () => {
     const resolved = resolveVisibleNavigation(
       declared,
-      [probe(['openjob-capabilities'])],
+      [probe(['source-repository'])],
       { probed: true, lastKnownIds: null },
     );
     expect(resolved.map((entry) => entry.id)).toEqual(['se.source-repository']);
@@ -78,7 +78,7 @@ describe('resolveVisibleNavigation', () => {
   it('多入口同 id 只保留第一个声明，不被后面的岗位包替换', () => {
     const resolved = resolveVisibleNavigation(
       declared,
-      [probe(['openjob-capabilities', 'pm-pack'])],
+      [probe(['source-repository', 'pm-pack'])],
       { probed: true, lastKnownIds: null },
     );
     expect(resolved).toHaveLength(2);

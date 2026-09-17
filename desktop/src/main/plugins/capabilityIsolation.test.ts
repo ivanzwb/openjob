@@ -21,10 +21,9 @@ vi.mock('../db', () => ({
 import { PLUGIN_PERMISSIONS, type PluginPermission } from '@core/plugins/permissions';
 import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
 import {
-  CORE_CAPABILITIES_PACK_ID,
-  RETIRED_CAPABILITY_KEYS,
-  synthesizeSuiteFromRolePack,
-} from '@core/plugins/capabilitySuite';
+  capabilityEntriesFromRolePack,
+  rolePackDeclarationPlugin,
+} from '@core/plugins/capabilityEntries';
 import {
   DefaultDenyPermissionGateway,
   type CampaignCapabilityScope,
@@ -32,17 +31,24 @@ import {
 } from './permissionGateway';
 
 /**
- * 能力合编包的权限契约。
+ * 每个能力一条权限契约，从岗位包的内嵌声明推导。
  *
- * 三个能力并入一个包后，manifest 声明的权限是三者并集——「每个能力一份最小契约」
- * 的隔离升级为「一个包一份并集契约」：用户装这个包，等于一次性授权这四项权限。
- * 单能力的边界退到 descriptor 绑定层（战役启用与否）与宿主实现的按名分派。
+ * 能力不是独立的包：契约按**能力自己的 id** 建，内容就是那条声明自己的权限并集——
+ * 装一个岗位包等于授权它声明的那些能力，而不会顺带拿到别的能力。跨岗位的边界落在
+ * descriptor 绑定层（战役启用与否）与宿主实现的按名分派上。
  */
-// 合编包契约按「合成条目的版本」登记：每个版本的权限 = 该版本岗位包内嵌声明的并集；
-// 独立分发的旧套件（1.0.0）保留全量四项权限的兼容契约。
-const SUITE_CONTRACTS: ReadonlyMap<string, ReadonlySet<PluginPermission>> = new Map([
-  [CORE_CAPABILITIES_PACK_ID, new Set(['repository:read', 'llm:complete', 'microphone:read', 'artifact:read'])],
-]);
+const CAPABILITY_CONTRACTS: ReadonlyMap<string, ReadonlySet<PluginPermission>> = new Map(
+  DISTRIBUTED_ROLE_PACKS.flatMap((pack) =>
+    (pack.capabilities ?? []).map((declaration) => [
+      declaration.id,
+      new Set<PluginPermission>([
+        ...(declaration.tools ?? []).map((tool) => tool.permission),
+        ...(declaration.artifactParsers ?? []).map((parser) => parser.permission),
+        ...(declaration.permissions ?? []),
+      ]),
+    ] as const),
+  ),
+);
 
 /** 一切 Campaign 侧条件都放行，把变量收敛到「权限本身准不准」。 */
 const OPEN_SCOPE: CampaignCapabilityScope = {
@@ -53,7 +59,7 @@ const OPEN_SCOPE: CampaignCapabilityScope = {
 };
 
 function realGateway(
-  contracts: ReadonlyMap<string, ReadonlySet<PluginPermission>> = SUITE_CONTRACTS,
+  contracts: ReadonlyMap<string, ReadonlySet<PluginPermission>> = CAPABILITY_CONTRACTS,
 ) {
   const resolve = vi.fn((): CampaignCapabilityScope => OPEN_SCOPE);
   const provider: PermissionScopeProvider = { resolve };
@@ -74,30 +80,27 @@ function authorize(capabilityId: string, permission: PluginPermission) {
   return { decision, resolve };
 }
 
-describe('权限契约来自安装清单', () => {
-  it('能力合编包有一条契约，等于岗位包内嵌声明权限的并集', () => {
-    const declared = SUITE_CONTRACTS.get(CORE_CAPABILITIES_PACK_ID);
-    expect(declared).toBeDefined();
-    const fromPacks = [
-      ...new Set(
-        DISTRIBUTED_ROLE_PACKS.flatMap((pack) => [
-          ...(pack.capabilities ?? []).flatMap((declaration) => [
+describe('权限契约来自岗位包的内嵌声明', () => {
+  it('每个能力一条契约，等于该声明自己的权限并集', () => {
+    const declaredIds = DISTRIBUTED_ROLE_PACKS.flatMap((pack) =>
+      (pack.capabilities ?? []).map((declaration) => declaration.id),
+    );
+    expect(declaredIds.length).toBeGreaterThan(0);
+    expect([...CAPABILITY_CONTRACTS.keys()].sort()).toEqual([...declaredIds].sort());
+
+    for (const pack of DISTRIBUTED_ROLE_PACKS) {
+      for (const declaration of pack.capabilities ?? []) {
+        const expected = [
+          ...new Set([
             ...(declaration.tools ?? []).map((tool) => tool.permission),
             ...(declaration.artifactParsers ?? []).map((parser) => parser.permission),
             ...(declaration.permissions ?? []),
           ]),
-        ]),
-      ),
-    ].sort();
-    expect([...declared!].sort()).toEqual(fromPacks);
-  });
-
-  it('三个退役 id 不在契约里：旧内置身份不能再被借用', () => {
-    // 契约按已安装包推导，而合编包用的是新 id；旧 id@1.0.0 同时在 reserved
-    // 名册里（见 runtime.ts 的 builtInPluginKeys），装都装不进来
-    for (const key of RETIRED_CAPABILITY_KEYS) {
-      const id = key.split('@')[0]!;
-      expect(SUITE_CONTRACTS.has(id)).toBe(false);
+        ].sort();
+        expect([...CAPABILITY_CONTRACTS.get(declaration.id)!].sort(), declaration.id).toEqual(
+          expected,
+        );
+      }
     }
   });
 
@@ -119,22 +122,32 @@ describe('权限契约来自安装清单', () => {
 });
 
 describe('声明的权限就是上限', () => {
-  it('合编包拿得到且只拿得到它声明的权限', () => {
-    const declared = new Set(SUITE_CONTRACTS.get(CORE_CAPABILITIES_PACK_ID));
-    expect(declared.size).toBeGreaterThan(0);
+  it('每个能力拿得到且只拿得到它自己声明的权限', () => {
+    for (const [capabilityId, declared] of CAPABILITY_CONTRACTS) {
+      expect(declared.size, capabilityId).toBeGreaterThan(0);
 
-    for (const permission of PLUGIN_PERMISSIONS) {
-      const { decision } = authorize(CORE_CAPABILITIES_PACK_ID, permission);
-      expect(decision.allowed, `${CORE_CAPABILITIES_PACK_ID} → ${permission}`).toBe(
-        declared.has(permission),
-      );
+      for (const permission of PLUGIN_PERMISSIONS) {
+        const { decision } = authorize(capabilityId, permission);
+        expect(decision.allowed, `${capabilityId} → ${permission}`).toBe(declared.has(permission));
+      }
     }
   });
 
-  it('没安装的能力一律拒绝，包括三个退役 id', () => {
-    // 同一个 Campaign 里合编包有 repository:read，
-    // 不代表一个未安装的旧能力 id 也能读仓库
-    for (const capabilityId of ['not-installed-capability', ...RETIRED_CAPABILITY_KEYS.map((key) => key.split('@')[0]!)]) {
+  it('某个能力有 repository:read，不代表另一个能力也能读仓库', () => {
+    // 装岗位包 ≠ 所有能力都拿到全部权限：每条契约各管自己
+    const withoutRepo = [...CAPABILITY_CONTRACTS].find(([, permissions]) =>
+      !permissions.has('repository:read'),
+    );
+    expect(withoutRepo, '需要一个不含 repository:read 的能力做对照').toBeDefined();
+
+    expect(authorize(withoutRepo![0], 'repository:read').decision).toMatchObject({
+      allowed: false,
+      code: 'permission-undeclared',
+    });
+  });
+
+  it('没安装的能力一律拒绝', () => {
+    for (const capabilityId of ['not-installed-capability', 'source-repository@1.0.0']) {
       expect(authorize(capabilityId, 'repository:read').decision).toMatchObject({
         allowed: false,
         code: 'permission-undeclared',
@@ -144,14 +157,7 @@ describe('声明的权限就是上限', () => {
 
   it('越界请求在读 Campaign 状态之前就被拒', () => {
     // 先查库再拒等于让未授权的调用方也能触发一次数据库访问
-    const { decision, resolve } = authorize(CORE_CAPABILITIES_PACK_ID, 'artifact:write');
-    expect(decision).toMatchObject({ allowed: false, code: 'permission-undeclared' });
-    expect(resolve).not.toHaveBeenCalled();
-  });
-
-  it('越界请求在读 Campaign 状态之前就被拒', () => {
-    // 先查库再拒等于让未授权的调用方也能触发一次数据库访问
-    const { decision, resolve } = authorize(CORE_CAPABILITIES_PACK_ID, 'artifact:write');
+    const { decision, resolve } = authorize('source-repository', 'artifact:write');
     expect(decision).toMatchObject({ allowed: false, code: 'permission-undeclared' });
     expect(resolve).not.toHaveBeenCalled();
   });
@@ -233,13 +239,16 @@ describe('插件够不到宿主资源', () => {
     expect(violations).toEqual([]);
   });
 
-  it('能力插件是纯声明：只导出数据与 register，不含运行期副作用', () => {
-    for (const plugin of DISTRIBUTED_ROLE_PACKS.filter((pack) => pack.manifest.main).map(
-      (pack) => synthesizeSuiteFromRolePack(pack)!,
-    )) {
-      // Manifest 能原样 JSON 往返，说明里面没有函数、类实例或句柄
-      expect(JSON.parse(JSON.stringify(plugin.manifest))).toEqual(plugin.manifest);
-      expect(typeof plugin.register).toBe('function');
+  it('内嵌声明是纯数据：派生的能力条目与重放视图都能原样 JSON 往返', () => {
+    for (const pack of DISTRIBUTED_ROLE_PACKS) {
+      // 条目里没有函数、类实例或句柄
+      for (const entry of capabilityEntriesFromRolePack(pack)) {
+        expect(JSON.parse(JSON.stringify(entry)), entry.id).toEqual(entry);
+      }
+      // 重放视图的 manifest 就是岗位包自己的 manifest，register 是函数
+      const replay = rolePackDeclarationPlugin(pack);
+      expect(JSON.parse(JSON.stringify(replay.manifest))).toEqual(replay.manifest);
+      expect(typeof replay.register).toBe('function');
     }
   });
 });

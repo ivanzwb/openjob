@@ -13,10 +13,6 @@ import {
   type ClientPluginStatus,
   type InstalledPlugin,
 } from '../plugins/clientView';
-import {
-  normalizeCapabilityRefs,
-  synthesizeSuiteFromRolePack,
-} from '../plugins/capabilitySuite';
 import { hashRuntimeConfig } from '../plugins/resolver';
 import type { RolePack, TaskTemplate } from '../plugins/types';
 import type { CampaignRuntimeDescriptor, ClientPlatform } from '../plugins/types';
@@ -166,13 +162,7 @@ function capabilityStatus(
   installed: readonly InstalledPlugin[],
 ): ClientPluginStatus | null {
   if (!contribution.rolePackIds.includes(runtime.rolePack.id)) return null;
-  const view = buildClientCapabilityView({
-    // 旧战役的 descriptor 还 pin 着三个退役 id（历史事实，不能改写）：判定前归一成
-    // 合编包 id，否则装了合编包也会判成 plugin-not-installed，回填窗口内排程会跳变
-    descriptor: { ...runtime, capabilities: normalizeCapabilityRefs(runtime.capabilities) },
-    platform,
-    installed,
-  });
+  const view = buildClientCapabilityView({ descriptor: runtime, platform, installed });
   const status = view.capabilities.find((item) => item.id === contribution.capabilityId) ?? null;
   if (
     status?.reason === 'pinned-version-unavailable' &&
@@ -294,21 +284,22 @@ export const PRE_PLUGIN_DEFAULT_ROLE_PACK_ID = 'software-engineering';
  * 字段与 `src/main/db/backfill/pluginRuntime.ts` 的回填默认值一致，使回填前后的
  * 排程结果不发生跳变。没有凭据的战役不走这里，见 `collectPlannerContributions`。
  *
- * 这里的 `source-repository@1.0.0` 是**历史事实**：那时它是内置能力。旧战役的
- * binding/descriptor 也 pin 着这个 id，投影与 hash 都按它算——不要跟着合编包改名，
- * 否则旧记录的 config_snapshot_hash 会跳变（同样的理由见已安装岗位包声明的
- * examFormMappings：历史映射是冻结事实，不随合编包改名）。
+ * 能力引用按岗位包的内嵌声明逐条产出（能力 id + 包版本），与 resolver 的产出规则一致：
+ * 这条兜底路径现场重算 hash，形状不一致就会和已落库的 descriptor 对不上。
  */
 export function descriptorFromRolePack(
   campaignId: string,
   pack: RolePack,
   options: { coreVersion: string; schemaVersion: number },
 ): CampaignRuntimeDescriptor {
-  const suite = synthesizeSuiteFromRolePack(pack);
   const rolePack = { id: pack.manifest.id, version: pack.manifest.version };
-  const capabilities: CampaignRuntimeDescriptor['capabilities'] = suite
-    ? [{ id: suite.manifest.id, version: suite.manifest.version, enabled: true as const }]
-    : [];
+  const capabilities: CampaignRuntimeDescriptor['capabilities'] = (
+    pack.capabilities ?? []
+  ).map((declaration) => ({
+    id: declaration.id,
+    version: pack.manifest.version,
+    enabled: true as const,
+  }));
   return {
     campaignId,
     coreVersion: options.coreVersion,

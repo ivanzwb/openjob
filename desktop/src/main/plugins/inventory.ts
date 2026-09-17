@@ -39,8 +39,6 @@ export type PluginRejectionReason =
   | 'unsigned'
   /** 签名者不在信任列表，等用户显式决定 */
   | 'untrusted-signer'
-  /** 与内置插件或另一个外置包撞了同一个 id@version */
-  | 'duplicate'
   /** 代码插件的静态隔离扫描未通过（§13.4 准入第二层） */
   | 'isolation-violation'
   /** 读取失败 */
@@ -69,13 +67,6 @@ export interface ScanOptions {
   pluginsDir: string;
   /** 第一方发布公钥（SPKI PEM） */
   trustedPublicKeys: readonly string[];
-  /**
-   * 已被内置插件占用的 `id@version`。
-   *
-   * 外置包不允许顶替内置包：允许的话，换一个同名同版本的包就能悄悄改掉内置岗位包的
-   * 量规和提示词，而 descriptor 里的 hash 一个字都不变。
-   */
-  reservedKeys?: ReadonlySet<string>;
 }
 
 type ReadResult = { ok: true; files: PluginPackageFiles } | { ok: false; error: string };
@@ -161,8 +152,6 @@ export function scanPluginInventory(options: ScanOptions): PluginInventory {
     return inventory;
   }
 
-  const taken = new Set(options.reservedKeys ?? []);
-
   for (const name of dirNames) {
     const dir = join(options.pluginsDir, name);
 
@@ -222,12 +211,6 @@ export function scanPluginInventory(options: ScanOptions): PluginInventory {
       inventory.rejected.push(reject(name, trustRejection, `签名判定：${trust}`));
       continue;
     }
-
-    if (taken.has(name)) {
-      inventory.rejected.push(reject(name, 'duplicate', `${name} 已被内置或另一个包占用`));
-      continue;
-    }
-    taken.add(name);
 
     inventory.entries.push({ dir, trust, package: parsed });
   }

@@ -30,6 +30,7 @@ import { sourcePolicy } from './search-policy';
 export {
   SOFTWARE_ENGINEERING_ROLE_PACK_ID,
   SOFTWARE_ENGINEERING_ROLE_PACK_VERSION,
+  SOURCE_REPOSITORY_CAPABILITY_ID,
 } from './ids';
 export {
   SOFTWARE_ENGINEERING_FORMAT_IDS,

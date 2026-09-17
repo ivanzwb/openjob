@@ -1,4 +1,5 @@
 import type { CapabilityDeclaration } from '@core/plugins/types';
+import { SOURCE_REPOSITORY_CAPABILITY_ID } from './ids';
 
 /**
  * 插入点 E：工程岗位内嵌的源码能力。
@@ -12,7 +13,7 @@ import type { CapabilityDeclaration } from '@core/plugins/types';
  */
 export const capabilities: CapabilityDeclaration[] = [
   {
-    id: 'source-repository',
+    id: SOURCE_REPOSITORY_CAPABILITY_ID,
     llmRoles: [{ name: 'codeAgent', hint: '源码检索与理解，agent 循环对工具遵循率要求高' }],
     tools: [
       {

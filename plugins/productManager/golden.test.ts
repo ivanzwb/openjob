@@ -3,13 +3,11 @@ import { composePrompt } from '@core/prompts/composer';
 import { resolvePracticeFormat } from '@core/practice';
 import { BuiltInPluginRegistry } from '@core/plugins/registry';
 import { DeterministicRuntimeResolver } from '@core/plugins/resolver';
+import type { CapabilityPlugin } from '@core/plugins/types';
 import { softwareEngineeringRolePack } from '../softwareEngineering';
-import {
-  CORE_CAPABILITIES_PACK_ID,
-  synthesizeSuiteFromRolePack,
-} from '@core/plugins/capabilitySuite';
 import { DISTRIBUTED_ROLE_PACKS } from '../../scripts/distributed-role-packs';
 import {
+  ANALYTICS_CASE_CAPABILITY_ID,
   PRODUCT_MANAGER_FORMAT_IDS,
   PRODUCT_MANAGER_ROLE_PACK_ID,
   PRODUCT_MANAGER_ROLE_PACK_VERSION,
@@ -81,29 +79,51 @@ const roleOwnedText = JSON.stringify({
 }).toLocaleLowerCase();
 
 function resolveWith(
-  capabilityPlugins: readonly NonNullable<ReturnType<typeof synthesizeSuiteFromRolePack>>[],
+  capabilityPlugins: readonly CapabilityPlugin[],
+  capabilityIds: readonly string[] = [],
 ): ReturnType<DeterministicRuntimeResolver['resolve']> {
   const registry = new BuiltInPluginRegistry();
   DISTRIBUTED_ROLE_PACKS.forEach((pack) => registry.register(pack));
   capabilityPlugins.forEach((plugin) => registry.registerCapability(plugin));
   return new DeterministicRuntimeResolver(registry).resolve({
     coreVersion: '1.0.0',
-    schemaVersion: 23,
+    schemaVersion: 24,
     rolePackId: PRODUCT_MANAGER_ROLE_PACK_ID,
-    capabilityIds: [],
+    capabilityIds: [...capabilityIds],
   });
 }
 
-/**
- * 真的把可选能力从本机清单里摘掉。
- *
- * 原来这里注册的是全部内置能力，只靠 `capabilityIds: []` 表达「没装」——可
- * resolver 会自动接受**已安装**的可选依赖，于是 analytics-case 一旦真被实现，
- * 这条用例就从「没装也能跑」悄悄变成「装了也能跑」，再也盖不住它本来要盖的路径。
- */
-function resolveWithoutOptionalCapabilities(): ReturnType<DeterministicRuntimeResolver['resolve']> {
-  // 内置清单已清空：可选能力没装 = 本机不注册合编包
+/** 本机只有岗位包本身：能力随包派生，没有「额外装的能力包」这回事。 */
+function resolvePackOnly(): ReturnType<DeterministicRuntimeResolver['resolve']> {
   return resolveWith([]);
+}
+
+/**
+ * 一个独立的能力包（能力包这个类型仍然存在，第三方可以单独发）。
+ *
+ * 用来守住「能力包与岗位包内嵌声明走同一条解析路径」：显式请求时它照样进 descriptor。
+ */
+function demoCapabilityPlugin(): CapabilityPlugin {
+  return {
+    manifest: {
+      id: 'demo-capability',
+      version: '1.0.0',
+      type: 'capability',
+      displayName: '演示能力',
+      description: '第三方能力包的解析用例',
+      compatibility: { core: '^1.0.0', schema: 24 },
+      permissions: ['artifact:read'],
+      runtime: { desktop: 'full', mobile: 'view-only' },
+      artifactSchemas: { 'tabular-dataset': 1 },
+    },
+    register(registry) {
+      registry.registerArtifactParser({
+        artifactType: 'tabular-dataset',
+        schemaVersion: 1,
+        permission: 'artifact:read',
+      });
+    },
+  };
 }
 
 describe('product manager role pack goldens', () => {
@@ -236,13 +256,13 @@ describe('product manager role pack goldens', () => {
   });
 
   it('analytics-case 内嵌于岗位包：无需独立安装即随包启用', () => {
-    // 空安装清单：能力声明随包分发，resolver 从包内嵌声明合成合编包引用
-    const resolved = resolveWithoutOptionalCapabilities();
+    // 本机只有岗位包本身：能力声明随包分发，resolver 从包内嵌声明解析出能力引用
+    const resolved = resolvePackOnly();
     expect(resolved.ok).toBe(true);
     if (!resolved.ok) return;
 
     const ref = resolved.descriptor.capabilities.find(
-      (item) => item.id === CORE_CAPABILITIES_PACK_ID,
+      (item) => item.id === ANALYTICS_CASE_CAPABILITY_ID,
     );
     expect(ref).toMatchObject({ enabled: true, version: PRODUCT_MANAGER_ROLE_PACK_VERSION });
 
@@ -262,23 +282,21 @@ describe('product manager role pack goldens', () => {
         formatId: PRODUCT_MANAGER_FORMAT_IDS.productCase,
       });
       expect(composed.systemPrompt).toContain('产品案例');
-      expect(composed.provenance.capabilityIds).toEqual(['openjob-capabilities']);
+      expect(composed.provenance.capabilityIds).toEqual([ANALYTICS_CASE_CAPABILITY_ID]);
     }
   });
 
-  it('装了 analytics-case 时产品岗自动把它启用', () => {
-    const pmSuite = synthesizeSuiteFromRolePack(productManagerRolePack)!;
-    const resolved = resolveWith([pmSuite]);
+  it('独立能力包（能力包类型仍然存在）显式请求时照样进 descriptor', () => {
+    const demo = demoCapabilityPlugin();
+    const resolved = resolveWith([demo], [demo.manifest.id]);
     expect(resolved.ok).toBe(true);
     if (!resolved.ok) return;
 
-    const ref = resolved.descriptor.capabilities.find(
-      (item) => item.id === CORE_CAPABILITIES_PACK_ID,
-    );
-    // 声明已内嵌进岗位包：descriptor 固定的是包内嵌合成的版本，不是独立安装的旧套件
-    expect(ref).toMatchObject({ enabled: true, version: PRODUCT_MANAGER_ROLE_PACK_VERSION });
+    expect(
+      resolved.descriptor.capabilities.find((item) => item.id === demo.manifest.id),
+    ).toMatchObject({ enabled: true, version: demo.manifest.version });
 
-    // 但它只是加强项：案例题依然不绑能力插件，纯文本路径不受影响
+    // 它只是加强项：案例题依然不绑能力插件，纯文本路径不受影响
     const { format } = resolvePracticeFormat(
       productManagerRolePack,
       PRODUCT_MANAGER_FORMAT_IDS.productCase,

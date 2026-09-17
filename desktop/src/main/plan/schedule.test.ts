@@ -16,7 +16,7 @@ import {
   type PrePluginPlanDay,
 } from '@core/planner/__fixtures__/prePluginPlan';
 import * as schema from '../db/schema';
-import { installedCapabilitySuiteEntries, installedRolePackEntry } from '../plugins/__fixtures__/installedPlugins';
+import { installedRolePackEntry } from '../plugins/__fixtures__/installedPlugins';
 import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
 import { setExternalPlugins } from '../plugins/runtime';
 import type { CampaignRuntimeDescriptor } from '@core/plugins/types';
@@ -190,10 +190,9 @@ function expectedTasks(days: PrePluginPlanDay[]): FlatTask[] {
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date(`${CROSS_CLIENT_PLAN.today}T09:00:00`));
-  // 排程按本机安装清单判能力：pre-plugin descriptor 归一化后指向能力合编包，
-  // 装上它 readCode 才会被排进计划（与生产安装链路同构）
-  // 排程贡献从岗位包 taskTemplates 派生：岗位包本身也要装上
-  setExternalPlugins([installedRolePackEntry(softwareEngineeringRolePack), ...installedCapabilitySuiteEntries()]);
+  // 排程按本机安装清单判能力，而能力随岗位包派生：装上岗位包，readCode 才会被排进计划
+  // （与生产安装链路同构）
+  setExternalPlugins([installedRolePackEntry(softwareEngineeringRolePack)]);
 });
 
 afterEach(() => {
@@ -329,7 +328,7 @@ describe('generatePlan', () => {
 function prePluginFallbackDescriptorForTest(campaignId: string): CampaignRuntimeDescriptor {
   return descriptorFromRolePack(campaignId, softwareEngineeringRolePack, {
     coreVersion: '1.0.0',
-    schemaVersion: 23,
+    schemaVersion: 24,
   });
 }
 
@@ -338,9 +337,9 @@ describe('pre-plugin fallback descriptor', () => {
     const fallback = prePluginFallbackDescriptorForTest(CROSS_CLIENT_PLAN.campaignId);
 
     expect(fallback.rolePack).toEqual({ id: 'software-engineering', version: '1.4.0' });
-    // 内嵌声明合成的合编包引用随包版本
+    // 能力引用按包内嵌声明逐条产出：能力 id + 所属包版本
     expect(fallback.capabilities).toEqual([
-      { id: 'openjob-capabilities', version: '1.4.0', enabled: true },
+      { id: 'source-repository', version: '1.4.0', enabled: true },
     ]);
   });
 });

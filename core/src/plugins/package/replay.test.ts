@@ -8,29 +8,35 @@
  */
 import { describe, expect, it } from 'vitest';
 import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
-import { synthesizeSuiteFromRolePack } from '../capabilitySuite';
+import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
 
-/** 重放样例：岗位包的内嵌声明按版本合并成一个能力插件（与 runtime 合并规则一致）。 */
-function mergeSuites(packs: readonly (typeof DISTRIBUTED_ROLE_PACKS)[number][]): CapabilityPlugin {
-  const suites = packs
-    .map((pack) => synthesizeSuiteFromRolePack(pack))
-    .filter((suite): suite is NonNullable<ReturnType<typeof synthesizeSuiteFromRolePack>> => suite !== null);
-  const first = suites[0]!;
-  return {
-    manifest: {
-      ...first.manifest,
-      permissions: [...new Set(suites.flatMap((suite) => suite.manifest.permissions))].sort(),
-      artifactSchemas: Object.assign({}, ...suites.map((suite) => suite.manifest.artifactSchemas ?? {})),
-      interactionSchemas: Object.assign({}, ...suites.map((suite) => suite.manifest.interactionSchemas ?? {})),
-    },
-    register(registry) {
-      for (const suite of suites) suite.register(registry);
-    },
-  };
-}
+/**
+ * 重放样例：一个自带声明的能力包。
+ *
+ * 基础包不再内置能力包——能力随岗位包分发；但**能力包这个类型还在**，第三方可以单独发
+ * 一个。这个样例从 SE 包的内嵌声明里取一条打成独立能力包，用来验证「原地注册」与
+ * 「过一遍包格式再重放」两条路径逐字等价。
+ */
+const DEMO_DECLARATION = softwareEngineeringRolePack.capabilities[0]!;
+
+const DEMO_CAPABILITY_PLUGIN: CapabilityPlugin = {
+  manifest: {
+    id: 'demo-capability',
+    version: '1.0.0',
+    type: 'capability',
+    displayName: '演示能力',
+    description: '重放等价性用例的能力包',
+    compatibility: { core: '^1.0.0', schema: 24 },
+    permissions: ['repository:read'],
+    runtime: { desktop: 'full', mobile: 'view-only' },
+  },
+  register(registry) {
+    for (const tool of DEMO_DECLARATION.tools ?? []) registry.registerTool(tool);
+  },
+};
 
 const DECLARED_CAPABILITY_PLUGINS = [
-  { id: 'openjob-capabilities', plugin: mergeSuites(DISTRIBUTED_ROLE_PACKS) },
+  { id: 'demo-capability', plugin: DEMO_CAPABILITY_PLUGIN },
 ];
 import { BuiltInPluginRegistry } from '../registry';
 import { DeterministicRuntimeResolver } from '../resolver';
@@ -55,6 +61,7 @@ const CORE_VERSION = '1.0.0';
 /** 从插件自己的兼容性声明里取，别写死数字：插件抬了 schema 要求，这个测试不该跟着改。 */
 const SCHEMA_VERSION = Math.max(
   ...DISTRIBUTED_ROLE_PACKS.map((pack) => pack.manifest.compatibility.schema),
+  ...DECLARED_CAPABILITY_PLUGINS.map(({ plugin }) => plugin.manifest.compatibility.schema),
 );
 
 interface Registrations {

@@ -279,8 +279,8 @@ flowchart TB
 
 | 能力 | 功能 | 内嵌于 | v1.0 |
 |---|---|---|---|
-| `source-repository` | Git 仓库、符号索引、源码问答和引用 | software-engineering | 已交付（套件引用形式，待内嵌） |
-| `role-play` | 客户、面试官、利益相关者角色扮演 | sales-customer-success | 已交付（套件引用形式，待内嵌） |
+| `source-repository` | Git 仓库、符号索引、源码问答和引用 | software-engineering | 已交付（内嵌于岗位包） |
+| `role-play` | 客户、面试官、利益相关者角色扮演 | sales-customer-success | 已交付（内嵌于岗位包） |
 | `analytics-case` | CSV/XLSX 数据分析与案例作答 | data-analytics、product-manager | 已交付（CSV；XLSX 提取器待补） |
 | `portfolio-review` | 作品集结构、叙事和展示评审 | design、product-manager | backlog |
 | `presentation-review` | 演示结构、内容和表达反馈 | product-manager、咨询 | backlog |
@@ -288,7 +288,7 @@ flowchart TB
 
 同一能力可以出现在多个岗位包中（如 `analytics-case`）：声明是数据，重复成本低；每个 Campaign 只加载一个主岗位包，运行时只激活当前包的内嵌声明，天然没有跨包冲突。
 
-历史说明：v1.0 中前三个能力曾作为独立插件，后合并为 `openjob-capabilities` 可分发套件、由岗位包以可选依赖引用；本设计将套件进一步溶解进岗位包，套件退化为打包中间产物，旧 descriptor 中的套件引用按既有 retired-key 规则归一。
+历史说明：前三个能力在 v1.0 是随应用发布的内置能力，后来一度合并为可单独分发的 `openjob-capabilities` 套件。该套件已**彻底取消**：能力不是独立的包，声明内嵌在岗位包里，descriptor 的能力引用、权限契约的 key、清单里的能力条目用的都是**能力自己的 id**（`source-repository` / `role-play` / `analytics-case`）。
 
 backlog 中的能力缺席时只降级为 disabled，不让岗位解析失败，也不让任何一种题型不可用；具体行为见 [V1_UPGRADE_ROLLBACK.md](V1_UPGRADE_ROLLBACK.md) 第 5 节。
 
@@ -350,7 +350,7 @@ interface PluginManifest {
 
 插件 ID 一旦发布不可修改。显示名称可以本地化，持久化和同步只使用 ID。
 
-`type` 收敛为 `'role-pack'`。运行位置声明从 Manifest 移到内嵌能力声明上（7.8）。历史 descriptor 中的 `capability` 类型引用（`openjob-capabilities` 套件）按既有 retired-key 规则归一为岗位包内嵌声明。
+`type` 收敛为 `'role-pack'`。运行位置声明从 Manifest 移到内嵌能力声明上（7.8）。能力引用一律用能力自己的 id；没有「套件」这一层，也没有需要归一的中间 id。
 
 ### 7.2 Role Pack
 
@@ -493,7 +493,7 @@ interface CapabilityDeclaration {
 
 **LLM 角色也随声明走**（`CapabilityDeclaration.llmRoles`）：能力用到哪个模型角色、那个角色是干什么的，都由包声明，宿主按能力 id 取名字去解析档位（取不到时落 `main`）。基础包只保留与岗位无关的角色（`outline` / `explain` / `quiz` / `resumeOptimize`），不认识 `codeAgent` 这类岗位角色——所以设置页的「角色映射」在没装对应岗位包时不会列出它。
 
-运行时形态：resolver 把选中岗位包的内嵌声明合成为 `openjob-capabilities@<包版本>` 的能力引用写进 descriptor——下游（权限网关、能力视图、排程、移动端）的消费方式不变；独立分发的旧套件包仍可安装，为 1.2.0 及更早的岗位包兼容。能力不能直接访问数据库、密钥、同步服务或任意 IPC；运行期调用一律经过权限网关（见 9.4 与 13 章）。
+运行时形态：resolver 把选中岗位包的每条内嵌声明解析成一条能力引用（id = 能力自己的 id，version = 所属包版本）写进 descriptor——下游（权限网关、能力视图、排程、移动端）按 id 匹配，消费方式与「装了一个同名能力包」时完全一样。宿主实现按能力 id 绑定（如 `source-repository` 的工具实现在 `desktop/src/main/repo/`），能力不能直接访问数据库、密钥、同步服务或任意 IPC；运行期调用一律经过权限网关（见 9.4 与 13 章）。
 
 ### 7.9 代码贡献与运行时（v3）
 
@@ -1198,7 +1198,7 @@ interface CampaignPluginBinding {
 3. 将旧 `ExamForm` 映射为岗位包题型；
 4. 保留 `KnowledgeNode`、`DesignCase` 和 `readCode`；
 5. 旧 `ResumeParsed` 字段映射为工程岗位包默认简历模块；
-6. 旧 descriptor 中 `openjob-capabilities` 套件引用归一为岗位包内嵌能力声明；
+6. 旧 descriptor 里的能力引用本身就是能力 id（与内嵌声明同名），按 id 直接匹配即可；
 7. 新功能写入新实体，同时兼容读取旧字段；
 8. 桌面和手机都完成双读后，再考虑停止写旧字段。
 
@@ -1356,7 +1356,7 @@ plugins/<pack>/
 |---|---|
 | `core/src/enums.ts` | 保留旧枚举，新增 registry ID 与通用协议类型 |
 | `core/src/plugins/types.ts` | RolePack 增加导航入口、简历模块、内嵌能力声明等插入点字段；PromptFragmentSet 改为文件化 PromptFragment |
-| `core/src/plugins/capabilitySuite.ts` | 套件溶解为岗位包内嵌声明，保留 retired-key 归一 |
+| `core/src/plugins/capabilityEntries.ts` | 把岗位包内嵌声明投影成能力条目（本机清单/能力视图用）与注册校验视图；**没有套件层** |
 | `core/src/prompts/composer.ts` | 片段解析改为 file / ref 显式模型与 specificity 规则；片段内容 hash 进 configSnapshotHash |
 | `core/src/prompts/registry.ts` | 收敛为 Core 自有流水线 prompt；岗位包 promptId 引用仅为迁移期兼容 |
 | `plugins/*/index.ts` | 巨型单文件拆为目录化声明 + defineRolePack 装配（15.6） |
@@ -1387,7 +1387,7 @@ plugins/<pack>/
 - 建立最小权限网关、共享 resolver 和运行时能力协商；
 - 新增 RoleProfile；
 - 用适配层将现有软件开发逻辑登记为 `software-engineering` 岗位包；
-- 将现有仓库能力登记为 `source-repository` 内嵌能力（先经 `openjob-capabilities` 套件引用），实现代码暂留原位置，但所有入口先经过权限网关；
+- 将现有仓库能力登记为 `source-repository` 内嵌能力（声明归岗位包，实现暂留宿主 `desktop/src/main/repo/`），所有入口先经过权限网关；
 - 旧 Campaign 自动绑定工程岗位包；
 - 核心路径仍保持原行为。
 
@@ -1421,7 +1421,7 @@ plugins/<pack>/
 - 完善 `product-manager`，新增 `sales-customer-success`；
 - 去除 `software-engineering` 对旧逻辑的适配依赖；
 - 将 `source-repository` 实现移出旧 Core 路径，保留 Phase 0 已建立的插件协议；
-- `openjob-capabilities` 套件溶解为岗位包内嵌声明；
+- 能力一律内嵌在岗位包里声明，**取消「能力合编包」这一层**：descriptor 的能力引用就是能力自己的 id；
 - 插入点 B 片段文件化与岗位包目录化（15.6）：defineRolePack、脚手架与 `pack validate`；`software-engineering` 的 promptId 引用迁移为包内片段文件；
 - 导航入口声明化：硬编码页签显隐改为消费 `navigation[]`（插入点 A）；
 - 岗位化公司情报和搜索来源；

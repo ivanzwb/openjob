@@ -45,7 +45,7 @@ describe('runCodeRepoTool permission integration', () => {
       (): PermissionDecision => ({
         allowed: true,
         campaignId: 'campaign-engineering',
-        capabilityId: 'openjob-capabilities',
+        capabilityId: 'source-repository',
         permission: 'repository:read',
       }),
     );
@@ -74,7 +74,7 @@ describe('runCodeRepoTool permission integration', () => {
     ]);
     expect(authorize).toHaveBeenCalledWith({
       campaignId: 'campaign-engineering',
-      capabilityId: 'openjob-capabilities',
+      capabilityId: 'source-repository',
       permission: 'repository:read',
       resource: { kind: 'repository', id: 'repo-a' },
     });

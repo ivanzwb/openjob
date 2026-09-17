@@ -32,7 +32,6 @@ on:
           - software-engineering
           - product-manager
           - sales-customer-success
-          - openjob-capabilities
 
 permissions:
   contents: write # 创建 release 并上传插件包需要

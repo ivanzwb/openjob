@@ -111,9 +111,8 @@ async function main() {
    * 用户按自己的岗位装一个。装上某个岗位包即等价于该岗位在插件化之前的完整功能
    * ——能力（内嵌声明）、题型、评分、训练任务、页面随包来，宿主只提供通用运行时。
    *
-   * 能力合编包（openjob-capabilities）不再作为附件分发：它已退化为打包中间产物，
-   * 运行时由 resolver 从选中岗位包的内嵌声明内联合成（core/src/plugins/capabilitySuite.ts），
-   * 单独发一份只会让用户在「装岗位包」之外多装一个不需要的包。
+   * 没有「能力合编包」这种东西：能力不是独立的包，它随**声明它的岗位包**分发，
+   * 运行时由 resolver 从包内嵌声明解析出能力引用（core/src/plugins/capabilityEntries.ts）。
    */
   // 拆分走各 transfer：手机端收岗位包、安装端解析都复用同一份定义
   const allPackages = rolePacks.DISTRIBUTED_ROLE_PACKS.map((pack) => ({

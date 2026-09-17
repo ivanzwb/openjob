@@ -170,12 +170,6 @@ function degradedStatus(
   return { id, version, installed, mode, reason, detail };
 }
 
-/**
- * 随应用发布的 `id@version`。
- *
- * 外置包不允许占用这些键（见 `main/plugins/inventory.ts` 的 reservedKeys），所以
- * 「不在这个集合里」就等价于「这个包是用户自己装进来的」。
- */
 /** 空内置清单 → 空保留键集合（保留结构，回填位置见 listBuiltInPlugins 注释）。 */
 const BUILT_IN_KEYS = new Set<string>();
 

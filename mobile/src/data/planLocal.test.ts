@@ -35,17 +35,29 @@ vi.mock('../sync/identity', () => ({
 vi.mock('../sync/triggers', () => ({
   writingAs: (_db: unknown, _id: string, fn: () => void) => fn(),
 }));
-// planLocal 现在引用 rolePackLocal（能力合编包安装判定），后者 import 到 RN 侧模块，
+// planLocal 引用 rolePackLocal（本机装了哪些岗位包/能力），后者 import 到 RN 侧模块，
 // 这里整包替换成测试关心的最小面
 vi.mock('./rolePackLocal', () => {
-  // 排程判定按「桌面装了合编包」给全量清单；能力在手机本就钳到 view-only。
-  // 贡献现在从岗位包 taskTemplates 派生：mock 提供 SE 包的缓存数据（1.4.0）。
+  // 排程判定按本机缓存里的岗位包派生能力条目；能力在手机本就钳到 view-only。
+  // 贡献从岗位包 taskTemplates 派生：mock 提供 SE 包的缓存数据（1.4.0）。
   const cachedPack = { ...softwareEngineeringRolePack };
+  const declarations = cachedPack.capabilities ?? [];
   return {
-    installedPluginsForCampaign: (db: unknown, descriptor: { capabilities?: Array<{ id: string; enabled?: boolean }> } | null) => {
+    installedPluginsForCampaign: (db: unknown) => {
       void db;
-      void descriptor;
-      return [{ id: 'openjob-capabilities', version: '1.0.0', type: 'capability', displayName: 'OpenJob 能力包', description: '', runtime: { desktop: 'full', mobile: 'view-only' }, artifactSchemas: {}, interactionSchemas: {}, permissions: [] }];
+      return declarations.map((declaration) => ({
+        id: declaration.id,
+        version: cachedPack.manifest.version,
+        type: 'capability',
+        displayName: cachedPack.manifest.displayName,
+        description: cachedPack.manifest.description,
+        runtime: { desktop: 'full', mobile: 'view-only' },
+        artifactSchemas: {},
+        interactionSchemas: {},
+        permissions: [],
+        main: null,
+        api: null,
+      }));
     },
     getCachedRolePack: (db: unknown, id: string, version: string) => {
       void db;

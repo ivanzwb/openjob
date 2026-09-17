@@ -102,7 +102,7 @@ function loadRuntimeDescriptor(
     return pack
       ? descriptorFromRolePack(campaignId, pack, {
           coreVersion: '1.0.0',
-          schemaVersion: 23,
+          schemaVersion: 24,
         })
       : null;
   }
@@ -137,7 +137,7 @@ export function pluginTaskSupport(
     runtime,
     kind,
     'mobile',
-    installedPluginsForCampaign(db, runtime),
+    installedPluginsForCampaign(db),
     resolveCampaignRolePack(db, runtime),
   );
 }
@@ -289,7 +289,7 @@ export async function generatePlan(
       budgetMinutes: budget,
       usedMinutes: used,
       repos,
-      installed: installedPluginsForCampaign(db, runtime),
+      installed: installedPluginsForCampaign(db),
       rolePack: resolveCampaignRolePack(db, runtime),
     })) {
       dayTasks.push({

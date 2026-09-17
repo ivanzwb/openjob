@@ -13,6 +13,10 @@
  */
 import { defineRolePack, packRoot } from '../../scripts/pack-authoring';
 import type { RolePack } from '@core/plugins/types';
+import {
+  TABULAR_DATASET_ARTIFACT_TYPE,
+  TABULAR_DATASET_SCHEMA_VERSION,
+} from '@core/case/dataset';
 import { PRODUCT_MANAGER_OPTIONAL_CAPABILITY_IDS, PRODUCT_MANAGER_ROLE_PACK_ID, PRODUCT_MANAGER_ROLE_PACK_VERSION } from './ids';
 import { productManagerMatchers } from './matchers';
 import { competencyTemplates } from './competencies';
@@ -26,6 +30,7 @@ import { sourcePolicy } from './search-policy';
 export {
   PRODUCT_MANAGER_ROLE_PACK_ID,
   PRODUCT_MANAGER_ROLE_PACK_VERSION,
+  ANALYTICS_CASE_CAPABILITY_ID,
   PRODUCT_MANAGER_OPTIONAL_CAPABILITY_IDS,
   PRODUCT_MANAGER_FORMAT_IDS,
   PRODUCT_MANAGER_COMPETENCY_IDS,
@@ -43,6 +48,9 @@ export const productManagerRolePack: RolePack = defineRolePack({
     compatibility: { core: '^1.0.0', schema: 23 },
     // 内嵌 analytics-case：权限 = 其声明的并集（contracts 校验）
     permissions: ['artifact:read'],
+    // 内嵌声明贡献的解析器版本：manifest 是宿主判定「认不认得这份数据」的唯一事实源，
+    // 声明归包所有，版本也就得由包自己写清楚
+    artifactSchemas: { [TABULAR_DATASET_ARTIFACT_TYPE]: TABULAR_DATASET_SCHEMA_VERSION },
     // portfolio-review 尚无宿主实现，保留为可选依赖；analytics-case 已内嵌
     dependencies: [
       {

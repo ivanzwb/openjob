@@ -105,8 +105,8 @@ export const navigation: NavigationEntry[] = [
   {
     id: 'se.source-repository',
     label: '源码',
-    pageId: 'source-repository',        // 宿主注册表里没有实现就不渲染
-    requiredCapabilityId: 'openjob-capabilities',
+    pageId: 'source-repository',        // 宿主页面注册表里没有实现就不渲染
+    requiredCapabilityId: 'source-repository',   // 引用本包内嵌的能力 id
     degradedHint: '克隆与索引需在桌面端完成。',
   },
 ];
@@ -326,7 +326,7 @@ pnpm verify:plugins                     # 打包并验签（CI 同款）
 
 **Q：片段写了没生效？** 检查 frontmatter 的 `slot` 拼写、`formatId` 是否是本包题型 id；`pnpm pack:validate` 的片段清单会列出每条片段的实际归属。
 
-**Q：能力装了但任务没排？** 排程贡献从包 taskTemplates 派生：确认任务模板写了 `capabilityId`，且 descriptor 里该能力 enabled、本机清单里有对应版本的合成条目。
+**Q：能力装了但任务没排？** 排程贡献从包 taskTemplates 派生：确认任务模板写了 `capabilityId`（就是本包内嵌声明的 id），且 descriptor 里该能力 enabled、本机清单里有它派生的能力条目。
 
 **Q：页面在主导航上看不到？** 代码插件先确认已启用（设置页）；再看 `ctx.views.registerPage` 是否在 `activate` 同步调用（异步注册的页面在下次激活时才出现）。
 

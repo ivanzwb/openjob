@@ -15,23 +15,34 @@ import { DatabaseSync } from 'node:sqlite';
 import type { Database } from 'better-sqlite3';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { synthesizeSuiteFromRolePack } from '@core/plugins/capabilitySuite';
+import { capabilityEntriesFromRolePack } from '@core/plugins/capabilityEntries';
 import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
 import { productManagerRolePack } from '@plugins/productManager';
 import { salesCustomerSuccessRolePack } from '@plugins/salesCustomerSuccess';
 
-const SUITE_MANIFEST_BY_PACK = (): Record<string, { runtime?: { mobile?: string } }> => ({
-  'software-engineering': synthesizeSuiteFromRolePack(softwareEngineeringRolePack)!.manifest,
-  'product-manager': synthesizeSuiteFromRolePack(productManagerRolePack)!.manifest,
-  'sales-customer-success': synthesizeSuiteFromRolePack(salesCustomerSuccessRolePack)!.manifest,
-});
+/**
+ * 岗位包内嵌能力的 id：descriptor 的能力引用、binding 行、清单项用的都是它。
+ *
+ * 一个包声明几条能力就是几条，没有「合编包」这一层。
+ */
+function capabilityIdsOf(pack: RolePack): string[] {
+  return (pack.capabilities ?? []).map((declaration) => declaration.id);
+}
+
+/** 某个能力的本机条目形态（mobile 可用性由它声明）。 */
+function capabilityEntryOf(pack: RolePack, capabilityId: string): InstalledPlugin {
+  const entry = capabilityEntriesFromRolePack(pack).find((item) => item.id === capabilityId);
+  if (!entry) throw new Error(`${pack.manifest.id} 没有能力 ${capabilityId}`);
+  return entry;
+}
+
 import {
   PRODUCT_MANAGER_OPTIONAL_CAPABILITY_IDS,
   PRODUCT_MANAGER_ROLE_PACK_ID,
 } from '@plugins/productManager';
 import { SALES_CUSTOMER_SUCCESS_ROLE_PACK_ID } from '@plugins/salesCustomerSuccess';
-import { CORE_CAPABILITIES_PACK_ID } from '@core/plugins/capabilitySuite';
-import type { CampaignRuntimeDescriptor } from '@core/plugins/types';
+import type { CampaignRuntimeDescriptor, RolePack } from '@core/plugins/types';
+import type { InstalledPlugin } from '@core/plugins/clientView';
 import { buildClientCapabilityView } from '@core/plugins/clientView';
 import { installRolePacks } from './plugins/__fixtures__/installedPlugins';
 import {
@@ -85,19 +96,19 @@ const ROLE_PACK_CASES: readonly RolePackCase[] = [
     label: '软件工程',
     rolePackId: softwareEngineeringRolePack.manifest.id,
     roleFamily: 'software',
-    capabilityId: CORE_CAPABILITIES_PACK_ID,
+    capabilityId: capabilityIdsOf(softwareEngineeringRolePack)[0]!,
   },
   {
     label: '产品经理',
     rolePackId: PRODUCT_MANAGER_ROLE_PACK_ID,
     roleFamily: 'product',
-    capabilityId: CORE_CAPABILITIES_PACK_ID,
+    capabilityId: capabilityIdsOf(productManagerRolePack)[0]!,
   },
   {
     label: '销售客户成功',
     rolePackId: SALES_CUSTOMER_SUCCESS_ROLE_PACK_ID,
     roleFamily: 'sales',
-    capabilityId: CORE_CAPABILITIES_PACK_ID,
+    capabilityId: capabilityIdsOf(salesCustomerSuccessRolePack)[0]!,
   },
 ];
 
@@ -176,23 +187,25 @@ describe('三个岗位包在同一份库上共存', () => {
 });
 
 describe('能力绑定', () => {
-  it('三个岗位包启用的都是同一个能力合编包，各绑一条', () => {
-    // 三个能力已并入一个包：隔离不再靠「不同 id」，而靠岗位包各自的题型声明
-    // （哪些题型挂 capabilityId）与战役级启用开关。这里守的是绑定结果：
-    // 每个岗位包恰好一条能力 binding，且都指向合编包。
+  it('每个岗位包启用自己的内嵌能力，各绑一条', () => {
+    // 能力随岗位包分发：隔离靠岗位包各自的题型声明（哪些题型挂 capabilityId）与战役级
+    // 启用开关，而不是靠把三个能力塞进同一个包。这里守的是绑定结果：每个岗位包恰好
+    // 绑定它自己声明的能力。
     for (const item of ROLE_PACK_CASES) {
       const descriptor = bindRolePack(item);
-      expect(enabledIds(descriptor)).toEqual([CORE_CAPABILITIES_PACK_ID]);
+      expect(enabledIds(descriptor)).toEqual([item.capabilityId]);
     }
   });
 
-  it('岗位包没声明的能力即使装在本机也不会被启用', () => {
+  it('别的岗位包声明的能力即使装在本机也不会被启用', () => {
     const descriptor = bindRolePack(ROLE_PACK_CASES[0]);
     const installed = listInstalledPlugins().map((plugin) => plugin.id);
 
-    expect(installed).toContain(CORE_CAPABILITIES_PACK_ID);
-    // SE 包只声明依赖合编包；PM/sales 的可选依赖不归这个战役
-    expect(enabledIds(descriptor)).toEqual([CORE_CAPABILITIES_PACK_ID]);
+    for (const item of ROLE_PACK_CASES) {
+      expect(installed).toContain(item.capabilityId);
+    }
+    // SE 战役只启用它自己声明的能力；PM/sales 的能力不归这个战役
+    expect(enabledIds(descriptor)).toEqual([ROLE_PACK_CASES[0].capabilityId]);
   });
 });
 
@@ -208,13 +221,13 @@ describe('两端消费同一份 descriptor', () => {
       desktop.capabilities.map((entry) => entry.id),
     );
 
-    // 手机端的可用性以 Manifest 声明为准，不在这里重写一份预期
-    const manifest =
-      CORE_CAPABILITIES_PACK_ID === item.capabilityId
-        ? SUITE_MANIFEST_BY_PACK()[item.rolePackId]
-        : undefined;
-    expect(mobile.capabilities.find((entry) => entry.id === item.capabilityId)?.mode).toBe(
-      manifest?.runtime?.mobile,
+    // 手机端的可用性以能力条目的运行时声明为准，不在这里重写一份预期
+    const pack = [softwareEngineeringRolePack, productManagerRolePack, salesCustomerSuccessRolePack].find(
+      (candidate) => candidate.manifest.id === item.rolePackId,
+    )!;
+    const entry = capabilityEntryOf(pack, item.capabilityId);
+    expect(mobile.capabilities.find((status) => status.id === item.capabilityId)?.mode).toBe(
+      entry.runtime?.mobile,
     );
   });
 });
@@ -229,7 +242,7 @@ describe('未交付的能力留在 backlog，不阻塞发布', () => {
     // 未实现的可选能力只以 disabled 出现，解析不失败、战役照常可用
     expect(ref).toMatchObject({ enabled: false });
     expect(ref?.enabled === false ? ref.disabledReason : '').toContain('plugin-not-found');
-    expect(enabledIds(descriptor)).toContain(CORE_CAPABILITIES_PACK_ID);
+    expect(enabledIds(descriptor)).toContain(ROLE_PACK_CASES[1].capabilityId);
   });
 
   it('本机根本没有的能力不会被凭空写进 descriptor', () => {

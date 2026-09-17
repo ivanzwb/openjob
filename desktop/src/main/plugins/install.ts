@@ -21,7 +21,7 @@ import { loadExternalPlugins } from './bootstrap';
 import { exactKeyOf } from './inventory';
 import { classifyPackageTrust, type PackageTrust } from './package/signature';
 import { loadTrustedPublicKeys } from './package/trustedKeys';
-import { builtInPluginKeys, listExternalPlugins } from './runtime';
+import { listExternalPlugins } from './runtime';
 
 export const BUNDLE_EXTENSION = '.openjob.json';
 
@@ -42,7 +42,6 @@ export type InstallFailureCode =
   | 'tampered'
   | 'unsigned'
   | 'untrusted-signer'
-  | 'reserved-id'
   | 'already-installed'
   | 'one-plugin-limit'
   | 'isolation-violation'
@@ -196,10 +195,6 @@ export function installPluginBundle(raw: Buffer, options: InstallOptions = {}): 
 
   const manifest = JSON.parse(files['manifest.json']!) as { id: string; version: string; type?: string };
   const key = exactKeyOf(manifest.id, manifest.version);
-
-  if (builtInPluginKeys().has(key)) {
-    return fail('reserved-id', `${key} 与内置插件冲突`);
-  }
 
   // 一台设备只装一个插件包。这是宿主的产品规则，不是包格式的一部分，所以守卫落在安装这个
   // 唯一入口上：文件对话框与更新源清单两条路都从这里进，谁都不会绕过去。

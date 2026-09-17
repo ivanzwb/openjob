@@ -7,7 +7,6 @@ const SOURCE_REPOSITORY_TOOL_DEFINITIONS = [
   { name: 'read_file', description: 'Read a line range from a repository file.', permission: 'repository:read', inputSchemaVersion: 1 },
   { name: 'grep', description: 'Search repository file contents.', permission: 'repository:read', inputSchemaVersion: 1 },
 ] as const;
-import { CORE_CAPABILITIES_PACK_ID } from '@core/plugins/capabilitySuite';
 import { formatPathSuggestions, suggestRepoPaths } from '@core/repo/pathSuggest';
 import { normalizeRepoPath } from '@core/repo/virtualFs';
 import {
@@ -32,6 +31,14 @@ import {
 } from './files';
 import { recordCodeRefs } from './repository';
 import { listRepoFilePaths } from './snapshot';
+
+/**
+ * 本模块是 source-repository 能力的宿主实现，所以按这条能力 id 绑定自己。
+ *
+ * 声明（工具契约、权限、素材）住在岗位包里，这里只认名字——能力 id 是宿主与包之间唯一
+ * 的约定。应用源码不引 `@plugins`（见 basePackage.test.ts 的静态关卡），所以写成常量。
+ */
+const SOURCE_REPOSITORY_CAPABILITY_ID = 'source-repository';
 
 export const CODE_REPO_TOOLS: AgentFunctionTool[] = [
   {
@@ -136,7 +143,7 @@ export async function runCodeRepoTool(
   if (SOURCE_REPOSITORY_TOOL_NAMES.has(name)) {
     const decision = (ctx?.permissionGateway ?? defaultPermissionGateway).authorize({
       campaignId: ctx?.campaignId ?? '',
-      capabilityId: CORE_CAPABILITIES_PACK_ID,
+      capabilityId: SOURCE_REPOSITORY_CAPABILITY_ID,
       permission: 'repository:read',
       resource: {
         kind: 'repository',

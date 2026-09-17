@@ -279,7 +279,7 @@ describe('sales & customer success role pack goldens', () => {
         formatId: SALES_CUSTOMER_SUCCESS_FORMAT_IDS.behavioral,
       });
       expect(composed.systemPrompt).toContain('销售行为面');
-      expect(composed.provenance.capabilityIds).toEqual(['openjob-capabilities']);
+      expect(composed.provenance.capabilityIds).toEqual([SALES_ROLE_PLAY_CAPABILITY_ID]);
     }
   });
 

@@ -1,7 +1,7 @@
 import type { TaskTemplate } from '@core/plugins/types';
 import { EXAM_FORMS, TASK_KINDS } from '@core/enums';
-import { CORE_CAPABILITIES_PACK_ID } from '@core/plugins/capabilitySuite';
 import { SOFTWARE_ENGINEERING_FORMAT_IDS, formatIdForExamForm } from './examForms';
+import { SOURCE_REPOSITORY_CAPABILITY_ID } from './ids';
 
 const allFormatIds = EXAM_FORMS.map(formatIdForExamForm);
 
@@ -30,7 +30,7 @@ export const taskTemplates: TaskTemplate[] = [
       SOFTWARE_ENGINEERING_FORMAT_IDS.systemDesign,
       SOFTWARE_ENGINEERING_FORMAT_IDS.projectDeepDive,
     ],
-    capabilityId: CORE_CAPABILITIES_PACK_ID,
+    capabilityId: SOURCE_REPOSITORY_CAPABILITY_ID,
   },
   {
     id: 'se.review',

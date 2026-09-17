@@ -73,11 +73,10 @@ function installRolePack(id: string, version = '2.0.0', signed = true): RolePack
   return pack;
 }
 
-function scan(reservedKeys?: Set<string>) {
+function scan() {
   return scanPluginInventory({
     pluginsDir: root,
     trustedPublicKeys: [PUBLIC_PEM],
-    reservedKeys,
   });
 }
 
@@ -190,18 +189,6 @@ describe('scanPluginInventory', () => {
     });
 
     expect(scan()).toMatchObject({ entries: [], rejected: [{ reason: 'invalid-package' }] });
-  });
-
-  it('撞上内置插件的 id@version 时拒装', () => {
-    const builtIn = DISTRIBUTED_ROLE_PACKS[0]!.manifest;
-    const pack = externalRolePack(builtIn.id, builtIn.version);
-    writePackage(exactKeyOf(builtIn.id, builtIn.version), rolePackFiles(pack));
-
-    // 允许顶替的话，换一个同名同版本的包就能悄悄改掉内置岗位包的量规和提示词，
-    // 而 descriptor 里的 configSnapshotHash 一个字都不变
-    expect(
-      scan(new Set([exactKeyOf(builtIn.id, builtIn.version)])).rejected[0],
-    ).toMatchObject({ reason: 'duplicate' });
   });
 
   it('一个坏包不影响其它包装载', () => {

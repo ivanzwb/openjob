@@ -7,16 +7,12 @@
  */
 import { describe, expect, it } from 'vitest';
 import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
-import { synthesizeSuiteFromRolePack } from '../capabilitySuite';
 import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
 import { productManagerRolePack } from '@plugins/productManager';
 import { salesCustomerSuccessRolePack } from '@plugins/salesCustomerSuccess';
-
-const coreCapabilitiesSuite = synthesizeSuiteFromRolePack(softwareEngineeringRolePack)!;
-const pmSuite = synthesizeSuiteFromRolePack(productManagerRolePack)!;
-const salesSuite = synthesizeSuiteFromRolePack(salesCustomerSuccessRolePack)!;
 import type {
   ArtifactParserDefinition,
+  CapabilityDeclaration,
   CapabilityPlugin,
   HostRenderedInteraction,
   RolePack,
@@ -65,6 +61,64 @@ function paths(files: PluginPackageFiles): string[] {
   return validatePluginPackage(files).map((issue) => issue.path);
 }
 
+/**
+ * 把一条能力声明包成一个独立能力包。
+ *
+ * 基础包不再内置能力包（能力随岗位包分发），但能力包这个类型还在；格式用例需要
+ * 「声明里有什么」的真实素材，所以直接从岗位包的内嵌声明里取一条来包。
+ */
+function declarationPlugin(id: string, declaration: CapabilityDeclaration): CapabilityPlugin {
+  const artifactSchemas: Record<string, number> = {};
+  for (const parser of declaration.artifactParsers ?? []) {
+    artifactSchemas[parser.artifactType] = parser.schemaVersion;
+  }
+  const interactionSchemas: Record<string, number> = {};
+  for (const interaction of declaration.interactions ?? []) {
+    interactionSchemas[interaction.type] = interaction.schemaVersion;
+  }
+
+  return {
+    manifest: {
+      id,
+      version: '1.0.0',
+      type: 'capability',
+      displayName: id,
+      description: '格式用例：把一条能力声明单独打成能力包',
+      compatibility: { core: '^1.0.0', schema: 24 },
+      permissions: [
+        ...new Set([
+          ...(declaration.tools ?? []).map((tool) => tool.permission),
+          ...(declaration.artifactParsers ?? []).map((parser) => parser.permission),
+          ...(declaration.permissions ?? []),
+        ]),
+      ].sort(),
+      runtime: { desktop: 'full', mobile: 'view-only' },
+      ...(Object.keys(artifactSchemas).length > 0 ? { artifactSchemas } : {}),
+      ...(Object.keys(interactionSchemas).length > 0 ? { interactionSchemas } : {}),
+    },
+    register(registry) {
+      for (const tool of declaration.tools ?? []) registry.registerTool(tool);
+      for (const parser of declaration.artifactParsers ?? []) registry.registerArtifactParser(parser);
+      for (const interaction of declaration.interactions ?? []) {
+        registry.registerInteractionType(interaction);
+      }
+    },
+  };
+}
+
+const SE_CAPABILITY = declarationPlugin(
+  'demo-source-repository',
+  softwareEngineeringRolePack.capabilities[0]!,
+);
+const PM_CAPABILITY = declarationPlugin(
+  'demo-analytics-case',
+  productManagerRolePack.capabilities[0]!,
+);
+const SALES_CAPABILITY = declarationPlugin(
+  'demo-role-play',
+  salesCustomerSuccessRolePack.capabilities[0]!,
+);
+
 describe('插件包格式', () => {
   it('每个内置岗位包序列化成外置包后都合法，且解析回来一字不差', () => {
     expect(DISTRIBUTED_ROLE_PACKS.length).toBeGreaterThan(0);
@@ -77,18 +131,10 @@ describe('插件包格式', () => {
     }
   });
 
-  it('每个能力声明序列化成外置包后都合法（含三合一的合编包）', () => {
-    // 内置清单已清空：能力来自单独安装的合编包，声明模块仍在 core 供打包录制
-    const capabilityPlugins = [coreCapabilitiesSuite];
-    expect(capabilityPlugins.length).toBeGreaterThan(0);
-
-    for (const plugin of capabilityPlugins) {
-      const files = capabilityFiles(plugin);
-      expect(validatePluginPackage(files), plugin.manifest.id).toEqual([]);
-      expect(parsePluginPackage(files).contributions, plugin.manifest.id).toEqual(
-        recordContributions(plugin),
-      );
-    }
+  it('能力包（manifest + contributions）序列化后仍然合法', () => {
+    const files = capabilityFiles(SE_CAPABILITY);
+    expect(validatePluginPackage(files)).toEqual([]);
+    expect(parsePluginPackage(files).contributions).toEqual(recordContributions(SE_CAPABILITY));
   });
 
   it('包里出现白名单外的文件一律拒装', () => {
@@ -122,9 +168,9 @@ describe('插件包格式', () => {
   });
 
   it('能力插件声明了 manifest 里没写的权限时拒装', () => {
-    // SE 合成套件的 manifest 只含 repository:read：改权限到 microphone:read 后
+    // 这条声明的 manifest 只含 repository:read：改权限到 microphone:read 后
     // 与 manifest 不一致才会被拒
-    const plugin = coreCapabilitiesSuite;
+    const plugin = SE_CAPABILITY;
 
     const contributions = recordContributions(plugin!);
     contributions.tools![0]!.permission = 'microphone:read';
@@ -138,7 +184,7 @@ describe('插件包格式', () => {
   });
 
   it('能力插件一项都不声明时拒装', () => {
-    const plugin = coreCapabilitiesSuite;
+    const plugin = SE_CAPABILITY;
 
     expect(
       paths({
@@ -149,10 +195,10 @@ describe('插件包格式', () => {
   });
 
   it('artifact parser 的版本必须与 manifest.artifactSchemas 对齐', () => {
-    const plugin = [pmSuite].find(
+    const plugin = [PM_CAPABILITY].find(
       (item) => recordContributions(item).artifactParsers!.length > 0,
     );
-    expect(plugin, '需要一个注册了 artifact parser 的内置能力插件').toBeDefined();
+    expect(plugin, '需要一个注册了 artifact parser 的能力包').toBeDefined();
 
     const contributions = recordContributions(plugin!);
     contributions.artifactParsers![0]!.schemaVersion += 1;
@@ -166,10 +212,10 @@ describe('插件包格式', () => {
   });
 
   it('交互类型的版本必须与 manifest.interactionSchemas 对齐', () => {
-    const plugin = [salesSuite].find(
+    const plugin = [SALES_CAPABILITY].find(
       (item) => recordContributions(item).interactions!.length > 0,
     );
-    expect(plugin, '需要一个注册了交互类型的内置能力插件').toBeDefined();
+    expect(plugin, '需要一个注册了交互类型的能力包').toBeDefined();
 
     const contributions = recordContributions(plugin!);
     contributions.interactions![0]!.schemaVersion += 1;

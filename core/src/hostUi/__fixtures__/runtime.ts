@@ -13,7 +13,7 @@ import {
 } from '../../plugins/clientView';
 import type { ClientCapabilityView } from '../../plugins/clientView';
 import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
-import { synthesizeSuiteFromRolePack } from '../../plugins/capabilitySuite';
+import { capabilityEntriesFromRolePack } from '../../plugins/capabilityEntries';
 import { BuiltInPluginRegistry } from '../../plugins/registry';
 import { DeterministicRuntimeResolver } from '../../plugins/resolver';
 import type { CampaignRuntimeDescriptor, ClientPlatform } from '../../plugins/types';
@@ -22,14 +22,12 @@ import type { RoleProfile } from '../../entities';
 
 export const CAMPAIGN_ID = 'c-hostui';
 export const CORE_VERSION = '1.0.0';
-export const SCHEMA_VERSION = 23;
+export const SCHEMA_VERSION = 24;
 
 function resolver(): DeterministicRuntimeResolver {
   const registry = new BuiltInPluginRegistry();
   registry.register(softwareEngineeringRolePack);
-  // 声明内嵌在 SE 包：合成套件随包解析，fixture 与生产路径同构
-  const suite = synthesizeSuiteFromRolePack(softwareEngineeringRolePack);
-  if (suite) registry.registerCapability(suite);
+  // 声明内嵌在 SE 包：能力由 resolver 从包内声明解析出来，fixture 与生产路径同构
   return new DeterministicRuntimeResolver(registry);
 }
 
@@ -76,12 +74,12 @@ export function buildCapabilityView(
     descriptor,
     platform,
     // 岗位包不随应用发布，本机安装集合要显式带上它——只给内置清单就等于在测
-    // 「用户还没装岗位包」，而这些用例问的是装好之后界面怎么渲染
+    // 「用户还没装岗位包」，而这些用例问的是装好之后界面怎么渲染。
+    // 能力条目随之派生：能力不是独立的包。
     installed: [
       ...listBuiltInPlugins(),
       toInstalledPlugin(softwareEngineeringRolePack.manifest),
-      // 内嵌声明的合成条目：descriptor pin 的是包版本
-      toInstalledPlugin(synthesizeSuiteFromRolePack(softwareEngineeringRolePack)!.manifest),
+      ...capabilityEntriesFromRolePack(softwareEngineeringRolePack),
     ],
   });
 }

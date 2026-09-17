@@ -13,7 +13,7 @@ vi.mock('../db', () => ({
 }));
 
 import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
-import { CORE_CAPABILITIES_PACK_ID } from '@core/plugins/capabilitySuite';
+import { SOURCE_REPOSITORY_CAPABILITY_ID } from '@plugins/softwareEngineering';
 import type { PluginManifest, PluginPermission } from '@core/plugins';
 import type { RolePack } from '@core/plugins/types';
 import type { PluginInventoryEntry } from './inventory';
@@ -118,7 +118,7 @@ describe('installedPermissionContracts', () => {
     // 合编包有 repository:read，不代表一个只声明 artifact:read 的外置包也能读仓库
     setExternalPlugins([entry({ permissions: [] })]);
 
-    expect(authorize(CORE_CAPABILITIES_PACK_ID, 'repository:read').allowed).toBe(false);
+    expect(authorize(SOURCE_REPOSITORY_CAPABILITY_ID, 'repository:read').allowed).toBe(false);
     expect(authorize('demo.cap', 'repository:read')).toMatchObject({
       allowed: false,
       code: 'permission-undeclared',

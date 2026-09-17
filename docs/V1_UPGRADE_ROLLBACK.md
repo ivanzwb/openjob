@@ -128,7 +128,7 @@ Drizzle 不会「降级」，只会在缺表缺列上直接失败。回滚必须
 | 验收项 | 守在哪 |
 |---|---|
 | 三个岗位包 golden 通过 | `builtin/{softwareEngineering,productManager,salesCustomerSuccess}/golden.test.ts` |
-| 三个能力插件权限隔离 | `desktop/src/main/plugins/capabilityIsolation.test.ts` |
+| 每个岗位包的能力权限隔离 | `desktop/src/main/plugins/capabilityIsolation.test.ts` |
 | 岗位与能力不串味 | `desktop/src/main/v1ReleaseGate.test.ts` 的隔离矩阵 |
 | 两端 migration 清单一致 | `desktop/src/main/db/migrations.test.ts` |
 | 两端 descriptor 一致 | `v1ReleaseGate.test.ts`、`core/src/plugins/phase1Gate.test.ts` |

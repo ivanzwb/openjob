@@ -9,7 +9,6 @@ import { getAppPaths } from '../paths';
 import { scanPluginInventory, type PluginInventory } from './inventory';
 import { loadTrustedPublicKeys } from './package/trustedKeys';
 import {
-  builtInPluginKeys,
   findLatestRolePack,
   setExternalPlugins,
 } from './runtime';
@@ -29,7 +28,6 @@ export function loadExternalPlugins(): PluginInventory {
   const inventory = scanPluginInventory({
     pluginsDir: getAppPaths().pluginsDir,
     trustedPublicKeys: loadTrustedPublicKeys(),
-    reservedKeys: builtInPluginKeys(),
   });
 
   setExternalPlugins(inventory.entries);

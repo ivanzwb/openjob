@@ -13,7 +13,6 @@ import type { Database } from 'better-sqlite3';
 
 import type { LlmRole } from '@core/enums';
 import { composePrompt, type ComposedPrompt } from '@core/prompts/composer';
-import { CORE_CAPABILITIES_PACK_ID } from '@core/plugins/capabilitySuite';
 import { CUSTOMER_CONVERSATION_TYPE, type CustomerConversationScenario } from '@core/plugins/interactions/session';
 import { buildInteractionHostView } from '@core/plugins/interactions/hostView';
 import { listInstalledPlugins } from './runtime';
@@ -29,6 +28,7 @@ import type {
  * 全部来自 descriptor——宿主不持有任何能力素材，也没有任何 @plugins import。
  */
 function resolveRolePlayCapability(rolePack: RolePack | null): {
+  id: string;
   interaction: HostRenderedInteraction;
   schemaVersion: number;
   scenarios: readonly CustomerConversationScenario[];
@@ -37,6 +37,7 @@ function resolveRolePlayCapability(rolePack: RolePack | null): {
     for (const interaction of declaration.interactions ?? []) {
       if (interaction.type !== CUSTOMER_CONVERSATION_TYPE) continue;
       return {
+        id: declaration.id,
         interaction,
         schemaVersion: interaction.schemaVersion,
         scenarios: (declaration.scenarios ?? []) as unknown as readonly CustomerConversationScenario[],
@@ -117,17 +118,18 @@ function findScenario(
 /**
  * 找出本岗位包里由 role-play 支撑的题型。
  *
- * 不写死销售包：任何岗位包只要把某个题型的 capabilityId 指向 role-play，
- * 这里就能用。岗位包与能力插件之间靠 capabilityId 关联，不靠命名约定。
+ * 不写死销售包，也不写死能力名：题型与能力之间靠 `capabilityId` 关联，而那个 id 就是
+ * 岗位包自己声明的这条能力——谁声明了客户对话交互，谁的 id 说了算。
  */
-function resolveRolePlayFormat(rolePack: RolePack): InterviewFormatDefinition {
-  const format = rolePack.interviewFormats.find(
-    (item) => item.capabilityId === CORE_CAPABILITIES_PACK_ID,
-  );
+function resolveRolePlayFormat(
+  rolePack: RolePack,
+  capabilityId: string,
+): InterviewFormatDefinition {
+  const format = rolePack.interviewFormats.find((item) => item.capabilityId === capabilityId);
   if (!format) {
     throw new RolePlayError(
       'format-unavailable',
-      `岗位包 ${rolePack.manifest.id} 没有依赖 role-play 的题型`,
+      `岗位包 ${rolePack.manifest.id} 没有依赖 ${capabilityId} 的题型`,
     );
   }
   return format;
@@ -147,9 +149,9 @@ function grantedPermissions(microphoneAvailable: boolean): PluginPermission[] {
   );
 }
 
-/** 合编能力包在本机装没装。对练渲染的可交互性由它决定（没装只能看历史快照）。 */
-function isCapabilitySuiteInstalled(): boolean {
-  return listInstalledPlugins().some((plugin) => plugin.id === CORE_CAPABILITIES_PACK_ID);
+/** 这条能力在本机装没装（= 声明它的岗位包在不在）。没装只能看历史快照。 */
+function isCapabilityInstalled(capabilityId: string): boolean {
+  return listInstalledPlugins().some((plugin) => plugin.id === capabilityId);
 }
 
 function toTurnViews(state: RolePlayState): RolePlayTurnView[] {
@@ -171,14 +173,6 @@ export function createRolePlaySessionService(
   /** 解析本次对练的岗位包、题型与本机渲染能力。 */
   function resolve(campaignId: string, microphoneAvailable: boolean) {
     const runtime = resolveCampaignPracticeRuntime(raw, campaignId);
-    const format = resolveRolePlayFormat(runtime.rolePack);
-
-    const capabilityRef = runtime.descriptor.capabilities.find(
-      (item) => item.id === CORE_CAPABILITIES_PACK_ID,
-    );
-    const capabilityEnabled = capabilityRef?.enabled === true;
-
-    const permissions = grantedPermissions(microphoneAvailable);
     const capability = resolveRolePlayCapability(runtime.rolePack);
     if (!capability) {
       throw new RolePlayError(
@@ -186,13 +180,22 @@ export function createRolePlaySessionService(
         `岗位包 ${runtime.rolePack.manifest.id} 没有声明客户对话能力`,
       );
     }
+    const format = resolveRolePlayFormat(runtime.rolePack, capability.id);
+
+    // descriptor 里 pin 的是能力自己的 id（版本随岗位包），与声明同源
+    const capabilityRef = runtime.descriptor.capabilities.find(
+      (item) => item.id === capability.id,
+    );
+    const capabilityEnabled = capabilityRef?.enabled === true;
+
+    const permissions = grantedPermissions(microphoneAvailable);
     const view = buildInteractionHostView({
       interaction: capability.interaction,
       platform: 'desktop',
       capabilityEnabled,
-      // 能力现在来自单独安装的合编包：本机没装时不渲染，交回 view-only 降级视图。
+      // 能力随岗位包分发：本机没装那个包时不渲染，交回 view-only 降级视图。
       // 写死 true 是内置时代的遗留，会让「没装包却出题」被渲染成可交互表单。
-      pluginInstalled: isCapabilitySuiteInstalled(),
+      pluginInstalled: isCapabilityInstalled(capability.id),
       externalPlugin: true,
       knownSchemaVersion: capability.schemaVersion,
       grantedPermissions: permissions,

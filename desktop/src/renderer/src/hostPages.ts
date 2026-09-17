@@ -1,12 +1,11 @@
-import { Repos } from './pages/Repos';
-
 /**
  * 宿主页面注册表：岗位包导航入口的 pageId → 本机已实现的页面组件。
  *
- * 插件不注入组件（插入点 A 的硬约束），入口能指向哪些页面由这张表封闭；
- * 新页面先在 core 的 HOST_PAGE_IDS 登记 id，再在两端实现组件并挂进这里。
+ * 现在**是空的**：能力页由岗位包自己带的 Webview 页面提供（v3 代码插件，见 §7.9 的
+ * `ctx.views.registerPage`），源码页就是这么搬进 software-engineering 包的——宿主不再
+ * 为某个具体能力实现一份页面组件，也就不必认识那条能力 id。
+ *
+ * 表留着是因为插入点 A 的机制还在：将来确实有「只能由宿主渲染」的页面时再往这里挂，
+ * 挂的时候记得 pageId 用宿主自己的名字，不要用某个能力 id。
  */
-/** 宿主页面注册表：key 为岗位包声明的 pageId；没实现的 id 渲染时跳过。 */
-export const HOST_PAGES: Record<string, () => React.JSX.Element> = {
-  'source-repository': Repos,
-};
+export const HOST_PAGES: Record<string, () => React.JSX.Element> = {};

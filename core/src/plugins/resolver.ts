@@ -1,8 +1,5 @@
 import { RUNTIME_AVAILABILITIES, type PluginType } from '../enums';
-import {
-  CORE_CAPABILITIES_PACK_ID,
-  synthesizeSuiteFromRolePack,
-} from './capabilitySuite';
+import { rolePackDeclarationPlugin } from './capabilityEntries';
 import {
   isExactSemVer,
   isStablePluginId,
@@ -706,20 +703,22 @@ function validateCapabilityRegistrations(
   return null;
 }
 
-/** 与上面同一套校验，额外把岗位包内嵌声明合成的套件一起过 collector（防重名、验权限声明） */
-function validateRegistrationsWithInlineSuite(
+/** 与上面同一套校验，额外把岗位包的内嵌声明重放一遍过 collector（防重名、验权限声明） */
+function validateRegistrationsWithRolePack(
   selected: Map<string, RegisteredPlugin>,
-  inlineSuite: CapabilityPlugin,
+  declarations: CapabilityPlugin,
 ): RuntimeResolveError | null {
   const baseError = validateCapabilityRegistrations(selected);
   if (baseError) return baseError;
   const collector = new RegistrationCollector('root', new Set(), {});
   try {
-    inlineSuite.register(collector.forPlugin(inlineSuite.manifest.id, inlineSuite.manifest));
+    declarations.register(
+      collector.forPlugin(declarations.manifest.id, declarations.manifest),
+    );
   } catch (error) {
     return {
       code: 'invalid-manifest',
-      pluginId: inlineSuite.manifest.id,
+      pluginId: declarations.manifest.id,
       message: error instanceof Error ? error.message : '内嵌能力注册失败',
     };
   }
@@ -969,13 +968,14 @@ export class DeterministicRuntimeResolver implements RuntimeResolver {
     const role = selected.get(input.rolePackId)!;
     const industry = input.industryPackId ? selected.get(input.industryPackId)! : undefined;
 
-    // 插入点 E：岗位包内嵌的能力声明合成为套件引用。descriptor 形状不变——
-    // 下游（网关/视图/排程/移动端）仍按 openjob-capabilities@<包版本> 消费。
-    // 启用语义与旧「可选依赖自动展开」一致：选中岗位包即启用其声明的能力，
-    // 不再受用户勾选影响——粒度更细的「按材料激活」由排程与网关在更下游判定。
-    const inlineSuite = role.rolePack ? synthesizeSuiteFromRolePack(role.rolePack) : null;
-    if (inlineSuite !== null) {
-      const registrationError = validateRegistrationsWithInlineSuite(selected, inlineSuite);
+    // 插入点 E：岗位包内嵌的能力声明直接成为 descriptor 里的能力引用——能力用**自己的**
+    // id（source-repository / role-play / analytics-case），version 是所属岗位包的版本。
+    // 没有「合编包」这一层：下游（网关/视图/排程/移动端）一律按能力 id 匹配。
+    // 启用语义与旧「可选依赖自动展开」一致：选中岗位包即启用其声明的能力，不再受用户勾选
+    // 影响——粒度更细的「按材料激活」由排程与网关在更下游判定。
+    const declarations = role.rolePack ? rolePackDeclarationPlugin(role.rolePack) : null;
+    if (declarations !== null) {
+      const registrationError = validateRegistrationsWithRolePack(selected, declarations);
       if (registrationError) return { ok: false, error: registrationError };
     }
 
@@ -986,10 +986,10 @@ export class DeterministicRuntimeResolver implements RuntimeResolver {
         version: entry.manifest.version,
         enabled: true as const,
       }));
-    if (inlineSuite !== null) {
+    for (const declaration of role.rolePack?.capabilities ?? []) {
       enabledCapabilities.push({
-        id: CORE_CAPABILITIES_PACK_ID,
-        version: inlineSuite.manifest.version,
+        id: declaration.id,
+        version: role.manifest.version,
         enabled: true as const,
       });
     }

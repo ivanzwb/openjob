@@ -58,7 +58,6 @@ const REJECTION_LABEL: Record<string, string> = {
   tampered: '内容与签名不符，可能被改动过',
   unsigned: '没有签名',
   'untrusted-signer': '签名者不受信任，需要重新安装并确认来源',
-  duplicate: '与已有插件的 id@version 重复',
   unreadable: '读不出来',
   'isolation-violation': '静态隔离扫描未通过：插件试图访问宿主受限能力',
 };
@@ -70,7 +69,6 @@ const INSTALL_FAILURE_LABEL: Record<string, string> = {
   tampered: '内容与签名不符，已拒绝安装',
   unsigned: '这个包没有签名，无法确认来源',
   'untrusted-signer': '签名者不在信任列表',
-  'reserved-id': '与随应用发布的插件冲突',
   'already-installed': '这个版本已经装过了',
   'one-plugin-limit': '本机已经装了一个插件，要先卸载它',
   'isolation-violation': '静态隔离扫描未通过，已拒绝安装',
@@ -167,9 +165,9 @@ export function PluginsPanel({
   /**
    * 「已装」列表直接来自盘上的扫描结果。
    *
-   * 不用 plugin:listInstalled：那份清单里还会带上按岗位包内嵌声明合成出来的能力条目
-   * （openjob-capabilities@<包版本>），它是运行时解析能力引用与权限契约用的，内容本来就
-   * 归岗位包所有——列在这里会让「装一个包」看起来像装了两个。
+   * 不用 plugin:listInstalled：那份清单里还会带上按岗位包内嵌声明派生的能力条目
+   * （`source-repository` 这种），它是运行时解析能力引用与权限契约用的，内容本来就归
+   * 岗位包所有——列在这里会让「装一个包」看起来像装了两个。
    */
   const packages = inventory?.installed ?? [];
 
@@ -316,9 +314,9 @@ export function PluginsPanel({
   /**
    * 岗位包排前面。
    *
-   * 基础包不带岗位，只装个能力包的话面试照样开不了；而清单按 id 排序时「能力包」
-   * （openjob-capabilities）正好在最前，用户第一眼看到的就是它。一个设备只能装一个插件，
-   * 先装上它就得再卸一次才轮得到岗位包。
+   * 基础包不带岗位，只装个能力包的话面试照样开不了；而清单按 id 排序时能力包
+   * （`source-repository` 这种）正好在最前，用户第一眼看到的就是它。一个设备只能装一个
+   * 插件，先装上它就得再卸一次才轮得到岗位包。
    */
   const entries = [...(catalog?.entries ?? [])].sort(
     (left, right) =>

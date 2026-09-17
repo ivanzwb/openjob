@@ -12,10 +12,7 @@
  * 这份缓存不进同步表，理由与 repo.local_path 相同：它是设备属性，不是备考数据。
  */
 import type { SQLiteDatabase } from 'expo-sqlite';
-import {
-  capabilityIdResolvedBySuite,
-  synthesizeSuiteFromRolePack,
-} from '@core/plugins/capabilitySuite';
+import { capabilityEntriesFromRolePack } from '@core/plugins/capabilityEntries';
 import { listBuiltInPlugins, toInstalledPlugin, type InstalledPlugin } from '@core/plugins/clientView';
 import { parseTransferredRolePack } from '@core/plugins/package/rolePackTransfer';
 import type { CampaignRuntimeDescriptor, ResolvedPluginRef, RolePack } from '@core/plugins/types';
@@ -132,14 +129,13 @@ export function pinnedRolePackRefs(db: SQLiteDatabase): RolePackRef[] {
 }
 
 /**
- * 本机安装集合。
+ * 本机安装集合（不含能力条目）。
  *
  * `buildClientCapabilityView` 的 `installed` 必须是**本机**的集合。以前手机端不传，桌面
  * 替它兜底成桌面自己的清单，于是桌面装了什么就算手机也有——一个只在桌面装了的岗位包会让
  * 手机端把战役判成正常，而它其实一道题都出不了。
  *
- * 岗位包只算取回来的那些；能力合编包不在这里，排程判定用
- * `installedPluginsForCampaign`（它需要 descriptor 才知道这个战役启用了什么）。
+ * 岗位包只算取回来的那些；排程判定要用带能力条目的版本，见 `installedPluginsForCampaign`。
  */
 export function installedPluginsHere(db: SQLiteDatabase): InstalledPlugin[] {
   return [
@@ -149,31 +145,21 @@ export function installedPluginsHere(db: SQLiteDatabase): InstalledPlugin[] {
 }
 
 /**
- * 排程判定用的本机安装集合：岗位包 + 能力合编包的「视图级」存在性。
+ * 排程判定用的本机安装集合：岗位包 + 它们内嵌声明派生的能力条目。
  *
- * 能力包的工具实现全在桌面宿主里，手机端本来就只有视图能力；但排程必须与桌面逐条
- * 一致——手机只是把任务显示成「需桌面完成」，不能因为「本机没装」把任务静默丢掉。
- * 所以 descriptor 把该能力解析为 enabled 时（那意味着解析时桌面确实装着它）补一条
- * 合编包条目，且用真实 manifest——`buildClientCapabilityView` 对外置能力有手机端
- * 上限，仍会把它钳到 view-only，不会凭空造出执行入口；descriptor 说没启用（桌面
- * 没装）时不补，两端同样不排。
+ * 能力不是独立的包，声明随岗位包下发；工具实现全在桌面宿主里，手机端本来就只有视图能力。
+ * 但排程必须与桌面逐条一致——手机只是把任务显示成「需桌面完成」，不能因为「本机没装」把
+ * 任务静默丢掉。所以这里与桌面共用 `capabilityEntriesFromRolePack`：本机缓存里有哪些岗位包，
+ * 就派生哪些能力条目；`buildClientCapabilityView` 对外置能力有手机端上限，仍会把它钳到
+ * view-only，不会凭空造出执行入口。
  */
-export function installedPluginsForCampaign(
-  db: SQLiteDatabase,
-  descriptor: CampaignRuntimeDescriptor | null,
-): InstalledPlugin[] {
-  const packs = installedPluginsHere(db);
-  // 旧战役 descriptor pin 的是退役 id（source-repository 等），它们同样由合编包承载
-  const capabilityEnabled = (descriptor?.capabilities ?? []).some(
-    (item) => capabilityIdResolvedBySuite(item.id) && item.enabled === true,
-  );
-  if (!capabilityEnabled) return packs;
-  // 合编包条目从缓存里任一带内嵌能力的岗位包合成（版本随包）
-  for (const pack of listCachedRolePacks(db)) {
-    const suite = synthesizeSuiteFromRolePack(pack);
-    if (suite) return [...packs, toInstalledPlugin(suite.manifest)];
-  }
-  return packs;
+export function installedPluginsForCampaign(db: SQLiteDatabase): InstalledPlugin[] {
+  const packs = listCachedRolePacks(db);
+  return [
+    ...listBuiltInPlugins(),
+    ...packs.map((pack) => toInstalledPlugin(pack.manifest)),
+    ...packs.flatMap((pack) => capabilityEntriesFromRolePack(pack)),
+  ];
 }
 
 /** 界面用的下发状态：每个被固定的岗位包，数据到了没有。 */

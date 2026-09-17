@@ -1,7 +1,6 @@
 import type { Database } from 'better-sqlite3';
 import { PRE_PLUGIN_CAMPAIGN_SCOPE_KIND, descriptorFromRolePack } from '@core/planner/contributions';
 import { CORE_VERSION, RUNTIME_SCHEMA_VERSION } from '../../plugins/runtime';
-import { synthesizeSuiteFromRolePack } from '@core/plugins/capabilitySuite';
 import type { RolePack } from '@core/plugins/types';
 
 export const PLUGIN_RUNTIME_BACKFILL_KIND = 'generic-interview-v1';
@@ -98,10 +97,12 @@ export function backfillPrePluginCampaignRuntime(
       coreVersion: CORE_VERSION,
       schemaVersion: RUNTIME_SCHEMA_VERSION,
     });
-    const suite = synthesizeSuiteFromRolePack(pack);
-    const capabilityRef = suite
-      ? { id: suite.manifest.id, version: suite.manifest.version }
-      : null;
+    // binding 与 descriptor 的能力引用同一套 id：能力用自己声明的 id（source-repository 等），
+    // 版本随岗位包——与 resolver 的产出规则一致，网关才能按能力 id 回查 binding
+    const capabilityRefs = (pack.capabilities ?? []).map((declaration) => ({
+      id: declaration.id,
+      version: pack.manifest.version,
+    }));
 
     raw
       .prepare(
@@ -132,7 +133,7 @@ export function backfillPrePluginCampaignRuntime(
     );
     for (const plugin of [
       { id: pack.manifest.id, version: pack.manifest.version },
-      ...(capabilityRef ? [capabilityRef] : []),
+      ...capabilityRefs,
     ]) {
       insertBinding.run(
         stableId('binding', campaign.id, `:${plugin.id}:${revision}`),

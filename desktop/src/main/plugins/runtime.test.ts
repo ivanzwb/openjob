@@ -8,11 +8,9 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { Database } from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
-import { CORE_CAPABILITIES_PACK_ID } from '@core/plugins/capabilitySuite';
+import { softwareEngineeringRolePack, SOURCE_REPOSITORY_CAPABILITY_ID } from '@plugins/softwareEngineering';
 import { listBuiltInPlugins } from '@core/plugins/clientView';
 import {
-  builtInPluginKeys,
   declaredLlmRole,
   declaredLlmRoles,
   getCampaignRuntime,
@@ -29,7 +27,8 @@ import { installSyncTriggers } from '../sync/triggers';
 const MIGRATIONS_DIR = join(__dirname, '..', 'db', 'migrations');
 const ROLE_PACK_ID = softwareEngineeringRolePack.manifest.id;
 const ROLE_PACK_VERSION = softwareEngineeringRolePack.manifest.version;
-const REPO_ID = CORE_CAPABILITIES_PACK_ID;
+// 能力随岗位包分发：descriptor 里 pin 的是能力自己的 id
+const REPO_ID = SOURCE_REPOSITORY_CAPABILITY_ID;
 const EXTERNAL_ROLE_PACK_ID = 'demo.role';
 
 /**
@@ -129,7 +128,7 @@ describe('listInstalledPlugins', () => {
   });
 
   it('什么都没装时清单为空：基础包不自带任何插件', () => {
-    // 能力已并入单独安装的合编包（openjob-capabilities），内置清单清空；
+    // 岗位包由用户安装，能力随岗位包的内嵌声明派生——两样都没有；
     // 出厂状态下练习链路就该是「还没选岗位」，能力也还没有
     expect(listInstalledPlugins()).toEqual(listBuiltInPlugins());
     expect(listInstalledPlugins()).toEqual([]);
@@ -156,21 +155,8 @@ describe('listInstalledPlugins', () => {
     expect(listInstalledPlugins()).toEqual(forward);
   });
 
-  it('builtInPluginKeys 是退役名册：三个旧能力 id@1.0.0 不被外置包顶替', () => {
-    const keys = builtInPluginKeys();
-
-    expect(keys.has('source-repository@1.0.0')).toBe(true);
-    expect(keys.has('role-play@1.0.0')).toBe(true);
-    expect(keys.has('analytics-case@1.0.0')).toBe(true);
-    expect(keys.size).toBe(3);
+  it('内置清单为空：基础包不自带任何插件，也没有保留名册', () => {
     expect(listBuiltInPlugins()).toEqual([]);
-  });
-
-  it('岗位包的 id@version 不被占用，官方包才装得进来', () => {
-    // 官方岗位包正是以 software-engineering@1.0.0 这个 id@version 分发的。占住它的后果不是
-    // 报错，而是用户从 release 下载的岗位包一律以 reserved-id 被拒——而拒绝理由指向
-    // 「与随应用发布的插件冲突」，而基础包里根本没有这个插件
-    expect(builtInPluginKeys().has(`${ROLE_PACK_ID}@${ROLE_PACK_VERSION}`)).toBe(false);
   });
 });
 
@@ -313,9 +299,9 @@ describe('setCampaignRoleProfile', () => {
       resolvedAt: 1234,
     });
     expect(view.descriptor.configSnapshotHash).toMatch(/^[a-f0-9]{64}$/);
-    // 插入点 E：SE 包内嵌 source-repository 声明，resolver 合成与其同版本的套件引用
+    // 能力随岗位包分发：descriptor 里 pin 的是能力自己的 id 与所属包版本
     expect(view.descriptor.capabilities).toEqual([
-      { id: CORE_CAPABILITIES_PACK_ID, version: '1.4.0', enabled: true },
+      { id: REPO_ID, version: ROLE_PACK_VERSION, enabled: true },
     ]);
     expect(view.roleProfile).toMatchObject({
       roleFamily: 'software',
@@ -323,15 +309,15 @@ describe('setCampaignRoleProfile', () => {
       interviewLanguage: 'zh',
       userConfirmed: true,
     });
-    // resolver 先写 capabilities 再写岗位包（见 runtime.ts 的 bound 顺序）
+    // 岗位包与它启用的能力各绑一条（按 plugin_id 排序，见 bindings 的 ORDER BY）
     expect(bindings(raw)).toEqual([
-      { plugin_id: REPO_ID, plugin_version: '1.4.0', revision: 1, active_execution: 1 },
       {
         plugin_id: ROLE_PACK_ID,
         plugin_version: ROLE_PACK_VERSION,
         revision: 1,
         active_execution: 1,
       },
+      { plugin_id: REPO_ID, plugin_version: ROLE_PACK_VERSION, revision: 1, active_execution: 1 },
     ]);
   });
 

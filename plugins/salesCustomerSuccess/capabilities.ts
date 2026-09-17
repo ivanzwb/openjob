@@ -3,6 +3,7 @@ import type {
   CapabilityDeclaration,
   HostRenderedInteraction,
 } from '@core/plugins/types';
+import { SALES_ROLE_PLAY_CAPABILITY_ID } from './ids';
 
 export const CUSTOMER_CONVERSATION_INTERACTION = 'customer-conversation';
 export const CUSTOMER_CONVERSATION_SCHEMA_VERSION = 1;
@@ -115,7 +116,7 @@ export const ROLE_PLAY_SCENARIOS: readonly RolePlayScenario[] = [
  */
 export const capabilities: CapabilityDeclaration[] = [
   {
-    id: 'role-play',
+    id: SALES_ROLE_PLAY_CAPABILITY_ID,
     interactions: [customerConversationInteraction],
     // 交互贡献没有逐项 permission 字段：台词生成走 llm，语音作答走麦克风
     permissions: ['llm:complete', 'microphone:read'],

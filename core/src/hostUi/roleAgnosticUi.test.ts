@@ -17,8 +17,6 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { listBuiltInPlugins } from '../plugins/clientView';
-import { CORE_CAPABILITIES_PACK_ID } from '../plugins/capabilitySuite';
 import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
 import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
 
@@ -98,24 +96,15 @@ describe('渲染进程只消费 descriptor', () => {
   });
 
   /**
-   * 能力声明与岗位包在这里区别对待。宿主功能本来就按能力门控，界面引用能力 ID 常量
-   * 是本分（源码页签就靠它）；岗位包是数据，界面一旦 import 进来，就等于把「这个岗位
-   * 有哪些题型」抄了一份到渲染进程。
-   *
-   * 能力声明模块的白名单：合编包的 ID 常量模块，与三个宿主声明模块（它们是宿主实现的
-   * 一部分，能力合编包只是把它们的声明打包分发）。岗位包在 `@plugins` 下，一律不许。
+   * 界面不引任何插件侧模块：能力与岗位包都是数据，随 descriptor 到达渲染层。界面一旦
+   * import 进来，就等于把「这个岗位有哪些能力与题型」抄了一份到渲染进程。
    */
-  it('界面 import 能力声明只走白名单模块，岗位包一律不许 import', () => {
-    const ALLOWED = /^@core\/plugins\/(?:capabilitySuite|builtin\/(?:sourceRepository|rolePlay|analyticsCase))$/;
+  it('界面不许 import 插件包与声明模块', () => {
     const imports = /from\s+['"]([^'"]+)['"]/g;
 
     expect(
       offenders((text) =>
-        [...text.matchAll(imports)].some(([, path]) => {
-          const touchesPlugins =
-            path.startsWith('@plugins') || path.includes('plugins/builtin/') || path.includes('plugins/capabilitySuite');
-          return touchesPlugins && !ALLOWED.test(path);
-        }),
+        [...text.matchAll(imports)].some(([, path]) => path.startsWith('@plugins')),
       ),
     ).toEqual([]);
   });
@@ -153,22 +142,19 @@ describe('渲染进程只消费 descriptor', () => {
 
   /** ID 漂移一次，门控就会静默失效成「永远不可用」，而界面上只是少了一个入口 */
   it('能力 ID 走共享常量，不在界面里重抄一遍字面量', () => {
-    // 内置清单已清空（能力改为单独安装的合编包），这里直接盯合编包与三个退役 id：
-    // 界面只许引用共享常量，不许把这些字面量抄一遍
-    const watchedIds = [
-      CORE_CAPABILITIES_PACK_ID,
-      ...listBuiltInPlugins().filter((item) => item.type === 'capability').map((item) => item.id),
-    ];
-    for (const id of watchedIds) {
+    // 能力不是独立的包：这些 id 由各岗位包声明，界面一律不许把名字抄一遍。门控走
+    // descriptor 数据（navigation[].requiredCapabilityId、题型/capabilityId），
+    // 渲染层连能力名都不需要认识——源码页就因此搬进了岗位包自己的 Webview 页面。
+    const capabilityIds = DISTRIBUTED_ROLE_PACKS.flatMap((pack) =>
+      (pack.capabilities ?? []).map((declaration) => declaration.id),
+    );
+
+    expect(capabilityIds.length).toBeGreaterThan(0);
+    for (const id of capabilityIds) {
       expect(
         offenders((text) => text.includes(`'${id}'`) || text.includes(`"${id}"`)),
         `${id} 的 ID 被写成了字面量`,
       ).toEqual([]);
     }
-
-    expect(offenders((text) => text.includes(`'${CORE_CAPABILITIES_PACK_ID}'`))).toEqual([]);
-    // 插入点 A 声明化之后，界面不再按能力 ID 做门控——导航入口来自岗位包的
-    // navigation[] 声明（descriptor 数据），渲染层连共享常量都不需要引用
-    expect(offenders((text) => text.includes('CORE_CAPABILITIES_PACK_ID'))).toEqual([]);
   });
 });

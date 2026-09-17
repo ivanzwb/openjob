@@ -16,14 +16,13 @@ import {
   type PlannerRepo,
 } from '../planner/contributions';
 import { composePrompt } from '../prompts/composer';
-import { formatIdForExamForm, softwareEngineeringRolePack } from '@plugins/softwareEngineering';
 import {
-  capabilityIdResolvedBySuite,
-  CORE_CAPABILITIES_PACK_ID,
-  normalizeCapabilityRefs,
-} from './capabilitySuite';
+  SOURCE_REPOSITORY_CAPABILITY_ID,
+  formatIdForExamForm,
+  softwareEngineeringRolePack,
+} from '@plugins/softwareEngineering';
 import { buildClientCapabilityView, capabilityMode } from './clientView';
-import { installedCapabilitySuiteOnly } from './__fixtures__/installed';
+import { installedWith } from './__fixtures__/installed';
 import {
   PHASE0_CAMPAIGN,
   PHASE0_READY_REPO_ID,
@@ -47,7 +46,7 @@ function context(overrides: Partial<PlannerContext> = {}): PlannerContext {
     budgetMinutes: PHASE0_CAMPAIGN.dailyMinutes,
     usedMinutes: 0,
     repos: repos(),
-    installed: installedCapabilitySuiteOnly(),
+    installed: installedWith(softwareEngineeringRolePack),
     rolePack: softwareEngineeringRolePack,
     ...overrides,
   };
@@ -59,7 +58,7 @@ function withCapabilityDisabled(
   return {
     ...descriptor,
     capabilities: descriptor.capabilities.map((capability) =>
-      capabilityIdResolvedBySuite(capability.id)
+      capability.id === SOURCE_REPOSITORY_CAPABILITY_ID
         ? {
             ...capability,
             enabled: false as const,
@@ -112,7 +111,7 @@ describe('Phase 0 兼容性闸门', () => {
       nodeId: null,
       repoId: PHASE0_READY_REPO_ID,
       estMinutes: PHASE0_READ_CODE_MINUTES,
-      capabilityId: CORE_CAPABILITIES_PACK_ID,
+      capabilityId: SOURCE_REPOSITORY_CAPABILITY_ID,
     });
     expect(tasks[0].client.executable).toBe(true);
   });
@@ -133,13 +132,12 @@ describe('Phase 0 兼容性闸门', () => {
     expect(collectPlannerContributions(disabled, context())).toEqual([]);
 
     const view = buildClientCapabilityView({
-      // 落库的 descriptor 仍写旧 id（历史事实），视图判定前归一
-      descriptor: { ...disabled, capabilities: normalizeCapabilityRefs(disabled.capabilities) },
+      descriptor: disabled,
       platform: 'desktop',
-      installed: installedCapabilitySuiteOnly(),
+      installed: installedWith(softwareEngineeringRolePack),
     });
-    expect(capabilityMode(view, CORE_CAPABILITIES_PACK_ID)).toBe('unsupported');
-    expect(view.enabledCapabilityIds).not.toContain(CORE_CAPABILITIES_PACK_ID);
+    expect(capabilityMode(view, SOURCE_REPOSITORY_CAPABILITY_ID)).toBe('unsupported');
+    expect(view.enabledCapabilityIds).not.toContain(SOURCE_REPOSITORY_CAPABILITY_ID);
   });
 
   it('手机把 readCode 标成需桌面完成，而不是少排一条', () => {
@@ -165,10 +163,9 @@ describe('Phase 0 兼容性闸门', () => {
 
     const views = (['desktop', 'mobile'] as const).map((platform) =>
       buildClientCapabilityView({
-        // 视图判定前把退役 id 归一成合编包 id（落库数据本身不改写）
-        descriptor: { ...runtime, capabilities: normalizeCapabilityRefs(runtime.capabilities) },
+        descriptor: runtime,
         platform,
-        installed: installedCapabilitySuiteOnly(),
+        installed: installedWith(softwareEngineeringRolePack),
       }),
     );
 
@@ -178,7 +175,7 @@ describe('Phase 0 兼容性闸门', () => {
       expect(view.configSnapshotHash).toBe(runtime.configSnapshotHash);
     }
     expect(views[0].readOnlyCapabilityIds).toEqual([]);
-    expect(views[1].readOnlyCapabilityIds).toEqual([CORE_CAPABILITIES_PACK_ID]);
+    expect(views[1].readOnlyCapabilityIds).toEqual([SOURCE_REPOSITORY_CAPABILITY_ID]);
   });
 });
 import { prePluginRuntimeDescriptor } from '../plugins/__fixtures__/prePluginDescriptor';

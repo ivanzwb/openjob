@@ -35,10 +35,6 @@ import {
   PACKAGE_PACK_FILE,
   type PluginPackageFiles,
 } from '@core/plugins/package/contract';
-import { synthesizeSuiteFromRolePack } from '@core/plugins/capabilitySuite';
-import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
-
-const coreCapabilitiesSuite = synthesizeSuiteFromRolePack(softwareEngineeringRolePack)!;
 import { signPackageFiles, toBundleJson } from './bundle';
 import { installPluginBundle, uninstallPlugin } from './install';
 import { listExternalPlugins, listInstalledPlugins, setExternalPlugins, findInstalledRolePack } from './runtime';
@@ -116,10 +112,13 @@ describe('release 附件端到端', () => {
       );
       expect(entry, `${key} 装上之后不在装载清单里`).toBeDefined();
 
-      // 清单里没有「随应用发布」的内置条目：装上去的这条就是全部来源
+      // 清单里没有「随应用发布」的内置条目：装上去的这条包 + 它内嵌声明派生的能力
+      // 就是全部来源
       const ids = listInstalledPlugins().map((plugin) => plugin.id);
-      expect(ids).not.toContain('source-repository');
       expect(ids).toContain(entry!.package.manifest.id);
+      for (const declaration of entry!.package.rolePack?.capabilities ?? []) {
+        expect(ids, `缺少 ${declaration.id} 的能力条目`).toContain(declaration.id);
+      }
 
       // 岗位包装上就能按精确 id@version 解析
       if (entry!.package.manifest.type === 'role-pack') {
@@ -145,41 +144,32 @@ describe('release 附件端到端', () => {
     loadExternalPlugins();
 
     // 清单里没有「随应用发布」：全部都是 first-party 外置包。
-    // 插入点 E：带内嵌声明的岗位包按版本合出合成套件条目
-    // （3 个岗位包 + 1.4.0 / 1.3.0 两条合成 = 5），它不占 release 附件
+    // 能力不是独立的包：每个包的内嵌声明各派生一条能力条目
+    // （3 个岗位包 + 3 条能力 = 6），它们不占 release 附件
     const installed = listInstalledPlugins();
-    expect(installed).toHaveLength(5);
-    expect(installed.map((p) => p.id)).toContain('openjob-capabilities');
-    expect(installed.map((p) => p.id)).not.toContain('source-repository');
+    expect(installed).toHaveLength(6);
+    expect(installed.map((p) => p.id)).not.toContain('openjob-capabilities');
 
     // 三个岗位包都能按精确 id@version 解析
     for (const pack of DISTRIBUTED_ROLE_PACKS) {
       expect(findInstalledRolePack(pack.manifest.id, pack.manifest.version)).not.toBeNull();
     }
 
-    // 合成条目由 SE 声明合出来（版本随包），权限 = SE 内嵌能力
-    const suite = installed.find(
-      (p) => p.id === 'openjob-capabilities' && p.version === coreCapabilitiesSuite.manifest.version,
-    );
-    expect(suite!.permissions.sort()).toEqual(['repository:read']);
-    // 合成条目按包版本存在：每个版本的权限 = 该版本岗位包内嵌能力的并集
-    for (const pack of DISTRIBUTED_ROLE_PACKS) {
-      if (!pack.manifest.main) continue;
-      const inline = installed.find(
-        (p) => p.id === 'openjob-capabilities' && p.version === pack.manifest.version,
-      );
-      expect(inline, `缺少 ${pack.manifest.id} 版本的合成条目`).toBeDefined();
-      expect(inline!.permissions.length).toBeGreaterThan(0);
-    }
-    // 软件工程包的合成条目只带 repository:read（它只内嵌了源码能力）
-    const seInline = installed.find(
-      (p) =>
-        p.id === 'openjob-capabilities' &&
-        p.version === '1.4.0',
-    );
-    expect(seInline!.permissions).toEqual(['repository:read']);
+    // 能力条目的权限取各自声明：SE 的源码能力只要 repository:read
+    const repo = installed.find((p) => p.id === 'source-repository');
+    expect(repo).toMatchObject({ version: '1.4.0', type: 'capability' });
+    expect(repo!.permissions).toEqual(['repository:read']);
 
-    // 设置页的「已装」列表只看盘上有什么：合成条目不是用户装的包（它的内容本来就归岗位包
+    // 每条内嵌声明都派生出一条条目，id 由声明自己决定
+    for (const pack of DISTRIBUTED_ROLE_PACKS) {
+      for (const declaration of pack.capabilities ?? []) {
+        const entry = installed.find((p) => p.id === declaration.id);
+        expect(entry, `缺少能力条目 ${declaration.id}`).toBeDefined();
+        expect(entry!.version).toBe(pack.manifest.version);
+      }
+    }
+
+    // 设置页的「已装」列表只看盘上有什么：能力条目不是用户装的包（它的声明本来就归岗位包
     // 所有），列出来会让「装一个包」看起来像装了两个
     const view = pluginInventoryView();
     expect(view.installed.map((item) => `${item.id}@${item.version}`)).toEqual([

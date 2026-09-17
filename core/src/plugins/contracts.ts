@@ -358,6 +358,40 @@ function validateNavigation(entries: NavigationEntry[], issues: PluginContractIs
 }
 
 /**
+ * 内嵌声明的 schema 版本必须与 manifest 对得上。
+ *
+ * 与能力包同一条规则（见 package/contract.ts 对 contributions 的校验）：声明归包所有，
+ * 而 manifest 是宿主的唯一事实源——解析期会按 manifest 声明的版本决定「认不认得这份数据」。
+ * 包自己不写清楚的话，那一步只能等到运行时才发现对不上。
+ */
+function validateDeclarationSchemas(
+  pack: RolePack,
+  declaration: CapabilityDeclaration,
+  issues: PluginContractIssue[],
+): void {
+  for (const parser of declaration.artifactParsers ?? []) {
+    if (pack.manifest.artifactSchemas?.[parser.artifactType] === parser.schemaVersion) continue;
+    issue(
+      issues,
+      `manifest.artifactSchemas.${parser.artifactType}`,
+      'missing-reference',
+      `能力 ${declaration.id} 声明了解析器 ${parser.artifactType}@${parser.schemaVersion}，` +
+        'manifest 必须声明同一版本',
+    );
+  }
+  for (const interaction of declaration.interactions ?? []) {
+    if (pack.manifest.interactionSchemas?.[interaction.type] === interaction.schemaVersion) continue;
+    issue(
+      issues,
+      `manifest.interactionSchemas.${interaction.type}`,
+      'missing-reference',
+      `能力 ${declaration.id} 声明了交互 ${interaction.type}@${interaction.schemaVersion}，` +
+        'manifest 必须声明同一版本',
+    );
+  }
+}
+
+/**
  * 能力声明的 LLM 角色。
  *
  * 角色名会进 config.json 当 key、会进审计记录，所以形状必须可控；同一个包里重复声明
@@ -430,6 +464,7 @@ function validateCapabilities(
     }
     // 交互的 schema 深校验交给 resolver 的 RegistrationCollector，这里不重复
     validateLlmRoles(declaration, declaredRoles, issues);
+    validateDeclarationSchemas(pack, declaration, issues);
   }
 
   const expected = [...declared].sort();
