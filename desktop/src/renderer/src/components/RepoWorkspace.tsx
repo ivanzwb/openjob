@@ -117,7 +117,7 @@ export function RepoWorkspace({
     const next = [...history, userMessage];
     setHistory(next);
     void send({
-      role: 'codeAgent',
+      // 不指定角色：宿主按源码能力声明的角色提升（角色名归岗位包所有）
       repoId: repo.id,
       allowWebSearch,
       sessionKind: 'repoQa',

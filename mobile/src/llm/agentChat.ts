@@ -6,6 +6,7 @@ import { searchWeb } from '../search';
 import { resolveLlmRole } from './resolve';
 import { CODE_REPO_TOOL_DEFS, runCodeRepoTool } from '../data/repoTools';
 import { countRepoFiles } from '../data/repoFiles';
+import { declaredLlmRoleFor } from '../data/rolePackLocal';
 
 const MAX_REPO_TOOL_ROUNDS = 8;
 
@@ -102,7 +103,10 @@ export async function completeRepoAgentChat(
   messages: ChatMessage[],
   opts?: { allowWebSearch?: boolean; signal?: AbortSignal },
 ): Promise<string> {
-  const { baseUrl, model, apiKey, temperature } = await resolveLlmRole('codeAgent');
+  // 角色名归岗位包所有：从已缓存的岗位包声明的源码能力里取，取不到落 main 档
+  const { baseUrl, model, apiKey, temperature } = await resolveLlmRole(
+    declaredLlmRoleFor(db, 'source-repository'),
+  );
   const url = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
   const syncedFiles = countRepoFiles(db, repo.id);
   const tools = [

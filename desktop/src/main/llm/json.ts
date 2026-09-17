@@ -88,7 +88,8 @@ function buildAttempts(baseMessages: ChatMessage[]): JsonAttempt[] {
 }
 
 interface JsonRequest {
-  role: LlmRole;
+  /** 未声明/拿不到角色时为 undefined，落 main 档 */
+  role: LlmRole | undefined;
   /** registry key，或插件自带片段的稳定标识 */
   promptId: string;
   /** 实际命中的版本，落进 prompt_run 供 AB 分析 */
@@ -288,7 +289,8 @@ export async function completePluginJson<T>(request: {
 }
 
 export async function completeJson<T>(
-  role: LlmRole,
+  /** 角色名归岗位包所有，宿主只按能力声明取；取不到时传 undefined 落 main 档 */
+  role: LlmRole | undefined,
   promptId: string,
   user: string,
   signal?: AbortSignal,

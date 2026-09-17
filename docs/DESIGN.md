@@ -570,7 +570,10 @@ API Key 存储用 Electron `safeStorage`（走系统密钥链）加密后落盘�
 
 ```ts
 type LlmTier = 'main' | 'cheap';
-type LlmRole = 'outline' | 'explain' | 'codeAgent' | 'quiz';
+// 基础 Agent 自己的角色。岗位特有的角色（如 codeAgent）由岗位包在能力声明里声明，
+// 所以整体是开放集合；未声明的角色一律落 main 档。
+type BaseLlmRole = 'outline' | 'explain' | 'quiz' | 'resumeOptimize';
+type LlmRole = BaseLlmRole | (string & {});
 
 interface LlmConfig {
   providers: Record<string, {
@@ -583,8 +586,9 @@ interface LlmConfig {
     temperature?: number;
   }>;
   // 角色 → 档位映射。除贴出的覆盖项外默认都是 'main'，
-  // 新角色加入时不用新增模型配置，只改映射。
-  roles: Partial<Record<LlmRole, LlmTier>>;
+  // 新角色加入时不用新增模型配置，只改映射。有效键集由主进程按
+  // 「基础角色 + 已装岗位包声明的角色」收敛，这里不承担白名单职责。
+  roles: Partial<Record<string, LlmTier>>;
 
   // embedding 不参与档位选择：模型一换向量空间就变，已有图谱/真题向量全部失效。
   // 它是固定资产，作为 provider 级固定配置存在，设置页只允许查看不允许随意切换。
@@ -597,14 +601,17 @@ interface LlmConfig {
 
 角色分工（默认映射）：
 
-| 角色 | 用途 | 档位 | 说明 |
-|---|---|---|---|
-| `outline` | JD/简历解析、图谱大纲、排序决策 | `main` | 结构决策错不起，调用量小，成本占比低 |
-| `explain` | 知识点讲解（调用量最大） | `cheap` | 全设计里唯一真正省钱的地方，可随意换便宜模型 |
-| `codeAgent` | 源码检索 | `main` | 与 outline 共用强档，不单独占配置位 |
-| `quiz` | 出题与评分 | `main` | 同上 |
+| 角色 | 归属 | 用途 | 档位 | 说明 |
+|---|---|---|---|---|
+| `outline` | 基础包 | JD/简历解析、图谱大纲、排序决策 | `main` | 结构决策错不起，调用量小，成本占比低 |
+| `explain` | 基础包 | 知识点讲解（调用量最大） | `cheap` | 全设计里唯一真正省钱的地方，可随意换便宜模型 |
+| `quiz` | 基础包 | 出题与评分 | `main` | 与 outline 共用强档，不单独占配置位 |
+| `resumeOptimize` | 基础包 | 简历定向优化 | `main` | 与 outline 共用强档 |
+| `codeAgent` | **software-engineering 岗位包** | 源码检索 | `main` | 随 `source-repository` 能力声明；没装那个包时基础包不认识它 |
 
-> **硬约束**：`codeAgent` 必须走 `main` 档——不是因为它需要 function calling（如今便宜模型普遍支持），而是 agentic 循环对**工具协议遵循率**和连续多轮 tool call 的稳定性要求高，弱模型在这里发疯的代价远高于省下的几分钱。`embedding` 模型则相反，一旦选定就锁死，换模型等于推倒已有数据。
+> **硬约束**：`codeAgent` 必须走 `main` 档——不是因为它需要 function calling（如今便宜模型普遍支持），而是 agentic 循环对**工具协议遵循率**和连续多轮 tool call 的稳定性要求高，弱模型在这里发疯的代价远高于省下的几分钱。这条约束由声明它的包在 hint 里写明；`embedding` 模型则相反，一旦选定就锁死，换模型等于推倒已有数据。
+
+角色也随能力声明（`CapabilityDeclaration.llmRoles`）：宿主按能力 id 取声明去解析档位，基础包不持有「某个岗位用什么角色」的知识——所以设置页的「角色映射」在没装对应岗位包时不会列出该角色。
 
 ### 5.3 Search Provider 抽象
 

@@ -9,6 +9,7 @@
  */
 
 import type { AppConfig, UiTheme } from './config';
+import type { LlmRoleView } from './llm/roles';
 import type {
   EvidenceKind,
   LlmRole,
@@ -186,8 +187,13 @@ export interface ChatMessage {
 }
 
 export interface ChatRequest {
-  /** 由角色决定用哪个 provider 和 model，调用方不直接指定模型 */
-  role: LlmRole;
+  /**
+   * 由角色决定用哪个 provider 和 model，调用方不直接指定模型。
+   *
+   * 省略时按能力声明的角色解析（带 repoId 的请求由宿主提升为源码能力声明的角色），
+   * 都没有则落 main 档。
+   */
+  role?: LlmRole;
   messages: ChatMessage[];
   /** 开启后 Agent 可自行决定是否联网检索 */
   allowWebSearch?: boolean;
@@ -1163,6 +1169,13 @@ export interface IpcInvokeMap {
 
   'config:get': { req: void; res: AppConfig };
   'config:update': { req: AppConfig; res: AppConfig };
+  /**
+   * 本机有效的 LLM 角色清单：基础角色 + 已装岗位包声明的角色。
+   *
+   * 设置页的「角色映射」按它渲染，所以没装某个岗位包时，那个岗位特有的角色
+   * 不会出现在列表里。角色归包所有，基础包不认识具体岗位的角色。
+   */
+  'config:listLlmRoles': { req: void; res: LlmRoleView[] };
   /** 密钥单独走 safeStorage，不进 config.json */
   'config:setSecret': { req: { ref: string; value: string }; res: void };
   'config:hasSecret': { req: { ref: string }; res: boolean };
@@ -1563,6 +1576,7 @@ export const IPC_INVOKE_CHANNELS = [
   'update:install',
   'config:get',
   'config:update',
+  'config:listLlmRoles',
   'config:setSecret',
   'config:hasSecret',
   'config:deleteSecret',

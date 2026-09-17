@@ -15,6 +15,7 @@ import type {
   SetRoleProfileInput,
 } from '@core/ipc';
 import { RETIRED_CAPABILITY_KEYS, synthesizeSuite } from '@core/plugins/capabilitySuite';
+import type { LlmRoleContribution } from '@core/llm/roles';
 import {
   buildClientCapabilityView,
   listBuiltInPlugins,
@@ -117,6 +118,41 @@ let resolver = new DeterministicRuntimeResolver(registry);
  */
 export function builtInPluginKeys(): Set<string> {
   return new Set([...RETIRED_CAPABILITY_KEYS]);
+}
+
+/**
+ * 已装岗位包为某个能力声明的第一个 LLM 角色；没装或没声明返回 undefined。
+ *
+ * 宿主只按能力 id 取声明，不认识任何具体角色名——角色名与用途都写在岗位包的
+ * 能力声明里（CapabilityDeclaration.llmRoles）。返回 undefined 时调用方按
+ * 「未声明角色」处理，最终落 main 档。
+ *
+ * 只认岗位包：v3 起声明归岗位包所有，独立能力包已不再随 release 分发。
+ */
+export function declaredLlmRole(capabilityId: string): string | undefined {
+  for (const entry of externalEntries) {
+    for (const declaration of entry.package.rolePack?.capabilities ?? []) {
+      if (declaration.id !== capabilityId) continue;
+      const role = declaration.llmRoles?.[0];
+      if (role) return role.name;
+    }
+  }
+  return undefined;
+}
+
+/** 本机已装岗位包声明的全部角色，供设置页的「角色映射」展示。 */
+export function declaredLlmRoles(): LlmRoleContribution[] {
+  const contributions: LlmRoleContribution[] = [];
+  for (const entry of externalEntries) {
+    const pack = entry.package.rolePack;
+    if (!pack) continue;
+    for (const declaration of pack.capabilities ?? []) {
+      for (const role of declaration.llmRoles ?? []) {
+        contributions.push({ role, pluginId: pack.manifest.id });
+      }
+    }
+  }
+  return contributions;
 }
 
 /**

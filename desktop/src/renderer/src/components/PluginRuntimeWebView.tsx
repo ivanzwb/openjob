@@ -63,7 +63,8 @@ function bridgeMethods(permissions: readonly string[]) {
       },
     ) =>
       invoke('llm:chat', {
-        role: params.role ?? 'codeAgent',
+        // 不给默认角色：带 repoId 的请求由宿主按源码能力声明的角色提升，其余落 main 档
+        ...(params.role !== undefined ? { role: params.role } : {}),
         messages: [{ role: 'user', content: params.question }],
         allowTools: params.allowTools ?? false,
         allowWebSearch: false,

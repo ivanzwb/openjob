@@ -83,6 +83,26 @@ export function cacheRolePack(db: SQLiteDatabase, pack: RolePack, now = Date.now
 }
 
 /**
+ * 已缓存岗位包为某个能力声明的第一个 LLM 角色；没缓存或没声明返回 undefined。
+ *
+ * 与桌面端同一条规则：角色名归岗位包所有（CapabilityDeclaration.llmRoles），两端都只按
+ * 能力 id 取声明，不认识任何具体角色名。取不到时调用方按「未声明角色」处理，落 main 档。
+ */
+export function declaredLlmRoleFor(
+  db: SQLiteDatabase,
+  capabilityId: string,
+): string | undefined {
+  for (const pack of listCachedRolePacks(db)) {
+    for (const declaration of pack.capabilities ?? []) {
+      if (declaration.id !== capabilityId) continue;
+      const role = declaration.llmRoles?.[0];
+      if (role) return role.name;
+    }
+  }
+  return undefined;
+}
+
+/**
  * 本机战役固定的岗位包，按 id@version 去重。
  *
  * 只看当前激活的那个 revision：旧 revision 的历史结果仍然可读（靠 practice_session 上的

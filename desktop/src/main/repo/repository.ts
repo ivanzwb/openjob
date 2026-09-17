@@ -17,6 +17,7 @@ import { reanchorRepoCodeRefs } from './reanchorRefs';
 import { listRepoFilePaths, snapshotRepoFiles } from './snapshot';
 import { assertGitAvailable, resolveGitBinary } from './git';
 import { emit } from '../ipc/bridge';
+import { declaredLlmRole } from '../plugins/runtime';
 
 function rowToRepo(row: typeof schema.repo.$inferSelect): Repo {
   return {
@@ -208,7 +209,7 @@ export async function cloneAndIndex(url: string, jobId: string): Promise<void> {
 
     report('正在生成项目摘要…', 0.7);
     const summary = await completeJson<{ summaryMd: string }>(
-      'codeAgent',
+      declaredLlmRole('source-repository'),
       'repo.summary',
       `仓库 URL：${url}\n语言：${languages.join(', ')}\n\nRepo Map：\n${repoMapMd.slice(0, 12000)}`,
     );
@@ -332,7 +333,7 @@ export async function updateRepoToLatest(repoId: string, jobId: string): Promise
     if (repoMapMd !== row.repoMapMd || !summaryMd) {
       report('正在更新项目摘要…', 0.6);
       const summary = await completeJson<{ summaryMd: string }>(
-        'codeAgent',
+        declaredLlmRole('source-repository'),
         'repo.summary',
         `仓库 URL：${row.url}\n语言：${languages.join(', ')}\n\nRepo Map：\n${repoMapMd.slice(0, 12000)}`,
       );

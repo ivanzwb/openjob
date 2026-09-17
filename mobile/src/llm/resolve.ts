@@ -38,8 +38,12 @@ async function resolveTier(tier: LlmTier): Promise<ResolvedLlm> {
   };
 }
 
-export async function resolveLlmRole(role: LlmRole): Promise<ResolvedLlm> {
+/**
+ * 角色 → 档位 → 端点。未在 roles 映射里、或拿不到角色（岗位包没声明）时落 main 档，
+ * 所以缺声明不会让调用失败。
+ */
+export async function resolveLlmRole(role: LlmRole | undefined): Promise<ResolvedLlm> {
   const config = getMobileConfig();
-  const tierName = config.llm.roles[role] ?? 'main';
+  const tierName = (role === undefined ? undefined : config.llm.roles[role]) ?? 'main';
   return resolveTier(tierName);
 }

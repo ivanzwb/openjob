@@ -21,6 +21,7 @@ import { agentTools, AGENT_TOOLS, GRAPH_TOOLS, runTool, type ToolContext } from 
 import { decideToolKind } from './toolPolicy';
 import { getRepo, getRepoLocalPath } from '../repo/repository';
 import { mergedCodeAgentTools, runCodeRepoTool } from '../repo/tools';
+import { declaredLlmRole } from '../plugins/runtime';
 import { getCampaignRow } from '../campaign/repository';
 import { buildNodeFollowUpSystem } from '../campaign/candidateContext';
 import { decideSearchTrigger, triggerInstruction } from '../search/trigger';
@@ -115,7 +116,9 @@ async function runChat(
   let sessionId = req.sessionId ?? null;
 
   try {
-    const role = req.repoId ? 'codeAgent' : req.role;
+    // 带 repoId 的请求由宿主提升为源码能力声明的角色（角色名归岗位包所有）；
+    // 没装声明它的包时为 undefined，按「未声明角色」落 main 档
+    const role = req.repoId ? declaredLlmRole('source-repository') : req.role;
     const { client, model, temperature } = createRoleClient(role);
 
     const userMessages = req.messages.filter((m) => m.role === 'user');

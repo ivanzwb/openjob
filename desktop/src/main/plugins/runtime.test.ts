@@ -13,6 +13,8 @@ import { CORE_CAPABILITIES_PACK_ID } from '@core/plugins/capabilitySuite';
 import { listBuiltInPlugins } from '@core/plugins/clientView';
 import {
   builtInPluginKeys,
+  declaredLlmRole,
+  declaredLlmRoles,
   getCampaignRuntime,
   getClientCapabilityView,
   listInstalledPlugins,
@@ -169,6 +171,46 @@ describe('listInstalledPlugins', () => {
     // 报错，而是用户从 release 下载的岗位包一律以 reserved-id 被拒——而拒绝理由指向
     // 「与随应用发布的插件冲突」，而基础包里根本没有这个插件
     expect(builtInPluginKeys().has(`${ROLE_PACK_ID}@${ROLE_PACK_VERSION}`)).toBe(false);
+  });
+});
+
+describe('岗位包声明的 LLM 角色', () => {
+  afterEach(() => {
+    setExternalPlugins([]);
+  });
+
+  it('装了工程岗位包就能拿到 source-repository 声明的角色', () => {
+    setExternalPlugins([externalEntry(softwareEngineeringRolePack)]);
+
+    expect(declaredLlmRole('source-repository')).toBe('codeAgent');
+    expect(declaredLlmRoles()).toEqual([
+      { role: { name: 'codeAgent', hint: expect.any(String) }, pluginId: ROLE_PACK_ID },
+    ]);
+  });
+
+  it('什么都没装时拿不到角色——基础包不认识 codeAgent', () => {
+    expect(declaredLlmRole('source-repository')).toBeUndefined();
+    expect(declaredLlmRoles()).toEqual([]);
+  });
+
+  it('只声明了别的能力或别的角色时，不会凭空冒出这个角色', () => {
+    const pack = externalRolePack('demo.role');
+    pack.capabilities = [
+      {
+        id: 'source-repository',
+        tools: [
+          {
+            name: 'grep',
+            description: 'Search repository file contents.',
+            permission: 'repository:read',
+            inputSchemaVersion: 1,
+          },
+        ],
+      },
+    ];
+
+    setExternalPlugins([externalEntry(pack)]);
+    expect(declaredLlmRole('source-repository')).toBeUndefined();
   });
 });
 

@@ -28,6 +28,14 @@ describe('softwareEngineeringRolePack contract', () => {
     });
   });
 
+  it('源码能力声明它用到的 LLM 角色：角色名与用途都归本包所有', () => {
+    const repo = softwareEngineeringRolePack.capabilities.find(
+      (declaration) => declaration.id === 'source-repository',
+    );
+
+    expect(repo?.llmRoles).toEqual([{ name: 'codeAgent', hint: expect.any(String) }]);
+  });
+
   it('references registered prompts without embedding prompt bodies', () => {
     const documentedRefs = leafStrings(SOFTWARE_ENGINEERING_PROMPT_REFS);
     // 插入点 B 目前是迁移期：片段全部用显式 ref 引用宿主注册表

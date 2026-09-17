@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { AppConfig, PriorityWeights, SearchConfig, UiTheme, UpdateConfig } from '@core/config';
 import { DEFAULT_PRIORITY_WEIGHTS } from '@core/config';
-import { LLM_ROLES, LLM_TIERS, type CoverageType, type LlmRole, type LlmTier } from '@core/enums';
+import { LLM_TIERS, type CoverageType, type LlmRole, type LlmTier } from '@core/enums';
+import type { LlmRoleView } from '@core/llm/roles';
 import type { ProviderTestResult } from '@core/ipc';
 import { invoke } from '../ipc';
 import { runTask, useTask, useTaskResult } from '../ipc/taskStore';
@@ -20,16 +21,8 @@ const THEME_OPTIONS: Array<{ id: UiTheme; label: string; hint: string }> = [
 ];
 
 const TIER_HINTS: Record<LlmTier, string> = {
-  main: '主力档：outline / codeAgent / quiz 与全部未映射的角色都走这一档，必须支持 function calling',
+  main: '主力档：全部未映射的角色、以及出题这类要求稳定评判的链路都走这一档，必须支持 function calling',
   cheap: '便宜档：讲解（explain）专用，调用量最大，是成本大头',
-};
-
-const ROLE_HINTS: Record<LlmRole, string> = {
-  outline: '生成知识图谱大纲，需要结构化能力，用量小',
-  explain: '生成三档讲解，调用最频繁，是成本大头',
-  codeAgent: '源码检索与理解，agent 循环对工具遵循率要求高',
-  quiz: '出题与评分，需要稳定的评判尺度',
-  resumeOptimize: '简历定向优化：仅基于母版改写表述与结构，不编造事实',
 };
 
 const COVERAGE_TYPES: CoverageType[] = ['deepDive', 'gap', 'landmine', 'extra'];
@@ -137,13 +130,20 @@ function TierCard({
 
 export function Settings(): React.JSX.Element {
   const [config, setConfig] = useState<AppConfig | null>(null);
+  const [llmRoles, setLlmRoles] = useState<LlmRoleView[]>([]);
   const [saved, setSaved] = useState(false);
   const [dbInfo, setDbInfo] = useState<{ ok: boolean; tables: number; path: string } | null>(null);
+
+  /** 角色清单跟着已装岗位包走，所以装/卸插件之后要重拉（见 PluginsPanel 的回调） */
+  const loadLlmRoles = useCallback((): void => {
+    void invoke('config:listLlmRoles', undefined).then(setLlmRoles);
+  }, []);
 
   useEffect(() => {
     void invoke('config:get', undefined).then(setConfig);
     void invoke('db:health', undefined).then(setDbInfo);
-  }, []);
+    loadLlmRoles();
+  }, [loadLlmRoles]);
 
   if (!config) return <p className="p-6 text-sm text-[var(--color-muted)]">加载配置…</p>;
 
@@ -277,20 +277,26 @@ const updateEmbedding = (patch: Partial<AppConfig['llm']['embedding']>): void =>
         <div>
           <h3 className="text-sm font-medium text-[var(--color-muted)]">角色映射</h3>
           <p className="mt-1 text-xs text-[var(--color-muted)]">
-            每个角色指定走哪个档位。未列出的角色默认走「主力」档。
+            每个角色指定走哪个档位。未列出的角色默认走「主力」档；带来源标注的角色由对应
+            岗位包声明，装上那个包才会出现。
           </p>
         </div>
 
-        {LLM_ROLES.map((role) => (
+        {llmRoles.map((role) => (
           <div
-            key={role}
+            key={role.name}
             className="flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3"
           >
-            <code className="w-24 shrink-0 text-sm text-sky-300">{role}</code>
-            <span className="flex-1 text-xs text-[var(--color-muted)]">{ROLE_HINTS[role]}</span>
+            <code className="w-24 shrink-0 text-sm text-sky-300">{role.name}</code>
+            <span className="flex-1 text-xs text-[var(--color-muted)]">
+              {role.hint}
+              {role.sourcePluginId !== null && (
+                <span className="ml-1 opacity-70">（来自 {role.sourcePluginId}）</span>
+              )}
+            </span>
             <select
-              value={config.llm.roles[role] ?? 'main'}
-              onChange={(e) => updateRoleTier(role, e.target.value as LlmTier)}
+              value={config.llm.roles[role.name] ?? 'main'}
+              onChange={(e) => updateRoleTier(role.name, e.target.value as LlmTier)}
               className="rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1.5 text-sm outline-none"
             >
               {LLM_TIERS.map((tier) => (
@@ -433,7 +439,7 @@ const updateEmbedding = (patch: Partial<AppConfig['llm']['embedding']>): void =>
         </div>
       </section>
 
-      <PluginsPanel />
+      <PluginsPanel onPluginsChanged={loadLlmRoles} />
 
       <UpdatePanel value={config.update} onChange={updateUpdater} />
 

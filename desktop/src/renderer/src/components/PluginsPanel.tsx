@@ -92,7 +92,15 @@ function permissionSummary(permissions: string[]): string {
   return permissions.map((permission) => PERMISSION_LABEL[permission] ?? permission).join('；');
 }
 
-export function PluginsPanel(): React.JSX.Element {
+/**
+ * 插件面板。
+ *
+ * `onPluginsChanged` 让宿主页面知道「本机装了哪些包」变了——角色映射那份清单跟着岗位包走，
+ * 装/卸之后必须重拉，否则用户要重开设置页才能看到变化。
+ */
+export function PluginsPanel({
+  onPluginsChanged,
+}: { onPluginsChanged?: () => void } = {}): React.JSX.Element {
   const [installed, setInstalled] = useState<InstalledPlugin[]>([]);
   const [inventory, setInventory] = useState<PluginInventoryView | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -110,7 +118,8 @@ export function PluginsPanel(): React.JSX.Element {
     setInstalled(await invoke('plugin:listInstalled', undefined));
     setInventory(await invoke('plugin:inventory', undefined));
     setPluginRuntimes(await invoke('pluginRuntime:list', undefined));
-  }, []);
+    onPluginsChanged?.();
+  }, [onPluginsChanged]);
 
   /**
    * 清单每次都重新拉。

@@ -76,7 +76,9 @@ function loadModule(
         campaignId?: string;
       }) =>
         invoke('llm:chat', {
-          role: request.role ?? 'codeAgent',
+          // 不给默认角色：带 repoId 的请求由宿主按源码能力声明的角色提升，其余落 main 档。
+          // 角色名归岗位包所有，渲染层不认识 codeAgent
+          ...(request.role !== undefined ? { role: request.role } : {}),
           messages: [{ role: 'user', content: request.question }],
           allowTools: request.allowTools ?? false,
           allowWebSearch: false,

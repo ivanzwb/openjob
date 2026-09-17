@@ -13,7 +13,33 @@ import {
   validatePluginManifest,
   validateRolePack,
 } from './contracts';
-import type { CapabilityPlugin, PluginManifest, RolePack } from './types';
+import type { CapabilityDeclaration, CapabilityPlugin, PluginManifest, RolePack } from './types';
+
+/**
+ * 带内嵌源码能力的岗位包。
+ *
+ * 能力声明一旦带上工具贡献，manifest.permissions 就必须等于那项贡献的权限并集，
+ * 所以这里同步把 permissions 改成 repository:read。
+ */
+function withRepoCapability(declaration: Partial<CapabilityDeclaration>): RolePack {
+  const pack = validRolePack();
+  pack.manifest.permissions = ['repository:read'];
+  pack.capabilities = [
+    {
+      id: 'source-repository',
+      tools: [
+        {
+          name: 'grep',
+          description: 'Search repository file contents.',
+          permission: 'repository:read',
+          inputSchemaVersion: 1,
+        },
+      ],
+      ...declaration,
+    },
+  ];
+  return pack;
+}
 
 function validRolePack(): RolePack {
   return {
@@ -169,6 +195,35 @@ describe('plugin contracts', () => {
       expect.objectContaining({
         path: 'manifest.permissions',
         code: 'invalid-permission',
+      }),
+    );
+  });
+
+  it('能力声明可以带上本能力用到的 LLM 角色（角色归包所有）', () => {
+    const pack = withRepoCapability({
+      llmRoles: [{ name: 'codeAgent', hint: '源码检索与理解' }],
+    });
+
+    expect(validateRolePack(pack)).toEqual([]);
+  });
+
+  it('角色名不合法、hint 为空、包内重复声明都要被拦', () => {
+    const pack = withRepoCapability({
+      llmRoles: [
+        { name: 'code agent', hint: '名字里有空格' },
+        { name: 'codeAgent', hint: '   ' },
+        { name: 'codeAgent' },
+      ],
+    });
+
+    const issues = validateRolePack(pack);
+    expect(issues).toContainEqual(
+      expect.objectContaining({ path: 'capabilities[source-repository].llmRoles', code: 'invalid-value' }),
+    );
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        path: 'capabilities[source-repository].llmRoles',
+        code: 'duplicate-id',
       }),
     );
   });

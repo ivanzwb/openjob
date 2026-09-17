@@ -19,7 +19,8 @@ export interface PromptRunInput {
   versionId: string;
   /** 分流指纹：设备 id 等稳定标识 */
   fingerprint: string;
-  role: LlmRole;
+  /** 未声明/拿不到角色时为 undefined，落 main 档；审计记录里如实留空 */
+  role: LlmRole | undefined;
   model: string;
   tier: LlmTier;
   ok: boolean;

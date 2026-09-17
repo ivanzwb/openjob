@@ -5,7 +5,7 @@
  * 绝不存明文 API Key。密钥经 Electron safeStorage 加密后单独落盘。
  */
 
-import type { CoverageType, LlmRole, LlmTier, SearchProviderName } from './enums';
+import type { CoverageType, LlmTier, SearchProviderName } from './enums';
 
 export interface LlmProviderConfig {
   id: string;
@@ -24,14 +24,16 @@ export interface LlmTierConfig {
 /**
  * 两层结构：档位（tier）定义模型，角色（role）只做映射。
  * 默认只配 tiers.main 即可完整运行；cheap 是可选成本优化。
- * 硬约束：codeAgent 落在 main 档——agentic 循环对工具协议遵循率要求高，
- * 弱模型在这里发疯的代价远高于省下的钱。
+ *
+ * 键是角色名：基础角色见 BASE_LLM_ROLES，岗位特有角色由岗位包在能力声明里声明
+ * （见 core/src/llm/roles.ts）。未列出的角色一律落 main，所以这里不承担白名单
+ * 职责——有效键集由主进程按「基础角色 + 已装包声明」收敛。
  */
 export interface LlmConfig {
   providers: LlmProviderConfig[];
   tiers: Record<LlmTier, LlmTierConfig>;
   /** 角色 → 档位映射；未列出的角色落到 main */
-  roles: Partial<Record<LlmRole, LlmTier>>;
+  roles: Partial<Record<string, LlmTier>>;
   /**
    * embedding 不参与档位选择：模型一换向量空间就变，已有图谱/真题向量全部失效。
    * 它是固定资产，作为固定配置存在，设置页只允许查看不允许随意切换。

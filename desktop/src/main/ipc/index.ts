@@ -54,6 +54,7 @@ import {
 import { generateDesignCase, submitDesignAnswer, updateDesignCaseAnswers, generateRecommendedAnswer, elaborateDesignAnswer } from '../design';
 import { dbHealth, getRawDb } from '../db';
 import {
+  declaredLlmRoles,
   findInstalledRolePack,
   getCampaignRuntime,
   getClientCapabilityView,
@@ -139,6 +140,8 @@ import { getSttStatus, transcribe } from '../stt';
 import { checkForUpdates, getUpdateStatus, quitAndInstall } from '../updater';
 import { handle } from './bridge';
 import { applyWindowTheme } from '../theme';
+import { collectLlmRoles } from '@core/llm/roles';
+import type { AppConfig } from '@core/config';
 import { importResumeFromFile } from '../campaign/resumeImport';
 import {
   createEvidenceService,
@@ -164,6 +167,21 @@ import {
 
 function currentWindow(): BrowserWindow | undefined {
   return BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows().find((win) => !win.isDestroyed());
+}
+
+/**
+ * 落盘前剪掉角色映射里已经无效的键。
+ *
+ * 有效键集 = 基础角色 + 已装岗位包声明的角色。卸载某个岗位包后，它声明的角色映射就成了
+ * 惰性残留（运行时读不到、设置页也不列），继续留在 config.json 里只会让同步镜像和设置页
+ * 各背一份没人认领的数据。
+ */
+function pruneLlmRoles(config: AppConfig): AppConfig {
+  const known = new Set(collectLlmRoles(declaredLlmRoles()).map((role) => role.name));
+  const roles = Object.fromEntries(
+    Object.entries(config.llm.roles).filter(([role]) => known.has(role)),
+  );
+  return { ...config, llm: { ...config.llm, roles } };
 }
 
 export function registerIpcHandlers(): void {
@@ -193,10 +211,17 @@ export function registerIpcHandlers(): void {
 
   handle('config:get', () => getConfig());
   handle('config:update', (next) => {
-    const merged = updateConfig(next);
+    const merged = updateConfig(pruneLlmRoles(next));
     applyWindowTheme(merged.ui.theme);
     return merged;
   });
+  /**
+   * 设置页「角色映射」的数据源：基础角色 + 已装岗位包声明的角色。
+   *
+   * 角色归包所有，所以没装某个包时它声明的角色不出现；对应地，已装包被卸载后
+   * 残留的映射在这里落盘前被剪掉（见 pruneLlmRoles），不让它变成一条点了也改不动的僵尸行。
+   */
+  handle('config:listLlmRoles', () => collectLlmRoles(declaredLlmRoles()));
   handle('config:setSecret', ({ ref, value }) => setSecret(ref, value));
   handle('config:hasSecret', ({ ref }) => hasSecret(ref));
   handle('config:deleteSecret', ({ ref }) => deleteSecret(ref));

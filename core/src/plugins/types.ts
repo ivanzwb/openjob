@@ -6,6 +6,7 @@ import type {
   PluginType,
   RuntimeAvailability,
 } from '../enums';
+import type { LlmRoleDeclaration } from '../llm/roles';
 import type { InteractionResultSchema, InteractionSchema } from './interactions/schema';
 import type { PluginPermission } from './permissions';
 export type { PluginPermission };
@@ -374,6 +375,13 @@ export interface CapabilityDeclaration {
    * 宿主运行时从 descriptor 的岗位包里取，core 不持有任何具体素材。
    */
   scenarios?: ReadonlyArray<Record<string, unknown>>;
+  /**
+   * 本能力用到的 LLM 角色。
+   *
+   * 角色名与用途说明都归包所有：宿主按能力 id 取到声明的角色去解析档位，基础包
+   * 不再持有「某个岗位用什么角色」的知识。未声明时宿主传 undefined，落 main 档。
+   */
+  llmRoles?: LlmRoleDeclaration[];
 }
 
 export interface CapabilityPlugin {

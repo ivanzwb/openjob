@@ -14,18 +14,29 @@ function file(): string {
  * 旧版 llm.roles 形态：角色 → {providerId, model, temperature} 配置对象。
  * 新版形态：角色 → 档位名（tier 字符串）。由角色值类型区分。
  */
-type PreTierRoleSlice = {
-  outline?: { providerId?: string; model?: string; temperature?: number };
-  explain?: { providerId?: string; model?: string; temperature?: number };
-  codeAgent?: { providerId?: string; model?: string; temperature?: number };
-  quiz?: { providerId?: string; model?: string; temperature?: number };
-  embedding?: { providerId?: string; model?: string };
-};
+type PreTierRoleConfig = { providerId?: string; model?: string; temperature?: number };
+type PreTierRoleSlice = Record<string, PreTierRoleConfig>;
 
 function isPreTierRoles(value: unknown): value is PreTierRoleSlice {
   if (!value || typeof value !== 'object') return false;
   const first = Object.values(value as Record<string, unknown>)[0];
   return typeof first === 'object' && first !== null;
+}
+
+/**
+ * 旧版主力档的角色名由旧版应用写死，其中可能包含后来归到岗位包的角色。
+ * 这里不认识任何具体名字，只排除**已知不承担主力档**的三个：explain 是便宜档来源、
+ * embedding 是固定配置、quiz 当年自成一档且从不提升。剩下的（岗位角色）就是主力档来源。
+ */
+const NON_MAIN_PRE_TIER_ROLES = new Set(['explain', 'embedding', 'quiz']);
+
+function firstPreTierMainRole(roles: PreTierRoleSlice | null): PreTierRoleConfig | undefined {
+  if (!roles) return undefined;
+  for (const [name, value] of Object.entries(roles)) {
+    if (NON_MAIN_PRE_TIER_ROLES.has(name)) continue;
+    if (value && typeof value === 'object') return value;
+  }
+  return undefined;
 }
 
 /**
@@ -38,8 +49,10 @@ function mergeDefaults(loaded: Partial<AppConfig>): AppConfig {
   const preTierRoles = isPreTierRoles(llmLoaded?.roles) ? (llmLoaded!.roles as unknown as PreTierRoleSlice) : null;
 
   // 旧版把模型配置放在角色对象里：outline 是主力档的默认来源，explain 是便宜档的来源，
-  // embedding 角色对应现在的固定配置。已有新结构的 tiers/embedding 优先（用户改过的不能丢）。
-  const preTierMain = preTierRoles?.outline ?? preTierRoles?.codeAgent;
+  // embedding 角色对应现在的固定配置。旧数据里主力档也可能记在别的角色名下，所以
+  // outline 缺失时按 firstPreTierMainRole 兜底，不硬编码任何角色名。
+  // 已有新结构的 tiers/embedding 优先（用户改过的不能丢）。
+  const preTierMain = preTierRoles?.outline ?? firstPreTierMainRole(preTierRoles);
   const preTierCheap = preTierRoles?.explain;
 
   return {
@@ -170,9 +183,11 @@ export function resolveLlmTier(tier: LlmTier): {
 
 /**
  * 按角色取出可直接发起调用所需的信息：角色 → 档位 → provider。
- * 角色未在 roles 映射中时落到 main 档。
+ *
+ * 角色未在 roles 映射中时落到 main 档；`undefined`（调用方拿不到岗位包声明的角色，
+ * 例如没装声明它的包）同样落 main——所以这不影响调用能否成功。
  */
-export function resolveLlmRole(role: LlmRole): {
+export function resolveLlmRole(role: LlmRole | undefined): {
   tier: keyof AppConfig['llm']['tiers'];
   baseUrl: string;
   model: string;
@@ -180,7 +195,7 @@ export function resolveLlmRole(role: LlmRole): {
   temperature: number | undefined;
 } {
   const config = getConfig();
-  const tierName = config.llm.roles[role] ?? 'main';
+  const tierName = (role === undefined ? undefined : config.llm.roles[role]) ?? 'main';
   const tierConfig = config.llm.tiers[tierName];
   const provider = config.llm.providers.find((p) => p.id === tierConfig.providerId);
 

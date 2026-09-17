@@ -33,10 +33,10 @@ export function createTierClient(tier: LlmTier): RoleClient {
 }
 
 /**
- * 按角色创建客户端。角色先经配置映射到档位（未映射则落 main），
+ * 按角色创建客户端。角色先经配置映射到档位（未映射、或没拿到角色时落 main），
  * 再由档位决定 provider 与模型——这是模型分流控成本的前提。
  */
-export function createRoleClient(role: LlmRole): RoleClient {
+export function createRoleClient(role: LlmRole | undefined): RoleClient {
   const { tier, baseUrl, model, apiKeyRef, temperature } = resolveLlmRole(role);
   return {
     client: buildClient(baseUrl, apiKeyRef),

@@ -11,6 +11,7 @@
  * 3. 事件白名单：插件只能订阅宿主显式开放的事件，不能造通道。
  */
 
+import type { LlmRole } from '../../enums';
 import type { CampaignRuntimeDescriptor } from '../types';
 
 export type PluginRuntimeEventName =
@@ -57,7 +58,7 @@ export interface PluginRuntimeServices {
     complete(request: {
       system: string;
       user: string;
-      role?: 'outline' | 'explain' | 'codeAgent' | 'quiz' | 'resumeOptimize';
+      role?: LlmRole;
     }): Promise<unknown>;
   };
   /**
@@ -68,7 +69,7 @@ export interface PluginRuntimeServices {
   readonly agent?: {
     ask(request: {
       question: string;
-      role?: 'outline' | 'explain' | 'codeAgent' | 'quiz' | 'resumeOptimize';
+      role?: LlmRole;
       allowTools?: boolean;
       repoId?: string;
       campaignId?: string;

@@ -5,8 +5,10 @@ import {
   PLUGIN_TYPES,
   RUNTIME_AVAILABILITIES,
 } from '../enums';
+import { isValidLlmRoleName } from '../llm/roles';
 import { isPluginPermission } from './permissions';
 import type {
+  CapabilityDeclaration,
   CapabilityPlugin,
   NavigationEntry,
   PluginManifest,
@@ -355,6 +357,40 @@ function validateNavigation(entries: NavigationEntry[], issues: PluginContractIs
   });
 }
 
+/**
+ * 能力声明的 LLM 角色。
+ *
+ * 角色名会进 config.json 当 key、会进审计记录，所以形状必须可控；同一个包里重复声明
+ * 同一个角色说明作者对「谁拥有这个角色」没想清楚，也在这里拦下。
+ */
+function validateLlmRoles(
+  declaration: CapabilityDeclaration,
+  declaredRoles: Set<string>,
+  issues: PluginContractIssue[],
+): void {
+  const roles = declaration.llmRoles;
+  if (roles === undefined) return;
+  const path = `capabilities[${declaration.id}].llmRoles`;
+  if (!Array.isArray(roles)) {
+    issue(issues, path, 'invalid-value', 'llmRoles 必须是数组');
+    return;
+  }
+  for (const role of roles) {
+    if (!isValidLlmRoleName(role?.name)) {
+      issue(issues, path, 'invalid-value', `角色名不合法：${String(role?.name)}`);
+      continue;
+    }
+    if (role.hint !== undefined && (typeof role.hint !== 'string' || role.hint.trim() === '')) {
+      issue(issues, `${path}[${role.name}].hint`, 'invalid-value', 'hint 必须是非空字符串');
+    }
+    if (declaredRoles.has(role.name)) {
+      issue(issues, path, 'duplicate-id', `重复声明的角色：${role.name}`);
+      continue;
+    }
+    declaredRoles.add(role.name);
+  }
+}
+
 function validateCapabilities(
   pack: RolePack,
   issues: PluginContractIssue[],
@@ -369,6 +405,7 @@ function validateCapabilities(
   // 权限并集规则（声明少于实现会漏授权，多于实现是凭空要权）依然成立，
   // 但事实源是声明本身，不是某个宿主内置清单。
   const declared = new Set<string>();
+  const declaredRoles = new Set<string>();
   for (const declaration of pack.capabilities) {
     const contributionCount =
       (declaration.tools?.length ?? 0) +
@@ -392,6 +429,7 @@ function validateCapabilities(
       declared.add(permission);
     }
     // 交互的 schema 深校验交给 resolver 的 RegistrationCollector，这里不重复
+    validateLlmRoles(declaration, declaredRoles, issues);
   }
 
   const expected = [...declared].sort();

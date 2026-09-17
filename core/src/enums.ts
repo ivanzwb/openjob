@@ -7,9 +7,24 @@
 export const LLM_TIERS = ['main', 'cheap'] as const;
 export type LlmTier = (typeof LLM_TIERS)[number];
 
-/** 业务角色只做 → 档位映射，不直接持有模型配置 */
-export const LLM_ROLES = ['outline', 'explain', 'codeAgent', 'quiz', 'resumeOptimize'] as const;
-export type LlmRole = (typeof LLM_ROLES)[number];
+/**
+ * 基础 Agent 自己的 LLM 角色：与具体岗位无关，任何岗位都可能有这几条链路。
+ *
+ * 岗位特有的角色（如软件开发岗位的 codeAgent）**不在这里**——它由岗位包在自己的
+ * 能力声明里声明（CapabilityDeclaration.llmRoles），见 core/src/llm/roles.ts。
+ * 基础包不认识任何具体岗位的角色。
+ */
+export const BASE_LLM_ROLES = ['outline', 'explain', 'quiz', 'resumeOptimize'] as const;
+export type BaseLlmRole = (typeof BASE_LLM_ROLES)[number];
+
+/**
+ * 运行时角色名。基础角色是封闭联合，岗位包声明的角色是开放集合，所以整体是
+ * `BaseLlmRole | (string & {})`：既保留基础角色的补全，又容得下包声明的名字。
+ *
+ * 角色 → 档位的解析默认落 main（core/src/config.ts），因此一个未声明的角色不会
+ * 让调用失败，只是失去「单独为它选档位」的能力。
+ */
+export type LlmRole = BaseLlmRole | (string & {});
 
 export const CAMPAIGN_STATUSES = ['planning', 'active', 'done'] as const;
 export type CampaignStatus = (typeof CAMPAIGN_STATUSES)[number];
