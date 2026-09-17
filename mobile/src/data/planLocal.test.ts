@@ -39,7 +39,7 @@ vi.mock('../sync/triggers', () => ({
 // 这里整包替换成测试关心的最小面
 vi.mock('./rolePackLocal', () => {
   // 排程判定按本机缓存里的岗位包派生能力条目；能力在手机本就钳到 view-only。
-  // 贡献从岗位包 taskTemplates 派生：mock 提供 SE 包的缓存数据（1.4.0）。
+  // 贡献从岗位包 taskTemplates 派生：mock 提供 SE 包的缓存数据。
   const cachedPack = { ...softwareEngineeringRolePack };
   const declarations = cachedPack.capabilities ?? [];
   return {

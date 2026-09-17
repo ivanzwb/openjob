@@ -30,6 +30,7 @@ const paths = { userData: '', pluginsDir: '' };
 vi.mock('../paths', () => ({ getAppPaths: () => paths }));
 
 import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
+import { SOFTWARE_ENGINEERING_ROLE_PACK_VERSION } from '@plugins/softwareEngineering';
 import {
   PACKAGE_MANIFEST_FILE,
   PACKAGE_PACK_FILE,
@@ -158,7 +159,7 @@ describe('release 附件端到端', () => {
     // 能力条目的权限取各自声明：SE 的源码能力现在自己声明通用原语（工作区 / 远端拉取）与
     // 基础问答；`repository:read` 还是宿主侧旧工具实现要用的，随那块下线一起退掉
     const repo = installed.find((p) => p.id === 'source-repository');
-    expect(repo).toMatchObject({ version: '1.4.0', type: 'capability' });
+    expect(repo).toMatchObject({ version: SOFTWARE_ENGINEERING_ROLE_PACK_VERSION, type: 'capability' });
     expect(repo!.permissions).toEqual([
       'filesystem:workspace',
       'llm:complete',
@@ -178,11 +179,9 @@ describe('release 附件端到端', () => {
     // 设置页的「已装」列表只看盘上有什么：能力条目不是用户装的包（它的声明本来就归岗位包
     // 所有），列出来会让「装一个包」看起来像装了两个
     const view = pluginInventoryView();
-    expect(view.installed.map((item) => `${item.id}@${item.version}`)).toEqual([
-      'product-manager@1.3.0',
-      'sales-customer-success@1.3.0',
-      'software-engineering@1.4.0',
-    ]);
+    expect(view.installed.map((item) => `${item.id}@${item.version}`).sort()).toEqual(
+      DISTRIBUTED_ROLE_PACKS.map((pack) => `${pack.manifest.id}@${pack.manifest.version}`).sort(),
+    );
     expect(view.installed.map((item) => item.displayName)).toContain('软件工程');
     expect(view.installed.find((item) => item.id === 'software-engineering')?.main).toBe('desktop/main.js');
     expect(view.rejected).toEqual([]);

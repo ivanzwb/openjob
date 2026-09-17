@@ -336,10 +336,13 @@ describe('pre-plugin fallback descriptor', () => {
   it('从已安装的软件工程包构建：插件装上即原功能', () => {
     const fallback = prePluginFallbackDescriptorForTest(CROSS_CLIENT_PLAN.campaignId);
 
-    expect(fallback.rolePack).toEqual({ id: 'software-engineering', version: '1.4.0' });
+    expect(fallback.rolePack).toEqual({
+      id: 'software-engineering',
+      version: softwareEngineeringRolePack.manifest.version,
+    });
     // 能力引用按包内嵌声明逐条产出：能力 id + 所属包版本
     expect(fallback.capabilities).toEqual([
-      { id: 'source-repository', version: '1.4.0', enabled: true },
+      { id: 'source-repository', version: softwareEngineeringRolePack.manifest.version, enabled: true },
     ]);
   });
 });

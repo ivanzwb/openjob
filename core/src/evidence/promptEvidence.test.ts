@@ -15,8 +15,9 @@ import { isConfirmed, toPromptEvidence, toPromptEvidenceList } from './promptEvi
 
 const RUNTIME: PromptRuntimeSnapshot = {
   coreVersion: '1.0.0',
-  // 与 softwareEngineeringRolePack.manifest 一致（能力依赖改版时包换代（当前 1.2.0））
-  rolePack: { id: 'software-engineering', version: '1.4.0' },
+  // 与 softwareEngineeringRolePack.manifest 一致：composer 会核对运行时绑定，写死字面量
+  // 会在包换代时把这里连同下面几条一起弄红
+  rolePack: { id: 'software-engineering', version: softwareEngineeringRolePack.manifest.version },
   capabilities: [],
   configSnapshotHash: 'snapshot-hash',
 };

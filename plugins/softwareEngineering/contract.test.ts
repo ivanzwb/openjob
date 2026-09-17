@@ -20,7 +20,7 @@ describe('softwareEngineeringRolePack contract', () => {
   it('keeps the stable runtime identity and role-pack permission boundary', () => {
     expect(softwareEngineeringRolePack.manifest).toMatchObject({
       id: 'software-engineering',
-      version: '1.4.0',
+      version: '1.0.0',
       type: 'role-pack',
       compatibility: { core: '^1.0.0', schema: 23 },
       // 通用原语（工作区 + 远端拉取）与基础问答归本包页面用；repository:read 是宿主侧

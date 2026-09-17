@@ -10,7 +10,7 @@ export const SOFTWARE_ENGINEERING_ROLE_PACK_ID = 'software-engineering';
  * 'software-engineering'（旧 Campaign 的 descriptor 与题型投影 pin 着它），
  * 包内容换代时版本要跟着走，否则解析器会把新旧两份包当成同一份。
  */
-export const SOFTWARE_ENGINEERING_ROLE_PACK_VERSION = '1.4.0';
+export const SOFTWARE_ENGINEERING_ROLE_PACK_VERSION = '1.0.0';
 
 /**
  * 本包内嵌的源码能力 id。
