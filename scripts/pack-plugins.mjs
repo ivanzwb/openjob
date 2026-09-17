@@ -16,8 +16,7 @@
  */
 import { Buffer } from 'node:buffer';
 import { generateKeyPairSync, createHash, createPrivateKey, createPublicKey } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { transformSync } from 'esbuild';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createServer } from 'vite';
 
@@ -50,15 +49,10 @@ async function loadModules() {
     optimizeDeps: { noDiscovery: true },
   });
   try {
-    const suite = await server.ssrLoadModule('core/src/plugins/capabilitySuite.ts');
     const rolePacks = await server.ssrLoadModule('scripts/distributed-role-packs.ts');
     const transfer = await server.ssrLoadModule('core/src/plugins/package/rolePackTransfer.ts');
-    const capabilityTransfer = await server.ssrLoadModule(
-      'core/src/plugins/package/capabilityTransfer.ts',
-    );
-    const contract = await server.ssrLoadModule('core/src/plugins/package/contract.ts');
     const bundle = await server.ssrLoadModule('desktop/src/main/plugins/bundle.ts');
-    return { suite, rolePacks, transfer, capabilityTransfer, contract, bundle };
+    return { rolePacks, transfer, bundle };
   } finally {
     await server.close();
   }
@@ -109,58 +103,23 @@ function resolveSigningKey() {
 }
 
 async function main() {
-  const { suite, rolePacks, transfer, capabilityTransfer, contract, bundle } = await loadModules();
+  const { rolePacks, transfer, bundle } = await loadModules();
   const key = resolveSigningKey();
 
   /**
-   * 基础包不再内置任何插件，这里产出全部随 release 分发的包：
+   * 基础包不再内置任何插件，随 release 分发的只有三个岗位包：一个岗位一个包，
+   * 用户按自己的岗位装一个。装上某个岗位包即等价于该岗位在插件化之前的完整功能
+   * ——能力（内嵌声明）、题型、评分、训练任务、页面随包来，宿主只提供通用运行时。
    *
-   * - 三个岗位包：一个岗位一个包，用户按自己的岗位装一个；
-   * - 一个能力合编包（源码仓库 + 角色扮演 + 案例拆解）：需要的用户装它一个。
-   *
-   * 能力包能装上了：三个旧 id@1.0.0 已从内置清单退役（只留在 reserved 名册里防抢注），
-   * 合编包用新 id 走与岗位包完全相同的安装链路。
+   * 能力合编包（openjob-capabilities）不再作为附件分发：它已退化为打包中间产物，
+   * 运行时由 resolver 从选中岗位包的内嵌声明内联合成（core/src/plugins/capabilitySuite.ts），
+   * 单独发一份只会让用户在「装岗位包」之外多装一个不需要的包。
    */
   // 拆分走各 transfer：手机端收岗位包、安装端解析都复用同一份定义
-  // 代码插件（v3）：examples/ 下的纯文本资产直接读入，无需 ssrLoadModule。
-  // 入口作者语言是 TS：打包期编译为 CJS 的 main.js 入信封——信封里签的、扫的、跑的是同一份产物
-  const CODE_PLUGIN_DIR = join(ROOT, 'examples', 'portfolio-board');
-  const mainSourcePath = existsSync(join(CODE_PLUGIN_DIR, 'main.ts'))
-    ? join(CODE_PLUGIN_DIR, 'main.ts')
-    : join(CODE_PLUGIN_DIR, 'main.js');
-  const mainSource = readFileSync(mainSourcePath, 'utf8');
-  const entrySource = mainSourcePath.endsWith('.ts')
-    ? transformSync(mainSource, { loader: 'ts', format: 'cjs' }).code
-    : mainSource;
-  const codeFiles = {
-    'main.js': entrySource,
-  };
-  for (const name of ['manifest.json', 'ui/index.html']) {
-    codeFiles[name] = readFileSync(join(CODE_PLUGIN_DIR, name), 'utf8');
-  }
-  const codeIssues = contract.validatePluginPackage(codeFiles);
-  if (codeIssues.length > 0) {
-    const detail = codeIssues.map((issue) => `  ${issue.path}: ${issue.message}`).join('\n');
-    throw new Error(`代码插件 ${CODE_PLUGIN_DIR} 校验失败：\n${detail}`);
-  }
-
-  const allPackages = [
-    ...rolePacks.DISTRIBUTED_ROLE_PACKS.map((pack) => ({
-      manifest: pack.manifest,
-      files: transfer.rolePackToPackageFiles(pack),
-    })),
-    // 独立分发的合编包附件：由岗位包内嵌声明合成，为已装旧版的用户保持升级路径
-    {
-      manifest: suite.synthesizeSuiteFromRolePack(rolePacks.DISTRIBUTED_ROLE_PACKS[0]).manifest,
-      files: capabilityTransfer.capabilityPluginToPackageFiles(
-        suite.synthesizeSuiteFromRolePack(rolePacks.DISTRIBUTED_ROLE_PACKS[0]),
-      ),
-    },
-    {
-      manifest: JSON.parse(codeFiles['manifest.json']),
-      files: codeFiles,
-    },
-  ];
+  const allPackages = rolePacks.DISTRIBUTED_ROLE_PACKS.map((pack) => ({
+    manifest: pack.manifest,
+    files: transfer.rolePackToPackageFiles(pack),
+  }));
 
   const packages = ONLY
     ? allPackages.filter(({ manifest }) => manifest.id === ONLY)

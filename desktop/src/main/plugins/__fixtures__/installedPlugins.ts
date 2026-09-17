@@ -72,9 +72,9 @@ function collectContributions(suite: CapabilityPlugin): PluginPackageContributio
   return collected as PluginPackageContributions;
 }
 
-/** 默认装上全部随 release 分发的包：三个岗位包 + 能力合编包。 */
+/** 默认装上全部随 release 分发的包：只有三个岗位包。 */
 export function installRolePacks(packs: readonly RolePack[] = DISTRIBUTED_ROLE_PACKS): void {
-  setExternalPlugins([...packs.map(installedRolePackEntry), installedCapabilitySuiteEntry()]);
+  setExternalPlugins(packs.map(installedRolePackEntry));
 }
 
 /** 回到「一个岗位包都没装」的出厂状态；进程内状态是全局的，用完要还回去。 */

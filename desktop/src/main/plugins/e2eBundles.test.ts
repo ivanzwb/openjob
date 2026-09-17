@@ -1,6 +1,7 @@
 /**
- * 临时端到端验证（阅后即删）：四个 release 附件按真实安装链路装载后，
- * 目录落位、岗位包可解析、能力绑定指向合编包、清单不再有「随应用发布」。
+ * release 附件的真实安装/扫描链路：三个岗位包按真实安装入口装完即能解析，
+ * 升级前装着多个包的机器扫盘照常装载；能力条目由岗位包内嵌声明在运行时合成，
+ * 不随 release 单独分发，清单里也没有「随应用发布」的内置条目。
  */import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -30,7 +31,6 @@ vi.mock('../paths', () => ({ getAppPaths: () => paths }));
 
 import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
 import {
-  PACKAGE_CONTRIBUTIONS_FILE,
   PACKAGE_MANIFEST_FILE,
   PACKAGE_PACK_FILE,
   type PluginPackageFiles,
@@ -65,44 +65,19 @@ function layDownPackage(dirName: string, files: PluginPackageFiles): void {
   }
 }
 
-/** 重打四个 release 附件（与 CI 同一函数），内容取自仓库里的分发数据。 */
+/** 重打三个 release 附件（与 CI 同一函数），内容取自仓库里的分发数据。 */
 function releaseAttachments(): Array<{ name: string; files: PluginPackageFiles }> {
-  const attachments: Array<{ name: string; files: PluginPackageFiles }> = DISTRIBUTED_ROLE_PACKS.map(
-    (pack) => {
-      const { manifest, ...rest } = pack;
-      return {
-        name: `${manifest.id}@${manifest.version}.openjob.json`,
-        files: {
-          [PACKAGE_MANIFEST_FILE]: JSON.stringify(manifest),
-          [PACKAGE_PACK_FILE]: JSON.stringify(rest),
-        },
-      };
-    },
-  );
-
-  // 能力合编包由 SE 的内嵌声明合成：contributions.json 就是 register() 会推的那些声明
-  const collected: { tools: unknown[]; artifactParsers: unknown[]; interactions: unknown[] } = {
-    tools: [],
-    artifactParsers: [],
-    interactions: [],
-  };
-  coreCapabilitiesSuite.register({
-    registerTool: (t) => collected.tools.push(t),
-    registerArtifactParser: (p) => collected.artifactParsers.push(p),
-    registerInteractionType: (i) => collected.interactions.push(i),
+  return DISTRIBUTED_ROLE_PACKS.map((pack) => {
+    const { manifest, ...rest } = pack;
+    const files: PluginPackageFiles = {
+      [PACKAGE_MANIFEST_FILE]: JSON.stringify(manifest),
+      [PACKAGE_PACK_FILE]: JSON.stringify(rest),
+    };
+    return {
+      name: `${manifest.id}@${manifest.version}.openjob.json`,
+      files: signPackageFiles(files, publisher.privateKey, PUBLISHER_PEM),
+    };
   });
-  attachments.push({
-    name: `${coreCapabilitiesSuite.manifest.id}@${coreCapabilitiesSuite.manifest.version}.openjob.json`,
-    files: {
-      [PACKAGE_MANIFEST_FILE]: JSON.stringify(coreCapabilitiesSuite.manifest),
-      [PACKAGE_CONTRIBUTIONS_FILE]: JSON.stringify(collected),
-    },
-  });
-
-  return attachments.map((item) => ({
-    name: item.name,
-    files: signPackageFiles(item.files, publisher.privateKey, PUBLISHER_PEM),
-  }));
 }
 
 beforeEach(() => {
@@ -121,14 +96,14 @@ afterEach(() => {
 });
 
 describe('release 附件端到端', () => {
-  it('四个附件都能装，装完就能解析', () => {
+  it('三个附件都能装，装完就能解析', () => {
     for (const { name, files } of releaseAttachments()) {
       // 信封写到临时目录：模拟用户从 release 页下载到本地的那份
       writeFileSync(join(DIST, name), toBundleJson(files), 'utf8');
     }
 
     const bundles = readdirSync(DIST).filter((f) => f.endsWith('.openjob.json'));
-    expect(bundles).toHaveLength(4);
+    expect(bundles).toHaveLength(3);
 
     // 一个设备只装一个插件：逐个装、逐个验，装下一个之前先卸掉上一个
     for (const name of bundles) {
@@ -170,9 +145,10 @@ describe('release 附件端到端', () => {
     loadExternalPlugins();
 
     // 清单里没有「随应用发布」：全部都是 first-party 外置包。
-    // 插入点 E：带内嵌声明的岗位包按版本合并出一条合成套件条目（3 包 + 旧套件 + 合成 = 5）
+    // 插入点 E：带内嵌声明的岗位包按版本合出合成套件条目
+    // （3 个岗位包 + 1.4.0 / 1.3.0 两条合成 = 5），它不占 release 附件
     const installed = listInstalledPlugins();
-    expect(installed).toHaveLength(6);
+    expect(installed).toHaveLength(5);
     expect(installed.map((p) => p.id)).toContain('openjob-capabilities');
     expect(installed.map((p) => p.id)).not.toContain('source-repository');
 
@@ -181,7 +157,7 @@ describe('release 附件端到端', () => {
       expect(findInstalledRolePack(pack.manifest.id, pack.manifest.version)).not.toBeNull();
     }
 
-    // 套件附件由 SE 声明合成（版本随包），权限 = SE 内嵌能力
+    // 合成条目由 SE 声明合出来（版本随包），权限 = SE 内嵌能力
     const suite = installed.find(
       (p) => p.id === 'openjob-capabilities' && p.version === coreCapabilitiesSuite.manifest.version,
     );
