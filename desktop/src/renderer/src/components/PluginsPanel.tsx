@@ -8,7 +8,11 @@ import type {
 } from '@core/ipc';
 import type { InstalledPlugin } from '@core/plugins/clientView';
 import { compareExactSemVer } from '@core/plugins/registry';
-import { disablePluginRuntime, enablePluginRuntime } from '../pluginRuntimes/runtime';
+import {
+  activateInstalledPluginRuntimes,
+  disablePluginRuntime,
+  enablePluginRuntime,
+} from '../pluginRuntimes/runtime';
 import { invoke } from '../ipc';
 
 type PluginRuntimeInfo = Awaited<ReturnType<typeof invoke<'pluginRuntime:list'>>>[number];
@@ -118,6 +122,9 @@ export function PluginsPanel({
     setInstalled(await invoke('plugin:listInstalled', undefined));
     setInventory(await invoke('plugin:inventory', undefined));
     setPluginRuntimes(await invoke('pluginRuntime:list', undefined));
+    // 代码插件的页签由激活产生，而激活只在应用挂载与启用/停用开关时发生：装、卸、删目录
+    // 之后不重新激活的话，新装的岗位包（如 software-engineering 的「源码」页）要重启才出现
+    await activateInstalledPluginRuntimes();
     onPluginsChanged?.();
   }, [onPluginsChanged]);
 

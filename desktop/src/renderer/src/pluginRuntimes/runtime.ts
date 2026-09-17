@@ -107,7 +107,15 @@ function loadModule(
 
 /** 激活全部「已确认启用」的代码插件；单个失败不阻断其余（错误进 console 供诊断） */
 export async function activateInstalledPluginRuntimes(): Promise<void> {
-  const pluginRuntimes = await invoke('pluginRuntime:list', undefined);
+  let pluginRuntimes: Awaited<ReturnType<typeof invoke<'pluginRuntime:list'>>>;
+  try {
+    pluginRuntimes = await invoke('pluginRuntime:list', undefined);
+  } catch (error) {
+    // 连清单都拿不到时不能静默返回：表现是「所有插件页签凭空消失」，而这与
+    // 「一个代码插件都没装」在界面上完全一样，没有日志就无从分辨
+    console.error('[pluginRuntime] 读取插件清单失败，本次不激活任何插件页', error);
+    return;
+  }
   const next: ActivePluginRuntime[] = [];
 
   for (const plugin of pluginRuntimes.filter((item) => item.enabled)) {
