@@ -24,6 +24,7 @@ import {
 } from '../interactions/schema';
 import type {
   ArtifactParserDefinition,
+  ClientPlatform,
   HostRenderedInteraction,
   PluginManifest,
   RolePack,
@@ -48,9 +49,22 @@ export const PACKAGE_ALLOWED_FILES: readonly string[] = [
   PACKAGE_SIGNATURE_FILE,
 ];
 
-/** 代码插件入口（v3，manifest.main v1 固定此名）与 Webview 资源目录前缀。 */
-export const PLUGIN_MAIN_FILE = 'main.js';
-export const PLUGIN_UI_PREFIX = 'ui/';
+/**
+ * 代码插件的各端实现：包内以平台前缀平铺，桌面一份、移动一份。
+ *
+ * manifest.main / manifest.mobile 固定指向对应平台目录下的入口，文件名本身不再带平台前缀
+ * ——前缀由各端激活时剥掉，插件源码因此两端同构（见 selectPlatformAssets）。
+ */
+export const PLUGIN_DESKTOP_PREFIX = 'desktop/';
+export const PLUGIN_MOBILE_PREFIX = 'mobile/';
+
+/** 两端入口：manifest.main / manifest.mobile 的固定取值，也是平台目录下的入口资产名。 */
+export const PLUGIN_MAIN_FILE = 'desktop/main.js';
+export const PLUGIN_MOBILE_MAIN_FILE = 'mobile/main.js';
+
+/** 两端 Webview 资源目录前缀。 */
+export const PLUGIN_UI_PREFIX = 'desktop/ui/';
+export const PLUGIN_MOBILE_UI_PREFIX = 'mobile/ui/';
 
 /** 能力插件的注册声明，等价于 register() 会向 registry 推的那些东西。 */
 export interface PluginPackageContributions {
@@ -68,7 +82,7 @@ export interface ParsedPluginPackage {
   rolePack?: RolePack;
   /** type 为 capability 时给出。 */
   contributions?: PluginPackageContributions;
-  /** 代码插件（manifest.main）时给出：入口与 Webview 资产原文，供隔离扫描与激活 */
+  /** 代码插件（manifest.main / manifest.mobile）时给出：各端入口与 Webview 资产原文（键带平台前缀），供隔离扫描与激活 */
   codeAssets?: Record<string, string>;
 }
 
@@ -307,17 +321,41 @@ export function validatePluginPackage(files: PluginPackageFiles): PluginContract
 /** 单个资产文件的文本长度上限：插件代码包不是分发媒体的渠道 */
 const CODE_ASSET_MAX_LENGTH = 2_000_000;
 
+/** 代码资产名：两端入口，或对应平台目录下的 Webview 资源。 */
 export function isCodeAssetName(name: string): boolean {
-  return name === PLUGIN_MAIN_FILE || name.startsWith(PLUGIN_UI_PREFIX);
+  return (
+    name === PLUGIN_MAIN_FILE ||
+    name === PLUGIN_MOBILE_MAIN_FILE ||
+    name.startsWith(PLUGIN_UI_PREFIX) ||
+    name.startsWith(PLUGIN_MOBILE_UI_PREFIX)
+  );
 }
 
-
+/**
+ * 取某一端的入口与 Webview 资源，并剥掉平台前缀：两端拿到的键都是 'main.js' 与 'ui/**'，
+ * 插件源码里的 ctx.views.registerPage({ webviewPath: 'ui/x.html' }) 因此两端同构。
+ * 该端没有实现时返回 null（只提供一端的包，在缺的那端不出现页签）。
+ */
+export function selectPlatformAssets(
+  codeAssets: PluginPackageFiles | undefined,
+  platform: ClientPlatform,
+): { source: string; uiAssets: Record<string, string> } | null {
+  const prefix = platform === 'mobile' ? PLUGIN_MOBILE_PREFIX : PLUGIN_DESKTOP_PREFIX;
+  const entry = platform === 'mobile' ? PLUGIN_MOBILE_MAIN_FILE : PLUGIN_MAIN_FILE;
+  const source = codeAssets?.[entry];
+  if (typeof source !== 'string') return null;
+  const uiAssets: Record<string, string> = {};
+  for (const [name, content] of Object.entries(codeAssets!)) {
+    if (name.startsWith(`${prefix}ui/`)) uiAssets[name.slice(prefix.length)] = content;
+  }
+  return { source, uiAssets };
+}
 
 function validatePackageInternal(files: PluginPackageFiles): PluginContractIssue[] {
   const issues: PluginContractIssue[] = [];
 
-  // 代码插件的资产白名单是条件式的：声明了 main 才允许 main.js 与 ui/ 资源，
-  // 且资产本身不算「未知文件」，由专门的规则校验（见 validateCodeAssets）
+  // 代码插件的资产白名单是条件式的：声明了 main 才允许 desktop/**，声明了 mobile 才允许
+  // mobile/**，且资产本身不算「未知文件」，由专门的规则校验（见 validateCodeAssets）
   const manifestValue = parseJson(files, PACKAGE_MANIFEST_FILE, issues);
   if (manifestValue === undefined) return issues;
   if (
@@ -329,13 +367,15 @@ function validatePackageInternal(files: PluginPackageFiles): PluginContractIssue
     return issues;
   }
   const manifest = manifestValue as PluginManifest;
-  const codeAssetsAllowed = manifest.main !== undefined;
   const unexpected = Object.keys(files)
-    .filter(
-      (name) =>
-        !PACKAGE_ALLOWED_FILES.includes(name) &&
-        !(codeAssetsAllowed && isCodeAssetName(name)),
-    )
+    .filter((name) => {
+      if (PACKAGE_ALLOWED_FILES.includes(name)) return false;
+      if (!isCodeAssetName(name)) return true;
+      // 已识别的代码资产：只有对应端声明了入口才允许出现
+      return name.startsWith(PLUGIN_MOBILE_PREFIX)
+        ? manifest.mobile === undefined
+        : manifest.main === undefined;
+    })
     .sort();
   for (const name of unexpected) {
     issue(issues, name, 'invalid-value', `包内出现未知文件：${name}`);
@@ -371,8 +411,19 @@ function validatePackageInternal(files: PluginPackageFiles): PluginContractIssue
       }
       const pack = packValue as Omit<RolePack, 'manifest'>;
       // 代码资产是岗位包数据的一部分（defineRolePack 内联），信封不再带散文件
-      if (manifest.main !== undefined && typeof pack.codeAssets?.['main.js'] !== 'string') {
-        issue(issues, 'pack.codeAssets', 'invalid-value', '声明了 main 却缺少 main.js 代码资产');
+      if (manifest.main !== undefined && typeof pack.codeAssets?.[PLUGIN_MAIN_FILE] !== 'string') {
+        issue(issues, 'pack.codeAssets', 'invalid-value', `声明了 main 却缺少 ${PLUGIN_MAIN_FILE} 代码资产`);
+      }
+      if (
+        manifest.mobile !== undefined &&
+        typeof pack.codeAssets?.[PLUGIN_MOBILE_MAIN_FILE] !== 'string'
+      ) {
+        issue(
+          issues,
+          'pack.codeAssets',
+          'invalid-value',
+          `声明了 mobile 却缺少 ${PLUGIN_MOBILE_MAIN_FILE} 代码资产`,
+        );
       }
       issues.push(...validateRolePack({ ...pack, manifest }));
       break;
@@ -398,22 +449,34 @@ function validatePackageInternal(files: PluginPackageFiles): PluginContractIssue
       break;
     }
     case 'plugin': {
-      // 代码插件（v3）：manifest + main.js + ui/ 资产，不带岗位数据与能力贡献
+      // 代码插件（v3）：manifest + 各端入口与 ui/ 资产，不带岗位数据与能力贡献
       for (const name of [PACKAGE_PACK_FILE, PACKAGE_CONTRIBUTIONS_FILE]) {
         if (files[name] !== undefined) {
           issue(issues, name, 'invalid-value', `代码插件不带 ${name}`);
         }
       }
-      if (files[PLUGIN_MAIN_FILE] === undefined) {
-        issue(issues, PLUGIN_MAIN_FILE, 'invalid-value', '声明了 main 却缺少 main.js');
-        break;
+      const entries: ReadonlyArray<readonly [string, string | undefined]> = [
+        [PLUGIN_MAIN_FILE, manifest.main],
+        [PLUGIN_MOBILE_MAIN_FILE, manifest.mobile],
+      ];
+      for (const [file, declaredEntry] of entries) {
+        if (declaredEntry !== undefined && files[file] === undefined) {
+          issue(issues, file, 'invalid-value', `声明了 ${declaredEntry} 却缺少 ${file}`);
+        }
       }
       for (const [name, content] of Object.entries(files)) {
         if (!isCodeAssetName(name)) continue;
         if (content.length > CODE_ASSET_MAX_LENGTH) {
           issue(issues, name, 'invalid-value', `代码资产超过 ${CODE_ASSET_MAX_LENGTH} 字符上限`);
         }
-        if (name !== PLUGIN_MAIN_FILE && !name.slice(PLUGIN_UI_PREFIX.length)) {
+        const uiPrefix = name.startsWith(PLUGIN_MOBILE_UI_PREFIX)
+          ? PLUGIN_MOBILE_UI_PREFIX
+          : PLUGIN_UI_PREFIX;
+        if (
+          name !== PLUGIN_MAIN_FILE &&
+          name !== PLUGIN_MOBILE_MAIN_FILE &&
+          !name.slice(uiPrefix.length)
+        ) {
           issue(issues, name, 'invalid-value', 'ui/ 资源必须有文件名');
         }
       }
@@ -445,7 +508,7 @@ export function parsePluginPackage(files: PluginPackageFiles): ParsedPluginPacka
     parsed = { manifest };
   }
   // 代码插件：入口与 Webview 资产原文随解析结果带走（隔离扫描与激活都要用）
-  if (manifest.main !== undefined) {
+  if (manifest.main !== undefined || manifest.mobile !== undefined) {
     if (parsed.rolePack?.codeAssets) {
       // 岗位包：资产内联在包数据里，随 pack.json 走信封与移动端同步
       parsed.codeAssets = parsed.rolePack.codeAssets;

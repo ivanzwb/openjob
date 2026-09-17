@@ -283,3 +283,92 @@ describe('插件包格式', () => {
     ).toBeGreaterThan(0);
   });
 });
+
+describe('代码插件各端入口（v3，无向后兼容）', () => {
+  const baseManifest = {
+    id: 'demo-plugin',
+    version: '1.0.0',
+    type: 'plugin' as const,
+    displayName: '演示',
+    description: '代码插件格式用例',
+    compatibility: { core: '^1.0.0', schema: 23 },
+    permissions: [] as string[],
+    api: '^1.0',
+  };
+
+  function pluginFiles(
+    manifest: Record<string, unknown>,
+    assets: Record<string, string>,
+  ): PluginPackageFiles {
+    return { [PACKAGE_MANIFEST_FILE]: JSON.stringify(manifest), ...assets };
+  }
+
+  it('main 只认 desktop/main.js：写成 main.js 或写错平台都判为无效', () => {
+    expect(paths(pluginFiles({ ...baseManifest, main: 'main.js' }, { 'main.js': 'x' }))).toContain(
+      'manifest.main',
+    );
+    expect(
+      paths(pluginFiles({ ...baseManifest, main: 'mobile/main.js' }, { 'mobile/main.js': 'x' })),
+    ).toContain('manifest.main');
+  });
+
+  it('mobile 只认 mobile/main.js', () => {
+    expect(
+      paths(pluginFiles({ ...baseManifest, mobile: 'desktop/main.js' }, { 'desktop/main.js': 'x' })),
+    ).toContain('manifest.mobile');
+  });
+
+  it('声明了 mobile 却缺少 mobile/main.js → 无效', () => {
+    const issues = paths(
+      pluginFiles({ ...baseManifest, mobile: 'mobile/main.js' }, { 'mobile/ui/x.html': '<p>x</p>' }),
+    );
+    expect(issues).toContain('mobile/main.js');
+  });
+
+  it('声明了 main 却缺少 desktop/main.js → 无效', () => {
+    const issues = paths(
+      pluginFiles({ ...baseManifest, main: 'desktop/main.js' }, { 'desktop/ui/x.html': '<p>x</p>' }),
+    );
+    expect(issues).toContain('desktop/main.js');
+  });
+
+  it('ui 资产必须在对应平台目录下：顶层 main.js / ui/** 都不再是合法资产', () => {
+    const issues = paths(
+      pluginFiles(
+        { ...baseManifest, main: 'desktop/main.js' },
+        { 'desktop/main.js': 'x', 'main.js': 'y', 'ui/x.html': '<p>x</p>' },
+      ),
+    );
+    expect(issues).toContain('main.js');
+    expect(issues).toContain('ui/x.html');
+  });
+
+  it('两端入口齐全的包合法，解析后 codeAssets 带平台前缀', () => {
+    const files = pluginFiles(
+      { ...baseManifest, main: 'desktop/main.js', mobile: 'mobile/main.js' },
+      {
+        'desktop/main.js': 'exports.activate = () => undefined;',
+        'desktop/ui/index.html': '<p>d</p>',
+        'mobile/main.js': 'exports.activate = () => undefined;',
+        'mobile/ui/index.html': '<p>m</p>',
+      },
+    );
+
+    expect(validatePluginPackage(files)).toEqual([]);
+    expect(Object.keys(parsePluginPackage(files).codeAssets!).sort()).toEqual([
+      'desktop/main.js',
+      'desktop/ui/index.html',
+      'mobile/main.js',
+      'mobile/ui/index.html',
+    ]);
+  });
+
+  it('只提供一端也合法（缺的那端不出现页签，不是坏包）', () => {
+    const files = pluginFiles(
+      { ...baseManifest, main: 'desktop/main.js' },
+      { 'desktop/main.js': 'exports.activate = () => undefined;' },
+    );
+    expect(validatePluginPackage(files)).toEqual([]);
+  });
+});
+

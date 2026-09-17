@@ -184,16 +184,19 @@ export function validatePluginManifest(manifest: PluginManifest): PluginContract
     }
   });
 
-  // 代码插件入口（v3）：main 与 api 成对声明，入口名 v1 固定为 main.js
-  if (manifest.main !== undefined) {
-    if (manifest.main !== 'main.js') {
-      issue(issues, 'manifest.main', 'invalid-value', '代码入口 v1 固定为 main.js');
-    }
+  // 代码插件入口（v3）：main / mobile 各指一端的实现，与 api 成对声明
+  if (manifest.main !== undefined && manifest.main !== 'desktop/main.js') {
+    issue(issues, 'manifest.main', 'invalid-value', '桌面入口固定为 desktop/main.js');
+  }
+  if (manifest.mobile !== undefined && manifest.mobile !== 'mobile/main.js') {
+    issue(issues, 'manifest.mobile', 'invalid-value', '移动入口固定为 mobile/main.js');
+  }
+  if (manifest.main !== undefined || manifest.mobile !== undefined) {
     if (manifest.api === undefined || !isSemVerRange(manifest.api)) {
-      issue(issues, 'manifest.api', 'invalid-version', '声明了 main 就必须声明合法的 api 版本范围');
+      issue(issues, 'manifest.api', 'invalid-version', '声明了代码入口就必须声明合法的 api 版本范围');
     }
   } else if (manifest.api !== undefined) {
-    issue(issues, 'manifest.api', 'invalid-value', 'api 只能与 main 成对声明');
+    issue(issues, 'manifest.api', 'invalid-value', 'api 只能与代码入口成对声明');
   }
 
   Object.entries(manifest.artifactSchemas ?? {}).forEach(([artifactType, version]) => {
@@ -699,16 +702,22 @@ export function validateRolePack(pack: RolePack): PluginContractIssue[] {
   validateResumeModules(pack.resumeModules, issues);
   validateNavigation(pack.navigation, issues);
   validateCapabilities(pack, issues);
-  if (pack.manifest.main !== undefined) {
-    const assets = pack.codeAssets ?? {};
-    if (!isNonEmpty(assets['main.js'])) {
-      issue(
-        issues,
-        'codeAssets',
-        'invalid-value',
-        '声明了 main 却缺少 main.js 代码资产（defineRolePack 会从包目录内联）',
-      );
-    }
+  const codeAssets = pack.codeAssets ?? {};
+  if (pack.manifest.main !== undefined && !isNonEmpty(codeAssets['desktop/main.js'])) {
+    issue(
+      issues,
+      'codeAssets',
+      'invalid-value',
+      '声明了 main 却缺少 desktop/main.js 代码资产（defineRolePack 会从包目录内联）',
+    );
+  }
+  if (pack.manifest.mobile !== undefined && !isNonEmpty(codeAssets['mobile/main.js'])) {
+    issue(
+      issues,
+      'codeAssets',
+      'invalid-value',
+      '声明了 mobile 却缺少 mobile/main.js 代码资产（defineRolePack 会从包目录内联）',
+    );
   }
   return issues;
 }

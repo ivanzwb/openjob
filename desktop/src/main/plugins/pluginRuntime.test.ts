@@ -25,7 +25,8 @@ vi.mock('./package/trustedKeys', () => ({
 const paths = { userData: '', pluginsDir: '' };
 vi.mock('../paths', () => ({ getAppPaths: () => paths }));
 
-import { signPackageFiles, toBundleJson } from './bundle';
+import { selectPlatformAssets } from '@core/plugins/package/contract';
+import { signPackageFiles, encodeBundle } from './bundle';
 import { installPluginBundle } from './install';
 import { listExternalPlugins } from './runtime';
 import { loadExternalPlugins } from './bootstrap';
@@ -54,7 +55,8 @@ const CLEAN_MANIFEST = {
   description: '代码插件验收样本：看板页面 + 命令',
   compatibility: { core: '^1.0.0', schema: 23 },
   permissions: [],
-  main: 'main.js',
+  main: 'desktop/main.js',
+  mobile: 'mobile/main.js',
   api: '^1.0',
 };
 
@@ -65,18 +67,25 @@ export function activate(ctx) {
 }
 `;
 
-function pluginRuntimeFiles(mainSource: string): Record<string, string> {
+const CLEAN_UI = '<!doctype html><html><body><main>看板</main></body></html>';
+
+function pluginRuntimeFiles(
+  mainSource: string,
+  ui: { desktop: string; mobile: string } = { desktop: CLEAN_UI, mobile: CLEAN_UI },
+): Record<string, string> {
   return {
     'manifest.json': JSON.stringify(CLEAN_MANIFEST),
-    'main.js': mainSource,
-    'ui/index.html': '<!doctype html><html><body><main>看板</main></body></html>',
+    'desktop/main.js': mainSource,
+    'desktop/ui/index.html': ui.desktop,
+    'mobile/main.js': mainSource,
+    'mobile/ui/index.html': ui.mobile,
   };
 }
 
 describe('代码插件主进程链路', () => {
-  it('干净代码插件装得上，装载后代码资产被保留', () => {
+  it('干净代码插件装得上，装载后代码资产被保留（键带平台前缀）', () => {
     const signed = signPackageFiles(pluginRuntimeFiles(CLEAN_MAIN), publisher.privateKey, keys.publisherPem);
-    const result = installPluginBundle(Buffer.from(toBundleJson(signed)), {});
+    const result = installPluginBundle(encodeBundle(signed), {});
     if (!result.ok) console.error('install fail:', result.code, result.detail);
     expect(result).toMatchObject({ ok: true, id: 'portfolio-board' });
 
@@ -84,14 +93,53 @@ describe('代码插件主进程链路', () => {
     const entry = listExternalPlugins().find((item) => item.package.manifest.id === 'portfolio-board');
     expect(entry).toBeDefined();
     const assets = entry!.package.codeAssets!;
-    expect(assets['main.js']).toContain('activate(ctx)');
-    expect(assets['ui/index.html']).toContain('看板');
+    expect(assets['desktop/main.js']).toContain('activate(ctx)');
+    expect(assets['desktop/ui/index.html']).toContain('看板');
+    expect(assets['mobile/main.js']).toContain('activate(ctx)');
+    expect(assets['mobile/ui/index.html']).toContain('看板');
+  });
+
+  it('桌面端取到的资产键已剥掉 platform 前缀：main.js 与 ui/**', () => {
+    const signed = signPackageFiles(pluginRuntimeFiles(CLEAN_MAIN), publisher.privateKey, keys.publisherPem);
+    installPluginBundle(encodeBundle(signed), {});
+    loadExternalPlugins();
+    const assets = listExternalPlugins().find(
+      (item) => item.package.manifest.id === 'portfolio-board',
+    )!.package.codeAssets;
+
+    // 与 plugin:getEntrySource 的桌面分支同一条逻辑
+    const desktop = selectPlatformAssets(assets, 'desktop');
+    expect(desktop).not.toBeNull();
+    expect(desktop!.source).toContain('activate(ctx)');
+    expect(Object.keys(desktop!.uiAssets)).toEqual(['ui/index.html']);
+
+    // 插件源码里的 webviewPath 保持 'ui/index.html'，两端同构
+    expect(desktop!.uiAssets['ui/index.html']).toContain('看板');
+  });
+
+  it('只提供桌面实现的包在移动端取不到资产（不报错、返回 null）', () => {
+    const desktopOnly = {
+      'manifest.json': JSON.stringify({ ...CLEAN_MANIFEST, mobile: undefined }),
+      'desktop/main.js': CLEAN_MAIN,
+      'desktop/ui/index.html': CLEAN_UI,
+    };
+    const signed = signPackageFiles(desktopOnly, publisher.privateKey, keys.publisherPem);
+    const result = installPluginBundle(encodeBundle(signed), {});
+    expect(result).toMatchObject({ ok: true, id: 'portfolio-board' });
+
+    loadExternalPlugins();
+    const assets = listExternalPlugins().find(
+      (item) => item.package.manifest.id === 'portfolio-board',
+    )!.package.codeAssets;
+    expect(selectPlatformAssets(assets, 'desktop')).not.toBeNull();
+    // 移动端这份不存在的实现取不到：不报错，只是那端不出现页签
+    expect(selectPlatformAssets(assets, 'mobile')).toBeNull();
   });
 
   it('带宿主越权访问的包在安装期就被隔离扫描拒下', () => {
     const rogue = pluginRuntimeFiles("export function activate(ctx) { require('node:fs'); }");
     const signed = signPackageFiles(rogue, publisher.privateKey, keys.publisherPem);
-    const result = installPluginBundle(Buffer.from(toBundleJson(signed)), {});
+    const result = installPluginBundle(encodeBundle(signed), {});
     expect(result).toMatchObject({ ok: false, code: 'isolation-violation' });
     if (!result.ok) expect(result.detail).toContain('Node 内建模块');
   });

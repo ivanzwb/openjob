@@ -43,7 +43,7 @@ import { PACKAGE_MANIFEST_FILE, PACKAGE_PACK_FILE } from '@core/plugins/package/
 import { OFFICIAL_REPO, resolveFeedDir } from '@core/updateFeed';
 import type { RolePack } from '@core/plugins/types';
 import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
-import { signPackageFiles, toBundleJson } from './bundle';
+import { signPackageFiles, encodeBundle } from './bundle';
 import {
   downloadPluginBundle,
   githubApiFromFeedDir,
@@ -81,7 +81,7 @@ function signedBundle(id: string, version: string): Buffer {
     publisher.privateKey,
     PUBLISHER_PEM,
   );
-  return Buffer.from(toBundleJson(files), 'utf8');
+  return encodeBundle(files);
 }
 
 function bundleResponse(id: string, version: string): Response {
@@ -142,14 +142,14 @@ describe('githubApiFromFeedDir', () => {
 describe('parseReleaseList', () => {
   it('形状不对的条目只丢自己，不连坐整个列表', () => {
     const parsed = parseReleaseList([
-      { tag_name: 'v1', assets: [{ name: 'a@1.0.0.openjob.json', size: 10 }, { bad: true }] },
+      { tag_name: 'v1', assets: [{ name: 'a@1.0.0.ojb', size: 10 }, { bad: true }] },
       { tag_name: 'v2', assets: 'nope' },
       null,
       { tag_name: 'v3', assets: [] },
     ]);
 
     expect(parsed).toEqual([
-      { tag: 'v1', assets: [{ name: 'a@1.0.0.openjob.json', size: 10 }] },
+      { tag: 'v1', assets: [{ name: 'a@1.0.0.ojb', size: 10 }] },
       { tag: 'v3', assets: [] },
     ]);
   });
@@ -170,7 +170,7 @@ describe('parseCatalogIndex', () => {
         displayName: '演示岗位',
         description: '说明',
         permissions: ['artifact:read'],
-        file: 'demo.role@1.0.0.openjob.json',
+        file: 'demo.role@1.0.0.ojb',
         bytes: 2048,
         sha256: 'a'.repeat(64),
       },
@@ -186,7 +186,7 @@ describe('parseCatalogIndex', () => {
       type: 'role-pack',
       displayName: '演示岗位',
       permissions: ['artifact:read'],
-      file: 'demo.role@1.0.0.openjob.json',
+      file: 'demo.role@1.0.0.ojb',
       sha256: 'a'.repeat(64),
       described: true,
     });
@@ -201,9 +201,9 @@ describe('parseCatalogIndex', () => {
   it('file 必须自证是包文件名：清单里的这个字段会被拼进请求地址', () => {
     for (const file of [
       '../../../etc/passwd',
-      'sub/demo.role@1.0.0.openjob.json',
+      'sub/demo.role@1.0.0.ojb',
       'demo.role@1.0.0.zip',
-      'https://evil.example.com/x.openjob.json',
+      'https://evil.example.com/x.ojb',
     ]) {
       const parsed = parseCatalogIndex({
         ...valid,
@@ -223,19 +223,19 @@ describe('listAvailablePlugins', () => {
           {
             tag_name: 'v0.6.29',
             assets: [
-              { name: 'software-engineering@1.4.0.openjob.json', size: 111 },
-              { name: 'software-engineering@1.5.0.openjob.json', size: 222 },
+              { name: 'software-engineering@1.4.0.ojb', size: 111 },
+              { name: 'software-engineering@1.5.0.ojb', size: 222 },
               { name: 'index.json', size: 999 },
             ],
           },
           {
             tag_name: 'plugins/product-manager@1.3.0',
-            assets: [{ name: 'product-manager@1.3.0.openjob.json', size: 333 }],
+            assets: [{ name: 'product-manager@1.3.0.ojb', size: 333 }],
           },
         ]),
-      [releaseAssetUrl('v0.6.29', 'software-engineering@1.5.0.openjob.json')]: () =>
+      [releaseAssetUrl('v0.6.29', 'software-engineering@1.5.0.ojb')]: () =>
         bundleResponse('software-engineering', '1.5.0'),
-      [releaseAssetUrl('plugins/product-manager@1.3.0', 'product-manager@1.3.0.openjob.json')]: () =>
+      [releaseAssetUrl('plugins/product-manager@1.3.0', 'product-manager@1.3.0.ojb')]: () =>
         bundleResponse('product-manager', '1.3.0'),
     });
 
@@ -258,7 +258,7 @@ describe('listAvailablePlugins', () => {
     const fetchImpl = fetchStub({
       [RELEASES_URL]: () =>
         jsonResponse([
-          { tag_name: 'v1', assets: [{ name: 'demo.role@9.9.9.openjob.json', size: 10 }] },
+          { tag_name: 'v1', assets: [{ name: 'demo.role@9.9.9.ojb', size: 10 }] },
         ]),
       // 附件地址不登记 → 404，读不回 manifest
     });
@@ -280,10 +280,10 @@ describe('listAvailablePlugins', () => {
     const fetchImpl = fetchStub({
       [RELEASES_URL]: () =>
         jsonResponse([
-          { tag_name: 'v1', assets: [{ name: 'demo.role@1.0.0.openjob.json', size: 10 }] },
+          { tag_name: 'v1', assets: [{ name: 'demo.role@1.0.0.ojb', size: 10 }] },
         ]),
       // 地址说 demo.role@1.0.0，包里其实自称另一个 id
-      [releaseAssetUrl('v1', 'demo.role@1.0.0.openjob.json')]: () => bundleResponse('other.role', '2.0.0'),
+      [releaseAssetUrl('v1', 'demo.role@1.0.0.ojb')]: () => bundleResponse('other.role', '2.0.0'),
     });
 
     const view = await listAvailablePlugins({ feedUrl: '', fetchImpl });
@@ -305,7 +305,7 @@ describe('listAvailablePlugins', () => {
               displayName: '演示岗位',
               description: '',
               permissions: [],
-              file: 'demo.role@1.0.0.openjob.json',
+              file: 'demo.role@1.0.0.ojb',
               bytes: 10,
               sha256: 'b'.repeat(64),
             },
@@ -334,7 +334,7 @@ describe('listAvailablePlugins', () => {
               displayName: '演示岗位',
               description: '',
               permissions: [],
-              file: 'demo.role@1.0.0.openjob.json',
+              file: 'demo.role@1.0.0.ojb',
               bytes: 10,
               sha256: null,
             },
@@ -377,7 +377,7 @@ describe('listAvailablePlugins', () => {
 
 describe('downloadPluginBundle', () => {
   const dir = 'https://downloads.example.com/openjob';
-  const file = 'demo.role@1.0.0.openjob.json';
+  const file = 'demo.role@1.0.0.ojb';
 
   function indexRoutes(sha256: string | null, body: Buffer): Routes {
     return {

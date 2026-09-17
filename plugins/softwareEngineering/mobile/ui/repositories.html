@@ -1,0 +1,176 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        font-family: system-ui, sans-serif;
+        padding: 14px;
+        margin: 0;
+        color: inherit;
+        background: transparent;
+        font-size: 15px;
+        -webkit-text-size-adjust: 100%;
+      }
+      h2 { font-size: 16px; margin: 18px 0 8px; }
+      h2:first-child { margin-top: 0; }
+      ul { list-style: none; margin: 0; padding: 0; }
+      li {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 12px;
+        margin-bottom: 10px;
+        border: 1px solid rgba(127, 127, 127, 0.35);
+        border-radius: 12px;
+      }
+      li.selected { border-color: #3b82f6; }
+      .name { font-size: 16px; font-weight: 600; }
+      .muted { opacity: 0.65; font-size: 14px; }
+      .row { display: flex; flex-direction: column; gap: 10px; }
+      input, textarea {
+        width: 100%;
+        font-size: 16px;
+        padding: 12px;
+        border: 1px solid rgba(127, 127, 127, 0.4);
+        border-radius: 10px;
+        background: transparent;
+        color: inherit;
+      }
+      textarea { min-height: 72px; resize: vertical; }
+      button {
+        font-size: 15px;
+        min-height: 46px;
+        padding: 12px 16px;
+        border: 0;
+        border-radius: 10px;
+        background: #3b82f6;
+        color: #fff;
+      }
+      button.secondary { background: rgba(127, 127, 127, 0.25); color: inherit; }
+      .answer {
+        font-size: 14px;
+        white-space: pre-wrap;
+        min-height: 40px;
+        margin: 8px 0 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>仓库</h2>
+    <ul id="repos"></ul>
+
+    <h2>问源码</h2>
+    <div class="row">
+      <textarea id="question" placeholder="选中仓库后提问，如：登录流程在哪实现？"></textarea>
+      <button id="ask">提问</button>
+    </div>
+    <pre id="answer" class="muted answer"></pre>
+
+    <h2>链接仓库</h2>
+    <div class="row">
+      <input id="url" placeholder="https://github.com/org/repo.git" autocapitalize="off" autocorrect="off" />
+      <button id="add">链接仓库</button>
+    </div>
+    <p id="msg" class="muted"></p>
+
+    <script>
+      // 受控桥：只能调宿主白名单方法（repo:* 会在宿主侧按权限与网关再校验）
+      function call(method, params) {
+        return new Promise((resolve, reject) => {
+          const reqId = Date.now() + Math.random();
+          const onReply = (event) => {
+            const reply = event.data && event.data.openjobResponse;
+            if (reply && reply.reqId === reqId) {
+              window.removeEventListener('message', onReply);
+              reply.error ? reject(new Error(reply.error)) : resolve(reply.result);
+            }
+          };
+          window.addEventListener('message', onReply);
+          window.parent.postMessage({ openjob: { reqId, method, params } }, '*');
+        });
+      }
+
+      let selectedRepoId = null;
+      let answerStreamId = null;
+
+      function setMsg(text) {
+        document.getElementById('msg').textContent = text;
+      }
+
+      async function refresh() {
+        const repos = await call('repo.list', {});
+        const node = document.getElementById('repos');
+        node.innerHTML = '';
+        for (const repo of repos) {
+          const li = document.createElement('li');
+          const name = document.createElement('span');
+          name.className = 'name';
+          name.textContent = repo.name || repo.url;
+          name.onclick = () => {
+            selectedRepoId = repo.id;
+            for (const item of node.children) item.classList.remove('selected');
+            li.classList.add('selected');
+          };
+          const meta = document.createElement('span');
+          meta.className = 'muted';
+          meta.textContent = repo.updatedAt ? new Date(repo.updatedAt).toLocaleString() : '未索引';
+          const update = document.createElement('button');
+          update.className = 'secondary';
+          update.textContent = '更新索引';
+          update.onclick = async () => {
+            await call('repo.update', { id: repo.id });
+            setMsg('已开始更新索引');
+          };
+          li.append(name, meta, update);
+          node.appendChild(li);
+        }
+      }
+
+      // 基础流式问答（宿主能力）：源码问答 = 基础能力 + 选中仓库上下文
+      document.getElementById('ask').onclick = async () => {
+        const question = document.getElementById('question').value.trim();
+        if (!question || !selectedRepoId) {
+          setMsg('先选中一个仓库再提问');
+          return;
+        }
+        const answer = document.getElementById('answer');
+        answer.textContent = '';
+        const started = await call('agent.ask', {
+          question,
+          allowTools: true,
+          repoId: selectedRepoId,
+        });
+        answerStreamId = started.streamId;
+      };
+
+      window.addEventListener('message', (event) => {
+        const payload = event.data && event.data.openjobEvent;
+        if (!payload || payload.streamId !== answerStreamId) return;
+        const answer = document.getElementById('answer');
+        if (payload.event === 'stream:delta') {
+          answer.textContent += payload.delta || '';
+        } else if (payload.event === 'stream:error') {
+          answer.textContent += `[错误] ${payload.message || ''}`;
+        }
+      });
+
+      document.getElementById('add').onclick = async () => {
+        const url = document.getElementById('url').value.trim();
+        if (!url) return;
+        try {
+          await call('repo.add', { url });
+          document.getElementById('url').value = '';
+          setMsg('已开始克隆与索引');
+          await refresh();
+        } catch (err) {
+          setMsg(err.message);
+        }
+      };
+
+      void refresh();
+    </script>
+  </body>
+</html>

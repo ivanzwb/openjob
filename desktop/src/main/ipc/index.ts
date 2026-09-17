@@ -164,6 +164,7 @@ import {
   removePeer,
   restoreBackup,
 } from '../sync';
+import { selectPlatformAssets } from '@core/plugins/package/contract';
 
 function currentWindow(): BrowserWindow | undefined {
   return BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows().find((win) => !win.isDestroyed());
@@ -243,13 +244,8 @@ export function registerIpcHandlers(): void {
     const entry = listExternalPlugins().find(
       (item) => item.package.manifest.id === id && item.package.manifest.version === version,
     );
-    const assets = entry?.package.codeAssets;
-    if (!assets || !assets['main.js']) return null;
-    const uiAssets: Record<string, string> = {};
-    for (const [name, content] of Object.entries(assets)) {
-      if (name.startsWith('ui/')) uiAssets[name] = content;
-    }
-    return { source: assets['main.js'], uiAssets };
+    // 桌面端只取 desktop/ 那份实现，并剥掉平台前缀：插件拿到的键是 main.js 与 ui/**
+    return selectPlatformAssets(entry?.package.codeAssets, 'desktop');
   });
   handle('pluginRuntime:storage.get', ({ pluginId, key }) => pluginStorageGet(pluginId, key));
   handle('pluginRuntime:storage.set', ({ pluginId, key, value }) => pluginStorageSet(pluginId, key, value));
@@ -301,7 +297,7 @@ export function registerIpcHandlers(): void {
       title: '安装插件包',
       properties: ['openFile'],
       filters: [
-        { name: '插件包', extensions: ['json', 'gz'] },
+        { name: '插件包', extensions: ['ojb'] },
         { name: '所有文件', extensions: ['*'] },
       ],
     });

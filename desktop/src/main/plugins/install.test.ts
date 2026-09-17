@@ -7,7 +7,7 @@ import { generateKeyPairSync } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { gzipSync } from 'node:zlib';
+import { gzipSync, gunzipSync } from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const paths = { userData: '', pluginsDir: '' };
@@ -32,7 +32,7 @@ import {
   type PluginPackageFiles,
 } from '@core/plugins/package/contract';
 import type { RolePack } from '@core/plugins/types';
-import { signPackageFiles, toBundleJson } from './bundle';
+import { signPackageFiles, encodeBundle } from './bundle';
 import { installPluginBundle, parseBundle, removeRejectedPluginDir, uninstallPlugin } from './install';
 import { setExternalPlugins } from './runtime';
 
@@ -96,7 +96,7 @@ function bundle(
   signer = publisher,
   signerPem = PUBLISHER_PEM,
 ): Buffer {
-  return Buffer.from(toBundleJson(signPackageFiles(files, signer.privateKey, signerPem)), 'utf8');
+  return encodeBundle(signPackageFiles(files, signer.privateKey, signerPem));
 }
 
 function installedDirs(): string[] {
@@ -104,21 +104,19 @@ function installedDirs(): string[] {
 }
 
 describe('parseBundle', () => {
-  it('接受纯 JSON 与 gzip 两种形态，结果相同', () => {
+  it('只接受 .ojb 压缩容器，裸 JSON 一律拒', () => {
     const raw = bundle();
-    const plain = parseBundle(raw);
-    const zipped = parseBundle(gzipSync(raw));
+    expect(parseBundle(raw).ok).toBe(true);
 
-    expect(plain.ok && zipped.ok).toBe(true);
-    if (!plain.ok || !zipped.ok) return;
-    expect(zipped.files).toEqual(plain.files);
+    const plain = parseBundle(gunzipSync(raw));
+    expect(plain.ok).toBe(false);
+    if (!plain.ok) expect(plain.detail).toContain('.ojb');
   });
 
   it('信封里出现白名单外的文件名就拒，路径穿越无从谈起', () => {
     // 不引 zip 解析器的理由就在这：条目名在这一步被限死成四个常量之一
     for (const name of ['../../evil.json', 'plugin.mjs', 'nested/manifest.json']) {
-      const raw = Buffer.from(JSON.stringify({ files: { [name]: '{}' } }), 'utf8');
-      const parsed = parseBundle(raw);
+      const parsed = parseBundle(encodeBundle({ [name]: '{}' }));
 
       expect(parsed.ok, name).toBe(false);
       if (!parsed.ok) expect(parsed.detail).toContain(name);
@@ -127,7 +125,7 @@ describe('parseBundle', () => {
 
   it('缺 files、不是 JSON、内容不是字符串都拒', () => {
     for (const raw of ['{}', 'not json', '{"files":[]}', '{"files":{"manifest.json":123}}']) {
-      expect(parseBundle(Buffer.from(raw, 'utf8')).ok, raw).toBe(false);
+      expect(parseBundle(gzipSync(Buffer.from(raw, 'utf8'))).ok, raw).toBe(false);
     }
   });
 
@@ -170,10 +168,7 @@ describe('installPluginBundle', () => {
 
   it('签完再改内容一律拒装，确认信任也不放行', () => {
     const signed = signPackageFiles(rolePackFiles(), publisher.privateKey, PUBLISHER_PEM);
-    const tampered = Buffer.from(
-      toBundleJson({ ...signed, [PACKAGE_PACK_FILE]: '{"competencyTemplates":[]}' }),
-      'utf8',
-    );
+    const tampered = encodeBundle({ ...signed, [PACKAGE_PACK_FILE]: '{"competencyTemplates":[]}' });
 
     for (const options of [{}, { trustUnknownSigner: true }]) {
       expect(installPluginBundle(tampered, options)).toMatchObject({ code: 'tampered' });
@@ -182,7 +177,7 @@ describe('installPluginBundle', () => {
   });
 
   it('没签名的包拒装', () => {
-    const raw = Buffer.from(toBundleJson(rolePackFiles()), 'utf8');
+    const raw = encodeBundle(rolePackFiles());
 
     expect(installPluginBundle(raw)).toMatchObject({ code: 'unsigned' });
   });
@@ -288,7 +283,7 @@ describe('一个设备只装一个插件', () => {
 
     expect(
       installPluginBundle(
-        Buffer.from(toBundleJson({ ...tampered, [PACKAGE_PACK_FILE]: '{"competencyTemplates":[]}' })),
+        encodeBundle({ ...tampered, [PACKAGE_PACK_FILE]: '{"competencyTemplates":[]}' }),
       ),
     ).toMatchObject({ code: 'tampered' });
   });

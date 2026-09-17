@@ -1,8 +1,8 @@
 /**
- * 作品集看板：官方代码插件验收样本（§7.9）。
+ * 作品集看板：官方代码插件验收样本（§7.9）的移动端实现。
  *
- * 打包期由 esbuild 编译为 CJS 的 main.js；运行时（桌面渲染进程 / 移动端 WebView）
- * 只提供 require('openjob') 门面，同一份编译产物两端激活。
+ * 打包期由 esbuild 编译为 CJS 的 mobile/main.js；运行时在移动端 WebView 里
+ * 只提供 require('openjob') 门面。与 desktop/main.ts 同构，页面布局适配触摸屏。
  */
 import type { PluginRuntimeContext } from '@core/plugins/pluginRuntime/host';
 

@@ -3,8 +3,8 @@
  *
  * 插件入口在 WebView 的 JS 环境里激活：shim 页面提供 `require('openjob')` 门面
  * （postMessage → RN onMessage → invokeRemote → 桌面白名单通道），收集
- * `ctx.views.registerPage` 的页面并渲染 Webview 资产。与桌面共享同一份
- * main.js 与 ui/ 资产——差别只在桥的传输实现与本机能力判定。
+ * `ctx.views.registerPage` 的页面并渲染 Webview 资产。入口与 ui/ 资产是岗位包的
+ * mobile/ 那份（前缀已剥），与桌面那份同构——差别只在桥的传输实现与本机能力判定。
  */
 
 export interface MobilePluginRuntime {

@@ -6,7 +6,7 @@
  * 「应用能更新、插件却连不上 GitHub」这种两头堵的组合。
  *
  * 读取分两条路，因为发布本来就有两条：
- * - **GitHub**：列 release（含 prerelease），把各 release 附件里的 `<id>@<version>.openjob.json`
+ * - **GitHub**：列 release（含 prerelease），把各 release 附件里的 `<id>@<version>.ojb`
  *   合起来，同 id 取最高版本。插件可以单独发一版（tag `plugins/<id>@<version>`），
  *   只读「最新一版应用挂在 releases/latest 下的附件」就会漏掉那些包。
  * - **自建/通用目录**：读目录里的 `index.json`（`pack-plugins.mjs` 产出，随 release 一起传）。
@@ -39,12 +39,12 @@ const BUNDLE_TIMEOUT_MS = 30_000;
 const CACHE_TTL_MS = 10 * 60 * 1000;
 
 /**
- * 附件名 / 清单里的文件名：`<id>@<version>.openjob.json`。
+ * 附件名 / 清单里的文件名：`<id>@<version>.ojb`（gzip 压缩的分发容器，见 install.ts）。
  *
  * 字符集收在 URL 路径安全范围内（含 `@` 与 `+`）：这两个名字都会被直接拼进请求地址，
  * 允许空格、斜杠、`..` 就等于允许它跳到别的路径上去。
  */
-const BUNDLE_NAME = /^([A-Za-z0-9._-]+)@([A-Za-z0-9._+-]+)\.openjob\.json$/;
+const BUNDLE_NAME = /^([A-Za-z0-9._-]+)@([A-Za-z0-9._+-]+)\.ojb$/;
 
 /** GitHub 的仓库坐标与 API 前缀（镜像场景下前缀不是 github.com） */
 interface GithubApi {
@@ -381,7 +381,7 @@ async function listFromReleases(
   const refs = new Map<string, DownloadRef>();
   const entries = await Promise.all(
     chosen.map(async (item) => {
-      const file = `${entryKey(item.id, item.version)}.openjob.json`;
+      const file = `${entryKey(item.id, item.version)}.ojb`;
       // 自己拼附件地址而不是用接口给的 browser_download_url：镜像场景下那个字段指回
       // github.com 直连地址，等于让用户绕过自己配的镜像
       const downloadUrl = `${api.hostPrefix}${api.owner}/${api.repo}/releases/download/${item.tag}/${file}`;

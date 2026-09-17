@@ -102,8 +102,10 @@ export const softwareEngineeringRolePack: RolePack = defineRolePack({
     compatibility: { core: '^1.0.0', schema: 23 },
     // 内嵌 source-repository 能力：权限 = 其声明的并集（contracts 校验）
     permissions: ['repository:read'],
-    // 「源码」页已移入本包：页面跑在 Webview 沙箱，宿主 Repos 页退役
-    main: 'main.js',
+    // 「源码」页已移入本包：页面跑在 Webview 沙箱，宿主 Repos 页退役。
+    // 桌面与移动各一份实现，包内平铺在 desktop/ 与 mobile/ 下
+    main: 'desktop/main.js',
+    mobile: 'mobile/main.js',
     api: '^1.0',
     dependencies: [],
   },

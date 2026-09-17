@@ -1,14 +1,16 @@
 /**
  * 安装与卸载外置插件。
  *
- * 分发容器是一个 JSON 信封（可 gzip），不是 zip。包内文件全是文本，用不上归档格式；而
- * 引入 zip 解析器等于把 P01–P03 刚消掉的攻击面请回来——zip-slip（条目名里带 ../ 写到目录
- * 外）是这类漏洞的经典形态。信封里的键在写盘之前先过白名单，连路径分隔符都不可能出现。
+ * 分发容器 `.ojb` 是 gzip 压缩的 JSON 信封，不是 zip，也不接受裸 JSON。包内文件全是文本，
+ * 用不上归档格式；而引入 zip 解析器等于把 P01–P03 刚消掉的攻击面请回来——zip-slip（条目名
+ * 里带 ../ 写到目录外）是这类漏洞的经典形态。信封里的键在写盘之前先过白名单，连路径分隔符
+ * 都不可能出现。
  */
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import {
+  isCodeAssetName,
   PACKAGE_ALLOWED_FILES,
   validatePluginPackage,
   type PluginPackageFiles,
@@ -23,7 +25,8 @@ import { classifyPackageTrust, type PackageTrust } from './package/signature';
 import { loadTrustedPublicKeys } from './package/trustedKeys';
 import { listExternalPlugins } from './runtime';
 
-export const BUNDLE_EXTENSION = '.openjob.json';
+/** 分发容器扩展名。文件名是 `<id>@<version>.ojb`，内容是 gzip 压缩的 JSON 信封。 */
+export const BUNDLE_EXTENSION = '.ojb';
 
 /**
  * 信封解压后的大小上限。
@@ -69,14 +72,21 @@ function fail(code: InstallFailureCode, detail: string): InstallResult {
   return { ok: false, code, detail };
 }
 
-/** 解析分发信封。任何一步不对都拒，不做"尽力恢复"。 */
+/** 解析分发容器 `.ojb`。任何一步不对都拒，不做"尽力恢复"。 */
 export function parseBundle(raw: Buffer): { ok: true; files: PluginPackageFiles } | { ok: false; detail: string } {
+  const isGzip = raw.length >= 2 && GZIP_MAGIC.every((byte, index) => raw[index] === byte);
+  if (!isGzip) {
+    // 裸 JSON 是 v1.0 的旧产物形态。这里不兜：认下来就等于给一个"看起来能装、
+    // 其实没签名保护外的那层容器"的口子，报错比默默接受更有用
+    return {
+      ok: false,
+      detail: `不是 ${BUNDLE_EXTENSION} 包：文件头不是 gzip。插件包必须是用打包脚本产出的压缩包。`,
+    };
+  }
+
   let text: string;
   try {
-    const isGzip = raw.length >= 2 && GZIP_MAGIC.every((byte, index) => raw[index] === byte);
-    text = isGzip
-      ? gunzipSync(raw, { maxOutputLength: MAX_BUNDLE_BYTES }).toString('utf8')
-      : raw.toString('utf8');
+    text = gunzipSync(raw, { maxOutputLength: MAX_BUNDLE_BYTES }).toString('utf8');
   } catch (error) {
     return { ok: false, detail: `解压失败：${error instanceof Error ? error.message : String(error)}` };
   }
@@ -95,11 +105,10 @@ export function parseBundle(raw: Buffer): { ok: true; files: PluginPackageFiles 
 
   const files: Record<string, string> = {};
   for (const [name, content] of Object.entries(entries)) {
-    // 白名单先行：标准文件限死成常量；代码插件另允许 main.js 与 ui/<安全文件名>
-    // （是否真的允许由 manifest.main 决定，格式校验里还会再验一遍）。
+    // 白名单先行：标准文件限死成常量；代码插件另允许各端入口与 ui/<安全文件名>
+    // （是否真的允许由 manifest.main/mobile 决定，格式校验里还会再验一遍）。
     // 名字里不允许路径分隔符或 ..，路径穿越无从谈起
-    const isAllowedCodeAsset =
-      name === 'main.js' || (/^ui\//.test(name) && !name.includes('..'));
+    const isAllowedCodeAsset = isCodeAssetName(name) && !name.includes('..');
     if (!PACKAGE_ALLOWED_FILES.includes(name) && !isAllowedCodeAsset) {
       return { ok: false, detail: `信封里出现未知文件：${name}` };
     }

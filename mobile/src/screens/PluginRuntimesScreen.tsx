@@ -11,8 +11,8 @@ import { useTheme } from '../theme';
 /**
  * 代码插件的移动端运行时屏（§12.5）。
  *
- * 列出本机缓存里带代码资产的岗位包；点开后用 WebView 运行时激活入口——
- * 同一份 main.js 与 ui 资产，桥走 invokeRemote 转发桌面白名单通道
+ * 列出本机缓存里带移动端实现的岗位包；点开后用 WebView 运行时激活入口——
+ * 岗位包的 mobile/ 那份 main.js 与 ui 资产，桥走 invokeRemote 转发桌面白名单通道
  * （storage / campaign / repo / evidence），桌面权限网关逐次校验。
  * 功能可降级：桥调用失败把错误文本直接渲染在页面里，不静默吞。
  */

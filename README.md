@@ -201,7 +201,7 @@ openJob/
 几条约束值得单独记一下，破了会以很难懂的方式炸：
 
 - **core 的 `dependencies` 必须保持为空。** 它同时被 Electron 和 Metro 编译，装了 Node 专属依赖就只在桌面端能跑。pnpm 的严格 node_modules 让这条从「约定」变成「装不上」。
-- **`@plugins` 别名故意没登记在 `desktop/electron.vite.config.ts` 里**，应用代码一旦 import 岗位包，构建当场失败。`desktop/src/main/plugins/basePackage.test.ts` 另外静态扫一遍源码树兜底。
+- **`@plugins` 别名故意没登记在 `desktop/electron.vite.config.ts` 里**，应用代码一旦 import 岗位包，构建当场失败。`desktop/src/main/plugins/basePackage.test.ts` 另外静态扫一遍源码树兜底。岗位中立不只是「不带数据」，还包括「不带实现」——岗位簇的功能实现归包，基础包只留基础设施与通用原语（见 [docs/PLUGIN_DISTRIBUTION_PLAN.md](docs/PLUGIN_DISTRIBUTION_PLAN.md) §6 与 §11）。
 - **版本号的唯一来源是 `desktop/package.json`**，工作区根那份不带 `version`。手机端由 `mobile/scripts/sync-version.mjs` 同步，`core/src/version.test.ts` 盯住两端一致。
 - **`@types/*` 要提升到根 node_modules**（见 `.npmrc`）。第三方包自带的 `.d.ts` 引用 `react` 这类裸模块时，是从它在 `.pnpm` 里的位置往上找，只躺在 `desktop/node_modules` 的 `@types/react` 它看不见。
 
@@ -213,7 +213,7 @@ openJob/
 
 - [docs/DESIGN.md](docs/DESIGN.md) — 产品定位、数据模型、Agent 流程、同步协议、实施阶段与踩坑记录
 - [docs/USER_MANUAL.md](docs/USER_MANUAL.md) — 使用手册：从建战役到面后复盘的完整流程
-- [docs/GENERAL_INTERVIEW_AGENT_ARCHITECTURE.md](docs/GENERAL_INTERVIEW_AGENT_ARCHITECTURE.md) — 岗位包与能力插件的插件化架构
+- [docs/GENERAL_INTERVIEW_AGENT_ARCHITECTURE.md](docs/GENERAL_INTERVIEW_AGENT_ARCHITECTURE.md) — 岗位包（声明 + 代码）的插件化架构
 - [docs/GENERAL_INTERVIEW_AGENT_IMPLEMENTATION_PLAN.md](docs/GENERAL_INTERVIEW_AGENT_IMPLEMENTATION_PLAN.md) — 实施计划与实施状态
 - [docs/V1_UPGRADE_ROLLBACK.md](docs/V1_UPGRADE_ROLLBACK.md) — v1.0 升级、回滚与发布验收
 - [OpenJob 产品长文](docs/marketing/openjob-longform.md) — 功能逻辑、使用价值与完整产品截图

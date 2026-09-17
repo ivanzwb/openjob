@@ -106,6 +106,7 @@ import {
   listProposedEvidence,
 } from '../evidence';
 import { getStoryService } from '../story';
+import { selectPlatformAssets } from '@core/plugins/package/contract';
 
 type RpcHandler = (payload: unknown) => Promise<unknown> | unknown;
 
@@ -122,13 +123,8 @@ const RPC_HANDLERS: Partial<Record<IpcInvokeChannel, RpcHandler>> = {
     const entry = listExternalPlugins().find(
       (item) => item.package.manifest.id === id && item.package.manifest.version === version,
     );
-    const assets = entry?.package.codeAssets;
-    if (!assets || !assets['main.js']) return null;
-    const uiAssets: Record<string, string> = {};
-    for (const [name, content] of Object.entries(assets)) {
-      if (name.startsWith('ui/')) uiAssets[name] = content;
-    }
-    return { source: assets['main.js'], uiAssets };
+    // 移动端只取 mobile/ 那份实现，并剥掉平台前缀：插件拿到的键是 main.js 与 ui/**
+    return selectPlatformAssets(entry?.package.codeAssets, 'mobile');
   },
   'pluginRuntime:storage.get': (p) => {
     const { pluginId, key } = p as { pluginId: string; key: string };

@@ -46,6 +46,9 @@ const LOADER_FILES = [
   join(__dirname, '__fixtures__', 'installedPlugins.ts'),
   join(__dirname, 'package', 'signature.ts'),
   join(__dirname, 'package', 'trustedKeys.ts'),
+  // 这两处把分端资产（desktop/ 与 mobile/）交给两端，所以在处理包内容
+  join(__dirname, '..', 'ipc', 'index.ts'),
+  join(__dirname, '..', 'sync', 'rpc.ts'),
   join(CORE_SRC, 'plugins', 'package', 'contract.ts'),
   join(CORE_SRC, 'plugins', 'package', 'replay.ts'),
 ];

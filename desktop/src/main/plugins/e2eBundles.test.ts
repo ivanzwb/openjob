@@ -35,7 +35,7 @@ import {
   PACKAGE_PACK_FILE,
   type PluginPackageFiles,
 } from '@core/plugins/package/contract';
-import { signPackageFiles, toBundleJson } from './bundle';
+import { signPackageFiles, encodeBundle } from './bundle';
 import { installPluginBundle, uninstallPlugin } from './install';
 import { listExternalPlugins, listInstalledPlugins, setExternalPlugins, findInstalledRolePack } from './runtime';
 import { loadExternalPlugins, pluginInventoryView } from './bootstrap';
@@ -70,7 +70,7 @@ function releaseAttachments(): Array<{ name: string; files: PluginPackageFiles }
       [PACKAGE_PACK_FILE]: JSON.stringify(rest),
     };
     return {
-      name: `${manifest.id}@${manifest.version}.openjob.json`,
+      name: `${manifest.id}@${manifest.version}.ojb`,
       files: signPackageFiles(files, publisher.privateKey, PUBLISHER_PEM),
     };
   });
@@ -95,10 +95,10 @@ describe('release 附件端到端', () => {
   it('三个附件都能装，装完就能解析', () => {
     for (const { name, files } of releaseAttachments()) {
       // 信封写到临时目录：模拟用户从 release 页下载到本地的那份
-      writeFileSync(join(DIST, name), toBundleJson(files), 'utf8');
+      writeFileSync(join(DIST, name), encodeBundle(files));
     }
 
-    const bundles = readdirSync(DIST).filter((f) => f.endsWith('.openjob.json'));
+    const bundles = readdirSync(DIST).filter((f) => f.endsWith('.ojb'));
     expect(bundles).toHaveLength(3);
 
     // 一个设备只装一个插件：逐个装、逐个验，装下一个之前先卸掉上一个
@@ -106,7 +106,7 @@ describe('release 附件端到端', () => {
       const result = installPluginBundle(readFileSync(join(DIST, name)), {});
       if (!result.ok) throw new Error(`安装失败 ${name}: ${result.code}`);
 
-      const key = name.replace(/\.openjob\.json$/, '');
+      const key = name.replace(/\.ojb$/, '');
       const entry = listExternalPlugins().find(
         (item) => `${item.package.manifest.id}@${item.package.manifest.version}` === key,
       );
@@ -137,7 +137,7 @@ describe('release 附件端到端', () => {
     // 升级上来必须照常可用——这条限制只该挡住「再装一个」，不该让已有插件失效。
     // 安装路径已经到不了这个状态（见上一个用例），扫描路径才是它的来处。
     for (const { name, files } of releaseAttachments()) {
-      layDownPackage(name.replace(/\.openjob\.json$/, ''), files);
+      layDownPackage(name.replace(/\.ojb$/, ''), files);
     }
 
     // 扫描装载（与启动同一条入口）
@@ -178,7 +178,7 @@ describe('release 附件端到端', () => {
       'software-engineering@1.4.0',
     ]);
     expect(view.installed.map((item) => item.displayName)).toContain('软件工程');
-    expect(view.installed.find((item) => item.id === 'software-engineering')?.main).toBe('main.js');
+    expect(view.installed.find((item) => item.id === 'software-engineering')?.main).toBe('desktop/main.js');
     expect(view.rejected).toEqual([]);
   });
 });

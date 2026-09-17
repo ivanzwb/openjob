@@ -1,9 +1,15 @@
 /**
  * 打包与签名。发布侧（P09 的 CI 脚本）和测试共用同一段逻辑。
  *
+ * 分发容器 `.ojb`：gzip 压缩的 JSON 信封（`{ files: { <包内文件名>: <内容> } }`），不是 zip，
+ * 也不是裸 JSON——包内文件全是文本，用不上归档格式，而 zip 解析器会把 zip-slip 那类攻击面
+ * 请回来。压缩让产物是机器可读的二进制而不是随手能改的明文，签名仍然盖在**解压后**的文件
+ * 集合上（见 package/signature.ts）。
+ *
  * 与 install.ts 的 parseBundle 严格互逆：任何一方单独改动，测试里的往返用例会立刻发现。
  */
 import { sign, type KeyObject } from 'node:crypto';
+import { gzipSync } from 'node:zlib';
 import {
   PACKAGE_SIGNATURE_FILE,
   type PluginPackageFiles,
@@ -33,4 +39,9 @@ export function signPackageFiles(
 
 export function toBundleJson(files: PluginPackageFiles): string {
   return JSON.stringify({ files } satisfies SignedBundle);
+}
+
+/** 打成分发用的 `.ojb` 容器：gzip 压缩的信封字节。 */
+export function encodeBundle(files: PluginPackageFiles): Buffer {
+  return gzipSync(Buffer.from(toBundleJson(files), 'utf8'));
 }

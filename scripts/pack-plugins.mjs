@@ -136,9 +136,11 @@ async function main() {
   const entries = [];
   for (const { manifest, files } of packages) {
     const signed = bundle.signPackageFiles(files, key.privateKey, key.publicKeyPem);
-    const json = bundle.toBundleJson(signed);
-    const file = `${manifest.id}@${manifest.version}.openjob.json`;
-    writeFileSync(join(OUT_DIR, file), json, 'utf8');
+    // 产物是 .ojb 容器（gzip 压缩的信封），不是裸 JSON。清单里的 bytes / sha256 按**压缩后**
+    // 的字节算：下载端拿到的就是这些字节，摘要必须对得上，否则每次安装都报「内容被改动」
+    const bytes = bundle.encodeBundle(signed);
+    const file = `${manifest.id}@${manifest.version}.ojb`;
+    writeFileSync(join(OUT_DIR, file), bytes);
 
     entries.push({
       id: manifest.id,
@@ -149,8 +151,8 @@ async function main() {
       // 权限进 index：用户在装之前就该看到这个包要申请什么，而不是装完才知道
       permissions: manifest.permissions,
       file,
-      bytes: Buffer.byteLength(json, 'utf8'),
-      sha256: createHash('sha256').update(json, 'utf8').digest('hex'),
+      bytes: bytes.byteLength,
+      sha256: createHash('sha256').update(bytes).digest('hex'),
     });
     console.log(`  ${file}  ${entries.at(-1).bytes} bytes`);
   }

@@ -43,9 +43,14 @@ export interface PluginManifest {
   description: string;
   compatibility: PluginCompatibility;
   permissions: PluginPermission[];
-  /** 代码入口（相对包根）。v1 固定为 'main.js'；缺省 = 纯声明式插件，不进入激活生命周期 */
+  /**
+   * 桌面代码入口（相对包根）。固定为 'desktop/main.js'；与 mobile 至少声明其一才进入
+   * 激活生命周期，两者都缺省 = 纯声明式插件。
+   */
   main?: string;
-  /** 所需 openjob.* API 版本范围（如 '^1.0'）；与 main 必须成对声明 */
+  /** 移动代码入口（相对包根）。固定为 'mobile/main.js'；缺省 = 移动端无实现 */
+  mobile?: string;
+  /** 所需 openjob.* API 版本范围（如 '^1.0'）；与 main/mobile 必须成对声明 */
   api?: string;
   runtime?: PluginRuntimeAvailability;
   /** artifact type → schema version。 */
@@ -274,8 +279,8 @@ export interface RolePack {
   // 插入点 E：内嵌能力声明
   capabilities: CapabilityDeclaration[];
   /**
-   * 代码插件资产（§7.9）：manifest.main 声明时由 defineRolePack 从包目录内联
-   * （main.js 与 ui/**），随 pack.json 走信封与移动端同步——与 promptFragments
+   * 代码插件资产（§7.9）：manifest.main / manifest.mobile 声明时由 defineRolePack 从包目录内联
+   * （各端 main 与 ui/**），随 pack.json 走信封与移动端同步——与 promptFragments
    * 内联正文同一个模型。纯声明式岗位包为空。
    */
   codeAssets?: Record<string, string>;

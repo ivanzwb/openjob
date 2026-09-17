@@ -133,39 +133,48 @@ export function loadPromptFragments(
 /** 代码资产上限：入口 + Webview 资源是逻辑代码，不是分发媒体的渠道 */
 const CODE_ASSET_MAX_LENGTH = 2_000_000;
 
-/** 读入 manifest.main 声明的代码资产并跑隔离扫描；违规在装配期就拦下。
+/** 读入各端声明的代码资产并跑隔离扫描；违规在装配期就拦下。
  *
- * 作者语言是 TypeScript：main.ts（推荐）在装配期由 esbuild 编译为 CJS 的 main.js，
- * 编译产物才是被扫描、被签名、被两端执行的原文——「签的 = 扫的 = 跑的」。
+ * 作者语言是 TypeScript：各端目录下的 main.ts（推荐）在装配期由 esbuild 编译为 CJS 的
+ * main.js，编译产物才是被扫描、被签名、被两端执行的原文——「签的 = 扫的 = 跑的」。
  * 纯 JavaScript 的 main.js 同样接受；两者并存时 main.ts 优先。
+ *
+ * 两端实现平铺在 desktop/ 与 mobile/ 下：只有对应端存在入口时才收录该端资产。
  */
 function loadCodeAssets(root: string): Record<string, string> | undefined {
-  const mainTs = join(root, 'main.ts');
-  const mainJs = join(root, 'main.js');
-  let entrySource: string;
-  if (existsSync(mainTs)) {
-    const transpiled = transformSync(readFileSync(mainTs, 'utf8'), {
-      loader: 'ts',
-      format: 'cjs',
-    });
-    entrySource = transpiled.code;
-  } else if (existsSync(mainJs)) {
-    entrySource = readFileSync(mainJs, 'utf8');
-  } else {
-    return undefined;
-  }
-  const assets: Record<string, string> = { 'main.js': entrySource };
-  const uiDir = join(root, 'ui');
-  if (existsSync(uiDir)) {
-    for (const entry of readdirSync(uiDir, { withFileTypes: true }).sort((left, right) =>
-      left.name.localeCompare(right.name),
-    )) {
-      if (entry.isDirectory()) {
-        throw new PackAuthoringError(`ui/ 目前不支持子目录：ui/${entry.name}`);
+  const assets: Record<string, string> = {};
+  for (const platform of ['desktop', 'mobile']) {
+    const dir = join(root, platform);
+    if (!existsSync(dir)) continue;
+    const mainTs = join(dir, 'main.ts');
+    const mainJs = join(dir, 'main.js');
+    let entrySource: string;
+    if (existsSync(mainTs)) {
+      const transpiled = transformSync(readFileSync(mainTs, 'utf8'), {
+        loader: 'ts',
+        format: 'cjs',
+      });
+      entrySource = transpiled.code;
+    } else if (existsSync(mainJs)) {
+      entrySource = readFileSync(mainJs, 'utf8');
+    } else {
+      // 该端没有入口实现：整个平台目录跳过（只提供一端的包是允许的）
+      continue;
+    }
+    assets[`${platform}/main.js`] = entrySource;
+    const uiDir = join(dir, 'ui');
+    if (existsSync(uiDir)) {
+      for (const entry of readdirSync(uiDir, { withFileTypes: true }).sort((left, right) =>
+        left.name.localeCompare(right.name),
+      )) {
+        if (entry.isDirectory()) {
+          throw new PackAuthoringError(`${platform}/ui/ 目前不支持子目录：${platform}/ui/${entry.name}`);
+        }
+        assets[`${platform}/ui/${entry.name}`] = readFileSync(join(uiDir, entry.name), 'utf8');
       }
-      assets[`ui/${entry.name}`] = readFileSync(join(uiDir, entry.name), 'utf8');
     }
   }
+  if (Object.keys(assets).length === 0) return undefined;
   for (const [path, text] of Object.entries(assets)) {
     if (text.length > CODE_ASSET_MAX_LENGTH) {
       throw new PackAuthoringError(`${path}: 代码资产超过 ${CODE_ASSET_MAX_LENGTH} 字符上限`);

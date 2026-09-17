@@ -75,8 +75,8 @@ function readPackageFiles(dir: string): ReadResult {
   const files: Record<string, string> = {};
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (!entry.isFile()) {
-      // 目录名照样交给格式校验去否决：白名单里没有目录（ui/ 除外，下面递归读）
-      if (entry.name !== 'ui') files[entry.name] = '';
+      // 目录名照样交给格式校验去否决：白名单里没有目录（desktop/、mobile/ 除外，下面递归读）
+      if (entry.name !== 'desktop' && entry.name !== 'mobile') files[entry.name] = '';
       continue;
     }
     if (!PACKAGE_ALLOWED_FILES.includes(entry.name) && !isCodeAssetName(entry.name)) {
@@ -91,9 +91,10 @@ function readPackageFiles(dir: string): ReadResult {
     files[entry.name] = readFileSync(path, 'utf8');
   }
 
-  // 代码插件的 Webview 资源：ui/ 递归读为 ui/<相对路径>
-  const uiDir = join(dir, 'ui');
-  if (existsSync(uiDir)) {
+  // 代码插件的各端资产：desktop/ 与 mobile/ 递归读为 <平台>/<相对路径>
+  for (const platform of ['desktop', 'mobile']) {
+    const platformDir = join(dir, platform);
+    if (!existsSync(platformDir)) continue;
     const walk = (current: string, prefix: string): string | null => {
       for (const entry of readdirSync(current, { withFileTypes: true })) {
         const full = join(current, entry.name);
@@ -110,7 +111,7 @@ function readPackageFiles(dir: string): ReadResult {
       }
       return null;
     };
-    const failed = walk(uiDir, 'ui/');
+    const failed = walk(platformDir, `${platform}/`);
     if (failed) return { ok: false, error: failed };
   }
   return { ok: true, files };

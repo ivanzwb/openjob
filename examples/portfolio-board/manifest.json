@@ -6,6 +6,7 @@
   "description": "把已确认的证据与你的备注整理成一块看板，随讲随看。",
   "compatibility": { "core": "^1.0.0", "schema": 23 },
   "permissions": ["evidence:read-confirmed"],
-  "main": "main.js",
+  "main": "desktop/main.js",
+  "mobile": "mobile/main.js",
   "api": "^1.0"
 }

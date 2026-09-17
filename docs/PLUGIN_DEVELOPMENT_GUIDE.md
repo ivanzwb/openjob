@@ -10,13 +10,17 @@
 
 | | 岗位包（role-pack） | 代码插件（plugin） |
 |---|---|---|
-| 回答的问题 | 这类岗位怎么被面试 | 提供一块宿主没有的功能/UI |
-| 内容 | 声明数据（能力/题型/量规/Prompt 片段/检索策略/简历模块/能力声明），可选代码入口 | `main.ts` 入口 + `ui/` Webview 资源 |
+| 回答的问题 | 这类岗位怎么被面试 | 在通用原语之上实现一块基础包不该有的功能 / UI |
+| 内容 | 声明数据（能力/题型/量规/Prompt 片段/检索策略/简历模块/能力声明），可选代码入口 | `desktop/main.ts` 与 `mobile/main.ts` 各端入口 + `ui/` Webview 资源 |
 | 典型例子 | `plugins/softwareEngineering` | `examples/portfolio-board` |
 | 安装后 | 用户选岗即用 | 需用户确认权限清单后启用 |
-| 移动端 | 随同步数据自动可用 | WebView 运行时激活同一份代码 |
+| 移动端 | 随同步数据自动可用 | WebView 运行时激活移动端那份代码 |
 
-一个岗位包可以同时是代码插件：manifest 声明 `main` 后，包内的 `main.ts`（编译为 main.js）与 `ui/` 资产随包分发（如 software-engineering 的「源码」页）。
+一个岗位包可以同时是代码插件：manifest 声明 `main` / `mobile` 后，包内 `desktop/` 与 `mobile/` 两份实现（各自的 `main.ts` 编译为 `main.js`）与 `ui/` 资产随包分发（如 software-engineering 的「源码」页）。
+
+**实现归属**：基础包只提供与岗位无关的基础设施和**通用原语**（工作区、artifact、LLM、证据、存储）；
+**岗位簇的功能实现、领域概念、专属表、专属通道、专属文案都放进包**，不要去改基础包。包的行为由包
+自己的入口代码承担（§4），它跑在沙箱里，只能经 `openjob.*` 的原语触碰宿主资源。
 
 ---
 
@@ -37,8 +41,12 @@ plugins/<your-pack>/
   search-policy.ts        # 插入点 C：检索策略
   prompts/                # 插入点 B：Prompt 片段（frontmatter + markdown）
   navigation.ts           # 插入点 A：导航入口（没有就别建文件，index 里传 []）
-  main.ts                 # 可选：代码入口（TS 编写，打包期编译为 main.js 入信封）
-  ui/                     # 可选：代码入口的 Webview 资源
+  desktop/                # 可选：桌面端代码实现
+    main.ts               #   TS 编写，打包期编译为 desktop/main.js 入信封
+    ui/                   #   该端的 Webview 资源
+  mobile/                 # 可选：移动端代码实现（同构，布局适配触摸屏）
+    main.ts               #   打包期编译为 mobile/main.js
+    ui/                   #   该端的 Webview 资源
 
   contract.test.ts        # 契约测试（必写）
   golden.test.ts          # 黄金测试（必写）
@@ -178,9 +186,10 @@ export const capabilities: CapabilityDeclaration[] = [
 ];
 ```
 
-- `tools` / `interactions` / `artifactParsers` / `scenarios` 都是**声明数据**，随包分发；执行实现长在宿主里，按 id/name 绑定；
-- `manifest.permissions` 必须等于所有贡献的 permission 加 `permissions` 字段的并集（宿主注册表推导，装配时强制）；
-- 声明了宿主没有实现的工具，激活时该工具被跳过，岗位包本身不受影响。
+- `tools` / `interactions` / `artifactParsers` / `scenarios` 都是**声明数据**，随包分发——声明里没有实现，也不允许夹带实现；
+- **实现归包**：能力怎么干活写在本包自己的入口代码里（§4），通过 `openjob.*` 的通用原语触碰宿主资源（工作区、artifact、LLM、证据、存储）；基础包不认识这个能力在做什么，只按声明的 id 与权限放行；
+- `manifest.permissions` 必须等于所有贡献的 permission 加 `permissions` 字段的并集（按已安装包的 manifest 推导，装配时强制）；
+- 声明了基础包还没有对应原语或权限的贡献，激活时该能力降级为 disabled，岗位包本身不受影响。
 
 ### F. 领域模型
 
@@ -205,7 +214,8 @@ export const capabilities: CapabilityDeclaration[] = [
   "description": "……",
   "compatibility": { "core": "^1.0.0", "schema": 23 },
   "permissions": ["evidence:read-confirmed"],
-  "main": "main.js",   # 信封产物名固定；作者写 main.ts，打包期编译
+  "main": "desktop/main.js",     # 桌面入口；作者写 desktop/main.ts，打包期编译
+  "mobile": "mobile/main.js",    # 移动入口；不声明 = 该端不出现页签
   "api": "^1.0"
 }
 ```
@@ -215,7 +225,7 @@ export const capabilities: CapabilityDeclaration[] = [
 ### 入口（TypeScript）
 
 ```ts
-// main.ts —— 推荐用 TypeScript 编写；打包期由 esbuild 编译为 CJS 的 main.js 入信封。
+// desktop/main.ts —— 推荐用 TypeScript 编写；打包期由 esbuild 编译为 CJS 的 main.js 入信封。
 // import type 会被擦除：运行时只依赖 require('openjob')，对宿主模块零依赖。
 import type { PluginRuntimeContext } from '@core/plugins/pluginRuntime/host';
 
@@ -233,7 +243,7 @@ export function activate(ctx: PluginRuntimeContext): () => void {
 
 要点：
 
-- 入口文件写 `main.ts`（推荐）或 `main.js`；**信封里的产物统一是 main.js**——签名、隔离扫描、两端执行的同一份编译产物，「签的 = 扫的 = 跑的」；
+- 入口文件写 `main.ts`（推荐）或 `main.js`，分别放在 `desktop/` 与 `mobile/` 下；**信封里的产物是 `desktop/main.js` 与 `mobile/main.js`**——签名、隔离扫描、两端执行的都是各自那份编译产物，「签的 = 扫的 = 跑的」；
 - `import type` 在编译时擦除，宿主模块不会进入插件产物；普通的 `import`/`require` 会在运行时被 require shim 拒绝；
 - `ui/` 下的脚本目前保持纯 JavaScript（随 HTML 内联执行，无编译步骤）。
 
@@ -246,8 +256,10 @@ export function activate(ctx: PluginRuntimeContext): () => void {
 | `ctx.events` | — | 订阅白名单事件：`campaign:attached` / `campaign:capability-changed` / `practice:completed` |
 | `ctx.campaign` | — | `getDescriptor(campaignId)` 只读运行配置 |
 | `ctx.storage` | — | 插件私有 KV：`get / set / delete`（键数与值长有限制） |
+| `ctx.workspace` | `filesystem:workspace` | **通用原语**：本包工作区内的读 / 写 / 删 / 遍历 / glob / grep / 文本快照；可从远端 git 拉取到该目录。路径越出本包目录即拒 |
+| `ctx.artifact` | `artifact:read` | **通用原语**：读用户显式选择的文件（表格 / 文档） |
 | `ctx.llm` | `llm:complete` | `complete({ system, user, role? })` 受控 JSON 补全，同宿主网关与审计 |
-| `ctx.agent` | `llm:complete` | `ask({ question, allowTools?, repoId?, campaignId? })` 开启流式问答；增量经 `stream:delta` / `stream:done` / `stream:error` 事件到达（按 `streamId` 过滤） |
+| `ctx.agent` | `llm:complete` | `ask({ question, allowTools?, campaignId? })` 开启流式问答；增量经 `stream:delta` / `stream:done` / `stream:error` 事件到达（按 `streamId` 过滤）。**领域上下文由包自己组合**（本能力 + 自己的数据），宿主不为某个领域单开参数或通道 |
 | `ctx.evidence` | `evidence:read-confirmed` | `listConfirmed(campaignId)` 只读已确认证据 |
 
 未声明的权限对应命名空间**不存在**（不是报错，是 `ctx.llm === undefined`）。
@@ -256,7 +268,7 @@ export function activate(ctx: PluginRuntimeContext): () => void {
 
 - 单页 HTML 起步即可；`ui/` 下可以拆分 js/css，页面里的**同包相对引用**（`<script src="app.js">`、`<link rel="stylesheet" href="style.css">`）渲染时自动内联；
 - 外部 URL 原样保留——沙箱 iframe 无网络权限，自然加载失败；
-- 页面与宿主通信走受控桥（桌面为 iframe postMessage，移动端为 WebView postMessage），只有白名单方法可用；
+- 页面与宿主通信走受控桥（桌面为 iframe postMessage，移动端为 WebView postMessage），只有**本包声明的**桥方法可用（宿主按声明与前缀命名空间放行）；
 - 参考完整例子：`examples/portfolio-board/`。
 
 ### 启用与停用
@@ -290,13 +302,13 @@ pnpm -r typecheck && pnpm test      # 全仓类型 + 测试
 ## 6. 打包与分发
 
 ```bash
-pnpm pack:plugins                       # 打全部包 → dist-plugins/（签名信封 + index.json）
+pnpm pack:plugins                       # 打全部包 → dist-plugins/（<id>@<version>.ojb + index.json）
 pnpm pack:plugins --only my-pack        # 只打一个包（独立发版）
 pnpm verify:plugins                     # 打包并验签（CI 同款）
 ```
 
-- 产物是 gzip JSON 的签名信封（Ed25519），私钥走 `OPENJOB_PLUGIN_PRIVATE_KEY` 环境变量；
-- 用户从 release 附件安装，桌面端验签 → 格式校验 → 隔离扫描 → 落盘；
+- 产物是 `.ojb`：**gzip 压缩的 JSON 信封**（Ed25519 签名盖在解压后的文件集合上），私钥走 `OPENJOB_PLUGIN_PRIVATE_KEY` 环境变量；
+- 用户从 release 附件安装，桌面端验签 → 格式校验 → 隔离扫描 → 落盘。**不接受裸 JSON 或目录**：文件对话框只认 `.ojb`，文件头不是 gzip 的直接拒；
 - 移动端不装包：随同步链路拿到包数据与编译后的代码资产，在 WebView 运行时里激活同一份产物。
 
 发出去之后用户在设置页里就能看到：列表从**自动更新的同一个源**读（GitHub 走 `releases`
@@ -310,7 +322,8 @@ pnpm verify:plugins                     # 打包并验签（CI 同款）
 必须：
 
 - 所有 id 小写稳定、包内唯一；能力/题型/量规引用一律用 id；
-- 片段、指令、声明全部是数据——没有可执行逻辑；
+- 片段、指令、声明全部是数据——没有可执行逻辑；行为写进包自己的入口代码（§4）；
+- **岗位簇的实现在包里**：不往基础包加岗位专属的实现、表、通道、文案或按岗位分派的代码；
 - 新岗位包不修改 Planner、Practice Engine、数据库层、Core Prompt Policy。
 
 禁止：
@@ -331,3 +344,7 @@ pnpm verify:plugins                     # 打包并验签（CI 同款）
 **Q：页面在主导航上看不到？** 代码插件先确认已启用（设置页）；再看 `ctx.views.registerPage` 是否在 `activate` 同步调用（异步注册的页面在下次激活时才出现）。
 
 **Q：想加一个新的 Prompt 阶段/Slot？** 这是 Core 契约变更（组合顺序 + 契约校验），不是插件能做的——到仓库提 issue。
+
+**Q：想加一个新功能或新页面？** 页面走 `ctx.views.registerPage` + `ui/`（§4）；功能写进包自己的入口代码，用 `openjob.*` 的通用原语实现。**不要往基础包塞岗位专属的实现**——基础包只放与岗位无关的基础设施与通用原语。确实缺原语（比如要访问一种宿主还没提供的资源）就来提 issue：那是平台扩展，不是包作者能绕过的边界。
+
+**Q：装了这个包，为什么基础包还留着另一个岗位的功能实现？** 那是历史遗留：`source-repository` 等能力的实现仍在基础包里，正在按 `PLUGIN_DISTRIBUTION_PLAN.md` §11 搬迁。新的岗位包不要照抄这种做法。

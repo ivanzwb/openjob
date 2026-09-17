@@ -8,11 +8,17 @@
  * 用法：node scripts/verify-plugin-bundles.mjs [dist-plugins]
  */
 import { readFileSync } from 'node:fs';
+import { gunzipSync } from 'node:zlib';
 import { join, resolve } from 'node:path';
 import { createServer } from 'vite';
 
 const DIR = resolve(process.argv[2] ?? 'dist-plugins');
 const ROOT = process.cwd();
+
+/** `.ojb` = gzip 压缩的信封，解出来是 `{ files: { <包内文件名>: <内容> } }`。 */
+function readBundleFiles(path) {
+  return JSON.parse(gunzipSync(readFileSync(path)).toString('utf8')).files;
+}
 
 const server = await createServer({
   configFile: false,
@@ -31,7 +37,7 @@ try {
 
   let failed = 0;
   for (const entry of index.plugins) {
-    const files = JSON.parse(readFileSync(join(DIR, entry.file), 'utf8')).files;
+    const files = readBundleFiles(join(DIR, entry.file));
     const issues = contract.validatePluginPackage(files);
     const trust = signature.classifyPackageTrust(files, [index.publicKey]);
     // 这里的"信任"只意味着「内容与 index.json 里那把公钥签的时候一致」。装到用户机器上
@@ -45,7 +51,7 @@ try {
   }
 
   // 反向确认校验真的在起作用：改一个字节必须被判成篡改，否则上面的 OK 说明不了任何事
-  const sample = JSON.parse(readFileSync(join(DIR, index.plugins[0].file), 'utf8')).files;
+  const sample = readBundleFiles(join(DIR, index.plugins[0].file));
   const key = 'pack.json' in sample ? 'pack.json' : 'contributions.json';
   sample[key] = `${sample[key]} `;
   const tampered = signature.classifyPackageTrust(sample, [index.publicKey]);
