@@ -67,6 +67,7 @@ import type {
   WorkspaceEntry,
   WorkspaceGrepMatch,
   WorkspaceSnapshot,
+  WorkspaceSymbolsResult,
 } from './plugins/pluginRuntime/host';
 import type {
   EndRolePlayRequest,
@@ -1311,6 +1312,15 @@ export interface IpcInvokeMap {
     res: WorkspaceSnapshot | null;
   };
   /**
+   * 工作区原语的**批量符号提取**（分发计划 §11.4）：一次传入一批工作区内的相对路径，
+   * 拿回每文件的符号与摘要。解析在宿主侧常驻的 tree-sitter 引擎里做，包沙箱只拿结果；
+   * 传 `digests`（上一次的 sha256）可做增量，摘要没变的文件不再回符号。
+   */
+  'pluginRuntime:workspace.symbols': {
+    req: { pluginId: string; paths: string[]; digests?: Record<string, string> };
+    res: WorkspaceSymbolsResult;
+  };
+  /**
    * 代码插件的 **artifact 原语**（分发计划 §11.2）：读入用户显式选择的一个文件（表格 / 文档）。
    * 请求里**没有路径**——文件选择器弹在主进程，渲染层拿不到也就传不了本机路径；
    * 每次调用都经权限网关校验 `artifact:read`，选择器取消即拒。
@@ -1662,6 +1672,7 @@ export const IPC_INVOKE_CHANNELS = [
   'pluginRuntime:workspace.glob',
   'pluginRuntime:workspace.grep',
   'pluginRuntime:workspace.snapshot',
+  'pluginRuntime:workspace.symbols',
   'pluginRuntime:artifact.read',
   'pluginRuntime:list',
   'pluginRuntime:setEnabled',

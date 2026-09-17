@@ -1,7 +1,7 @@
 /**
  * 第一方发布公钥。
  *
- * 与 tree-sitter 语法文件同样的定位方式（见 src/main/repo/treeSitter.ts）：打包后
+ * 与 tree-sitter 语法文件同样的定位方式（见 src/main/symbols/treeSitter.ts）：打包后
  * extraResources 把 resources/ 铺到 resourcesPath 根下，开发期回落到 cwd。刻意不 import
  * electron，这样本模块可以直接单测。
  *

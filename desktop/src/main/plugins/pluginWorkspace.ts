@@ -13,6 +13,10 @@
  *    静默截断；
  * 3. **只做文本与字节**：不执行、不解压、不建符号链接（遍历时也不跟随符号链接）。
  *
+ * 符号提取（`workspaceSymbols`）复用同一条路径约束，解析交给宿主侧常驻的 tree-sitter 引擎
+ * （`src/main/symbols/treeSitter.ts`）——**包沙箱里不跑解析器**，包只拿解析结果，语法文件
+ * 缺失或语言不支持时如实回空符号而不是报错。
+ *
  * 这一层不 import `plugins/package/(contract|replay)`，也不含任何代码执行入口。
  */
 import { createHash } from 'node:crypto';
@@ -27,14 +31,17 @@ import {
   writeFileSync,
 } from 'node:fs';
 import type { Dirent, Stats } from 'node:fs';
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { app } from 'electron';
 import { isStablePluginId } from '@core/plugins/contracts';
 import type {
   WorkspaceEntry,
   WorkspaceGrepMatch,
   WorkspaceSnapshot,
+  WorkspaceSymbolsFile,
+  WorkspaceSymbolsResult,
 } from '@core/plugins/pluginRuntime/host';
+import { extractSymbolsAst, grammarForExt } from '../symbols/treeSitter';
 import type { PluginPermissionGateway } from './permissionGateway';
 
 /** 原语上限。超限一律抛错，绝不静默截断——静默截断会让包侧拿到「看起来完整」的错结果。 */
@@ -51,6 +58,28 @@ export const WORKSPACE_LIMITS = {
   listEntries: 1000,
 } as const;
 
+/**
+ * 符号提取的限流。分两档，口径刻意不同：
+ *
+ * - **输入**超限（路径太多）直接抛错：这是调用方一次问得太多，说不出「算了先给你一半」；
+ * - **预算**用完（总字节 / 时间 / 结果条数）返回已完成部分 + `truncated`：数据多大由不得
+ *   包，硬抛错只会逼出「更小的魔法数字」，如实回报才能让包自己收窄范围重来。
+ */
+export const SYMBOLS_LIMITS = {
+  /** 单次调用的文件数上限 */
+  paths: 2000,
+  /** 单文件解析字节上限；超过只回摘要与 skipped='too-large'，不回符号 */
+  fileBytes: 256 * 1024,
+  /** 单次调用累计读入字节上限 */
+  totalBytes: 32 * 1024 * 1024,
+  /** 单文件符号条数上限 */
+  perFile: 200,
+  /** 单次调用符号总条数上限 */
+  results: 5000,
+  /** 单次调用时间预算（毫秒）；解析是同步的，在文件之间检查 */
+  budgetMs: 10_000,
+} as const;
+
 export type WorkspaceErrorCode =
   | 'invalid-input'
   | 'path-absolute'
@@ -61,7 +90,8 @@ export type WorkspaceErrorCode =
   | 'write-limit'
   | 'glob-limit'
   | 'grep-limit'
-  | 'list-limit';
+  | 'list-limit'
+  | 'symbols-limit';
 
 export class WorkspaceError extends Error {
   constructor(
@@ -384,17 +414,22 @@ export interface PluginWorkspaceAccess {
   root?: string;
 }
 
-/** 逐次校验权限，然后返回绑定到本包工作区的文件系统。 */
-function authorizedWorkspace(
-  pluginId: string,
-  access: PluginWorkspaceAccess,
-): WorkspaceFileSystem {
+/** 逐次校验权限，返回本包工作区根（已 resolve）。 */
+function authorizedRoot(pluginId: string, access: PluginWorkspaceAccess): string {
   const decision = access.permissionGateway.authorizePlugin({
     pluginId,
     permission: 'filesystem:workspace',
   });
   if (!decision.allowed) throw new WorkspaceAccessDeniedError(decision.code);
-  return createWorkspaceFileSystem(access.root ?? pluginWorkspaceRoot(pluginId));
+  return resolve(access.root ?? pluginWorkspaceRoot(pluginId));
+}
+
+/** 逐次校验权限，然后返回绑定到本包工作区的文件系统。 */
+function authorizedWorkspace(
+  pluginId: string,
+  access: PluginWorkspaceAccess,
+): WorkspaceFileSystem {
+  return createWorkspaceFileSystem(authorizedRoot(pluginId, access));
 }
 
 export function workspaceRead(
@@ -454,4 +489,120 @@ export function workspaceSnapshot(
   access: PluginWorkspaceAccess,
 ): WorkspaceSnapshot | null {
   return authorizedWorkspace(pluginId, access).snapshot(request.path);
+}
+
+/** 路径表校成干净的相对路径列表：必须是字符串数组、有条数上限；同一路径只算一次。 */
+function normalizeSymbolPaths(input: unknown): string[] {
+  if (!Array.isArray(input)) {
+    throw new WorkspaceError('invalid-input', 'paths 必须是路径数组');
+  }
+  if (input.length > SYMBOLS_LIMITS.paths) {
+    throw new WorkspaceError(
+      'symbols-limit',
+      `一次最多提取 ${SYMBOLS_LIMITS.paths} 个文件的符号`,
+    );
+  }
+  const unique = new Set<string>();
+  for (const item of input) {
+    if (typeof item !== 'string' || item.length === 0) {
+      throw new WorkspaceError('invalid-input', 'paths 里只能是非空字符串');
+    }
+    unique.add(item);
+  }
+  return [...unique];
+}
+
+/**
+ * 批量符号提取（分发计划 §11.4）。
+ *
+ * 与读 / glob 共用同一条路径约束，但**越界仍然抛错**而不是降级成「这个文件跳过」——越界是
+ * 调用方的问题，不是数据的问题。反过来，文件不在或读不动只记在这一条上（`skipped`），一个
+ * 坏路径不该让整批白跑。
+ *
+ * 增量：`digests` 是上一次结果里的 sha256，命中且内容没变的文件只回摘要与 `unchanged`，不再
+ * 解析——第二次问同一批文件时，成本落在哈希上而不是解析上。预算（总字节 / 时间 / 条数）用完
+ * 则返回已完成部分并带 `truncated`。
+ */
+export async function workspaceSymbols(
+  pluginId: string,
+  request: { paths: unknown; digests?: Record<string, string> },
+  access: PluginWorkspaceAccess,
+): Promise<WorkspaceSymbolsResult> {
+  const root = authorizedRoot(pluginId, access);
+  // 与其它方法一致：工作区目录按需创建，符号提取只读，但也不该因「目录还没建」报路径错
+  mkdirSync(root, { recursive: true });
+  const paths = normalizeSymbolPaths(request.paths);
+  const previous = request.digests ?? {};
+  const startedAt = Date.now();
+
+  const files: WorkspaceSymbolsFile[] = [];
+  let totalBytes = 0;
+  let totalSymbols = 0;
+  let truncated = false;
+
+  for (const path of paths) {
+    if (truncated) break;
+    if (Date.now() - startedAt > SYMBOLS_LIMITS.budgetMs) {
+      truncated = true;
+      break;
+    }
+
+    const target = confine(root, path);
+    const stats = statFile(target);
+    if (!stats || !stats.isFile()) {
+      files.push({
+        path,
+        sha256: null,
+        bytes: 0,
+        language: null,
+        unchanged: false,
+        skipped: 'not-found',
+        symbols: [],
+      });
+      continue;
+    }
+
+    // 超过解析上限的文件不读：摘要只有配合符号才有用，而它这里注定没有符号
+    if (stats.size > SYMBOLS_LIMITS.fileBytes) {
+      files.push({
+        path,
+        sha256: null,
+        bytes: stats.size,
+        language: grammarForExt(extname(target).toLowerCase()),
+        unchanged: false,
+        skipped: 'too-large',
+        symbols: [],
+      });
+      continue;
+    }
+    if (totalBytes + stats.size > SYMBOLS_LIMITS.totalBytes) {
+      truncated = true;
+      break;
+    }
+    totalBytes += stats.size;
+
+    const text = readFileSync(target, 'utf8');
+    const sha256 = createHash('sha256').update(text, 'utf8').digest('hex');
+    const language = grammarForExt(extname(target).toLowerCase());
+
+    if (previous[path] === sha256) {
+      files.push({ path, sha256, bytes: stats.size, language, unchanged: true, skipped: null, symbols: [] });
+      continue;
+    }
+
+    const extraction = await extractSymbolsAst(text, extname(target).toLowerCase(), SYMBOLS_LIMITS.perFile);
+    if (!extraction) {
+      // 语言不认识、语法文件缺失或解析异常：如实回空符号，包侧自己降级
+      files.push({ path, sha256, bytes: stats.size, language, unchanged: false, skipped: null, symbols: [] });
+      continue;
+    }
+
+    const room = Math.max(0, SYMBOLS_LIMITS.results - totalSymbols);
+    const symbols = extraction.symbols.slice(0, room);
+    if (extraction.truncated || symbols.length < extraction.symbols.length) truncated = true;
+    totalSymbols += symbols.length;
+    files.push({ path, sha256, bytes: stats.size, language, unchanged: false, skipped: null, symbols });
+  }
+
+  return { files, truncated };
 }

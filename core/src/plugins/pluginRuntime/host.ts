@@ -67,6 +67,63 @@ export interface WorkspaceSnapshot {
 }
 
 /**
+ * 符号 kind 的**闭集合**：`workspace.symbols` 只产出这些值（tree-sitter 引擎按语言节点类型
+ * 映射到这张表，映射表在 `desktop/src/main/symbols/treeSitter.ts`）。
+ */
+export const WORKSPACE_SYMBOL_KINDS = [
+  'fn',
+  'method',
+  'class',
+  'object',
+  'module',
+  'interface',
+  'trait',
+  'impl',
+  'struct',
+  'enum',
+  'type',
+] as const;
+
+export type WorkspaceSymbolKind = (typeof WORKSPACE_SYMBOL_KINDS)[number];
+
+/** 一个符号命中。行号一律 1 起，且是**文件内**行号（相对本包工作区根，不含绝对路径）。 */
+export interface WorkspaceSymbol {
+  name: string;
+  kind: WorkspaceSymbolKind;
+  line: number;
+  /** 声明结束行；与 line 相同表示单行声明 */
+  endLine: number;
+  /** 外层符号名链，从最外层到直接父级；顶层符号为空数组 */
+  containerPath: string[];
+}
+
+/** 单文件的符号提取结果。读不出来与解析不了是两回事，分别在 sha256 / language 上表达。 */
+export interface WorkspaceSymbolsFile {
+  path: string;
+  /** 文件内容摘要；文件不在或读不动时为 null */
+  sha256: string | null;
+  bytes: number;
+  /** 命中的语法名；没有对应语法（扩展名不认识）时为 null——**不是错误** */
+  language: string | null;
+  /** 传了 digests 且内容与上次一致：符号不再重算，symbols 为空 */
+  unchanged: boolean;
+  /** 没解析的原因：文件太大 / 文件不在 */
+  skipped: 'too-large' | 'not-found' | null;
+  symbols: WorkspaceSymbol[];
+}
+
+/**
+ * 批量符号提取的结果。
+ *
+ * `truncated` 为 true 表示中途撞到预算（总字节 / 时间 / 结果条数）收了工，`files` 是**已完成
+ * 的那部分**——包侧据此收窄路径重来一次，而不是把这次当成完整结果。
+ */
+export interface WorkspaceSymbolsResult {
+  files: WorkspaceSymbolsFile[];
+  truncated: boolean;
+}
+
+/**
  * 工作区原语（分发计划 §11.2）：本包工作区内的读 / 写 / 删 / 遍历 / glob / grep / 文本快照。
  *
  * 语义边界写死在这里，实现（主进程）必须照做：
@@ -82,6 +139,16 @@ export interface PluginWorkspaceService {
   glob(pattern: string): Promise<string[]>;
   grep(pattern: string, options?: { path?: string }): Promise<WorkspaceGrepMatch[]>;
   snapshot(path: string): Promise<WorkspaceSnapshot | null>;
+  /**
+   * 批量符号提取（§11.4）：一次给一批**工作区内**的相对路径，拿回每文件的符号与摘要。
+   *
+   * 解析由宿主侧常驻的 tree-sitter 引擎做，包沙箱里不跑解析器；传 `digests` 可做增量——
+   * 摘要没变的文件只回摘要与 unchanged。超预算时返回已完成部分并带 `truncated`。
+   */
+  symbols(
+    paths: string[],
+    options?: { digests?: Record<string, string> },
+  ): Promise<WorkspaceSymbolsResult>;
 }
 
 /** 用户显式提供的文件读入结果（§11.2 artifact 原语）：对包是只读数据。 */

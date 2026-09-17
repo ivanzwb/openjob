@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { extractSymbolNames, langForExt } from '@core/repo/symbolScan';
-import { astWasUsed, extractSymbolsAst } from './treeSitter';
+import { astWasUsed, extractSymbolsAst } from '../symbols/treeSitter';
 
 const SKIP_DIRS = new Set([
   '.git', 'node_modules', 'dist', 'out', 'build', '.next', 'target', '__pycache__', '.venv', 'vendor',
@@ -57,8 +57,11 @@ export async function buildRepoMapAsync(repoRoot: string, maxFiles = 80): Promis
 
         try {
           const content = readFileSync(full, 'utf8');
-          let hits = await extractSymbolsAst(content, ext);
-          if (!hits) {
+          let hits: ReadonlyArray<{ name: string; kind: string; line: number }>;
+          const extraction = await extractSymbolsAst(content, ext);
+          if (extraction) {
+            hits = extraction.symbols;
+          } else {
             hits = extractSymbols(content, langForExt(ext) ?? 'typescript');
             regexFallbacks++;
           }

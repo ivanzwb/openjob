@@ -256,7 +256,7 @@ export function activate(ctx: PluginRuntimeContext): () => void {
 | `ctx.events` | — | 订阅白名单事件：`campaign:attached` / `campaign:capability-changed` / `practice:completed` |
 | `ctx.campaign` | — | `getDescriptor(campaignId)` 只读运行配置 |
 | `ctx.storage` | — | 插件私有 KV：`get / set / delete`（键数与值长有限制） |
-| `ctx.workspace` | `filesystem:workspace` | **通用原语**：本包工作区内的读 / 写 / 删 / 遍历 / glob / grep / 文本快照；可从远端 git 拉取到该目录。路径越出本包目录即拒 |
+| `ctx.workspace` | `filesystem:workspace` | **通用原语**：本包工作区内的读 / 写 / 删 / 遍历 / glob / grep / 文本快照 / 批量符号提取；可从远端 git 拉取到该目录。路径越出本包目录即拒 |
 | `ctx.artifact` | `artifact:read` | **通用原语**：读用户显式选择的文件（表格 / 文档） |
 | `ctx.llm` | `llm:complete` | `complete({ system, user, role? })` 受控 JSON 补全，同宿主网关与审计 |
 | `ctx.agent` | `llm:complete` | `ask({ question, allowTools?, campaignId? })` 开启流式问答；增量经 `stream:delta` / `stream:done` / `stream:error` 事件到达（按 `streamId` 过滤）。**领域上下文由包自己组合**（本能力 + 自己的数据），宿主不为某个领域单开参数或通道 |

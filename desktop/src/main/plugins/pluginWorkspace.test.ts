@@ -16,6 +16,7 @@ vi.mock('electron', () => ({ app: { getPath: () => state.userData } }));
 
 import type { PluginPermissionGateway } from './permissionGateway';
 import {
+  SYMBOLS_LIMITS,
   WORKSPACE_LIMITS,
   WorkspaceAccessDeniedError,
   WorkspaceError,
@@ -23,6 +24,7 @@ import {
   pluginWorkspaceRoot,
   workspaceGlob,
   workspaceRead,
+  workspaceSymbols,
   workspaceWrite,
 } from './pluginWorkspace';
 
@@ -53,6 +55,17 @@ afterEach(() => {
 function codeOf(run: () => unknown): string {
   try {
     run();
+  } catch (error) {
+    if (error instanceof WorkspaceError) return error.code;
+    throw error;
+  }
+  throw new Error('期望抛错，但调用成功返回了');
+}
+
+/** codeOf 的异步版：符号提取要过 tree-sitter，是唯一一条 async 路径。 */
+async function asyncCodeOf(run: () => Promise<unknown>): Promise<string> {
+  try {
+    await run();
   } catch (error) {
     if (error instanceof WorkspaceError) return error.code;
     throw error;
@@ -212,5 +225,114 @@ describe('基本语义', () => {
     expect(workspaceGlob('demo.pack', { pattern: '*.txt' }, { permissionGateway: ALLOW, root })).toEqual([
       'note.txt',
     ]);
+  });
+});
+
+describe('符号提取（workspace.symbols）', () => {
+  const TS_SOURCE = [
+    'class Greeter {',
+    '  greet(): string {',
+    "    return 'hi';",
+    '  }',
+    '}',
+    '',
+    'function standalone(): void {}',
+    '',
+  ].join('\n');
+
+  /** 走完整链路调一次（含网关），路径与 root 都按测试夹具给。 */
+  const symbolsOf = (paths: unknown, digests?: Record<string, string>) =>
+    workspaceSymbols('demo.pack', { paths, digests }, { permissionGateway: ALLOW, root });
+
+  it('AST 提取：名字 / kind / 行号 / 结束行 / 外层链都如实回报', async () => {
+    writeFileSync(join(root, 'greeter.ts'), TS_SOURCE);
+
+    const result = await symbolsOf(['greeter.ts']);
+
+    expect(result.truncated).toBe(false);
+    expect(result.files).toHaveLength(1);
+    expect(result.files[0]).toMatchObject({
+      path: 'greeter.ts',
+      language: 'typescript',
+      unchanged: false,
+      skipped: null,
+    });
+    expect(result.files[0]!.sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(result.files[0]!.symbols).toEqual([
+      { name: 'Greeter', kind: 'class', line: 1, endLine: 5, containerPath: [] },
+      { name: 'greet', kind: 'method', line: 2, endLine: 4, containerPath: ['Greeter'] },
+      { name: 'standalone', kind: 'fn', line: 7, endLine: 7, containerPath: [] },
+    ]);
+  });
+
+  it('同一个文件带上次摘要再来一次：不再解析，只回摘要与 unchanged', async () => {
+    writeFileSync(join(root, 'greeter.ts'), TS_SOURCE);
+    const first = await symbolsOf(['greeter.ts']);
+    const digest = first.files[0]!.sha256!;
+
+    const second = await symbolsOf(['greeter.ts'], { 'greeter.ts': digest });
+    expect(second.files[0]).toMatchObject({ unchanged: true, sha256: digest });
+    expect(second.files[0]!.symbols).toEqual([]);
+
+    // 内容变了就不再命中摘要，符号重新算
+    writeFileSync(join(root, 'greeter.ts'), `${TS_SOURCE}\nfunction extra(): void {}\n`);
+    const third = await symbolsOf(['greeter.ts'], { 'greeter.ts': digest });
+    expect(third.files[0]).toMatchObject({ unchanged: false });
+    expect(third.files[0]!.symbols.map((symbol) => symbol.name)).toContain('extra');
+  });
+
+  it('路径越界照旧抛错，不降级成「这个文件跳过」', async () => {
+    expect(await asyncCodeOf(() => symbolsOf(['../escape.ts']))).toBe('path-escape');
+    expect(await asyncCodeOf(() => symbolsOf(['/etc/passwd']))).toBe('path-absolute');
+  });
+
+  it('文件不在只记这一条，不让整批白跑', async () => {
+    writeFileSync(join(root, 'greeter.ts'), TS_SOURCE);
+
+    const result = await symbolsOf(['greeter.ts', 'missing.ts']);
+
+    expect(result.files.map((file) => file.path)).toEqual(['greeter.ts', 'missing.ts']);
+    expect(result.files[0]!.symbols.length).toBeGreaterThan(0);
+    expect(result.files[1]).toMatchObject({ skipped: 'not-found', sha256: null, symbols: [] });
+  });
+
+  it('不认识的语言如实回空符号（language 为 null），不是错误', async () => {
+    writeFileSync(join(root, 'notes.txt'), 'hello\nworld\n');
+
+    const result = await symbolsOf(['notes.txt']);
+
+    expect(result.files[0]).toMatchObject({ language: null, symbols: [], skipped: null });
+  });
+
+  it('超过单文件解析上限的文件不读、不回符号（摘要也一并省掉）', async () => {
+    writeFileSync(join(root, 'huge.ts'), 'a'.repeat(SYMBOLS_LIMITS.fileBytes + 1));
+
+    const result = await symbolsOf(['huge.ts']);
+
+    expect(result.files[0]).toMatchObject({
+      skipped: 'too-large',
+      sha256: null,
+      language: 'typescript',
+      symbols: [],
+    });
+  });
+
+  it('入参不合法直接拒：非数组 / 空字符串 / 条数超上限', async () => {
+    expect(await asyncCodeOf(() => symbolsOf('greeter.ts'))).toBe('invalid-input');
+    expect(await asyncCodeOf(() => symbolsOf(['']))).toBe('invalid-input');
+    expect(await asyncCodeOf(() => symbolsOf([1]))).toBe('invalid-input');
+    expect(
+      await asyncCodeOf(() =>
+        symbolsOf(Array.from({ length: SYMBOLS_LIMITS.paths + 1 }, () => 'a.ts')),
+      ),
+    ).toBe('symbols-limit');
+  });
+
+  it('未授权即拒，且不触碰文件系统', async () => {
+    writeFileSync(join(root, 'greeter.ts'), TS_SOURCE);
+
+    await expect(
+      workspaceSymbols('demo.pack', { paths: ['greeter.ts'] }, { permissionGateway: DENY, root }),
+    ).rejects.toThrowError(WorkspaceAccessDeniedError);
   });
 });

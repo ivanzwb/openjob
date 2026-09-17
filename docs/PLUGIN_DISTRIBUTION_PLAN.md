@@ -256,9 +256,9 @@ GitHub 接口不通（限额、镜像没代理 `api.github.com`）时退回读 `
 禁令，并作废「插件代码不提供裸能力」这条非目标（ARCH §3.2）——Node 进程内没有技术沙箱，
 隔离只能靠签名与用户确认。若将来要走，是一次独立的安全决策，不混在这条搬迁里。
 
-**已知使能缺口**：tree-sitter 在宿主侧（`web-tree-sitter` + `repo/treeSitter.ts`），包的沙箱既
+**已知使能缺口**：tree-sitter 在宿主侧（`web-tree-sitter` + `symbols/treeSitter.ts`），包的沙箱既
 `require` 不到它，静态扫描也禁 `new Function` / `fetch`，所以符号提取只能由宿主做成语言无关的
-通用原语（`workspace.symbols`）。已在 §11.4 定案，基准已跑。
+通用原语（`workspace.symbols`）。已在 §11.4 定案，并已落地（见 §11.4 末尾的落地记录）。
 
 ### 11.4 决策记录：`workspace.symbols` 与索引基准
 
@@ -302,3 +302,30 @@ parse 的长尾在单文件体积上：<4 KB 0.76 ms、4–16 KB 1.46 ms、**>16
    文件 `language: null`，不算错误。
 7. **不放进原语的**：跨文件引用图、语料索引、排序与检索、落盘持久化——那是包的实现加上阶段 3 的
    数据面。宿主现在也不落盘符号（`find_symbol` 是查询时现扫），保持一致。
+
+**落地记录（阶段 1）**
+
+实现分布：契约在 `core/src/plugins/pluginRuntime/host.ts`（`WORKSPACE_SYMBOL_KINDS` 是 kind 的闭
+集合，`WorkspaceSymbolsResult` 是产物形状），宿主实现在 `desktop/src/main/plugins/pluginWorkspace.ts`
+（`workspaceSymbols`，与读 / glob 共用同一条路径约束），解析引擎搬到
+`desktop/src/main/symbols/treeSitter.ts`——**搬出 `repo/` 是这次搬迁的一部分**：扩展名映射、节点
+类型映射与 AST 遍历都不认岗位，`repo/symbols.ts`（源码能力的符号骨架）现在反过来 import 它。
+`roleNeutralGate.test.ts` 的冻结名单里随之删掉了 `desktop/src/main/repo/treeSitter.ts` 那条。
+
+与上面决策的差异，都是落地时才看清的，记在这里而不是改决策：
+
+- **摘要字段叫 `sha256` 不叫 `digest`**：与工作区原语的 `snapshot().sha256`、artifact 的 `sha256`
+  同名同算法，包侧拿到两个摘要能直接比，不用记「哪个接口用哪个名字」。
+- **`skipped` 多一个 `not-found`**：批量语义下，一个坏路径不该让整批白跑（越界仍然抛错——那是调用
+  方的问题，不是数据的问题）。文件不在只记在它自己那一条上。
+- **超单文件上限的文件根本不读**：决策原文是「只回摘要不解析」，但摘要只有配合符号才有用，而它注定
+  没有符号；读一遍 200 MB 只为算个没人要的摘要不划算。改为一律不读，`sha256: null`。
+- **限流分两档**（`SYMBOLS_LIMITS`）：输入超限（路径条数 > 2000）直接抛错；预算用完（总字节
+  32 MB / 时间 10 s / 结果条数 5000 / 单文件条数 200）返回已完成部分并带 `truncated`。
+- **语法目录不再依赖 cwd**：`grammarDirs()` 现在先看 `resourcesPath`（打包）、再按模块位置回溯
+  `desktop/resources/tree-sitter`（源码与 out/ 两种布局都试），最后才回落 cwd 与 `node_modules`。
+  单测与 CI 在 `smoke:grammars` 之前就跑，靠的就是这条与 `node_modules` 兜底。
+
+用例：`desktop/src/main/plugins/pluginWorkspace.test.ts` 的「符号提取」一组（AST 产物、增量摘要、
+越界照抛、坏路径不连坐、语言未知、超大文件、入参校验、未授权）；`desktop/src/main/symbols/treeSitter.test.ts`
+钉常驻 Parser 的复用边界（连换 grammar 不串味、触上限标 `truncated`、未知扩展名返回 null）。

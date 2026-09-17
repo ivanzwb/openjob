@@ -96,6 +96,13 @@ export function desktopBridgePrimitives(pluginId: string): PluginBridgePrimitive
           path: (params as { path: string }).path,
         }),
     },
+    'workspace.symbols': {
+      permission: 'filesystem:workspace',
+      invoke: (params) => {
+        const { paths, digests } = params as { paths: string[]; digests?: Record<string, string> };
+        return invoke('pluginRuntime:workspace.symbols', { pluginId, paths, digests });
+      },
+    },
     'artifact.read': {
       permission: 'artifact:read',
       invoke: () => invoke('pluginRuntime:artifact.read', { pluginId }),

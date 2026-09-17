@@ -54,6 +54,8 @@ function workspaceService(pluginId: string): PluginWorkspaceService {
     grep: (pattern, options) =>
       invoke('pluginRuntime:workspace.grep', { pluginId, pattern, path: options?.path }),
     snapshot: (path) => invoke('pluginRuntime:workspace.snapshot', { pluginId, path }),
+    symbols: (paths, options) =>
+      invoke('pluginRuntime:workspace.symbols', { pluginId, paths, ...(options ?? {}) }),
   };
 }
 

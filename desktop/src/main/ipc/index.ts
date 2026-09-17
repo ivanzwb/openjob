@@ -79,6 +79,7 @@ import {
   workspaceList,
   workspaceRead,
   workspaceSnapshot,
+  workspaceSymbols,
   workspaceWrite,
 } from '../plugins/pluginWorkspace';
 import { artifactRead } from '../plugins/pluginArtifact';
@@ -324,6 +325,10 @@ export function registerIpcHandlers(): void {
   );
   handle('pluginRuntime:workspace.snapshot', ({ pluginId, path }) =>
     workspaceSnapshot(pluginId, { path }, { permissionGateway }),
+  );
+  // 符号提取（§11.4）：解析在宿主侧常驻的 tree-sitter 引擎里跑，包只拿结果
+  handle('pluginRuntime:workspace.symbols', ({ pluginId, paths, digests }) =>
+    workspaceSymbols(pluginId, { paths, digests }, { permissionGateway }),
   );
   // artifact 原语（分发计划 §11.2）：请求里没有路径——选择器弹在主进程，
   // 渲染层拿不到也就传不了本机路径；每次调用都经 permissionGateway 校验 artifact:read

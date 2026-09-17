@@ -3,7 +3,7 @@
  *
  * 复用**真实实现**（这三个模块都不 import electron，用 vite 的 ssrLoadModule 加载，
  * 别名姿势与 scripts/pack-plugins.mjs 一致）：
- *   - desktop/src/main/repo/treeSitter.ts     → extractSymbolsAst（wasm 加载 + tree-sitter 解析 + 提符号）
+ *   - desktop/src/main/symbols/treeSitter.ts  → extractSymbolsAst（wasm 加载 + tree-sitter 解析 + 提符号）
  *   - desktop/src/main/repo/files.ts          → listAllFilesAsync（枚举）
  *   - desktop/src/renderer/src/ipc/index.ts   → invoke（跨沙箱调用固定成本，配 mock 网关）
  *
@@ -204,7 +204,7 @@ async function main() {
     { label: '10k', count: QUICK ? 120 : 10000, largeCount: QUICK ? 1 : 6 },
   ].map((t) => ({ ...t, fx: buildFixture(join(fixtureRoot, t.label), t) }));
 
-  // tree-sitter 的 grammarDirs() 用 process.cwd()/resources/tree-sitter，切到 desktop 才能命中真实 wasm
+  // grammarDirs() 会从模块位置回溯到 desktop/resources/tree-sitter；切到 desktop 让 cwd 兜底那条也命中
   process.chdir(DESKTOP);
 
   server = await createServer({
@@ -217,7 +217,7 @@ async function main() {
     optimizeDeps: { noDiscovery: true },
   });
 
-  const tsMod = await server.ssrLoadModule('desktop/src/main/repo/treeSitter.ts');
+  const tsMod = await server.ssrLoadModule('desktop/src/main/symbols/treeSitter.ts');
   const filesMod = await server.ssrLoadModule('desktop/src/main/repo/files.ts');
   const ipcMod = await server.ssrLoadModule('desktop/src/renderer/src/ipc/index.ts');
 
@@ -378,7 +378,7 @@ async function runTier(tier, tsMod, filesMod) {
     const ext = rel.slice(rel.lastIndexOf('.'));
     if (LANG_NAME[ext]) {
       const hits = await tsMod.extractSymbolsAst(buf.toString('utf8'), ext);
-      idxSymbols += hits ? hits.length : 0;
+      idxSymbols += hits ? hits.symbols.length : 0;
     }
     if (++n % 500 === 0) {
       const m = process.memoryUsage();

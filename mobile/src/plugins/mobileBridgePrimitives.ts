@@ -16,6 +16,7 @@ export const MOBILE_UNAVAILABLE_METHODS: readonly string[] = [
   'workspace.glob',
   'workspace.grep',
   'workspace.snapshot',
+  'workspace.symbols',
   'artifact.read',
   'agent.ask',
 ];
