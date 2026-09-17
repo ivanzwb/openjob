@@ -13,6 +13,7 @@
 
 import type { LlmRole } from '../../enums';
 import type { CampaignRuntimeDescriptor } from '../types';
+import { assertPluginBridgeMethod } from './bridge';
 
 export type PluginRuntimeEventName =
   | 'campaign:attached'
@@ -83,6 +84,34 @@ export interface PluginWorkspaceService {
   snapshot(path: string): Promise<WorkspaceSnapshot | null>;
 }
 
+/** 用户显式提供的文件读入结果（§11.2 artifact 原语）：对包是只读数据。 */
+export interface PluginArtifact {
+  /** 用户选中的文件名（basename）；刻意不带本机目录，避免把路径泄进沙箱 */
+  name: string;
+  /** 来源格式：分隔文本按扩展名粗判为 `delimited`，其余为 `text` */
+  format: 'text' | 'delimited';
+  /** 原始 utf8 文本 */
+  text: string;
+  bytes: number;
+  sha256: string;
+  /**
+   * 行 × 单元格：文本每行一个单元格；分隔文件按分隔符做一次朴素拆分。
+   * **不做引号处理**——那是 artifact 解析器的职责，原语只负责「读进来」。
+   */
+  rows: string[][];
+}
+
+/**
+ * artifact 原语（分发计划 §11.2）：读入**用户显式选择**的文件（表格 / 文档）。
+ *
+ * 与工作区原语的本质区别：这里**不接收路径**。包只能发起一次「请用户选个文件」的请求，
+ * 由宿主弹选择器、读用户选中的那一个；没有用户选择就没有内容。读进来的数据对包只读，
+ * 也不落进本包工作区（除非包自己再写）。
+ */
+export interface PluginArtifactService {
+  read(): Promise<PluginArtifact>;
+}
+
 export interface PluginRuntimeServices {
   /** 只读指定 Campaign 的 descriptor；无 descriptor 时为 null */
   readonly campaign: {
@@ -122,6 +151,8 @@ export interface PluginRuntimeServices {
   };
   /** 本包工作区原语；仅 manifest 声明 filesystem:workspace 时注入 */
   readonly workspace?: PluginWorkspaceService;
+  /** artifact 原语（用户显式提供的文件读入）；仅 manifest 声明 artifact:read 时注入 */
+  readonly artifact?: PluginArtifactService;
 }
 
 export interface PluginRuntimeContext {
@@ -138,6 +169,8 @@ export interface PluginRuntimeContext {
   readonly evidence: PluginRuntimeServices['evidence'];
   /** 工作区原语；未声明 filesystem:workspace 权限时为 undefined */
   readonly workspace: PluginRuntimeServices['workspace'];
+  /** artifact 原语；未声明 artifact:read 权限时为 undefined */
+  readonly artifact: PluginRuntimeServices['artifact'];
   views: {
     registerPage(page: PluginRuntimePage): { dispose(): void };
   };
@@ -146,6 +179,15 @@ export interface PluginRuntimeContext {
   };
   events: {
     on(event: PluginRuntimeEventName, handler: (payload: unknown) => void): { dispose(): void };
+  };
+  /**
+   * 桥自注册（§11.2 / §6 判据三）：包声明自己要用的桥方法（命名空间 + 方法名），
+   * 宿主按声明放行——未声明的桥方法页面够不到（默认拒绝）。声明无权限门槛，
+   * 但「声明 ≠ 有权限」：真正放行仍要过权限网关。
+   */
+  bridge: {
+    declare(name: string): { dispose(): void };
+    methods(): readonly string[];
   };
 }
 
@@ -161,6 +203,8 @@ export interface ActivePluginRuntime {
   permissions: readonly string[];
   pages: RegisteredPluginRuntimePage[];
   commands: string[];
+  /** 包声明的桥方法名（§11.2 桥自注册）：宿主按声明放行，未声明一律拒 */
+  bridgeMethods: readonly string[];
   deactivate(): void;
 }
 
@@ -193,6 +237,7 @@ export function activatePluginRuntime(input: PluginRuntimeInput): ActivePluginRu
   const { pluginId, version, permissions, module, services, hub } = input;
   const pages: RegisteredPluginRuntimePage[] = [];
   const commands: string[] = [];
+  const bridgeMethods: string[] = [];
   const cleanups: Array<() => void> = [];
   let deactivated = false;
 
@@ -208,6 +253,7 @@ export function activatePluginRuntime(input: PluginRuntimeInput): ActivePluginRu
     agent: services.agent,
     evidence: services.evidence,
     workspace: services.workspace,
+    artifact: services.artifact,
     views: {
       registerPage(page: PluginRuntimePage) {
         guard();
@@ -260,6 +306,21 @@ export function activatePluginRuntime(input: PluginRuntimeInput): ActivePluginRu
         return subscription;
       },
     },
+    bridge: {
+      declare(name: string) {
+        guard();
+        assertPluginBridgeMethod(name);
+        if (bridgeMethods.includes(name)) throw new Error(`桥方法重复声明：${name}`);
+        bridgeMethods.push(name);
+        return { dispose() {
+          const index = bridgeMethods.indexOf(name);
+          if (index >= 0) bridgeMethods.splice(index, 1);
+        } };
+      },
+      methods() {
+        return [...bridgeMethods];
+      },
+    },
   };
 
   const teardown = module.activate(ctx);
@@ -277,11 +338,16 @@ export function activatePluginRuntime(input: PluginRuntimeInput): ActivePluginRu
     get commands() {
       return [...commands];
     },
+    // 声明快照：deactivate 清空内部登记后同步为空
+    get bridgeMethods() {
+      return [...bridgeMethods];
+    },
     deactivate() {
       if (deactivated) return;
       deactivated = true;
       pages.length = 0;
       commands.length = 0;
+      bridgeMethods.length = 0;
       for (const cleanup of cleanups.reverse()) {
         try {
           cleanup();
@@ -298,8 +364,10 @@ export function activatePluginRuntime(input: PluginRuntimeInput): ActivePluginRu
  * llm / evidence 只对 manifest 声明了对应权限的插件注入（渲染层装配时使用）。
  */
 export function pluginRuntimeNamespaces(permissions: readonly string[]): string[] {
-  const namespaces = ['views', 'commands', 'events', 'campaign', 'storage'];
+  // bridge 与基础命名空间同级：声明桥方法没有权限门槛，放行与否由权限网关判
+  const namespaces = ['views', 'commands', 'events', 'campaign', 'storage', 'bridge'];
   if (permissions.includes('filesystem:workspace')) namespaces.push('workspace');
+  if (permissions.includes('artifact:read')) namespaces.push('artifact');
   if (permissions.includes('llm:complete')) namespaces.push('llm', 'agent');
   if (permissions.includes('evidence:read-confirmed')) namespaces.push('evidence');
   return namespaces;

@@ -1,8 +1,13 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { WebView } from 'react-native-webview';
+import {
+  createPluginBridge,
+  declaredPermissionBridgeGate,
+} from '@core/plugins/pluginRuntime/bridge';
 import { buildMobileRuntimeHtml, type MobilePluginRuntime } from '../plugins/mobileRuntime';
+import { mobileBridgePrimitives } from '../plugins/mobileBridgePrimitives';
 import { listMobilePluginRuntimes } from '../data/pluginRuntimeLocal';
 import { invokeRemote } from '../remote/rpc';
 import { getRawDb } from '../db';
@@ -19,9 +24,19 @@ import { useTheme } from '../theme';
 
 type BridgeReply = {
   openjob?: { reqId: number; method: string; params: Record<string, unknown> };
+  /** WebView shim 回传的桥方法声明（§11.2 桥自注册） */
+  openjobDeclarations?: string[];
+  /** 入口 activate 抛错时的文案（不吞，显式让界面看到） */
+  openjobActivationError?: string;
 };
 
-/** 移动端桥白名单：与桌面受控桥同构，远端权限网关再校验一道 */
+/**
+ * 移动端桥白名单里**岗位簇方法**的过渡路径（阶段 2 随搬迁下线）。
+ *
+ * 通用原语（storage / campaign / evidence）已改走桥自注册（`createPluginBridge`），
+ * 这里只剩待搬迁的岗位簇方法——渲染层不再为它们单开机制。
+ * 远端权限网关仍逐次校验，移动端只是传输层。
+ */
 function bridgeMethod(
   method: string,
   params: Record<string, unknown>,
@@ -62,8 +77,24 @@ function bridgeMethod(
 function PluginRuntimeView({ plugin }: { plugin: MobilePluginRuntime }): React.JSX.Element {
   const theme = useTheme();
   const webRef = useRef<WebView>(null);
+  const [declared, setDeclared] = useState<readonly string[]>([]);
 
   const html = buildMobileRuntimeHtml(plugin);
+
+  // 桥自注册（§11.2）：包在入口代码里声明要用的桥方法，宿主按声明放行。手机端
+  // 原语表里没有桌面才有的能力（workspace / artifact / agent），声明了也如实拒绝。
+  const declaredBridge = useMemo(
+    () =>
+      createPluginBridge({
+        pluginId: plugin.pluginId,
+        declared,
+        primitives: mobileBridgePrimitives((channel, payload) =>
+          invokeRemote(channel, payload).then((r) => r.result),
+        ),
+        gate: declaredPermissionBridgeGate(plugin.permissions),
+      }),
+    [plugin.pluginId, plugin.permissions, declared],
+  );
 
   const onMessage = useCallback(
     (event: { nativeEvent: { data: string } }) => {
@@ -73,10 +104,23 @@ function PluginRuntimeView({ plugin }: { plugin: MobilePluginRuntime }): React.J
       } catch {
         return;
       }
+      // shim 激活入口后回传声明：记下来，后续调用按声明放行
+      if (parsed?.openjobDeclarations) {
+        setDeclared(parsed.openjobDeclarations);
+        return;
+      }
       const openjob = parsed?.openjob;
       if (!openjob) return;
       const { reqId, method, params } = openjob;
-      void bridgeMethod(method, params ?? {}).then(
+      const run = (): Promise<unknown> => {
+        // 声明过的走桥自注册：未声明 / 本端没有 / 网关拒绝都在这里如实报错
+        if (declaredBridge.declared.includes(method)) {
+          return declaredBridge.call(method, params ?? {});
+        }
+        // 未声明的岗位簇方法暂由 legacy 表兜着，阶段 2 随搬迁下线
+        return bridgeMethod(method, params ?? {});
+      };
+      void run().then(
         (result) => {
           const reply = JSON.stringify({ __openjobReply: { reqId, result, error: null } });
           webRef.current?.injectJavaScript(`window.__openjobReply(${reply}); true;`);
@@ -93,7 +137,7 @@ function PluginRuntimeView({ plugin }: { plugin: MobilePluginRuntime }): React.J
         },
       );
     },
-    [],
+    [declaredBridge],
   );
 
   return (

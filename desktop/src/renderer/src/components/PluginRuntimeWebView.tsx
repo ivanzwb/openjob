@@ -1,8 +1,13 @@
 import { useEffect, useRef } from 'react';
 import type { LlmRole } from '@core/enums';
 import { resolveWebviewHtml } from '@core/plugins/pluginRuntime/assets';
+import {
+  createPluginBridge,
+  declaredPermissionBridgeGate,
+} from '@core/plugins/pluginRuntime/bridge';
 import { invoke, onEvent } from '../ipc';
 import { getUiAssets, onPluginEvent } from '../pluginRuntimes/runtime';
+import { desktopBridgePrimitives } from '../pluginRuntimes/bridgePrimitives';
 
 /**
  * 代码插件的 Webview 沙箱页面（§7.9）。
@@ -96,6 +101,12 @@ function bridgeMethods(permissions: readonly string[]) {
     methods['workspace.snapshot'] = (_pluginId: string, params: { path: string }) =>
       invoke('pluginRuntime:workspace.snapshot', { pluginId: _pluginId, ...params });
   }
+  if (permissions.includes('artifact:read')) {
+    // artifact 原语（§11.2）：请求里没有路径——选择器弹在主进程，页面只能发起
+    // 「请用户选个文件」。没有用户选择就拒；主进程网关逐次校验 artifact:read
+    methods['artifact.read'] = (_pluginId: string) =>
+      invoke('pluginRuntime:artifact.read', { pluginId: _pluginId });
+  }
   return methods;
 }
 
@@ -103,10 +114,13 @@ export function PluginRuntimeWebView({
   pluginId,
   webviewPath,
   permissions,
+  declaredBridgeMethods,
 }: {
   pluginId: string;
   webviewPath: string;
   permissions: readonly string[];
+  /** 包在入口代码里声明的桥方法（§11.2 桥自注册）：未声明的页面够不到 */
+  declaredBridgeMethods: readonly string[];
 }): React.JSX.Element | null {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const assets = getUiAssets(pluginId);
@@ -114,6 +128,18 @@ export function PluginRuntimeWebView({
     ? resolveWebviewHtml(webviewPath, assets[webviewPath], assets)
     : undefined;
   const methods = bridgeMethods(permissions);
+  // 桥自注册（§11.2 / §6 判据三）：包声明了哪些桥方法，宿主就放行哪些——声明只决定
+  // 「能不能到网关」，放行与否交给权限网关（这里端侧判一次，主进程网关权威判一次）。
+  // 声明了但本端原语表里没有的方法不进 methods，页面调用时落到「未开放的桥方法」。
+  const declaredBridge = createPluginBridge({
+    pluginId,
+    declared: declaredBridgeMethods,
+    primitives: desktopBridgePrimitives(pluginId),
+    gate: declaredPermissionBridgeGate(permissions),
+  });
+  for (const method of declaredBridge.methods) {
+    methods[method] = (_pluginId: string, params: never) => declaredBridge.call(method, params);
+  }
 
   // 宿主事件单向推入沙箱：页面据此刷新，不需要自己实现轮询
   useEffect(() => {

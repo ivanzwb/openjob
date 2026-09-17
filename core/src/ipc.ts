@@ -63,6 +63,7 @@ import type { PluginType } from './enums';
 import type { CampaignRuntimeDescriptor, ClientPlatform, RolePack } from './plugins/types';
 import type { PluginPermission } from './plugins/permissions';
 import type {
+  PluginArtifact,
   WorkspaceEntry,
   WorkspaceGrepMatch,
   WorkspaceSnapshot,
@@ -1309,6 +1310,15 @@ export interface IpcInvokeMap {
     req: { pluginId: string; path: string };
     res: WorkspaceSnapshot | null;
   };
+  /**
+   * 代码插件的 **artifact 原语**（分发计划 §11.2）：读入用户显式选择的一个文件（表格 / 文档）。
+   * 请求里**没有路径**——文件选择器弹在主进程，渲染层拿不到也就传不了本机路径；
+   * 每次调用都经权限网关校验 `artifact:read`，选择器取消即拒。
+   */
+  'pluginRuntime:artifact.read': {
+    req: { pluginId: string };
+    res: PluginArtifact;
+  };
   /** 代码插件清单（含启用状态）：设置页展示与激活门槛共用 */
   'pluginRuntime:list': {
     req: void;
@@ -1652,6 +1662,7 @@ export const IPC_INVOKE_CHANNELS = [
   'pluginRuntime:workspace.glob',
   'pluginRuntime:workspace.grep',
   'pluginRuntime:workspace.snapshot',
+  'pluginRuntime:artifact.read',
   'pluginRuntime:list',
   'pluginRuntime:setEnabled',
   'campaign:list',

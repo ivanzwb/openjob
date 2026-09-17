@@ -12,6 +12,7 @@ import {
   type ActivePluginRuntime,
   type PluginRuntimeModule,
   type PluginWorkspaceService,
+  type PluginArtifactService,
 } from '@core/plugins/pluginRuntime/host';
 import type { LlmRole } from '@core/enums';
 import { invoke } from '../ipc';
@@ -53,6 +54,16 @@ function workspaceService(pluginId: string): PluginWorkspaceService {
     grep: (pattern, options) =>
       invoke('pluginRuntime:workspace.grep', { pluginId, pattern, path: options?.path }),
     snapshot: (path) => invoke('pluginRuntime:workspace.snapshot', { pluginId, path }),
+  };
+}
+
+/**
+ * artifact 原语的门面（§11.2）：请求里**没有路径**——由主进程弹选择器、读用户选中的文件。
+ * 每次调用都是一条 IPC，主进程的网关逐次校验 `artifact:read`，没有用户选择就拒。
+ */
+function artifactService(pluginId: string): PluginArtifactService {
+  return {
+    read: () => invoke('pluginRuntime:artifact.read', { pluginId }),
   };
 }
 
@@ -168,6 +179,10 @@ export async function activateInstalledPluginRuntimes(): Promise<void> {
             // 工作区原语；未声明 filesystem:workspace 时为 undefined（ctx.workspace 不存在）
             workspace: plugin.permissions.includes('filesystem:workspace')
               ? workspaceService(plugin.id)
+              : undefined,
+            // artifact 原语；未声明 artifact:read 时为 undefined（ctx.artifact 不存在）
+            artifact: plugin.permissions.includes('artifact:read')
+              ? artifactService(plugin.id)
               : undefined,
           },
           hub,

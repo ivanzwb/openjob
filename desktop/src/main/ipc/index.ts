@@ -81,6 +81,7 @@ import {
   workspaceSnapshot,
   workspaceWrite,
 } from '../plugins/pluginWorkspace';
+import { artifactRead } from '../plugins/pluginArtifact';
 import { completePluginJson } from '../llm/json';
 import { emit } from '../ipc/bridge';
 import { pluginInventoryView } from '../plugins/bootstrap';
@@ -323,6 +324,11 @@ export function registerIpcHandlers(): void {
   );
   handle('pluginRuntime:workspace.snapshot', ({ pluginId, path }) =>
     workspaceSnapshot(pluginId, { path }, { permissionGateway }),
+  );
+  // artifact 原语（分发计划 §11.2）：请求里没有路径——选择器弹在主进程，
+  // 渲染层拿不到也就传不了本机路径；每次调用都经 permissionGateway 校验 artifact:read
+  handle('pluginRuntime:artifact.read', ({ pluginId }) =>
+    artifactRead(pluginId, { permissionGateway }),
   );
   handle('plugin:install', async ({ trustUnknownSigner, overwrite, confirmDataLoss }) => {
     // 弹框放在主进程：渲染层不传路径，也就没有「渲染层指定任意文件让主进程去读」这条路

@@ -54,6 +54,7 @@ export function buildMobileRuntimeHtml(plugin: MobilePluginRuntime): string {
   var pending = {};
   var pages = [];
   var commands = {};
+  var bridgeMethods = [];
 
   function postToRn(message) {
     if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
@@ -105,6 +106,19 @@ export function buildMobileRuntimeHtml(plugin: MobilePluginRuntime): string {
         commands[pluginId + ':' + id] = handler;
         return { dispose: function () {} };
       }
+    },
+    events: {
+      // §7：手机端是 view-only，没有宿主事件流；订阅进来只登记、不投递（不假装能收到）
+      on: function () { return { dispose: function () {} }; }
+    },
+    bridge: {
+      // 桥自注册（§11.2）：登记本包要用的桥方法名，随 openjobDeclarations 回传 RN，
+      // 宿主按声明放行；未声明的方法一律拒（远端网关仍逐次校验权限）
+      declare: function (name) {
+        if (bridgeMethods.indexOf(name) < 0) bridgeMethods.push(name);
+        return { dispose: function () {} };
+      },
+      methods: function () { return bridgeMethods.slice(); }
     }
   };
 
@@ -114,6 +128,17 @@ export function buildMobileRuntimeHtml(plugin: MobilePluginRuntime): string {
     throw new Error('插件只允许 require("openjob")，实际请求了 ' + id);
   };
   new Function('module', 'exports', 'require', mainSource)(module, module.exports, requireShim);
+
+  // 激活入口：与桌面同构（宿主调用 activate(ctx)）。抛错不吞，回传 RN 让界面显式报错
+  try {
+    if (module.exports && typeof module.exports.activate === 'function') {
+      module.exports.activate(openjob);
+    }
+  } catch (error) {
+    postToRn({ openjobActivationError: String((error && error.message) || error) });
+  }
+  // 包声明的桥方法回传 RN：宿主据此放行（声明 !== 权限，远端网关仍逐次校验）
+  postToRn({ openjobDeclarations: bridgeMethods.slice() });
 
   // 相对引用解析：与桌面共用同一规则（core pluginRuntime/assets 的 JS 等价实现）
   function isRelative(ref) {

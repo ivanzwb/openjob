@@ -264,6 +264,7 @@ export default function App(): React.JSX.Element {
                     pluginId={plugin.pluginId}
                     webviewPath={page.webviewPath}
                     permissions={plugin.permissions}
+                    declaredBridgeMethods={plugin.bridgeMethods}
                   />
                 </TabPanel>
               );

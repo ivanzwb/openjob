@@ -126,6 +126,10 @@ describe('pluginRuntimeNamespaces', () => {
     const base = pluginRuntimeNamespaces([]);
     expect(base).toContain('views');
     expect(base).toContain('storage');
+    // bridge 与基础命名空间同级：声明桥方法没有权限门槛
+    expect(base).toContain('bridge');
+    expect(base).not.toContain('artifact');
+    expect(base).not.toContain('workspace');
     expect(base).not.toContain('llm');
     expect(base).not.toContain('evidence');
 
@@ -134,12 +138,21 @@ describe('pluginRuntimeNamespaces', () => {
     expect(full).toContain('evidence');
   });
 
-  it('ctx 透传 campaign/llm/evidence 服务', async () => {
+  it('artifact 原语只对声明 artifact:read 的插件注入', () => {
+    expect(pluginRuntimeNamespaces([])).not.toContain('artifact');
+    expect(pluginRuntimeNamespaces(['artifact:read'])).toContain('artifact');
+  });
+
+  it('ctx 透传 campaign/llm/evidence/artifact 服务与 bridge 命名空间', async () => {
     const hub = createEventHub();
     let seen = false;
     const plugin: PluginRuntimeModule = {
       activate(ctx) {
-        seen = typeof ctx.llm?.complete === 'function' && typeof ctx.evidence?.listConfirmed === 'function';
+        seen =
+          typeof ctx.llm?.complete === 'function' &&
+          typeof ctx.evidence?.listConfirmed === 'function' &&
+          typeof ctx.artifact?.read === 'function' &&
+          typeof ctx.bridge.declare === 'function';
       },
     };
     activatePluginRuntime({
@@ -151,6 +164,16 @@ describe('pluginRuntimeNamespaces', () => {
         storage: { get: async () => null, set: async () => undefined, delete: async () => undefined },
         llm: { complete: async () => ({}) },
         evidence: { listConfirmed: async () => [] },
+        artifact: {
+          read: async () => ({
+            name: 'a.csv',
+            format: 'delimited',
+            text: 'a,b',
+            bytes: 3,
+            sha256: '0'.repeat(64),
+            rows: [['a', 'b']],
+          }),
+        },
       },
       hub,
     });
