@@ -32,8 +32,14 @@ const MAX_ENTRIES = 20;
 /** 清单本身（一次 HTTP 往返）的超时 */
 const LIST_TIMEOUT_MS = 15_000;
 
-/** 包体下载的超时：包是几 KB 的文本，慢到这个程度已经是坏了 */
+/**
+ * 包体下载的超时：包体随包内资产增长（当前最大的是几百 KB 的压缩文本），
+ * 慢到这个程度已经不是「稍慢」，而是连接卡死了
+ */
 const BUNDLE_TIMEOUT_MS = 30_000;
+
+/** 包体下载的尝试次数：CDN 上偶发的重置/握手失败重试一次就过去了 */
+const BUNDLE_DOWNLOAD_ATTEMPTS = 2;
 
 /** 清单缓存有效期：装的时候复用刚拉到的地址，不再重列一遍 release */
 const CACHE_TTL_MS = 10 * 60 * 1000;
@@ -80,8 +86,23 @@ export function resetPluginCatalogCache(): void {
 
 type FetchLike = typeof fetch;
 
+/**
+ * 把连接层失败的原因摊开。
+ *
+ * undici 在连不上时只给一句 “fetch failed”，真正的原因（DNS 解析不到、TLS 握手超时、
+ * 连接被重置、整体超时中止）挂在 `cause` 链上。用户要判断这是自己的网络、镜像还是发布方
+ * 的问题，就得看到它，而不是一句无从下手的 fetch failed。
+ */
 function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  const parts: string[] = [];
+  let current: unknown = error;
+  while (current instanceof Error && parts.length < 4) {
+    const text = current.message || current.name;
+    if (text) parts.push(text);
+    current = current.cause;
+  }
+  if (parts.length === 0) return String(error);
+  return parts.length === 1 ? parts[0]! : `${parts[0]}（底层原因：${parts.slice(1).join('、')}）`;
 }
 
 function entryKey(id: string, version: string): string {
@@ -545,15 +566,30 @@ export async function downloadPluginBundle(options: {
     }
   }
 
-  let raw: Buffer | null;
-  try {
-    const res = await doFetch(ref.url, { signal: AbortSignal.timeout(BUNDLE_TIMEOUT_MS) });
-    if (!res.ok) {
-      return { ok: false, code: 'download-failed', detail: `下载 ${ref.url} 返回 HTTP ${res.status}` };
+  let raw: Buffer | null = null;
+  let lastError: unknown = null;
+  // 包体走发布页的下载地址，会被重定向到 CDN；CDN 上偶发重置/握手超时，重试一次就过去了，
+  // 直接把失败摊给用户等于让用户自己碰运气
+  for (let attempt = 0; attempt < BUNDLE_DOWNLOAD_ATTEMPTS; attempt += 1) {
+    try {
+      const res = await doFetch(ref.url, { signal: AbortSignal.timeout(BUNDLE_TIMEOUT_MS) });
+      if (!res.ok) {
+        return { ok: false, code: 'download-failed', detail: `下载 ${ref.url} 返回 HTTP ${res.status}` };
+      }
+      raw = await readCapped(res, MAX_BUNDLE_BYTES);
+      break;
+    } catch (error) {
+      lastError = error;
     }
-    raw = await readCapped(res, MAX_BUNDLE_BYTES);
-  } catch (error) {
-    return { ok: false, code: 'download-failed', detail: `下载 ${ref.url} 失败：${messageOf(error)}` };
+  }
+  if (raw === null && lastError !== null) {
+    return {
+      ok: false,
+      code: 'download-failed',
+      detail:
+        `下载 ${ref.url} 失败：${messageOf(lastError)}。` +
+        '包体取自更新源，连不上时可以在设置里把更新源指到镜像，或稍后重试。',
+    };
   }
   if (raw === null) {
     return { ok: false, code: 'download-failed', detail: `包体超过 ${MAX_BUNDLE_BYTES} 字节上限，已中断` };
