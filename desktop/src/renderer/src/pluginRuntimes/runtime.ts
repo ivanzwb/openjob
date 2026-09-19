@@ -317,6 +317,9 @@ export async function activateInstalledPluginRuntimes(): Promise<void> {
         activatePluginRuntime({
           pluginId: plugin.id,
           version: plugin.version,
+          // 声明的权限必须原样传进激活：它决定暴露给页面的桥方法，
+          // 漏传的表现不是「少几个方法」，而是页面调用任何带权限的原语都被判成「未声明」
+          permissions: plugin.permissions,
           module: loadModule(entry.source, plugin.id, plugin.version, plugin.permissions),
           services: {
             campaign: {

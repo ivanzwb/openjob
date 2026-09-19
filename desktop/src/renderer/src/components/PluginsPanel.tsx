@@ -426,10 +426,10 @@ export function PluginsPanel({
                   const info = pluginRuntimes.find((item) => `${item.id}@${item.version}` === confirmingId);
                   setBusy(true);
                   try {
-                    // 启用按**裸 id**走：id@version 是安装清单里的定位键，主进程那边校验的是插件 id
-                    if (!info) throw new Error(`安装清单里没有 ${confirmingId}`);
-                    await enablePluginRuntime(info.id);
-                    setMessage(`已启用 ${info.displayName}`);
+                    // 启用按**裸 id**走：id@version 是安装清单里的定位键，主进程那边校验的是插件 id。
+                    // 清单里查不到时（例如刚装好、这次快照还没刷新）就从键上取回 id，不把用户挡在门外
+                    await enablePluginRuntime(info?.id ?? confirmingId.split('@')[0]!);
+                    setMessage(`已启用 ${info?.displayName ?? confirmingId}`);
                   } finally {
                     setBusy(false);
                     setConfirmingId(null);
