@@ -46,8 +46,9 @@
     <button id="refresh">刷新</button>
     <p id="msg" class="muted"></p>
     <p class="hint">
-      手机端只读本包声明的 repositories 数据集合：链接、更新、概览与问源码都在桌面端做——工作区与
-      远端拉取这两类原语只有桌面有，这里不摆一个点了必然失败的按钮。
+      手机端只读本包声明的数据集合：链接、更新、建索引与问源码都在桌面端做——工作区与远端拉取这两类
+      原语只有桌面有，这里不摆一个点了必然失败的按钮。桌面建好的摘要与仓库地图会随数据集合同步过来，
+      这里只展示，不重新生成。
     </p>
 
     <script>
@@ -70,6 +71,8 @@
 
       // 登记表与桌面端同一份数据集合：行是包自己序列化的 JSON，宿主不理解内容。
       const COLLECTION = 'repositories';
+      // 索引产物（摘要 / 仓库地图）：桌面建好随数据集合同步过来，手机端只读展示。
+      const INDEX_COLLECTION = 'repository-indexes';
 
       function setMsg(text) {
         document.getElementById('msg').textContent = text;
@@ -107,9 +110,50 @@
         };
       }
 
+      /** 索引行：只认得出状态的才是可用行；手机端只读，不认识的内容一概当没有。 */
+      function parseIndex(raw) {
+        if (typeof raw !== 'string' || !raw) return null;
+        let value;
+        try {
+          value = JSON.parse(raw);
+        } catch {
+          return null;
+        }
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+        if (typeof value.status !== 'string') return null;
+        return {
+          status: value.status,
+          summary: typeof value.summary === 'string' ? value.summary : '',
+          repoMap: typeof value.repoMap === 'string' ? value.repoMap : '',
+          note: typeof value.note === 'string' ? value.note : '',
+          builtAt: typeof value.builtAt === 'number' ? value.builtAt : null,
+        };
+      }
+
+      function appendIndex(li, index) {
+        if (!index || index.status === 'building' || index.status === 'failed') return;
+        const wrap = document.createElement('div');
+        wrap.className = 'muted';
+        const when = index.builtAt ? `（${new Date(index.builtAt).toLocaleString()} 建立）` : '';
+        if (index.status === 'empty') {
+          wrap.textContent = index.note || '没什么可索引的';
+          li.appendChild(wrap);
+          return;
+        }
+        const parts = [];
+        if (index.summary) parts.push(`摘要：${index.summary}`);
+        if (index.repoMap) parts.push(`仓库地图：\n${index.repoMap}`);
+        if (parts.length === 0) return;
+        wrap.textContent = `${parts.join('\n\n')}${when}`;
+        li.appendChild(wrap);
+      }
+
       async function refresh() {
         const rows = await call('data.list', { collection: COLLECTION, limit: 1000 });
         const repos = rows.map((row) => parseEntry(row.value)).filter(Boolean);
+        // 索引产物与登记表同一份同步数据：桌面建好，手机端只读展示
+        const indexRows = await call('data.list', { collection: INDEX_COLLECTION, limit: 1000 });
+        const indexByKey = new Map(indexRows.map((row) => [row.key, parseIndex(row.value)]));
         const node = document.getElementById('repos');
         node.innerHTML = '';
         setMsg(repos.length ? '' : '还没有仓库：请在桌面端链接一个');
@@ -135,6 +179,8 @@
           url.textContent = entry.url;
 
           li.append(name, meta, url);
+          // 索引键取检出目录，与登记行的 id 一致；没有同步过来就什么都不显示
+          appendIndex(li, indexByKey.get(entry.id));
           node.appendChild(li);
         }
       }

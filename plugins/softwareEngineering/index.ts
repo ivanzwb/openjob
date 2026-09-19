@@ -90,12 +90,17 @@ export const softwareEngineeringRolePack: RolePack = defineRolePack({
     mobile: 'mobile/main.js',
     api: '^1.0',
     dependencies: [],
-    // 本包自己的数据集合：宿主只按这三个名字归档与取用，不理解里面的内容。
-    // 页面当前仍走 ctx.storage，改为按集合读写是后续步骤。
+    // 本包自己的数据集合：宿主只按这些名字归档与取用，不理解里面的内容。
+    // - repositories：检出登记表（排程按 (kind, collection) 取代码材料）；
+    // - qa-history：按检出分片的问答历史（问题 / 回答 / 引用 / 时间），跨端同步共用；
+    // - repository-indexes：按检出存的索引产物（摘要 / 仓库地图 / 状态 / 建立时间）。
+    // code-refs 与 repository-files 是旧通道留下的登记名，保留以兼容既有声明形状。
     dataCollections: [
       { name: 'repositories', schemaVersion: 1 },
       { name: 'code-refs', schemaVersion: 1 },
       { name: 'repository-files', schemaVersion: 1 },
+      { name: 'qa-history', schemaVersion: 1 },
+      { name: 'repository-indexes', schemaVersion: 1 },
     ],
   },
   roleMatchers: softwareEngineeringMatchers,

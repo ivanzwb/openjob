@@ -2,14 +2,54 @@ import { describe, expect, it } from 'vitest';
 import { PROMPT_REGISTRY } from '@core/prompts/registry';
 import { validateRolePack } from '@core/plugins/contracts';
 import {
+  activatePluginRuntime,
+  createEventHub,
+  type PluginRuntimeModule,
+  type PluginRuntimeServices,
+} from '@core/plugins/pluginRuntime/host';
+import type { CampaignRuntimeDescriptor } from '@core/plugins/types';
+import {
   SOFTWARE_ENGINEERING_PROMPT_REFS,
+  SOFTWARE_ENGINEERING_ROLE_PACK_ID,
   softwareEngineeringRolePack,
 } from './index';
+import { activate as desktopActivate } from './desktop/main';
+import { activate as mobileActivate } from './mobile/main';
 
 function leafStrings(value: unknown): string[] {
   if (typeof value === 'string') return [value];
   if (value === null || typeof value !== 'object') return [];
   return Object.values(value).flatMap(leafStrings);
+}
+
+/** 最小可用运行时服务：两端入口只注册页面与桥方法，不碰宿主任何服务。 */
+function runtimeServices(): PluginRuntimeServices {
+  return {
+    campaign: { getDescriptor: async () => null as CampaignRuntimeDescriptor | null },
+    storage: {
+      get: async () => null,
+      set: async () => undefined,
+      delete: async () => undefined,
+    },
+    data: {
+      get: async () => null,
+      put: async () => undefined,
+      delete: async () => undefined,
+      list: async () => [],
+      count: async () => 0,
+    },
+  };
+}
+
+/** 用最小运行时激活某一端入口（desktop/main.ts / mobile/main.ts），拿到页面与桥方法声明。 */
+function activateEntry(activate: PluginRuntimeModule['activate']) {
+  return activatePluginRuntime({
+    pluginId: SOFTWARE_ENGINEERING_ROLE_PACK_ID,
+    version: softwareEngineeringRolePack.manifest.version,
+    module: { activate },
+    services: runtimeServices(),
+    hub: createEventHub(),
+  });
 }
 
 describe('softwareEngineeringRolePack contract', () => {
@@ -55,5 +95,59 @@ describe('softwareEngineeringRolePack contract', () => {
       expect(promptId).toMatch(/^[a-z][A-Za-z]*(?:\.[A-Za-z][A-Za-z]*)+$/);
       expect(promptId).not.toContain('\n');
     }
+  });
+
+  it('两端入口各注册「源码」页，deactivate 后撤干净', () => {
+    for (const activate of [desktopActivate, mobileActivate]) {
+      const active = activateEntry(activate);
+      expect(active.pages).toEqual([
+        {
+          pluginId: SOFTWARE_ENGINEERING_ROLE_PACK_ID,
+          fullId: `${SOFTWARE_ENGINEERING_ROLE_PACK_ID}:source-repository`,
+          id: 'source-repository',
+          title: '源码',
+          webviewPath: 'ui/repositories.html',
+        },
+      ]);
+      active.deactivate();
+      expect(active.pages).toEqual([]);
+    }
+  });
+
+  it('桥自注册：桌面声明页面用到的全部通用原语，手机只读同一份数据', () => {
+    // 「源码」页编排的全是通用原语：工作区（浏览 / 读 / glob / grep / 符号 / 远端拉取）、
+    // 本包声明的数据集合读写、基础流式问答，以及建索引用的受控补全。声明只决定「能不能到网关」。
+    const desktop = activateEntry(desktopActivate);
+    expect(desktop.bridgeMethods).toEqual([
+      'workspace.fetch',
+      'workspace.delete',
+      'workspace.glob',
+      'workspace.list',
+      'workspace.read',
+      'workspace.grep',
+      'workspace.symbols',
+      'data.list',
+      'data.get',
+      'data.put',
+      'data.delete',
+      'llm.complete',
+      'agent.ask',
+    ]);
+
+    // 手机端不做执行：只声明读取本包声明的数据集合（登记表 + 同步来的索引）
+    const mobile = activateEntry(mobileActivate);
+    expect(mobile.bridgeMethods).toEqual(['data.list']);
+  });
+
+  it('数据集合随包声明：登记表、问答历史与索引产物都在 manifest 里', () => {
+    expect(
+      (softwareEngineeringRolePack.manifest.dataCollections ?? []).map((item) => item.name),
+    ).toEqual([
+      'repositories',
+      'code-refs',
+      'repository-files',
+      'qa-history',
+      'repository-indexes',
+    ]);
   });
 });

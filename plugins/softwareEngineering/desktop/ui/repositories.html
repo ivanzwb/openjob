@@ -40,6 +40,17 @@
         font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       }
       .source { font-size: 12px; margin: 2px 0; }
+
+      /* 索引产物（摘要 / 仓库地图）与历史问答：都只是本页自己排版的文本 */
+      .index-field h3 { font-size: 13px; margin: 10px 0 4px; }
+      .index-field pre { margin: 0; font-size: 12px; }
+      .qa {
+        border: 1px solid rgba(128, 128, 128, 0.25); border-radius: 6px;
+        padding: 8px; margin: 6px 0;
+      }
+      .qa .q { font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+      .qa .a { white-space: pre-wrap; font-size: 12px; margin: 0; }
+      .qa .at { font-size: 11px; margin-top: 4px; }
       @media (prefers-color-scheme: dark) {
         .tok-kw { color: #c792ea; }
         .tok-str { color: #9ece6a; }
@@ -81,15 +92,31 @@
     <pre id="code" class="code">选中仓库后，从上面的列表打开文件。</pre>
 
     <h2>概览</h2>
-    <pre id="overview" class="muted">选中仓库后点「概览」</pre>
+    <p class="muted" style="font-size: 12px">
+      拉取或更新检出后，本包会把目录与符号整理成「摘要」与「仓库地图」，存在本包声明的
+      repository-indexes 集合里，并记录建立时间与状态。索引只是「辅助材料」，下面的问答不依赖它；
+      也可以随时点「重建索引」重新生成。
+    </p>
+    <div class="bar">
+      <button id="reindex">重建索引</button>
+      <span id="index-status" class="muted">选中仓库后可建索引</span>
+    </div>
+    <div id="index" class="muted">选中并拉取仓库后可建索引</div>
 
     <h2>问源码</h2>
+    <p class="muted" style="font-size: 12px">
+      问答始终可用，不依赖上面的索引。每次问答的提问、回答与引用都会存进本包声明的
+      qa-history 集合（按检出分片），随同步保留，重新打开页面也能接着看。
+    </p>
     <p>
       <input id="question" placeholder="选中仓库后提问，如：登录流程在哪实现？" />
       <button id="ask">提问</button>
     </p>
     <pre id="answer" class="muted" style="min-height: 40px"></pre>
     <div id="sources"></div>
+
+    <h3>历史问答（最新在前）</h3>
+    <div id="history" class="muted">还没有问答记录。</div>
 
     <script>
       // 受控桥：只能调本包声明过的方法（见 desktop/main.ts），未声明的调用落到「未开放的桥方法」。
@@ -113,7 +140,23 @@
       // 同步，看不懂内容。行是这里自己序列化的 JSON 字符串，键取仓库 id——排程挑材料时按
       // {id, label, ready} 三个字段读，所以这三个字段必须写对（label 给展示，ready 才行）。
       const COLLECTION = 'repositories';
+      const HISTORY_COLLECTION = 'qa-history';
+      const INDEX_COLLECTION = 'repository-indexes';
       const SOURCE_EXTENSIONS = /\.(c|cc|cpp|cs|go|h|hpp|java|js|jsx|kt|php|py|rb|rs|scala|swift|ts|tsx|vue)$/i;
+      // 单次 glob 有结果数上限：整仓一次撞上限时退到逐扩展名试，清单与 SOURCE_EXTENSIONS 对齐
+      const SOURCE_EXT_LIST = ['c', 'cc', 'cpp', 'cs', 'go', 'h', 'hpp', 'java', 'js', 'jsx', 'kt', 'php', 'py', 'rb', 'rs', 'scala', 'swift', 'ts', 'tsx', 'vue'];
+      // 建索引的上限：符号提取与喂给模型的文件条目都收窄，避免一次把整仓塞进去
+      const INDEX_SYMBOL_FILES = 300;
+      const INDEX_DIGEST_LINES = 150;
+
+      // 建索引的提示词归本包所有：宿主只提供端点与 JSON 解析，不认识这段正文
+      const INDEX_SYSTEM = [
+        '你是资深工程师，正在为本包工作区里的一份代码检出建立索引。',
+        '根据给出的文件清单与已提取的符号，产出两段中文内容，输出严格 JSON 对象：{"summary": "...", "repoMap": "..."}。',
+        'summary：这是什么项目、主要语言、入口点，3–5 句。',
+        'repoMap：按目录 / 模块层级列出值得注意的文件与符号，用缩进的纯文本。',
+        '只依据给出的清单，不要编造不存在的文件或符号。',
+      ].join('\n');
 
       // 一页读多少行：大文件翻页看，不整份塞进页面。宿主单次读有字节上限，超了如实报错。
       const PAGE_LINES = 300;
@@ -122,6 +165,11 @@
       let repos = [];
       let selected = null;
       let answerStreamId = null;
+      let pendingQuestion = null;   // 正在流式回答的问题，收到最终正文后连同引用入库
+      let pendingRepoDir = null;    // 提问时选中的检出目录，回答回来仍记到这个检出
+      let history = [];             // 当前选中检出的问答历史（内存，渲染时按时间倒序）
+      let indexSnapshot = null;     // 当前选中检出已入库的索引行
+      const indexBuilding = new Set(); // 正在建索引的检出目录，避免重复并发
 
       // 代码浏览与查看的页面状态
       let browseDir = null;      // 当前浏览目录（工作区相对路径）
@@ -344,12 +392,21 @@
         }
       }
 
-      /** 从选中仓库重新初始化浏览位置，并清掉当前打开的文件。 */
+      /** 从选中仓库重新初始化浏览位置，并清掉当前打开的文件；顺带刷新索引与问答历史。 */
       async function refreshBrowse() {
         resetViewer();
         const repo = currentRepo();
         if (repo && repo.dir) await showDir(repo.dir);
-        else setBrowseEmpty('选中仓库后可浏览');
+        else setBrowseEmpty(repo ? '这个仓库本机还没有检出' : '选中仓库后可浏览');
+        await refreshIndexView(repo);
+        await loadHistory();
+      }
+
+      /** 选中一个检出：浏览、索引、问答历史都跟着它走。 */
+      async function selectRepo(id) {
+        selected = id;
+        render();
+        await refreshBrowse();
       }
 
       // ── 查看：按行区间读取、带行号、翻页 ───────────────────────────────────
@@ -454,13 +511,7 @@
           const name = document.createElement('span');
           name.className = entry.id === selected ? 'name selected' : 'name';
           name.textContent = entry.label;
-          name.onclick = () => run(async () => {
-            selected = entry.id;
-            render();
-            resetViewer();
-            if (entry.dir) await showDir(entry.dir);
-            else setBrowseEmpty('这个仓库本机还没有检出');
-          });
+          name.onclick = () => run(() => selectRepo(entry.id));
 
           const meta = document.createElement('span');
           meta.className = 'muted';
@@ -474,10 +525,11 @@
             meta.textContent = entry.ready ? '已登记，本机还没有检出' : '尚未就绪';
           }
 
+          // 概览现在展示本包入库的索引产物（摘要 / 仓库地图）：选中这个检出即可看到
           const overview = document.createElement('button');
           overview.textContent = '概览';
           overview.disabled = !entry.dir;
-          overview.onclick = () => run(() => showOverview(entry));
+          overview.onclick = () => run(() => selectRepo(entry.id));
 
           const update = document.createElement('button');
           update.textContent = '更新';
@@ -487,9 +539,13 @@
             const current = await readEntry(entry.id);
             const dir = current?.dir || entry.dir;
             const result = await call('workspace.fetch', dir ? { url: entry.url, dir } : { url: entry.url });
-            await writeEntry(remember(entry.url, result));
+            const updated = remember(entry.url, result);
+            await writeEntry(updated);
             msg('已更新到 ' + result.commit.slice(0, 7));
             render();
+            if (selected === updated.id) await refreshBrowse();
+            // 更新成功后在后台重建索引：不 await，页面上的其它操作照常
+            void buildIndex(updated);
           });
 
           const remove = document.createElement('button');
@@ -517,43 +573,328 @@
         }
       }
 
-      /** 概览：文件数按语言分档 + 符号数。glob 单次上限 200 条，超了就如实写明只看了一部分。 */
-      async function showOverview(entry) {
-        if (!entry.dir) throw new Error('这个仓库本机还没有检出');
-        const out = document.getElementById('overview');
-        out.textContent = '正在扫描…';
-        const files = await call('workspace.glob', { pattern: entry.dir + '/**/*' });
-        const sources = files.filter((path) => SOURCE_EXTENSIONS.test(path));
+      // ── 索引：拉取 / 更新后把目录与符号整理成摘要与仓库地图 ────────────────
+      // 索引产物存在本包声明的 repository-indexes 集合里，键取检出目录，值只有本页理解。
+      // 它只是「辅助材料」：建索引失败、没建、正在建，都不影响下面的问答。
+      function statusLabel(status) {
+        if (status === 'building') return '建立中…';
+        if (status === 'ready') return '已就绪';
+        if (status === 'empty') return '没什么可索引的';
+        if (status === 'failed') return '失败';
+        return '未知';
+      }
 
-        const byExtension = {};
-        for (const path of sources) {
-          const ext = path.slice(path.lastIndexOf('.') + 1).toLowerCase();
-          byExtension[ext] = (byExtension[ext] || 0) + 1;
+      function parseIndex(raw) {
+        if (typeof raw !== 'string' || !raw) return null;
+        let value;
+        try {
+          value = JSON.parse(raw);
+        } catch {
+          return null;
         }
-        const languages = Object.entries(byExtension)
-          .sort((a, b) => b[1] - a[1])
-          .map(([ext, count]) => `${ext}: ${count}`)
-          .join('  ');
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+        if (typeof value.status !== 'string') return null;
+        return {
+          status: value.status,
+          summary: typeof value.summary === 'string' ? value.summary : '',
+          repoMap: typeof value.repoMap === 'string' ? value.repoMap : '',
+          note: typeof value.note === 'string' ? value.note : '',
+          error: typeof value.error === 'string' ? value.error : '',
+          builtAt: typeof value.builtAt === 'number' ? value.builtAt : null,
+          fileCount: typeof value.fileCount === 'number' ? value.fileCount : null,
+          sourceCount: typeof value.sourceCount === 'number' ? value.sourceCount : null,
+          symbolCount: typeof value.symbolCount === 'number' ? value.symbolCount : null,
+          partial: value.partial === true,
+        };
+      }
 
-        let symbolLines = '未提符号（没有可识别的源文件）';
-        if (sources.length > 0) {
-          const extracted = await call('workspace.symbols', { paths: sources });
-          const total = extracted.files.reduce((sum, file) => sum + file.symbols.length, 0);
-          const parsed = extracted.files.filter((file) => file.language).length;
-          const top = extracted.files
-            .flatMap((file) => file.symbols.map((symbol) => symbol.name))
-            .slice(0, 12)
-            .join('  ');
-          symbolLines =
-            `符号 ${total} 个（解析 ${parsed}/${sources.length} 个文件` +
-            `${extracted.truncated ? '，已到预算上限' : ''}）` +
-            (top ? `\n${top}` : '');
+      async function readIndex(repoDir) {
+        return parseIndex(await call('data.get', { collection: INDEX_COLLECTION, key: repoDir }));
+      }
+
+      async function saveIndex(repoDir, patch) {
+        await call('data.put', {
+          collection: INDEX_COLLECTION,
+          key: repoDir,
+          value: JSON.stringify({ id: repoDir, ...patch }),
+        });
+      }
+
+      function indexField(label, text) {
+        const wrap = document.createElement('div');
+        wrap.className = 'index-field';
+        const heading = document.createElement('h3');
+        heading.textContent = label;
+        const body = document.createElement('pre');
+        body.className = 'muted';
+        body.textContent = text;
+        wrap.append(heading, body);
+        return wrap;
+      }
+
+      function indexMetaLine(snapshot) {
+        const parts = [`状态：${statusLabel(snapshot.status)}`];
+        if (snapshot.builtAt) parts.push(`建立于 ${new Date(snapshot.builtAt).toLocaleString()}`);
+        if (typeof snapshot.fileCount === 'number') {
+          parts.push(`文件 ${snapshot.fileCount}${snapshot.partial ? '（已收窄，可能只看到一部分）' : ''}`);
+        }
+        if (typeof snapshot.sourceCount === 'number') parts.push(`源码 ${snapshot.sourceCount}`);
+        if (typeof snapshot.symbolCount === 'number') parts.push(`符号 ${snapshot.symbolCount}`);
+        return parts.join('  ');
+      }
+
+      /** 渲染当前选中检出的索引；没有索引、建立中、失败、空仓各有各的如实说法。 */
+      function renderIndex(entry) {
+        const node = document.getElementById('index');
+        const status = document.getElementById('index-status');
+        node.innerHTML = '';
+        node.className = 'muted';
+        if (!entry || !entry.dir) {
+          status.textContent = '选中仓库后可建索引';
+          node.textContent = '选中并拉取仓库后可建索引';
+          return;
+        }
+        const snapshot = indexSnapshot;
+        if (!snapshot) {
+          status.textContent = '未建索引';
+          node.textContent = '还没有索引：点「重建索引」生成摘要与仓库地图。';
+          return;
+        }
+        status.textContent = indexMetaLine(snapshot);
+        node.className = '';
+        if (snapshot.status === 'building') {
+          node.appendChild(indexField('摘要', '正在建索引…（不影响页面上的其它操作）'));
+          return;
+        }
+        if (snapshot.status === 'empty') {
+          node.appendChild(indexField('摘要', snapshot.note || '没什么可索引的'));
+          return;
+        }
+        if (snapshot.status === 'failed') {
+          node.appendChild(indexField('摘要', `索引建立失败：${snapshot.error || '未知错误'}`));
+          return;
+        }
+        node.appendChild(indexField('摘要', snapshot.summary || '（模型没有返回摘要）'));
+        node.appendChild(indexField('仓库地图', snapshot.repoMap || '（模型没有返回仓库地图）'));
+      }
+
+      /** 从数据集合里读回当前检出已入库的索引行并渲染。 */
+      async function refreshIndexView(entry) {
+        const button = document.getElementById('reindex');
+        button.disabled = !entry || !entry.dir;
+        if (!entry || !entry.dir) {
+          indexSnapshot = null;
+          renderIndex(null);
+          return;
+        }
+        indexSnapshot = await readIndex(entry.dir);
+        renderIndex(entry);
+      }
+
+      /** 列举检出里的文件。整仓 glob 有结果数上限，撞上限就退到逐扩展名；如实记不完整。 */
+      async function enumerateRepo(dir) {
+        let list;
+        let partial = false;
+        try {
+          list = await call('workspace.glob', { pattern: dir + '/**/*' });
+        } catch {
+          partial = true;
+          const seen = new Set();
+          for (const ext of SOURCE_EXT_LIST) {
+            try {
+              const hits = await call('workspace.glob', { pattern: `${dir}/**/*.${ext}` });
+              for (const hit of hits) seen.add(hit);
+            } catch {
+              partial = true;
+            }
+          }
+          list = [...seen];
+        }
+        return { list, partial };
+      }
+
+      /**
+       * 建索引：列举 → 提符号 → 问模型要摘要与仓库地图 → 存回数据集合。
+       *
+       * 全程 await 的是桥调用，页面事件循环照常转，别的按钮不会被冻住；显式的「重建索引」
+       * 与拉取后的后台触发都走这里。失败写失败状态、空仓写空状态，都如实回传而不是一直转。
+       */
+      async function buildIndex(entry) {
+        if (!entry || !entry.dir) throw new Error('这个仓库本机还没有检出');
+        if (indexBuilding.has(entry.dir)) return;
+        indexBuilding.add(entry.dir);
+
+        // 先落一条「建立中」：页面刷新或换端后也能看到进度，而不是长时间空白
+        try {
+          await saveIndex(entry.dir, { status: 'building', builtAt: Date.now() });
+          if (selected === entry.id) {
+            indexSnapshot = { status: 'building', builtAt: Date.now() };
+            renderIndex(entry);
+          }
+        } catch {
+          // 状态行写不进去不该阻断建索引本身
         }
 
-        out.textContent =
-          `文件 ${files.length} 个${files.length >= 200 ? '（单次上限 200，可能只看到一部分）' : ''}\n` +
-          `源码 ${sources.length} 个  ${languages}\n` +
-          symbolLines;
+        try {
+          const enumerated = await enumerateRepo(entry.dir);
+          const sources = enumerated.list.filter((path) => SOURCE_EXTENSIONS.test(path));
+          if (sources.length === 0) {
+            const snapshot = {
+              status: 'empty',
+              note: '没什么可索引的：这个检出里没有可识别的源码文件。',
+              builtAt: Date.now(),
+              fileCount: enumerated.list.length,
+              sourceCount: 0,
+              symbolCount: 0,
+              partial: enumerated.partial,
+            };
+            await saveIndex(entry.dir, snapshot);
+            finishIndex(entry, snapshot);
+            return;
+          }
+
+          const indexed = sources.slice(0, INDEX_SYMBOL_FILES);
+          const extracted = await call('workspace.symbols', { paths: indexed });
+          const symbolCount = extracted.files.reduce((sum, file) => sum + file.symbols.length, 0);
+
+          const prefix = entry.dir === '.' ? '' : entry.dir + '/';
+          const rel = (path) => (prefix && path.startsWith(prefix) ? path.slice(prefix.length) : path);
+          const digest = indexed.map((path) => {
+            const file = extracted.files.find((item) => item.path === path);
+            const names = file && file.symbols.length
+              ? file.symbols.slice(0, 12).map((symbol) => `${symbol.name}(${symbol.kind})`).join(', ')
+              : '';
+            return `- ${rel(path)}${names ? `: ${names}` : ''}`;
+          });
+          const partial = enumerated.partial || extracted.truncated || sources.length > indexed.length;
+          const user =
+            `检出：${entry.label}\n` +
+            `文件清单${partial ? '（已收窄，可能不完整）' : ''}：\n` +
+            digest.slice(0, INDEX_DIGEST_LINES).join('\n');
+          const model = await call('llm.complete', { system: INDEX_SYSTEM, user, role: 'codeAgent' });
+
+          const snapshot = {
+            status: 'ready',
+            summary: typeof model.summary === 'string' ? model.summary : '',
+            repoMap: typeof model.repoMap === 'string' ? model.repoMap : '',
+            builtAt: Date.now(),
+            fileCount: enumerated.list.length,
+            sourceCount: sources.length,
+            symbolCount,
+            partial,
+          };
+          await saveIndex(entry.dir, snapshot);
+          finishIndex(entry, snapshot);
+        } catch (error) {
+          const message = error && error.message ? error.message : String(error);
+          const snapshot = { status: 'failed', error: message, builtAt: Date.now() };
+          try {
+            await saveIndex(entry.dir, snapshot);
+          } catch {
+            // 落盘失败只影响持久化，页面仍如实报出这次失败
+          }
+          finishIndex(entry, snapshot);
+          msg('索引建立失败：' + message);
+        } finally {
+          indexBuilding.delete(entry.dir);
+        }
+      }
+
+      /** 只有该检出仍被选中时才更新页面上的索引视图，避免把别的检出的结果画上来。 */
+      function finishIndex(entry, snapshot) {
+        if (selected !== entry.id) return;
+        indexSnapshot = snapshot;
+        renderIndex(entry);
+      }
+
+      // ── 问答历史：按检出分片存在本包声明的 qa-history 集合里 ────────────────
+      function historyPrefix(repoDir) {
+        return repoDir + '::';
+      }
+
+      function parseHistory(raw) {
+        if (typeof raw !== 'string' || !raw) return null;
+        let value;
+        try {
+          value = JSON.parse(raw);
+        } catch {
+          return null;
+        }
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+        if (typeof value.question !== 'string' || !value.question) return null;
+        return {
+          question: value.question,
+          answer: typeof value.answer === 'string' ? value.answer : '',
+          citations: Array.isArray(value.citations)
+            ? value.citations.filter((item) => item && typeof item === 'object')
+            : [],
+          at: typeof value.at === 'number' ? value.at : 0,
+        };
+      }
+
+      async function loadHistory() {
+        const repo = currentRepo();
+        if (!repo || !repo.dir) {
+          history = [];
+          renderHistory();
+          return;
+        }
+        const rows = await call('data.list', {
+          collection: HISTORY_COLLECTION,
+          prefix: historyPrefix(repo.dir),
+          limit: 200,
+        });
+        history = rows.map((row) => parseHistory(row.value)).filter(Boolean);
+        history.sort((left, right) => right.at - left.at);
+        renderHistory();
+      }
+
+      /** 每次问答完成后落一行：问题、最终正文、引用与时间都在里面，键按检出分片。 */
+      async function saveHistory(repoDir, question, answer, citations) {
+        const at = Date.now();
+        const key = `${historyPrefix(repoDir)}${at}-${Math.random().toString(36).slice(2, 8)}`;
+        await call('data.put', {
+          collection: HISTORY_COLLECTION,
+          key,
+          value: JSON.stringify({ question, answer, citations, at }),
+        });
+      }
+
+      function renderHistory() {
+        const node = document.getElementById('history');
+        node.innerHTML = '';
+        if (history.length === 0) {
+          node.className = 'muted';
+          node.textContent = '还没有问答记录。';
+          return;
+        }
+        node.className = '';
+        for (const item of history) {
+          const wrap = document.createElement('div');
+          wrap.className = 'qa';
+
+          const question = document.createElement('div');
+          question.className = 'q';
+          question.textContent = item.question;
+
+          const answer = document.createElement('pre');
+          answer.className = 'a';
+          answer.textContent = item.answer || '（没有回答）';
+
+          wrap.append(question, answer);
+          if (item.citations.length > 0) {
+            const sources = document.createElement('div');
+            renderCitations(sources, item.citations);
+            wrap.appendChild(sources);
+          }
+
+          const at = document.createElement('div');
+          at.className = 'muted at';
+          at.textContent = item.at ? new Date(item.at).toLocaleString() : '';
+          wrap.appendChild(at);
+
+          node.appendChild(wrap);
+        }
       }
 
       /** 从问题里挑几个标识符去本包工作区里搜，命中片段作为上下文——上下文由包自己拼，宿主不做 */
@@ -595,9 +936,8 @@
         throw lastError || new Error(`打不开引用里的文件：${filePath}`);
       }
 
-      function renderSources(citations) {
-        const node = document.getElementById('sources');
-        node.innerHTML = '';
+      /** 把一组引用渲染进给定容器：有文件的点开跳到那个文件 / 行，没有的只当一行文字。 */
+      function renderCitations(node, citations) {
         if (!citations.length) return;
 
         const title = document.createElement('div');
@@ -634,6 +974,12 @@
         }
       }
 
+      function renderSources(citations) {
+        const node = document.getElementById('sources');
+        node.innerHTML = '';
+        renderCitations(node, citations);
+      }
+
       document.getElementById('up').onclick = () => run(async () => {
         const repo = currentRepo();
         if (!browseDir || !repo || !repo.dir || browseDir === repo.dir) return;
@@ -651,11 +997,24 @@
         msg('正在拉取…');
         const result = await call('workspace.fetch', { url });
         document.getElementById('url').value = '';
-        await writeEntry(remember(url, result));
+        const entry = remember(url, result);
+        await writeEntry(entry);
         msg(`已拉到 ${result.dir}（${result.fileCount} 文件）`);
+        selected = entry.id;
         render();
         resetViewer();
         await showDir(result.dir);
+        await refreshIndexView(entry);
+        await loadHistory();
+        // 拉取成功后在后台建索引：不 await，页面照常可用（问答随时能问）
+        void buildIndex(entry);
+      });
+
+      // 显式重建：用户主动要一份新的摘要 / 仓库地图；等待期间页面上的其它操作照常
+      document.getElementById('reindex').onclick = () => run(async () => {
+        const entry = currentRepo();
+        if (!entry || !entry.dir) throw new Error('先选中一个已检出的仓库');
+        await buildIndex(entry);
       });
 
       document.getElementById('ask').onclick = () => run(async () => {
@@ -667,6 +1026,9 @@
         const answer = document.getElementById('answer');
         document.getElementById('sources').innerHTML = '';
         answer.textContent = '正在检索本包工作区…';
+        // 记下这次提问归属的检出与问题：回答流结束后按检出入库
+        pendingQuestion = question;
+        pendingRepoDir = entry.dir;
         const context = await gatherContext(entry, question);
         answer.textContent = '';
         const prompt = context.length
@@ -685,9 +1047,25 @@
         } else if (payload.event === 'stream:done') {
           // 收尾以 contentMd 为准：增量与最终正文可能不完全一致（宿主会做引用剥离等后处理）
           if (payload.contentMd) answer.textContent = payload.contentMd;
-          renderSources(payload.citations || []);
+          const citations = payload.citations || [];
+          renderSources(citations);
+          // 这次问答连同引用与时间入库；下次打开页面还在（历史按检出分片）
+          const question = pendingQuestion;
+          const repoDir = pendingRepoDir;
+          pendingQuestion = null;
+          pendingRepoDir = null;
+          answerStreamId = null;
+          if (question && repoDir) {
+            void run(async () => {
+              await saveHistory(repoDir, question, answer.textContent, citations);
+              if (selected === repoDir) await loadHistory();
+            });
+          }
         } else if (payload.event === 'stream:error') {
           answer.textContent += `[错误] ${payload.message || ''}`;
+          pendingQuestion = null;
+          pendingRepoDir = null;
+          answerStreamId = null;
         }
       });
 
