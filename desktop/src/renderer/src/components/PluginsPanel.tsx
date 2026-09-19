@@ -354,12 +354,12 @@ export function PluginsPanel({
           <button
             type="button"
             onClick={() => void installFromFile()}
-            disabled={busy}
+            disabled={busy || hasExternal}
             className="rounded border border-[var(--color-border)] px-3 py-1.5 disabled:opacity-40 hover:text-[var(--color-fg)]"
           >
             从文件安装…
           </button>
-          <span className="text-[var(--color-muted)]">已装 {packages.length} 个</span>
+          <span className="text-[var(--color-muted)]">只支持一个岗位簇</span>
           <button
             type="button"
             onClick={() => void loadCatalog()}
@@ -467,11 +467,6 @@ export function PluginsPanel({
                       <Badge tone="bg-[var(--color-bg)] text-[var(--color-muted)]">
                         {TYPE_LABEL[entry.type]}
                       </Badge>
-                    )}
-                    {entry.releaseTag !== null && (
-                      <span className="text-[10px] text-[var(--color-muted)]">
-                        来自 {entry.releaseTag}
-                      </span>
                     )}
                   </div>
                   {entry.described ? (
