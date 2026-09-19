@@ -190,6 +190,9 @@ describe('declaredPermissionBridgeGate（端侧镜像网关）', () => {
     expect(noPerm.authorize({ pluginId: 'p', method: 'artifact.read', permission: 'artifact:read' })).toEqual({
       allowed: false,
       code: 'permission-undeclared',
+      // 拒绝时把「这次拿到了哪些声明」一并带出：清单陈旧与页面越界在现象上一样，
+      // 报错里带上这份清单，用户贴一行就能分辨
+      declared: [],
     });
   });
 });

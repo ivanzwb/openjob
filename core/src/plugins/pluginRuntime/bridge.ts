@@ -61,7 +61,7 @@ export interface PluginBridgeGate {
     pluginId: string;
     method: string;
     permission?: PluginPermission;
-  }): { allowed: true } | { allowed: false; code: string };
+  }): { allowed: true } | { allowed: false; code: string; declared?: readonly string[] };
 }
 
 /**
@@ -77,7 +77,7 @@ export function declaredPermissionBridgeGate(
   return {
     authorize({ permission }) {
       if (permission === undefined || declared.has(permission)) return { allowed: true };
-      return { allowed: false, code: 'permission-undeclared' };
+      return { allowed: false, code: 'permission-undeclared', declared: [...declared] };
     },
   };
 }
@@ -146,7 +146,11 @@ export function createPluginBridge(input: {
       if (!decision.allowed) {
         throw new PluginBridgeError(
           'gateway-denied',
-          `桥方法被网关拒绝：${method}（${decision.code}）`,
+          `桥方法被网关拒绝：${method}（${decision.code}${
+            decision.declared !== undefined
+              ? `；本次已声明：${[...decision.declared].sort().join('、') || '（空）'}`
+              : ''
+          }）`,
         );
       }
       return primitive.invoke(params);

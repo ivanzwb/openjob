@@ -309,6 +309,10 @@ export async function activateInstalledPluginRuntimes(): Promise<void> {
       });
       if (!entry) continue;
       uiAssetsByPlugin.set(plugin.id, entry.uiAssets);
+      // 激活时把「拿到哪一份清单」打出来：桥被拒时对照这一行，一眼能看出是清单陈旧还是页面越界
+      console.info(
+        `[pluginRuntime] 激活 ${plugin.id}@${plugin.version}，已声明：${plugin.permissions.join('、') || '（空）'}`,
+      );
       next.push(
         activatePluginRuntime({
           pluginId: plugin.id,
