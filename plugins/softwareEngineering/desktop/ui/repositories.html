@@ -13,6 +13,40 @@
       button { font-size: 12px; }
       input { width: 60%; font-size: 13px; }
       pre { white-space: pre-wrap; }
+
+      /* 代码浏览与查看：只用已有桥原语，无外部依赖、无外部高亮器 */
+      .bar { display: flex; gap: 8px; align-items: baseline; margin: 6px 0; font-size: 12px; flex-wrap: wrap; }
+      #cwd, #file-label { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+      #entries { max-height: 200px; overflow: auto; }
+      .code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Courier New', monospace;
+        font-size: 12px; line-height: 1.5; white-space: pre; overflow: auto;
+        max-height: 360px; margin: 0; padding: 8px;
+        border: 1px solid rgba(128, 128, 128, 0.25); border-radius: 6px;
+      }
+      .code .row { display: block; }
+      .code .row.hl { background: rgba(255, 193, 7, 0.18); }
+      .code .ln {
+        display: inline-block; width: 3.5em; text-align: right; padding-right: 0.8em;
+        color: rgba(128, 128, 128, 0.75); user-select: none; -webkit-user-select: none;
+      }
+      /* 内联关键词着色：按语言给一份固定关键词集，未知语言原样退回纯等宽 */
+      .tok-kw { color: #7c3aed; font-weight: 600; }
+      .tok-str { color: #0a7f3f; }
+      .tok-num { color: #b45309; }
+      .tok-com { color: #6b7280; font-style: italic; }
+      .file-link {
+        color: #2563eb; cursor: pointer; text-decoration: underline;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+      .source { font-size: 12px; margin: 2px 0; }
+      @media (prefers-color-scheme: dark) {
+        .tok-kw { color: #c792ea; }
+        .tok-str { color: #9ece6a; }
+        .tok-num { color: #e0af68; }
+        .tok-com { color: #8b949e; }
+        .file-link { color: #7aa2f7; }
+      }
     </style>
   </head>
   <body>
@@ -28,6 +62,24 @@
     </p>
     <ul id="repos"></ul>
 
+    <h2>代码</h2>
+    <p class="muted" style="font-size: 12px">
+      从选中的检出逐层浏览目录；点文件名打开带行号的正文，大文件按页读、不整份加载。
+      着色只按一份固定关键词表认常见语言，认不出就退回纯等宽。
+    </p>
+    <div class="bar">
+      <button id="up">上级</button>
+      <span id="cwd" class="muted">选中仓库后可浏览</span>
+    </div>
+    <ul id="entries"></ul>
+    <div class="bar">
+      <span id="file-label" class="muted">未打开文件</span>
+      <span id="range" class="muted"></span>
+      <button id="prev" disabled>上一页</button>
+      <button id="next" disabled>下一页</button>
+    </div>
+    <pre id="code" class="code">选中仓库后，从上面的列表打开文件。</pre>
+
     <h2>概览</h2>
     <pre id="overview" class="muted">选中仓库后点「概览」</pre>
 
@@ -37,6 +89,7 @@
       <button id="ask">提问</button>
     </p>
     <pre id="answer" class="muted" style="min-height: 40px"></pre>
+    <div id="sources"></div>
 
     <script>
       // 受控桥：只能调本包声明过的方法（见 desktop/main.ts），未声明的调用落到「未开放的桥方法」。
@@ -62,9 +115,21 @@
       const COLLECTION = 'repositories';
       const SOURCE_EXTENSIONS = /\.(c|cc|cpp|cs|go|h|hpp|java|js|jsx|kt|php|py|rb|rs|scala|swift|ts|tsx|vue)$/i;
 
+      // 一页读多少行：大文件翻页看，不整份塞进页面。宿主单次读有字节上限，超了如实报错。
+      const PAGE_LINES = 300;
+      const CODE_HINT = '选中仓库后，从上面的列表打开文件。';
+
       let repos = [];
       let selected = null;
       let answerStreamId = null;
+
+      // 代码浏览与查看的页面状态
+      let browseDir = null;      // 当前浏览目录（工作区相对路径）
+      let openPath = null;       // 当前打开的文件（工作区相对路径）
+      let pageOffset = 1;        // 当前页起始行（1 起）
+      let pageHasMore = false;
+      let highlightFrom = null;  // 从引用跳转时高亮的行区间
+      let highlightTo = null;
 
       const msg = (text) => { document.getElementById('msg').textContent = text; };
 
@@ -143,6 +208,243 @@
         return entry;
       }
 
+      function currentRepo() {
+        return repos.find((item) => item.id === selected) || null;
+      }
+
+      function formatSize(bytes) {
+        if (typeof bytes !== 'number') return '';
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+      }
+
+      // ── 内联着色：一份固定关键词表 + 一份按扩展名的语言映射 ──────────────────
+      // 只认关键词 / 字符串 / 数字 / 行注释，认不出的语言原样退回纯等宽。刻意不做解析器。
+      function escapeHtml(text) {
+        return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      }
+
+      const KEYWORDS = {
+        js: 'async await break case catch class const continue debugger default delete do else export extends finally for from function get if import in instanceof let new of return set static super switch this throw try typeof var void while yield'.split(' '),
+        py: 'and as assert async await break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield True False None self'.split(' '),
+        go: 'break case chan const continue default defer else fallthrough for func go goto if import interface map package range return select struct switch type var true false nil'.split(' '),
+        rs: 'as async await break const continue crate dyn else enum extern false fn for if impl in let loop match mod move mut pub ref return self static struct super trait true type unsafe use where while'.split(' '),
+        java: 'abstract assert boolean break byte case catch char class const continue default do double else enum extends final finally float for if implements import instanceof int interface long native new package private protected public return short static super switch synchronized this throw throws transient try void volatile while true false null'.split(' '),
+        c: 'auto break case char const continue default do double else enum extern float for goto if inline int long register restrict return short signed sizeof static struct switch typedef union unsigned void volatile while'.split(' '),
+        cpp: 'auto break case catch char class const constexpr continue default delete do double else enum explicit export extern float for friend if inline int long namespace new operator private protected public return short signed sizeof static struct switch template this throw try typedef typename union unsigned using virtual void volatile while true false nullptr'.split(' '),
+        cs: 'abstract as base break case catch class const continue default do double else enum event explicit extern false finally fixed float for foreach if in int interface internal is lock long namespace new null object out override private protected public readonly ref return sealed short sizeof static string struct switch this throw true try typeof uint ulong using var virtual void while'.split(' '),
+        rb: 'alias and begin break case class def defined do else elsif end ensure false for if in module next nil not or redo rescue retry return self super then true undef unless until when while yield'.split(' '),
+        php: 'abstract and array as break callable case catch class clone const continue declare default do echo else elseif enddeclare endfor endforeach endif endswitch endwhile extends final finally fn for foreach function global goto if implements instanceof interface isset list namespace new or print private protected public require require_once return static switch throw trait try unset use var while xor yield true false null'.split(' '),
+        sh: 'case do done elif else esac fi for function if in select then time until while'.split(' '),
+        sql: 'select from where insert into values update set delete create table alter drop join left right inner outer on group by order having limit offset distinct as and or not null is like in between union all exists primary key foreign references default'.split(' '),
+        kotlin: 'as break class continue do else false for fun if in interface is null object package return super this throw true try typealias val var when while by catch constructor delegate dynamic field finally get import init param property receiver set setparam where actual abstract annotation companion const crossinline data enum expect external final infix inline inner internal lateinit noinline open operator out override private protected public reified sealed suspend tailrec vararg'.split(' '),
+        swift: 'associatedtype class deinit enum extension fileprivate func import init inout internal let open operator private protocol public static struct subscript typealias var break case continue default defer do else fallthrough for guard if in repeat return switch where while as any catch false is nil rethrows super self throw throws true try'.split(' '),
+        scala: 'abstract case catch class def do else extends false final finally for forSome if implicit import lazy match new null object override package private protected return sealed super this throw trait try true type val var while with yield'.split(' '),
+      };
+
+      const EXT_LANG = {
+        js: 'js', mjs: 'js', cjs: 'js', jsx: 'js', ts: 'js', tsx: 'js', mts: 'js', cts: 'js', vue: 'js',
+        py: 'py', pyw: 'py',
+        go: 'go', rs: 'rs', java: 'java',
+        c: 'c', h: 'c',
+        cc: 'cpp', cpp: 'cpp', cxx: 'cpp', hpp: 'cpp', hh: 'cpp', cs: 'cs',
+        rb: 'rb', php: 'php', sh: 'sh', bash: 'sh', zsh: 'sh', sql: 'sql',
+        kt: 'kotlin', kts: 'kotlin', swift: 'swift', scala: 'scala',
+      };
+
+      // `#` 是注释的语言（用另一条 token 正则）；其余走 `//`
+      const HASH_COMMENT = { py: true, rb: true, sh: true };
+
+      const TOKENS_SLASH = /\/\/[^\n]*|\/\*.*?\*\/|'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|\b\d[\w.]*\b|[A-Za-z_$][\w$]*/g;
+      const TOKENS_HASH = /#[^\n]*|\/\*.*?\*\/|'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|\b\d[\w.]*\b|[A-Za-z_$][\w$]*/g;
+
+      const KEYWORD_SETS = {};
+      function keywordSet(lang) {
+        if (!KEYWORD_SETS[lang]) KEYWORD_SETS[lang] = new Set(KEYWORDS[lang] || []);
+        return KEYWORD_SETS[lang];
+      }
+
+      function langForKey(path) {
+        const dot = path.lastIndexOf('.');
+        if (dot === -1) return null;
+        return EXT_LANG[path.slice(dot + 1).toLowerCase()] || null;
+      }
+
+      function colorize(line, lang) {
+        if (!lang || !KEYWORDS[lang]) return escapeHtml(line);
+        const keywords = keywordSet(lang);
+        const re = HASH_COMMENT[lang] ? TOKENS_HASH : TOKENS_SLASH;
+        re.lastIndex = 0;
+        let out = '';
+        let last = 0;
+        let match;
+        while ((match = re.exec(line)) !== null) {
+          out += escapeHtml(line.slice(last, match.index));
+          const token = match[0];
+          let cls = '';
+          if (token.startsWith('//') || token.startsWith('/*') || token.startsWith('#')) cls = 'tok-com';
+          else if (token[0] === "'" || token[0] === '"' || token[0] === '`') cls = 'tok-str';
+          else if (token.charCodeAt(0) >= 48 && token.charCodeAt(0) <= 57) cls = 'tok-num';
+          else if (keywords.has(token)) cls = 'tok-kw';
+          out += cls ? `<span class="${cls}">${escapeHtml(token)}</span>` : escapeHtml(token);
+          last = match.index + token.length;
+        }
+        return out + escapeHtml(line.slice(last));
+      }
+
+      // ── 浏览：从选中检出的目录逐层列出 ────────────────────────────────────
+      function setBrowseEmpty(text) {
+        browseDir = null;
+        document.getElementById('cwd').textContent = text;
+        document.getElementById('up').disabled = true;
+        document.getElementById('entries').innerHTML = '';
+      }
+
+      async function showDir(dir) {
+        const entries = await call('workspace.list', { path: dir });
+        browseDir = dir;
+        const repo = currentRepo();
+        document.getElementById('cwd').textContent = dir === '.' ? './' : dir + '/';
+        // 不越出选中的检出：到了仓库根就没有「上级」
+        document.getElementById('up').disabled = !repo || dir === repo.dir;
+        renderEntries(entries);
+      }
+
+      function renderEntries(entries) {
+        const node = document.getElementById('entries');
+        node.innerHTML = '';
+        const sorted = [...entries].sort((left, right) => {
+          if (left.type !== right.type) return left.type === 'dir' ? -1 : 1;
+          return left.path < right.path ? -1 : left.path > right.path ? 1 : 0;
+        });
+        for (const entry of sorted) {
+          const li = document.createElement('li');
+          const base = entry.path.slice(entry.path.lastIndexOf('/') + 1);
+
+          const name = document.createElement('span');
+          name.className = 'name';
+          name.textContent = entry.type === 'dir' ? base + '/' : base;
+          name.onclick = () => run(() =>
+            entry.type === 'dir' ? showDir(entry.path) : openFile(entry.path),
+          );
+
+          const meta = document.createElement('span');
+          meta.className = 'muted';
+          meta.textContent = entry.type === 'dir' ? '' : formatSize(entry.size);
+
+          li.append(name, meta);
+          node.appendChild(li);
+        }
+        if (sorted.length === 0) {
+          const li = document.createElement('li');
+          li.className = 'muted';
+          li.textContent = '（空目录）';
+          node.appendChild(li);
+        }
+      }
+
+      /** 从选中仓库重新初始化浏览位置，并清掉当前打开的文件。 */
+      async function refreshBrowse() {
+        resetViewer();
+        const repo = currentRepo();
+        if (repo && repo.dir) await showDir(repo.dir);
+        else setBrowseEmpty('选中仓库后可浏览');
+      }
+
+      // ── 查看：按行区间读取、带行号、翻页 ───────────────────────────────────
+      function resetViewer() {
+        openPath = null;
+        pageOffset = 1;
+        pageHasMore = false;
+        highlightFrom = null;
+        highlightTo = null;
+        document.getElementById('code').textContent = CODE_HINT;
+        document.getElementById('file-label').textContent = '未打开文件';
+        document.getElementById('range').textContent = '';
+        document.getElementById('prev').disabled = true;
+        document.getElementById('next').disabled = true;
+      }
+
+      /** 读一页；多读一行用来判断后面还有没有内容。找不到文件时抛出，交给调用方换候选。 */
+      async function readRange(path, offset) {
+        const text = await call('workspace.read', {
+          path,
+          startLine: offset,
+          endLine: offset + PAGE_LINES,
+        });
+        const all = String(text === undefined || text === null ? '' : text).split('\n');
+        const hasMore = all.length > PAGE_LINES;
+        return { lines: hasMore ? all.slice(0, PAGE_LINES) : all, hasMore };
+      }
+
+      function renderLines(lines, start) {
+        const lang = openPath ? langForKey(openPath) : null;
+        const rows = lines.map((line, index) => {
+          const number = start + index;
+          const marked =
+            highlightFrom !== null &&
+            number >= highlightFrom &&
+            (highlightTo === null || number <= highlightTo);
+          return (
+            `<div class="row${marked ? ' hl' : ''}">` +
+            `<span class="ln">${number}</span>` +
+            `<span class="txt">${colorize(line, lang)}</span>` +
+            '</div>'
+          );
+        });
+        document.getElementById('code').innerHTML = rows.join('');
+      }
+
+      function updateViewerChrome(lines, path) {
+        document.getElementById('file-label').textContent = path;
+        const count = lines.length;
+        const end = count > 0 ? pageOffset + count - 1 : pageOffset;
+        document.getElementById('range').textContent = count > 0 ? `第 ${pageOffset}–${end} 行` : '';
+        document.getElementById('prev').disabled = pageOffset <= 1;
+        document.getElementById('next').disabled = !pageHasMore;
+      }
+
+      function dirOf(path) {
+        const cut = path.lastIndexOf('/');
+        if (cut === -1) return (currentRepo() || {}).dir || '.';
+        return path.slice(0, cut);
+      }
+
+      /** 打开文件时把浏览列表跟到它所在的目录；失败不影响正文。 */
+      async function syncBrowseTo(path) {
+        try {
+          await showDir(dirOf(path));
+        } catch {
+          // 浏览位置同步失败不必打断查看
+        }
+      }
+
+      async function openFile(path, startLine, endLine) {
+        // 从引用跳转时把目标行往上留一点，别让它正好压在第一行
+        const offset = startLine && startLine > 1 ? Math.max(1, startLine - 3) : 1;
+        const page = await readRange(path, offset);
+        openPath = path;
+        pageOffset = offset;
+        pageHasMore = page.hasMore;
+        highlightFrom = startLine || null;
+        highlightTo = endLine || startLine || null;
+        renderLines(page.lines, offset);
+        updateViewerChrome(page.lines, path);
+        await syncBrowseTo(path);
+      }
+
+      async function gotoPage(offset) {
+        if (!openPath) return;
+        const page = await readRange(openPath, offset);
+        pageOffset = offset;
+        pageHasMore = page.hasMore;
+        highlightFrom = null;
+        highlightTo = null;
+        renderLines(page.lines, offset);
+        updateViewerChrome(page.lines, openPath);
+      }
+
       function render() {
         const node = document.getElementById('repos');
         node.innerHTML = '';
@@ -152,7 +454,13 @@
           const name = document.createElement('span');
           name.className = entry.id === selected ? 'name selected' : 'name';
           name.textContent = entry.label;
-          name.onclick = () => { selected = entry.id; render(); };
+          name.onclick = () => run(async () => {
+            selected = entry.id;
+            render();
+            resetViewer();
+            if (entry.dir) await showDir(entry.dir);
+            else setBrowseEmpty('这个仓库本机还没有检出');
+          });
 
           const meta = document.createElement('span');
           meta.className = 'muted';
@@ -193,6 +501,7 @@
             if (selected === entry.id) selected = repos[0] ? repos[0].id : null;
             msg('已删除登记与本机检出');
             render();
+            await refreshBrowse();
           });
 
           li.append(name, meta, overview, update, remove);
@@ -261,6 +570,81 @@
         return lines.slice(0, 20);
       }
 
+      // ── 引用跳转：带文件（可有行号）的引用点一下就在查看器里打开 ─────────────
+      /** 引用里的路径可能是工作区相对，也可能只是检出内的相对；两种都试一遍。 */
+      function citationCandidates(filePath) {
+        const cleaned = String(filePath).replace(/^\.\//, '').replace(/^\/+/, '');
+        const list = [cleaned];
+        const repo = currentRepo();
+        if (repo && repo.dir && repo.dir !== '.' && !(cleaned === repo.dir || cleaned.startsWith(repo.dir + '/'))) {
+          list.push(repo.dir + '/' + cleaned);
+        }
+        return list;
+      }
+
+      async function openFromCitation(filePath, startLine, endLine) {
+        let lastError = null;
+        for (const candidate of citationCandidates(filePath)) {
+          try {
+            await openFile(candidate, startLine, endLine);
+            return;
+          } catch (error) {
+            lastError = error;
+          }
+        }
+        throw lastError || new Error(`打不开引用里的文件：${filePath}`);
+      }
+
+      function renderSources(citations) {
+        const node = document.getElementById('sources');
+        node.innerHTML = '';
+        if (!citations.length) return;
+
+        const title = document.createElement('div');
+        title.className = 'muted';
+        title.textContent = '来源：';
+        node.appendChild(title);
+
+        for (const citation of citations) {
+          const row = document.createElement('div');
+          if (citation.filePath) {
+            // 有文件：路径可点，点开跳到那个文件 / 行
+            row.className = 'source';
+            row.appendChild(document.createTextNode('- '));
+            const link = document.createElement('span');
+            link.className = 'file-link';
+            link.textContent = citation.filePath + (citation.startLine ? ':' + citation.startLine : '');
+            link.title = '在代码查看器里打开';
+            link.onclick = () =>
+              run(() => openFromCitation(citation.filePath, citation.startLine, citation.endLine));
+            row.appendChild(link);
+            if (citation.url) {
+              const url = document.createElement('span');
+              url.className = 'muted';
+              url.textContent = '  ' + citation.url;
+              row.appendChild(url);
+            }
+          } else {
+            // 没有文件的引用照旧：只是一行文字，不假装能点
+            row.className = 'source muted';
+            const where = citation.title || citation.url || '';
+            row.textContent = ('- ' + where + (citation.url ? '  ' + citation.url : '')).trimEnd();
+          }
+          node.appendChild(row);
+        }
+      }
+
+      document.getElementById('up').onclick = () => run(async () => {
+        const repo = currentRepo();
+        if (!browseDir || !repo || !repo.dir || browseDir === repo.dir) return;
+        const cut = browseDir.lastIndexOf('/');
+        const parent = cut === -1 ? repo.dir : browseDir.slice(0, cut);
+        await showDir(parent);
+      });
+
+      document.getElementById('prev').onclick = () => run(() => gotoPage(Math.max(1, pageOffset - PAGE_LINES)));
+      document.getElementById('next').onclick = () => run(() => gotoPage(pageOffset + PAGE_LINES));
+
       document.getElementById('link').onclick = () => run(async () => {
         const url = document.getElementById('url').value.trim();
         if (!url) return;
@@ -270,6 +654,8 @@
         await writeEntry(remember(url, result));
         msg(`已拉到 ${result.dir}（${result.fileCount} 文件）`);
         render();
+        resetViewer();
+        await showDir(result.dir);
       });
 
       document.getElementById('ask').onclick = () => run(async () => {
@@ -279,6 +665,7 @@
         const entry = repos.find((item) => item.id === selected);
         if (!entry || !entry.dir) throw new Error('这个仓库本机还没有检出');
         const answer = document.getElementById('answer');
+        document.getElementById('sources').innerHTML = '';
         answer.textContent = '正在检索本包工作区…';
         const context = await gatherContext(entry, question);
         answer.textContent = '';
@@ -298,16 +685,7 @@
         } else if (payload.event === 'stream:done') {
           // 收尾以 contentMd 为准：增量与最终正文可能不完全一致（宿主会做引用剥离等后处理）
           if (payload.contentMd) answer.textContent = payload.contentMd;
-          const citations = payload.citations || [];
-          if (citations.length > 0) {
-            const lines = citations.map((citation) => {
-              const where = citation.filePath
-                ? `${citation.filePath}${citation.startLine ? ':' + citation.startLine : ''}`
-                : citation.title || citation.url || '';
-              return `- ${where}${citation.url ? '  ' + citation.url : ''}`.trimEnd();
-            });
-            answer.textContent += `\n\n来源：\n${lines.join('\n')}`;
-          }
+          renderSources(payload.citations || []);
         } else if (payload.event === 'stream:error') {
           answer.textContent += `[错误] ${payload.message || ''}`;
         }
@@ -316,6 +694,7 @@
       void run(async () => {
         await load();
         render();
+        await refreshBrowse();
       });
     </script>
   </body>
