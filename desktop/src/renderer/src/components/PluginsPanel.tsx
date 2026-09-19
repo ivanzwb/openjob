@@ -360,9 +360,6 @@ export function PluginsPanel({
             从文件安装…
           </button>
           <span className="text-[var(--color-muted)]">已装 {packages.length} 个</span>
-          <span className="truncate text-[10px] text-[var(--color-muted)]" title={catalog?.source}>
-            来自更新源：{catalog?.source ?? '读取中…'}
-          </span>
           <button
             type="button"
             onClick={() => void loadCatalog()}
@@ -372,13 +369,6 @@ export function PluginsPanel({
             {refreshing ? '读取中…' : '刷新清单'}
           </button>
         </div>
-
-        {hasExternal && (
-          <p className="text-[var(--color-muted)]">
-            本机已经装了 {[...externalVersions.keys()].join('、')}。插件只装一个：换插件要先卸载
-            它。同一个插件的其他版本属于更新或回退，装完再把旧版本卸掉即可。
-          </p>
-        )}
 
         {catalog?.error && (
           <div className="space-y-1 border-t border-[var(--color-border)] pt-3">
@@ -505,7 +495,7 @@ export function PluginsPanel({
                   onClick={() => void installFromCatalog(entry)}
                   className="shrink-0 rounded border border-[var(--color-border)] px-3 py-1.5 disabled:opacity-40 hover:text-[var(--color-fg)]"
                 >
-                  {pendingKey === key ? '安装中…' : blocked ? '先卸载已装的' : `安装 ${entry.version}`}
+                  {pendingKey === key ? '安装中…' : `安装 ${entry.version}`}
                 </button>
               </li>
             );
