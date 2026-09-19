@@ -155,6 +155,22 @@ describe('softwareEngineeringRolePack contract', () => {
     ]);
   });
 
+  it('声明代码位置标记的路由：code-mark 由本包的「源码」页承接', () => {
+    // 宿主按 manifest.annotationTargets 把汇总面板里包自己起的 kind 路由回承接页面；
+    // pageId 必须是两端入口都注册过的那一个（见上面的「两端入口各注册源码页」用例）。
+    expect(softwareEngineeringRolePack.manifest.annotationTargets).toEqual([
+      { kind: 'code-mark', label: '代码位置', pageId: 'source-repository' },
+    ]);
+  });
+
+  it('桌面页调用到的标记/话术原语都在声明里（声明 == 调用面）', () => {
+    // 页面里写标记改走 library.annotate，读回走 library.listAnnotations；两者都必须声明
+    const desktop = activateEntry(desktopActivate);
+    expect(desktop.bridgeMethods).toContain('library.annotate');
+    expect(desktop.bridgeMethods).toContain('library.listAnnotations');
+    desktop.deactivate();
+  });
+
   it('数据集合随包声明：登记表、问答历史与索引产物都在 manifest 里', () => {
     // 代码位置标记不再放在本包自己的集合里（改走宿主的标记原语 library.annotate）
     expect(

@@ -294,6 +294,11 @@ export function registerIpcHandlers(): void {
         // 岗位包的代码入口随岗位启用（选岗即确认）；独立 plugin 类型才需要逐个确认
         enabled:
           item.package.manifest.type === 'role-pack' || pluginRuntimeEnabled(item.package.manifest.id),
+        // 标记目标路由（插入点 F）：渲染层据此把包自己起的 kind 跳去承接它的本包页面。
+        // 声明是可选字段，缺省时原样不出现在结果里，前端按「没有跳转」处理。
+        ...(item.package.manifest.annotationTargets !== undefined
+          ? { annotationTargets: [...item.package.manifest.annotationTargets] }
+          : {}),
       })),
   );
   handle('pluginRuntime:setEnabled', ({ id, enabled }) => setPluginRuntimeEnabled(id, enabled));

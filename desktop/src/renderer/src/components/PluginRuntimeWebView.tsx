@@ -5,7 +5,11 @@ import {
   declaredPermissionBridgeGate,
 } from '@core/plugins/pluginRuntime/bridge';
 import { onEvent } from '../ipc';
-import { getUiAssets, onPluginEvent } from '../pluginRuntimes/runtime';
+import {
+  getUiAssets,
+  onPluginEvent,
+  takePendingAnnotationOpen,
+} from '../pluginRuntimes/runtime';
 import { desktopBridgePrimitives } from '../pluginRuntimes/bridgePrimitives';
 
 /**
@@ -67,6 +71,13 @@ export function PluginRuntimeWebView({
     };
     const offAttached = onPluginEvent('campaign:attached', forward('campaign:attached'));
     const offCapability = onPluginEvent('campaign:capability-changed', forward('campaign:capability-changed'));
+    // 标记汇总里的包目标跳转（插入点 F）：payload 携带着目标属于哪个包，只有本包自己的才转进
+    // 自己的沙箱——别的包的页面不该被点亮。页面按 kind 再自筛一次。
+    const offAnnotation = onPluginEvent('annotation:open', (payload) => {
+      const target = payload as { pluginId?: string } | undefined;
+      if (target?.pluginId && target.pluginId !== pluginId) return;
+      forward('annotation:open')(payload);
+    });
     // 流式问答增量（stream:*）同属宿主事件，按 streamId 由页面自行过滤
     const offDelta = onEvent('stream:delta', forward('stream:delta'));
     const offDone = onEvent('stream:done', forward('stream:done'));
@@ -75,12 +86,13 @@ export function PluginRuntimeWebView({
     return () => {
       offAttached();
       offCapability();
+      offAnnotation();
       offDelta();
       offDone();
       offError();
       offPractice();
     };
-  }, []);
+  }, [pluginId]);
 
   useEffect(() => {
     const onMessage = (event: MessageEvent): void => {
@@ -130,6 +142,16 @@ export function PluginRuntimeWebView({
       title={pluginId}
       className="h-full w-full border-0"
       srcDoc={html}
+      onLoad={() => {
+        // 页面刚加载完：把这次跳转的待办补投一次。跳转事件可能在页面注册监听脚本之前就发过了，
+        // 只在 iframe load（内联脚本已执行完）时补投，才接得住。
+        const pending = takePendingAnnotationOpen(pluginId);
+        if (!pending) return;
+        frameRef.current?.contentWindow?.postMessage(
+          { openjobEvent: { event: 'annotation:open', ...pending } },
+          '*',
+        );
+      }}
     />
   );
 }

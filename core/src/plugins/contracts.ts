@@ -1,4 +1,5 @@
 import {
+  ANNOTATION_TARGETS,
   COMPETENCY_CATEGORIES,
   FOLLOW_UP_STRATEGIES,
   INTERVIEW_PROTOCOLS,
@@ -267,6 +268,49 @@ export function validatePluginManifest(manifest: PluginManifest): PluginContract
         const schemaVersion: unknown = collection?.schemaVersion;
         if (!Number.isInteger(schemaVersion) || (schemaVersion as number) < 1) {
           issue(issues, `${path}.schemaVersion`, 'invalid-value', 'schemaVersion 必须是正整数');
+        }
+      });
+    }
+  }
+
+  // 标记目标路由（插入点 F）：包声明哪种 targetKind 由本包哪个页面承接。形状校验同 dataCollections
+  // 的思路——宿主不认识具体取值，只校验「不空、包内不重名、不占用宿主已知取值、pageId 非空」。
+  const declaredAnnotationTargets = manifest.annotationTargets;
+  if (declaredAnnotationTargets !== undefined) {
+    if (!Array.isArray(declaredAnnotationTargets) || declaredAnnotationTargets.length === 0) {
+      issue(
+        issues,
+        'manifest.annotationTargets',
+        'invalid-value',
+        'annotationTargets 必须是非空数组',
+      );
+    } else {
+      const hostTargets = new Set<string>(ANNOTATION_TARGETS);
+      const seenKinds = new Set<string>();
+      declaredAnnotationTargets.forEach((target, index) => {
+        const path = `manifest.annotationTargets[${index}]`;
+        const kind: unknown = target?.kind;
+        if (!isNonEmpty(kind)) {
+          issue(issues, `${path}.kind`, 'invalid-value', '目标类型不能为空');
+        } else {
+          if (hostTargets.has(kind)) {
+            issue(
+              issues,
+              `${path}.kind`,
+              'invalid-value',
+              `目标类型不得占用宿主已知取值：${kind}`,
+            );
+          }
+          if (seenKinds.has(kind)) {
+            issue(issues, `${path}.kind`, 'duplicate-id', `重复目标类型：${kind}`);
+          }
+          seenKinds.add(kind);
+        }
+        if (!isNonEmpty(target?.label)) {
+          issue(issues, `${path}.label`, 'invalid-value', '展示名不能为空');
+        }
+        if (!isNonEmpty(target?.pageId)) {
+          issue(issues, `${path}.pageId`, 'invalid-value', 'pageId 不能为空');
         }
       });
     }

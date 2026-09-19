@@ -12,7 +12,11 @@ import { bumpDataVersion } from './ipc/dataVersion';
 import { useJobProgress } from './ipc/useJobProgress';
 import { useNavigationTabs } from './ipc/useNavigationTabs';
 import { useBackgroundErrorToast } from './ipc/errorToast';
-import { useActivateOnMount, usePluginRuntimeTabs } from './pluginRuntimes/runtime';
+import {
+  onOpenPluginPage,
+  useActivateOnMount,
+  usePluginRuntimeTabs,
+} from './pluginRuntimes/runtime';
 import { PluginRuntimeWebView } from './components/PluginRuntimeWebView';
 import { HOST_PAGES } from './hostPages';
 import { nextVisibleTab } from '@core/hostUi';
@@ -155,6 +159,13 @@ export default function App(): React.JSX.Element {
     setTab(key);
     setMountedTabs((prev) => new Set(prev).add(key));
   };
+
+  // 标记汇总里的包目标跳转（插入点 F）：承接页面请求切到某个插件页签并把页面挂载起来，
+  // 事件载荷随后由该页面的 WebView 经宿主→页面通路转达。
+  useEffect(
+    () => onOpenPluginPage((fullId) => selectTab(`nav:${fullId}` as Tab)),
+    [],
+  );
 
   return (
     <ErrorBoundary>

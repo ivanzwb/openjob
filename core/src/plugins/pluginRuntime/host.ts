@@ -18,12 +18,16 @@ import { assertPluginBridgeMethod } from './bridge';
 export type PluginRuntimeEventName =
   | 'campaign:attached'
   | 'campaign:capability-changed'
-  | 'practice:completed';
+  | 'practice:completed'
+  // 宿主把标记汇总里的一条**包自己起的**目标交给承接它的页面：payload 是 { kind, targetId }。
+  // 角色中立：宿主不认识 kind，只按 manifest.annotationTargets 找到 pageId 再原样转达。
+  | 'annotation:open';
 
 export const PLUGIN_RUNTIME_EVENTS: readonly PluginRuntimeEventName[] = [
   'campaign:attached',
   'campaign:capability-changed',
   'practice:completed',
+  'annotation:open',
 ];
 
 /** 插件注册的 Webview 页面：资源路径相对包根，渲染进 Webview 沙箱 */

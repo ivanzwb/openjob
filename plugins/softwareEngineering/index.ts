@@ -91,6 +91,10 @@ export const softwareEngineeringRolePack: RolePack = defineRolePack({
     mobile: 'mobile/main.js',
     api: '^1.0',
     dependencies: [],
+    // 标记目标路由（插入点 F）：本包页面把代码位置标记写进宿主标记汇总时用的 targetKind 是
+    // code-mark（宿主不认识），这里声明它由本包的「源码」页承接。宿主据此把汇总里的这类行
+    // 变成可跳转：切到 source-repository 页并经 annotation:open 事件把 { kind, targetId } 交过去。
+    annotationTargets: [{ kind: 'code-mark', label: '代码位置', pageId: 'source-repository' }],
     // 本包自己的数据集合：宿主只按这些名字归档与取用，不理解里面的内容。
     // - repositories：检出登记表（排程按 (kind, collection) 取代码材料）；
     // - qa-history：按检出分片的问答历史（问题 / 回答 / 引用 / 时间），跨端同步共用；

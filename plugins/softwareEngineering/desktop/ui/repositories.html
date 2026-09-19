@@ -14,7 +14,7 @@
       input { width: 60%; font-size: 13px; }
       pre { white-space: pre-wrap; }
 
-      /* 代码浏览与查看：只用已有桥原语；着色器随包内联（ui/prism.vendored.js） */
+      /* 代码浏览与查看：只用已有桥原语；着色器随包内联（ui/shiki.vendored.js） */
       .bar { display: flex; gap: 8px; align-items: baseline; margin: 6px 0; font-size: 12px; flex-wrap: wrap; }
       #cwd, #file-label { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
       #entries { max-height: 200px; overflow: auto; }
@@ -30,19 +30,10 @@
         display: inline-block; width: 3.5em; text-align: right; padding-right: 0.8em;
         color: rgba(128, 128, 128, 0.75); user-select: none; -webkit-user-select: none;
       }
-      /* 语法着色：Prism 的 token 类（着色器随包内联，沙箱内无网络 / 无动态 import）。
-         没有对应语法的扩展名原样按纯等宽渲染。 */
-      .token.comment, .token.prolog, .token.doctype, .token.cdata { color: #6b7280; font-style: italic; }
-      .token.punctuation { color: #57606a; }
-      .token.property, .token.tag, .token.constant, .token.symbol, .token.boolean,
-      .token.number, .token.deleted { color: #b45309; }
-      .token.selector, .token.attr-name, .token.string, .token.char, .token.builtin,
-      .token.inserted, .token.regex { color: #0a7f3f; }
-      .token.operator, .token.entity, .token.url, .token.variable { color: #57606a; }
-      .token.atrule, .token.attr-value, .token.keyword { color: #7c3aed; font-weight: 600; }
-      .token.function, .token.class-name { color: #2563eb; }
-      .token.important, .token.bold { font-weight: 700; }
-      .token.italic { font-style: italic; }
+      /* 语法着色：Shiki（随包内联的 shiki.vendored.js）。双主题输出——每个 token 上带
+         --shiki-light / --shiki-dark 两个变量，这里按系统主题取用；没有对应语法的扩展名
+         原样按纯等宽渲染（highlight 返回 null，页面自己转义）。 */
+      .code .txt span { color: var(--shiki-light, inherit); }
       .file-link {
         color: #2563eb; cursor: pointer; text-decoration: underline;
         font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -60,15 +51,7 @@
       .qa .a { white-space: pre-wrap; font-size: 12px; margin: 0; }
       .qa .at { font-size: 11px; margin-top: 4px; }
       @media (prefers-color-scheme: dark) {
-        .token.comment, .token.prolog, .token.doctype, .token.cdata { color: #8b949e; }
-        .token.punctuation { color: #8b949e; }
-        .token.property, .token.tag, .token.constant, .token.symbol, .token.boolean,
-        .token.number, .token.deleted { color: #e0af68; }
-        .token.selector, .token.attr-name, .token.string, .token.char, .token.builtin,
-        .token.inserted, .token.regex { color: #9ece6a; }
-        .token.operator, .token.entity, .token.url, .token.variable { color: #8b949e; }
-        .token.atrule, .token.attr-value, .token.keyword { color: #c792ea; }
-        .token.function, .token.class-name { color: #7aa2f7; }
+        .code .txt span { color: var(--shiki-dark, inherit); }
         .file-link { color: #7aa2f7; }
       }
     </style>
@@ -89,7 +72,7 @@
     <h2>代码</h2>
     <p class="muted" style="font-size: 12px">
       从选中的检出逐层浏览目录；点文件名打开带行号的正文，大文件按页读、不整份加载。
-      着色用随包内联的 Prism 按语言分词（ui/prism.vendored.js），认不出的扩展名退回纯等宽。
+      着色用随包内联的 Shiki（ui/shiki.vendored.js，双主题），认不出的扩展名退回纯等宽。
     </p>
     <div class="bar">
       <button id="up">上级</button>
@@ -108,8 +91,10 @@
     <p class="muted" style="font-size: 12px">
       在代码正文里选中一段文字，或直接用当前这一页的行区间，点「存为话术」存进用户的话术库：
       来源类型（code-ref）与来源标签（file:line）由本页给出，宿主不认识这两个值，只按你给的
-      这一来源取回；同来源同内容只留一条。也可以给当前行区间留一条位置标记，回头从下面的
-      列表跳回去——标记存在本包声明的 code-marks 数据集合里，宿主同样不理解内容。
+      这一来源取回；同来源同内容只留一条。也可以给当前行区间留一条位置标记——标记走宿主
+      的标记原语（library.annotate）写进宿主的「我的标记」汇总面，于是它也会出现在宿主的标记
+      面板里；目标类型（code-mark）与标签（file:line）由本页给，宿主不认识，只按本页声明的
+      annotationTargets 把这类行路由回本页——从汇总面板点那一条就跳回这里的文件/行区间。
     </p>
     <div class="bar">
       <button id="save-snippet">存为话术</button>
@@ -149,11 +134,10 @@
     <h3>历史问答（最新在前）</h3>
     <div id="history" class="muted">还没有问答记录。</div>
 
-    <!-- 语法着色器随包内联：沙箱里没有网络、不能动态 import，所以 Prism 核心连同用到的语言
-         打成一份扁平资产（ui/prism.vendored.js），由宿主把相对 <script src> 就地内联。
-         先置 manual，让 Prism 不去自动扫 DOM（页面自己按行高亮）。 -->
-    <script>window.Prism = { manual: true };</script>
-    <script src="prism.vendored.js"></script>
+    <!-- 语法着色器随包内联：沙箱里没有网络、不能动态 import，所以 Shiki 连同 JS 正则引擎、
+         用到的语言与两套主题打成一份自包含 IIFE（ui/shiki.vendored.js，全局 OpenJobShiki），
+         由宿主把相对 <script src> 就地内联。页面按扩展名调 OpenJobShiki.highlight 渲染。 -->
+    <script src="shiki.vendored.js"></script>
     <script>
       // 受控桥：只能调本包声明过的方法（见 desktop/main.ts），未声明的调用落到「未开放的桥方法」。
       // 工作区的路径约束与容量上限判定全在宿主主进程，页面这里只传相对路径。
@@ -216,9 +200,9 @@
       let highlightTo = null;
 
       // 话术与位置标记的页面状态。话术走宿主的话术库原语（来源类型 code-ref 由本页起），
-      // 标记存在本包声明的 code-marks 数据集合里；两者都只承载本页自己写下的内容。
+      // 标记走宿主的标记原语（目标类型 code-mark 由本页起）；两者都只承载本页自己写下的内容。
       const SNIPPET_SOURCE_KIND = 'code-ref';
-      const MARK_COLLECTION = 'code-marks';
+      const MARK_KIND = 'code-mark';
       let currentLines = [];     // 当前这一页的正文行（无选区时按它整段存话术 / 标记）
 
       const msg = (text) => { document.getElementById('msg').textContent = text; };
@@ -309,25 +293,30 @@
         return (bytes / 1024 / 1024).toFixed(1) + ' MB';
       }
 
-      // ── 语法着色：随包内联的 Prism（见页尾 <script src="prism.vendored.js">） ──────
-      // 沙箱里没有网络、也不能动态 import，所以着色器连同用到的语言打成一份扁平资产一并内联。
-      // 按扩展名找对应语法；找不到对应语法的语言原样退回纯等宽。
+      // ── 语法着色：随包内联的 Shiki（见页尾 <script src="shiki.vendored.js">） ──────
+      // 沙箱里没有网络、也不能动态 import，所以 Shiki 连同 JS 正则引擎、用到的语言与两套主题
+      // 打成一份自包含 IIFE，挂在全局 OpenJobShiki 上（与宿主渲染层 lib/highlight.ts 同一渲染
+      // 方式：双主题、按扩展名取语法）。找不到语法的语言原样退回纯等宽。
       function escapeHtml(text) {
         return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       }
 
-      /** 扩展名 → Prism 语言 id（组件 id；Prism 自带的 html/xml/ts/sh… 等名指向同一份语法）。 */
+      function shiki() {
+        return window.OpenJobShiki || null;
+      }
+
+      /** 扩展名 → Shiki 语言 id。 */
       const EXT_LANG = {
         ts: 'typescript', mts: 'typescript', cts: 'typescript', tsx: 'tsx',
-        js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'jsx', vue: 'markup',
+        js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'jsx', vue: 'html',
         py: 'python', pyw: 'python',
         go: 'go', rs: 'rust',
         java: 'java', kt: 'kotlin', kts: 'kotlin', scala: 'scala',
         c: 'c', h: 'c', cc: 'cpp', cpp: 'cpp', cxx: 'cpp', hpp: 'cpp', hh: 'cpp',
         cs: 'csharp', rb: 'ruby', php: 'php', swift: 'swift', lua: 'lua',
-        sh: 'bash', bash: 'bash', zsh: 'bash',
+        sh: 'shellscript', bash: 'shellscript', zsh: 'shellscript',
         sql: 'sql', json: 'json', yml: 'yaml', yaml: 'yaml', toml: 'toml',
-        xml: 'markup', html: 'markup', htm: 'markup', svg: 'markup',
+        xml: 'xml', html: 'html', htm: 'html', svg: 'xml',
         css: 'css', scss: 'css', less: 'css',
         md: 'markdown', markdown: 'markdown',
         diff: 'diff', patch: 'diff', ini: 'ini', cfg: 'ini', env: 'ini',
@@ -336,62 +325,37 @@
       /** 没有扩展名也认得出的几个熟文件名。 */
       const NAME_LANG = { dockerfile: 'docker', makefile: 'makefile' };
 
-      /** 由文件路径推断 Prism 语言 id；没有对应语法时返回 null（调用方退回纯等宽）。 */
+      /** 由文件路径推断 Shiki 语言 id；本页构建里没有这门语法时返回 null（调用方退回纯等宽）。 */
       function langForKey(path) {
         const base = path.slice(path.lastIndexOf('/') + 1).toLowerCase();
         const dot = base.lastIndexOf('.');
         const id = dot > 0 ? EXT_LANG[base.slice(dot + 1)] : NAME_LANG[base];
-        const prism = window.Prism;
-        return id && prism && prism.languages[id] ? id : null;
+        const lib = shiki();
+        return id && lib && lib.hasLanguage(id) ? id : null;
       }
 
       /**
-       * 把整页正文按语言分词，再摊平成「每行一段段带类名的 HTML」。
+       * 整页一起交给 Shiki 高亮，再把输出拆回「每行一段 HTML」。
        *
        * 整页一起分词而不是逐行：块注释、模板串这类 token 会跨行，逐行认会从中间切断。
-       * 跨行的 token 在换行处断开、每一段各自带同一类名，行号表与整页排版因此不受影响。
+       * 没有对应语法、语言不在包内构建里、或高亮失败时，逐行原样转义（纯等宽）——不假装有语法。
        */
-      function highlightLines(lines, lang) {
-        const prism = window.Prism;
-        if (!lang || !prism || !prism.languages[lang]) return lines.map(escapeHtml);
-
-        const rows = [[]]; // rows[行序] = 该行的 { cls, text } 片段；换行即新起一行
-        const emit = (cls, text) => {
-          const parts = text.split('\n');
-          for (let i = 0; i < parts.length; i += 1) {
-            if (i > 0) rows.push([]);
-            if (parts[i] !== '') rows[rows.length - 1].push({ cls, text: parts[i] });
-          }
-        };
-        const walk = (content, cls) => {
-          if (typeof content === 'string') {
-            emit(cls, content);
-            return;
-          }
-          if (Array.isArray(content)) {
-            for (const item of content) walk(item, cls);
-            return;
-          }
-          // Prism Token：类名可能是数组，alias 一并带上（与 Prism.Token.stringify 同名规则）
-          let type = Array.isArray(content.type) ? content.type.join(' ') : content.type;
-          if (content.alias) {
-            type += ' ' + (Array.isArray(content.alias) ? content.alias.join(' ') : content.alias);
-          }
-          walk(content.content, cls ? cls + ' ' + type : type);
-        };
-
+      async function highlightLines(lines, lang) {
+        const fallback = () => lines.map(escapeHtml);
+        const lib = shiki();
+        if (!lang || !lib || !lib.hasLanguage(lang)) return fallback();
         try {
-          walk(prism.tokenize(lines.join('\n'), prism.languages[lang]), '');
+          const html = await lib.highlight(lines.join('\n'), lang, 1);
+          if (!html) return fallback();
+          // Shiki 输出 <pre class="shiki"><code>…<span class="line">…</span>…；按行取回内层 HTML，
+          // 外层行号与高亮框仍由本页自己画（.row / .ln），与引用跳转的行区间高亮保持一致。
+          const doc = new DOMParser().parseFromString(html, 'text/html');
+          const lineEls = doc.querySelectorAll('.shiki .line');
+          if (lineEls.length !== lines.length) return fallback();
+          return Array.from(lineEls, (el) => el.innerHTML);
         } catch {
-          return lines.map(escapeHtml);
+          return fallback();
         }
-        return lines.map((line, index) => {
-          const pieces = rows[index];
-          if (!pieces || pieces.length === 0) return escapeHtml(line);
-          return pieces
-            .map((piece) => '<span class="token ' + piece.cls + '">' + escapeHtml(piece.text) + '</span>')
-            .join('');
-        });
       }
 
       // ── 浏览：从选中检出的目录逐层列出 ────────────────────────────────────
@@ -489,11 +453,11 @@
         return { lines: hasMore ? all.slice(0, PAGE_LINES) : all, hasMore };
       }
 
-      function renderLines(lines, start) {
+      async function renderLines(lines, start) {
         currentLines = lines;
         const lang = openPath ? langForKey(openPath) : null;
-        // 整页正文一次分词，逐行取回带类名的 HTML；没有对应语法时 highlightLines 原样转义
-        const highlighted = highlightLines(lines, lang);
+        // 整页正文一次分词，逐行取回带 token 的 HTML；没有对应语法时 highlightLines 原样转义
+        const highlighted = await highlightLines(lines, lang);
         const rows = lines.map((line, index) => {
           const number = start + index;
           const marked =
@@ -543,7 +507,7 @@
         pageHasMore = page.hasMore;
         highlightFrom = startLine || null;
         highlightTo = endLine || startLine || null;
-        renderLines(page.lines, offset);
+        await renderLines(page.lines, offset);
         updateViewerChrome(page.lines, path);
         await syncBrowseTo(path);
       }
@@ -555,7 +519,7 @@
         pageHasMore = page.hasMore;
         highlightFrom = null;
         highlightTo = null;
-        renderLines(page.lines, offset);
+        await renderLines(page.lines, offset);
         updateViewerChrome(page.lines, openPath);
       }
 
@@ -1102,24 +1066,19 @@
         await loadSnippets();
       }
 
-      // ── 位置标记：本包自己的 code-marks 集合，只有本页理解内容 ─────────────
-      function parseMark(raw) {
-        if (typeof raw !== 'string' || !raw) return null;
-        let value;
-        try {
-          value = JSON.parse(raw);
-        } catch {
-          return null;
-        }
-        if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-        if (typeof value.path !== 'string' || typeof value.startLine !== 'number') return null;
-        return {
-          path: value.path,
-          startLine: value.startLine,
-          endLine: typeof value.endLine === 'number' ? value.endLine : value.startLine,
-          note: typeof value.note === 'string' ? value.note : '',
-          at: typeof value.at === 'number' ? value.at : 0,
-        };
+      // ── 位置标记：走宿主的标记原语（library.annotate），写进宿主跨功能的标记汇总 ─────
+      // 目标类型 code-mark 与标签 file:line 都由本页给，宿主不认识；targetId 里编码了
+      // 文件与行区间（`路径:起-止`），本页据此从汇总面板跳回来（见页尾 annotation:open 监听）。
+      // 同一个 (kind, targetId) 再标一次是更新而不是又插一条，所以同区间重标只改说明。
+      function markTargetId(path, startLine, endLine) {
+        return path + ':' + startLine + '-' + endLine;
+      }
+
+      /** 从 targetId 解回文件与行区间；不是本页自己写的形状就返回 null。 */
+      function parseMarkTargetId(targetId) {
+        const match = /^(.*):(\d+)-(\d+)$/.exec(String(targetId || ''));
+        if (!match) return null;
+        return { path: match[1], startLine: Number(match[2]), endLine: Number(match[3]) };
       }
 
       function markLabel(mark) {
@@ -1131,30 +1090,33 @@
         );
       }
 
+      /** 取回本页存过的标记（只按 targetKind=code-mark 收窄）：标签可点，跳回那段代码。 */
       async function loadMarks() {
         const node = document.getElementById('marks');
-        const rows = await call('data.list', { collection: MARK_COLLECTION, limit: 200 });
-        const marks = rows.map((row) => parseMark(row.value)).filter(Boolean);
-        marks.sort((left, right) => right.at - left.at);
+        const marks = await call('library.listAnnotations', { targetKind: MARK_KIND, limit: 200 });
         node.innerHTML = '';
-        if (marks.length === 0) {
+        if (!marks || marks.length === 0) {
           node.className = 'muted';
           node.textContent = '还没有位置标记。';
           return;
         }
         node.className = '';
         for (const mark of marks) {
+          const target = parseMarkTargetId(mark.targetId);
           const li = document.createElement('li');
           const link = document.createElement('span');
           link.className = 'file-link';
-          link.textContent = markLabel(mark);
+          link.textContent = mark.targetLabel || mark.targetId;
           link.title = '回到这段代码';
-          link.onclick = () => run(() => openFile(mark.path, mark.startLine, mark.endLine));
+          link.onclick = () => run(() => {
+            if (!target) throw new Error('这条标记没有可跳转的位置');
+            return openFile(target.path, target.startLine, target.endLine);
+          });
           li.appendChild(link);
-          if (mark.note) {
+          if (mark.noteMd) {
             const note = document.createElement('span');
             note.className = 'muted';
-            note.textContent = mark.note;
+            note.textContent = mark.noteMd;
             li.appendChild(note);
           }
           node.appendChild(li);
@@ -1166,17 +1128,12 @@
         const range = currentRange();
         if (!openPath || !range) throw new Error('先打开一个文件再标记');
         const note = document.getElementById('mark-note').value.trim();
-        const key = `${openPath}:${range.start}-${range.end}`;
-        await call('data.put', {
-          collection: MARK_COLLECTION,
-          key,
-          value: JSON.stringify({
-            path: openPath,
-            startLine: range.start,
-            endLine: range.end,
-            note,
-            at: Date.now(),
-          }),
+        await call('library.annotate', {
+          targetKind: MARK_KIND,
+          targetId: markTargetId(openPath, range.start, range.end),
+          targetLabel: markLabel({ path: openPath, startLine: range.start, endLine: range.end }),
+          kind: 'note',
+          note,
         });
         document.getElementById('mark-note').value = '';
         await loadMarks();
@@ -1242,7 +1199,16 @@
 
       window.addEventListener('message', (event) => {
         const payload = event.data && event.data.openjobEvent;
-        if (!payload || payload.streamId !== answerStreamId) return;
+        if (!payload) return;
+        // 宿主标记汇总跳回来（插入点 F）：宿主按 manifest.annotationTargets 把本页承接的
+        // code-mark 行交过来，本页按 targetId 打开文件/行区间并高亮（复用查看器已有的区间打开）。
+        if (payload.event === 'annotation:open') {
+          if (payload.kind !== MARK_KIND) return;
+          const target = parseMarkTargetId(payload.targetId);
+          if (target) void run(() => openFile(target.path, target.startLine, target.endLine));
+          return;
+        }
+        if (payload.streamId !== answerStreamId) return;
         const answer = document.getElementById('answer');
         if (payload.event === 'stream:delta') {
           answer.textContent += payload.delta || '';

@@ -58,7 +58,12 @@ import type {
   InstalledPlugin,
 } from './plugins/clientView';
 import type { PluginType } from './enums';
-import type { CampaignRuntimeDescriptor, ClientPlatform, RolePack } from './plugins/types';
+import type {
+  AnnotationTargetDeclaration,
+  CampaignRuntimeDescriptor,
+  ClientPlatform,
+  RolePack,
+} from './plugins/types';
 import type { PluginPermission } from './plugins/permissions';
 import type {
   LibraryAnnotation,
@@ -1263,6 +1268,8 @@ export interface IpcInvokeMap {
       main: string;
       api: string;
       enabled: boolean;
+      /** 本包声明的标记目标路由（插入点 F）：宿主据此把包自己起的 kind 跳去承接页面 */
+      annotationTargets?: AnnotationTargetDeclaration[];
     }>;
   };
   /** 启用/停用：启用要求用户已在界面上确认权限清单 */

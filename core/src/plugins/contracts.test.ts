@@ -386,4 +386,57 @@ describe('plugin contracts', () => {
       expect.objectContaining({ path: 'manifest.dataCollections', code: 'invalid-value' }),
     );
   });
+
+  it('接受形状合法的标记目标路由声明', () => {
+    const manifest = validCapabilityManifest();
+    manifest.annotationTargets = [
+      { kind: 'code-mark', label: '代码位置', pageId: 'source-repository' },
+    ];
+
+    expect(validatePluginManifest(manifest)).toEqual([]);
+  });
+
+  it('标记目标类型不得占用宿主已知取值，且包内不得重名', () => {
+    const manifest = validCapabilityManifest();
+    manifest.annotationTargets = [
+      { kind: 'node', label: '知识点', pageId: 'a' },
+      { kind: 'code-mark', label: '代码位置', pageId: 'b' },
+      { kind: 'code-mark', label: '又一个代码位置', pageId: 'c' },
+    ];
+
+    const issues = validatePluginManifest(manifest);
+    expect(issues).toContainEqual(
+      expect.objectContaining({ path: 'manifest.annotationTargets[0].kind', code: 'invalid-value' }),
+    );
+    expect(issues).toContainEqual(
+      expect.objectContaining({ path: 'manifest.annotationTargets[2].kind', code: 'duplicate-id' }),
+    );
+  });
+
+  it('标记目标的 kind / label / pageId 都不能为空', () => {
+    const manifest = validCapabilityManifest();
+    manifest.annotationTargets = [
+      { kind: ' ', label: '', pageId: '' },
+    ];
+
+    const issues = validatePluginManifest(manifest);
+    expect(issues).toContainEqual(
+      expect.objectContaining({ path: 'manifest.annotationTargets[0].kind', code: 'invalid-value' }),
+    );
+    expect(issues).toContainEqual(
+      expect.objectContaining({ path: 'manifest.annotationTargets[0].label', code: 'invalid-value' }),
+    );
+    expect(issues).toContainEqual(
+      expect.objectContaining({ path: 'manifest.annotationTargets[0].pageId', code: 'invalid-value' }),
+    );
+  });
+
+  it('显式声明的空标记目标数组也拒（要么不声明，要么给一条路由）', () => {
+    const manifest = validCapabilityManifest();
+    manifest.annotationTargets = [];
+
+    expect(validatePluginManifest(manifest)).toContainEqual(
+      expect.objectContaining({ path: 'manifest.annotationTargets', code: 'invalid-value' }),
+    );
+  });
 });

@@ -34,6 +34,24 @@ export interface PluginRuntimeAvailability {
   mobile: RuntimeAvailability;
 }
 
+/**
+ * 插入点 F：包声明「哪种标记目标类型由本包哪个页面承接」。
+ *
+ * 标记汇总面是跨功能的：包自己起的 targetKind（自由字符串）也会出现在宿主的标记面板里。
+ * 但宿主不认识那个取值，也不知道该跳到包里的哪个页面去——这份声明就是那条路由：
+ * 宿主按 `kind` 查到承接它的 `pageId`，激活时打开该页面并把 `{ kind, targetId }` 经宿主
+ * →页面事件交过去。`kind` 包内唯一，且不得占用宿主已知的取值（否则宿主自己的跳转会被顶掉）；
+ * 未安装或未声明该 kind 的页面，汇总行保持只读信息行（不给死按钮）。
+ */
+export interface AnnotationTargetDeclaration {
+  /** 标记目标类型（自由字符串，包自己起，如 code-mark）；包内唯一，不得与宿主已知取值冲突 */
+  kind: string;
+  /** 展示名（宿主认不出的取值在标记汇总里以它为准） */
+  label: string;
+  /** 承接该类型的本包页面 id（ctx.views.registerPage 注册的那个 id） */
+  pageId: string;
+}
+
 export interface PluginManifest {
   id: string;
   version: string;
@@ -74,6 +92,11 @@ export interface PluginManifest {
     schemaVersion: number;
   }>;
   dependencies?: PluginDependency[];
+  /**
+   * 包自己起的标记目标类型 → 承接它的本包页面（插入点 F）。缺省 = 本包的标记在宿主汇总面
+   * 里只作为信息行展示，不提供跳转。
+   */
+  annotationTargets?: ReadonlyArray<AnnotationTargetDeclaration>;
 }
 
 export interface RoleMatcher {

@@ -24,8 +24,84 @@ let active: ActivePluginRuntime[] = [];
 const uiAssetsByPlugin = new Map<string, Record<string, string>>();
 const listeners = new Set<() => void>();
 
+/**
+ * 包声明的标记目标路由（manifest.annotationTargets，插入点 F）：kind → 承接页面。
+ *
+ * 宿主不认识包自己起的 kind，只按这份声明决定「标记汇总里的这一行能不能跳、跳到哪个页面」。
+ * 只装已启用的包；解析时还会再核对「这个页面确实在本端激活了」，未激活即退回信息行。
+ */
+const annotationTargetsByPlugin = new Map<
+  string,
+  ReadonlyArray<{ kind: string; label: string; pageId: string }>
+>();
+
+/** 打开插件页面的请求（由标记汇总触发，App 订阅后切页签）：值是该页面的宿主完整 id */
+const pageOpenListeners = new Set<(fullId: string) => void>();
+
+/**
+ * 最近一次「跳去包页面看某个标记目标」的意图。页面可能还没挂载（页签刚被切过去），
+ * 这时事件路径上的 iframe 订阅还不存在——WebView 挂载时取一次这条待办，才不会丢。
+ */
+let pendingAnnotationOpen: { pluginId: string; pageId: string; kind: string; targetId: string } | null =
+  null;
+
 function notify(): void {
   for (const listener of listeners) listener();
+}
+
+/**
+ * 解析一条**包自己起的**标记目标该跳到哪：返回宿主侧完整页面 id，找不到则 null（信息行）。
+ * 命中条件三件套：包已激活、声明了该 kind、且声明的 pageId 真的在本端注册了。
+ */
+export function resolveAnnotationTarget(
+  kind: string,
+): { pluginId: string; pageId: string; fullId: string } | null {
+  for (const runtime of active) {
+    const declared = annotationTargetsByPlugin.get(runtime.pluginId) ?? [];
+    const match = declared.find((entry) => entry.kind === kind);
+    if (!match) continue;
+    const page = runtime.pages.find((candidate) => candidate.id === match.pageId);
+    if (!page) continue;
+    return { pluginId: runtime.pluginId, pageId: match.pageId, fullId: page.fullId };
+  }
+  return null;
+}
+
+/** App 订阅它来切到插件页面页签（并把页签挂载起来）。 */
+export function onOpenPluginPage(listener: (fullId: string) => void): () => void {
+  pageOpenListeners.add(listener);
+  return () => pageOpenListeners.delete(listener);
+}
+
+/**
+ * 从宿主标记汇总跳去承接页面：切到该页签，并把 `{ kind, targetId }` 经宿主→页面事件交过去。
+ * 页面尚未挂载时事件到不了，意图落进待办，由 WebView 挂载时补投。
+ */
+export function requestAnnotationOpen(intent: {
+  pluginId: string;
+  pageId: string;
+  kind: string;
+  targetId: string;
+}): void {
+  pendingAnnotationOpen = intent;
+  const fullId = `${intent.pluginId}:${intent.pageId}`;
+  for (const listener of pageOpenListeners) listener(fullId);
+  // 已经挂载的页面走实时事件：与宿主其它 openjobEvent 同一条宿主→页面通路
+  hub.emit('annotation:open', {
+    pluginId: intent.pluginId,
+    kind: intent.kind,
+    targetId: intent.targetId,
+  });
+}
+
+/** WebView 挂载时取一次待办（同一包的），取到即清空，避免重复投递。 */
+export function takePendingAnnotationOpen(
+  pluginId: string,
+): { kind: string; targetId: string } | null {
+  if (!pendingAnnotationOpen || pendingAnnotationOpen.pluginId !== pluginId) return null;
+  const { kind, targetId } = pendingAnnotationOpen;
+  pendingAnnotationOpen = null;
+  return { kind, targetId };
 }
 
 export function subscribePluginRuntimes(listener: () => void): () => void {
@@ -219,7 +295,13 @@ export async function activateInstalledPluginRuntimes(): Promise<void> {
   }
   const next: ActivePluginRuntime[] = [];
 
+  // 标记目标路由每次重激活都重算：停用的包随这次的清单消失，未声明该字段的包原样不在表里
+  annotationTargetsByPlugin.clear();
+
   for (const plugin of pluginRuntimes.filter((item) => item.enabled)) {
+    if (plugin.annotationTargets !== undefined) {
+      annotationTargetsByPlugin.set(plugin.id, plugin.annotationTargets);
+    }
     try {
       const entry = await invoke('plugin:getEntrySource', {
         id: plugin.id,

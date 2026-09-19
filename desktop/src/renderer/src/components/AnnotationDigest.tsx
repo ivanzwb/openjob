@@ -3,6 +3,7 @@ import type { AnnotationView } from '@core/ipc';
 import type { AnnotationTarget } from '@core/enums';
 import { highlightTextStyle } from '../lib/highlightStyle';
 import { invoke } from '../ipc';
+import { requestAnnotationOpen, resolveAnnotationTarget } from '../pluginRuntimes/runtime';
 import { DEFAULT_HIGHLIGHT_COLOR } from './AnnotationTools';
 
 /**
@@ -10,8 +11,12 @@ import { DEFAULT_HIGHLIGHT_COLOR } from './AnnotationTools';
  *
  * 这里是宿主认识的标记目标（知识点 / 讲解 / 真题 / 情报）与**包自己起的标记目标**共用的
  * 一张面板：宿主认识的取值照旧按自己的名字与颜色渲染、按目标跳回去；认不出的取值
- * （插件的自由字符串）就按包存下来的标签渲染，没有标签则退回原始取值，只作为一条**信息行**
- * 列出它的标签、笔记与选中文本，不提供跳到别处的导航——宿主不知道那个目标在哪。
+ * （插件的自由字符串）就按包存下来的标签渲染，没有标签则退回原始取值。
+ *
+ * 包的目标能不能跳，取决于它声明的路由（manifest.annotationTargets）：声明了 kind 与承接
+ * pageId 且该页面已激活时，这一行给出与宿主目标同一种「点一下跳回去」的给手——切到包的页面，
+ * 并把 `{ kind, targetId }` 经宿主→页面事件交过去；没安装、没声明或页面未激活时，仍只作为
+ * 一条信息行列出标签、笔记与选中文本，不给死按钮。
  */
 const TARGET_LABEL: Record<string, string> = {
   node: '知识点',
@@ -89,6 +94,35 @@ function AnnotationBody({ annotation }: { annotation: AnnotationView }): React.J
     </span>
   ) : (
     <>{annotation.noteMd}</>
+  );
+}
+
+/**
+ * 包自己起的标记目标：仅当它声明了承接页面且该页面已激活时，给出「跳回去」的给手。
+ * 跳转走宿主路由——切到包的页面并投递 `{ kind, targetId }`；解析不出目标就是纯信息行（null）。
+ */
+function PackageTargetLink({
+  annotation,
+}: {
+  annotation: AnnotationView;
+}): React.JSX.Element | null {
+  const resolved = resolveAnnotationTarget(annotation.targetType);
+  if (!resolved) return null;
+  return (
+    <button
+      type="button"
+      onClick={() =>
+        requestAnnotationOpen({
+          pluginId: resolved.pluginId,
+          pageId: resolved.pageId,
+          kind: annotation.targetType,
+          targetId: annotation.targetId,
+        })
+      }
+      className="text-left text-xs font-medium text-[var(--color-fg)] hover:text-[var(--color-accent)]"
+    >
+      {annotation.targetLabel}
+    </button>
   );
 }
 
@@ -194,7 +228,9 @@ export function AnnotationDigest({
                 </button>
               ) : isHostTarget(a.targetType) ? (
                 <p className="text-xs font-medium text-[var(--color-fg)]">{a.targetLabel}</p>
-              ) : null}
+              ) : (
+                <PackageTargetLink annotation={a} />
+              )}
               <p className="line-clamp-4 text-sm leading-relaxed text-[var(--color-muted)]">
                 <AnnotationBody annotation={a} />
               </p>
@@ -226,7 +262,9 @@ export function AnnotationDigest({
                       a.targetLabel
                     )}
                   </div>
-                ) : null}
+                ) : (
+                  <PackageTargetLink annotation={a} />
+                )}
                 <div className="break-words">
                   <AnnotationBody annotation={a} />
                 </div>
