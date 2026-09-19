@@ -14,24 +14,21 @@ export function ensureCriticalSchema(sqlite: SQLiteDatabase): void {
     );
   `);
 
+  // 插件声明的数据集合靠同步推过来：桌面端写了行、手机端还没这张表时，
+  // 落库会以「no such table」整批失败，所以这里也补一份
   sqlite.execSync(`
-    CREATE TABLE IF NOT EXISTS repo_file (
+    CREATE TABLE IF NOT EXISTS plugin_data (
       id text PRIMARY KEY NOT NULL,
-      repo_id text NOT NULL,
-      file_path text NOT NULL,
-      content text NOT NULL,
-      line_count integer NOT NULL,
-      byte_size integer NOT NULL,
-      updated_at integer NOT NULL,
-      FOREIGN KEY (repo_id) REFERENCES repo(id) ON UPDATE no action ON DELETE cascade
+      plugin_id text NOT NULL,
+      collection text NOT NULL,
+      key text NOT NULL,
+      value_json text,
+      updated_at integer NOT NULL
     );
   `);
 
   sqlite.execSync(
-    `CREATE INDEX IF NOT EXISTS idx_repo_file_repo ON repo_file (repo_id);`,
-  );
-  sqlite.execSync(
-    `CREATE INDEX IF NOT EXISTS idx_repo_file_path ON repo_file (repo_id, file_path);`,
+    `CREATE INDEX IF NOT EXISTS idx_plugin_data_collection ON plugin_data (plugin_id, collection, updated_at);`,
   );
 
   sqlite.execSync(`

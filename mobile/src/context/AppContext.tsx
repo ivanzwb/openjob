@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from 'react';
 import { AppState } from 'react-native';
-import { openDb, syncNow, isPaired, getPeerLabel, getAutoSync, setAutoSync as persistAutoSync, getRepoFileSyncNotice, getUseSyncedFeed, setUseSyncedFeed as persistUseSyncedFeed } from '../db';
+import { openDb, syncNow, isPaired, getPeerLabel, getAutoSync, setAutoSync as persistAutoSync, getUseSyncedFeed, setUseSyncedFeed as persistUseSyncedFeed } from '../db';
 import { SyncVersionMismatchError } from '../sync/client';
 import { getMobileConfig } from '../config/settings';
 import { setThemeScheme } from '../theme';
@@ -29,7 +29,6 @@ interface AppContextValue {
   lastSyncMessage: string | null;
   hasSyncError: boolean;
   versionMismatch: VersionMismatch | null;
-  repoFileSyncNotice: { skipped: boolean; message: string | null };
   autoSync: boolean;
   setAutoSync: (on: boolean) => void;
   useSyncedFeed: boolean;
@@ -50,10 +49,6 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
   const [lastSyncMessage, setLastSyncMessage] = useState<string | null>(null);
   const [hasSyncError, setHasSyncError] = useState(false);
   const [versionMismatch, setVersionMismatch] = useState<VersionMismatch | null>(null);
-  const [repoFileSyncNotice, setRepoFileSyncNotice] = useState<{ skipped: boolean; message: string | null }>({
-    skipped: false,
-    message: null,
-  });
   const [autoSyncOn, setAutoSyncOn] = useState(true);
   const [useSyncedFeedOn, setUseSyncedFeedOn] = useState(true);
   const [dataVersion, setDataVersion] = useState(0);
@@ -69,7 +64,6 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
     setPeerLabel(getPeerLabel());
     setAutoSyncOn(getAutoSync());
     setUseSyncedFeedOn(getUseSyncedFeed());
-    setRepoFileSyncNotice(getRepoFileSyncNotice());
   }, []);
 
   const triggerSync = useCallback(async () => {
@@ -84,13 +78,9 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
         (result.skipped > 0
           ? `，跳过 ${result.skipped} 条引用已删除父行的变更（父行未同步到本端，无法落库）`
           : '');
-      if (result.repoFileSkipped && result.repoFileMessage) {
-        message += `\n${result.repoFileMessage}`;
-      }
       setLastSyncMessage(message);
       setHasSyncError(false);
       setVersionMismatch(null);
-      setRepoFileSyncNotice(getRepoFileSyncNotice());
       bumpData();
     } catch (e) {
       setLastSyncMessage(e instanceof Error ? e.message : String(e));
@@ -159,7 +149,6 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
       lastSyncMessage,
       hasSyncError,
       versionMismatch,
-      repoFileSyncNotice,
       autoSync: autoSyncOn,
       setAutoSync,
       useSyncedFeed: useSyncedFeedOn,
@@ -169,7 +158,7 @@ export function AppProvider({ children }: { children: ReactNode }): React.JSX.El
       notifyDataChanged: bumpData,
       triggerSync,
     }),
-    [ready, paired, peerLabel, syncing, syncStatus, lastSyncMessage, hasSyncError, versionMismatch, repoFileSyncNotice, autoSyncOn, setAutoSync, useSyncedFeedOn, setUseSyncedFeed, dataVersion, refresh, bumpData, triggerSync],
+    [ready, paired, peerLabel, syncing, syncStatus, lastSyncMessage, hasSyncError, versionMismatch, autoSyncOn, setAutoSync, useSyncedFeedOn, setUseSyncedFeed, dataVersion, refresh, bumpData, triggerSync],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

@@ -38,7 +38,6 @@ export function SyncScreen(): React.JSX.Element {
     syncStatus,
     hasSyncError,
     versionMismatch,
-    repoFileSyncNotice,
     autoSync,
     setAutoSync,
     triggerSync,
@@ -247,19 +246,6 @@ export function SyncScreen(): React.JSX.Element {
           <Text style={{ color: theme.danger, fontWeight: '600' }}>配对失败</Text>
           <Text selectable style={{ color: theme.text, fontSize: 12 }}>
             {pairError}
-          </Text>
-        </View>
-      )}
-
-      {repoFileSyncNotice.skipped && repoFileSyncNotice.message && (
-        <View style={{ borderWidth: 1, borderColor: theme.danger, borderRadius: 8, padding: 10, backgroundColor: theme.surface, gap: 6 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <Ionicons name="warning" size={16} color={theme.danger} />
-            <Text style={{ color: theme.danger, fontWeight: '600' }}>代码库文件未同步</Text>
-          </View>
-          <Text style={{ color: theme.text, fontSize: 12, lineHeight: 18 }}>{repoFileSyncNotice.message}</Text>
-          <Text style={{ color: theme.muted, fontSize: 11, lineHeight: 16 }}>
-            请清理手机存储空间后再次同步；其他数据已正常同步。
           </Text>
         </View>
       )}

@@ -11,11 +11,10 @@ import type {
   SessionSummary,
   SessionMessageView,
 } from '@core/ipc';
-import type { Repo as RepoEntity } from '@core/entities';
 import type { EdgeRelation } from '@core/enums';
 import { sortNodesByStudyOrder } from '@core/campaign/studyOrder';
 import type { FollowUpMessage } from './mutations';
-import { repoQaSessionId, type RepoQaMessage } from './repoQaThread';
+import { materialLabelForPlanDay, taskPresentationForPlanDay } from './planLocal';
 import type {
   FollowUpStoredMessage,
   FollowUpSummaryState,
@@ -170,10 +169,6 @@ function resolveSpeechSourceLabel(
   sourceType: SpeechSnippetView['sourceType'],
   sourceId: string,
 ): string {
-  if (sourceType === 'codeRef') {
-    const repo = db.getFirstSync<{ url: string }>(`SELECT url FROM repo WHERE id = ?`, sourceId);
-    return repo ? `源码 · ${repo.url.replace(/^https?:\/\//, '')}` : '源码';
-  }
   if (sourceType === 'node') {
     const node = db.getFirstSync<{ name: string }>(`SELECT name FROM knowledge_node WHERE id = ?`, sourceId);
     return node ? `考点 · ${node.name}` : '考点';
@@ -304,7 +299,8 @@ export function getTodayPlan(db: SQLiteDatabase, campaignId?: string, date?: str
     id: string;
     plan_day_id: string;
     node_id: string | null;
-    repo_id: string | null;
+    material_kind: string | null;
+    material_id: string | null;
     kind: string;
     est_minutes: number;
     actual_minutes: number | null;
@@ -319,14 +315,12 @@ export function getTodayPlan(db: SQLiteDatabase, campaignId?: string, date?: str
           t.node_id,
         )
       : null;
-    const repo = t.repo_id
-      ? db.getFirstSync<{ url: string }>(`SELECT url FROM repo WHERE id = ?`, t.repo_id)
-      : null;
     return {
       id: t.id,
       planDayId: t.plan_day_id,
       nodeId: t.node_id,
-      repoId: t.repo_id,
+      materialKind: t.material_kind,
+      materialId: t.material_id,
       kind: t.kind as TaskView['kind'],
       estMinutes: t.est_minutes,
       actualMinutes: t.actual_minutes,
@@ -334,7 +328,8 @@ export function getTodayPlan(db: SQLiteDatabase, campaignId?: string, date?: str
       orderIdx: t.order_idx,
       nodeName: node?.name ?? null,
       nodeCoverage: (node?.coverage_type as TaskView['nodeCoverage']) ?? null,
-      repoUrl: repo?.url ?? null,
+      materialLabel: materialLabelForPlanDay(db, t.plan_day_id, t.material_id),
+      ...taskPresentationForPlanDay(db, t.plan_day_id, t.kind),
     };
   });
 
@@ -584,34 +579,6 @@ export function getCampaignOverview(db: SQLiteDatabase): CampaignOverview {
   };
 }
 
-export function listRepos(db: SQLiteDatabase): RepoEntity[] {
-  return db
-    .getAllSync<{
-      id: string;
-      url: string;
-      local_path: string;
-      default_branch: string | null;
-      commit_sha: string | null;
-      languages: string;
-      repo_map_md: string | null;
-      summary_md: string | null;
-      indexed_at: number | null;
-      status: string;
-    }>(`SELECT * FROM repo ORDER BY url ASC`)
-    .map((r) => ({
-      id: r.id,
-      url: r.url,
-      localPath: r.local_path,
-      defaultBranch: r.default_branch,
-      commitSha: r.commit_sha,
-      languages: JSON.parse(r.languages) as string[],
-      repoMapMd: r.repo_map_md,
-      summaryMd: r.summary_md,
-      indexedAt: r.indexed_at,
-      status: r.status as RepoEntity['status'],
-    }));
-}
-
 export function listSessions(db: SQLiteDatabase, limit = 30): SessionSummary[] {
   return db
     .getAllSync<{
@@ -710,20 +677,6 @@ export function getNodeFollowUpContext(
     },
     messages,
   };
-}
-
-export function getRepoQaHistory(db: SQLiteDatabase, repoId: string): RepoQaMessage[] {
-  return db
-    .getAllSync<{ role: string; content_md: string }>(
-      `SELECT role, content_md FROM message
-       WHERE session_id = ? AND role IN ('user', 'assistant')
-       ORDER BY created_at ASC, id ASC`,
-      repoQaSessionId(repoId),
-    )
-    .map((message) => ({
-      role: message.role as RepoQaMessage['role'],
-      text: message.content_md,
-    }));
 }
 
 export function getSessionMessages(db: SQLiteDatabase, sessionId: string): SessionMessageView[] {

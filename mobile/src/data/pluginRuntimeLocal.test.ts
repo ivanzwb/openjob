@@ -35,7 +35,7 @@ function packWithCode(input: {
       displayName: '演示代码包',
       description: '移动端代码插件用例',
       compatibility: { core: '^1.0.0', schema: 1 },
-      permissions: ['repository:read'],
+      permissions: ['filesystem:workspace'],
       ...(input.main !== undefined ? { main: input.main } : {}),
       ...(input.mobile !== undefined ? { mobile: input.mobile } : {}),
       api: '^1.0',

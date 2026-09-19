@@ -8,9 +8,11 @@ import {
   PRE_PLUGIN_CAMPAIGN_SCOPE_KIND,
   collectPlannerContributions,
   descriptorFromRolePack,
+  materialsFromRows,
   pluginTaskClientView,
+  taskPresentation,
   type PlannedTaskClientView,
-  type PlannerRepo,
+  type PlannerMaterial,
 } from '@core/planner/contributions';
 import type {
   CampaignRuntimeDescriptor,
@@ -133,7 +135,7 @@ function loadRuntimeDescriptor(
 export function pluginTaskSupport(
   db: SQLiteDatabase,
   campaignId: string,
-  kind: TaskKind,
+  kind: string,
 ): PlannedTaskClientView | null {
   const runtime = loadRuntimeDescriptor(db, campaignId);
   return pluginTaskClientView(
@@ -143,6 +145,21 @@ export function pluginTaskSupport(
     installedPluginsForCampaign(db),
     resolveCampaignRolePack(db, runtime),
   );
+}
+
+/** 任务名与任务页来自岗位包声明；手机端只读缓存里的岗位包，未缓存则回落考点视图。 */
+export function taskPresentationForPlanDay(
+  db: SQLiteDatabase,
+  planDayId: string,
+  kind: string,
+): { kindLabel: string | null; pageId: string | null } {
+  const day = db.getFirstSync<{ campaign_id: string }>(
+    `SELECT campaign_id FROM plan_day WHERE id = ?`,
+    planDayId,
+  );
+  if (!day) return { kindLabel: null, pageId: null };
+  const runtime = loadRuntimeDescriptor(db, day.campaign_id);
+  return taskPresentation(resolveCampaignRolePack(db, runtime), kind);
 }
 
 
@@ -159,6 +176,60 @@ function resolveCampaignRolePack(
   return (
     getCachedRolePack(db, id, version) ?? listCachedRolePacks(db).find((pack) => pack.manifest.id === id) ?? null
   );
+}
+
+/**
+ * 从岗位包自己声明的数据集合里读材料行（`plugin_data`），解析成排程认识的材料。
+ *
+ * 与桌面同一条规则：宿主不认识材料语义，按模板声明的 (materialKind, materialCollection)
+ * 逐条取数，值一律当字符串交给共享的 materialsFromRows 解析，两端因此逐条对齐。
+ */
+function loadMaterials(db: SQLiteDatabase, rolePack: RolePack | null): PlannerMaterial[] {
+  if (!rolePack) return [];
+  const materials: PlannerMaterial[] = [];
+  for (const template of rolePack.taskTemplates) {
+    if (!template.materialKind || !template.materialCollection) continue;
+    const rows = db.getAllSync<{ value_json: string | null }>(
+      `SELECT value_json FROM plugin_data WHERE plugin_id = ? AND collection = ?`,
+      rolePack.manifest.id,
+      template.materialCollection,
+    );
+    materials.push(...materialsFromRows(template.materialKind, rows.map((row) => row.value_json)));
+  }
+  return materials;
+}
+
+/** 把任务挂的 material_id 还原成展示名；扫本包声明的全部集合，不按 kind 收窄。 */
+function materialLabels(db: SQLiteDatabase, rolePack: RolePack | null): Map<string, string> {
+  const labels = new Map<string, string>();
+  if (!rolePack) return labels;
+  for (const collection of rolePack.manifest.dataCollections ?? []) {
+    const rows = db.getAllSync<{ value_json: string | null }>(
+      `SELECT value_json FROM plugin_data WHERE plugin_id = ? AND collection = ?`,
+      rolePack.manifest.id,
+      collection.name,
+    );
+    for (const material of materialsFromRows('', rows.map((row) => row.value_json))) {
+      labels.set(material.id, material.label);
+    }
+  }
+  return labels;
+}
+
+/** 任务卡上的材料标签：从该任务所在计划日反查战役的岗位包，再按 material_id 取 label。 */
+export function materialLabelForPlanDay(
+  db: SQLiteDatabase,
+  planDayId: string,
+  materialId: string | null,
+): string | null {
+  if (!materialId) return null;
+  const day = db.getFirstSync<{ campaign_id: string }>(
+    `SELECT campaign_id FROM plan_day WHERE id = ?`,
+    planDayId,
+  );
+  if (!day) return null;
+  const runtime = loadRuntimeDescriptor(db, day.campaign_id);
+  return materialLabels(db, resolveCampaignRolePack(db, runtime)).get(materialId) ?? null;
 }
 
 export async function generatePlan(
@@ -233,7 +304,7 @@ export async function generatePlan(
   const learnedQueue: string[] = [];
 
   const runtime = loadRuntimeDescriptor(db, campaignId);
-  const repos = db.getAllSync<PlannerRepo>(`SELECT id, url, status FROM repo`);
+  const materials = loadMaterials(db, resolveCampaignRolePack(db, runtime));
 
   for (let di = 0; di < dates.length; di++) {
     const date = dates[di]!;
@@ -241,9 +312,11 @@ export async function generatePlan(
     const budget = dailyBudget(daily);
     let used = 0;
     const dayTasks: {
-      kind: TaskKind;
+      /** 宿主种类或岗位包声明的种类，落库时原样写入 */
+      kind: string;
       nodeId: string | null;
-      repoId: string | null;
+      materialKind: string | null;
+      materialId: string | null;
       estMinutes: number;
       orderIdx: number;
     }[] = [];
@@ -254,7 +327,7 @@ export async function generatePlan(
       if (node) {
         const est = Math.min(15, conservativeEst(node.estMinutes));
         if (used + est <= budget) {
-          dayTasks.push({ kind: 'drill', nodeId: drillId, repoId: null, estMinutes: est, orderIdx: dayTasks.length });
+          dayTasks.push({ kind: 'drill', nodeId: drillId, materialKind: null, materialId: null, estMinutes: est, orderIdx: dayTasks.length });
           used += est;
         }
       }
@@ -268,7 +341,7 @@ export async function generatePlan(
         nodeIdx--;
         break;
       }
-      dayTasks.push({ kind: 'learn', nodeId: node.id, repoId: null, estMinutes: est, orderIdx: dayTasks.length });
+      dayTasks.push({ kind: 'learn', nodeId: node.id, materialKind: null, materialId: null, estMinutes: est, orderIdx: dayTasks.length });
       used += est;
       learnedQueue.push(node.id);
     }
@@ -279,7 +352,7 @@ export async function generatePlan(
     for (const node of shaky.slice(0, 1)) {
       const est = 15;
       if (used + est <= budget) {
-        dayTasks.push({ kind: 'review', nodeId: node.id, repoId: null, estMinutes: est, orderIdx: dayTasks.length });
+        dayTasks.push({ kind: 'review', nodeId: node.id, materialKind: null, materialId: null, estMinutes: est, orderIdx: dayTasks.length });
         used += est;
       }
     }
@@ -291,14 +364,15 @@ export async function generatePlan(
       dayCount: dates.length,
       budgetMinutes: budget,
       usedMinutes: used,
-      repos,
+      materials,
       installed: installedPluginsForCampaign(db),
       rolePack: resolveCampaignRolePack(db, runtime),
     })) {
       dayTasks.push({
         kind: planned.kind,
         nodeId: planned.nodeId,
-        repoId: planned.repoId,
+        materialKind: planned.materialKind,
+        materialId: planned.materialId,
         estMinutes: planned.estMinutes,
         orderIdx: dayTasks.length,
       });
@@ -315,12 +389,13 @@ export async function generatePlan(
       );
       for (const t of dayTasks) {
         db.runSync(
-          `INSERT INTO task (id, plan_day_id, node_id, repo_id, kind, est_minutes, actual_minutes, status, order_idx)
-           VALUES (?, ?, ?, ?, ?, ?, NULL, 'pending', ?)`,
+          `INSERT INTO task (id, plan_day_id, node_id, material_kind, material_id, kind, est_minutes, actual_minutes, status, order_idx)
+           VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 'pending', ?)`,
           Crypto.randomUUID(),
           planDayId,
           t.nodeId,
-          t.repoId,
+          t.materialKind,
+          t.materialId,
           t.kind,
           t.estMinutes,
           t.orderIdx,
@@ -341,8 +416,8 @@ export async function generatePlan(
     if (!planDay) break;
     writingAs(db, identity.deviceId, () => {
       db.runSync(
-        `INSERT INTO task (id, plan_day_id, node_id, repo_id, kind, est_minutes, actual_minutes, status, order_idx)
-         VALUES (?, ?, ?, NULL, 'fallbackScript', 10, NULL, 'pending', 999)`,
+        `INSERT INTO task (id, plan_day_id, node_id, material_kind, material_id, kind, est_minutes, actual_minutes, status, order_idx)
+         VALUES (?, ?, ?, NULL, NULL, 'fallbackScript', 10, NULL, 'pending', 999)`,
         Crypto.randomUUID(),
         planDay.id,
         node.id,
@@ -389,10 +464,11 @@ export async function deferToday(db: SQLiteDatabase, campaignId: string): Promis
   const pending = db.getAllSync<{
     id: string;
     node_id: string | null;
-    repo_id: string | null;
+    material_kind: string | null;
+    material_id: string | null;
     kind: string;
     est_minutes: number;
-  }>(`SELECT id, node_id, repo_id, kind, est_minutes FROM task WHERE plan_day_id = ? AND status = 'pending'`, planDay.id);
+  }>(`SELECT id, node_id, material_kind, material_id, kind, est_minutes FROM task WHERE plan_day_id = ? AND status = 'pending'`, planDay.id);
 
   let deferred = 0;
   const maxOrder =
@@ -402,12 +478,13 @@ export async function deferToday(db: SQLiteDatabase, campaignId: string): Promis
     for (const t of pending) {
       db.runSync(`UPDATE task SET status = 'skipped' WHERE id = ?`, t.id);
       db.runSync(
-        `INSERT INTO task (id, plan_day_id, node_id, repo_id, kind, est_minutes, actual_minutes, status, order_idx)
-         VALUES (?, ?, ?, ?, ?, ?, NULL, 'pending', ?)`,
+        `INSERT INTO task (id, plan_day_id, node_id, material_kind, material_id, kind, est_minutes, actual_minutes, status, order_idx)
+         VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 'pending', ?)`,
         Crypto.randomUUID(),
         tomorrowDay!.id,
         t.node_id,
-        t.repo_id,
+        t.material_kind,
+        t.material_id,
         t.kind,
         t.est_minutes,
         maxOrder + deferred,

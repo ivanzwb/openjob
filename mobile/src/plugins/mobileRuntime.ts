@@ -91,6 +91,15 @@ export function buildMobileRuntimeHtml(plugin: MobilePluginRuntime): string {
       set: function (key, value) { return callHost('storage.set', { key: key, value: value }); },
       delete: function (key) { return callHost('storage.delete', { key: key }); }
     },
+    // 包声明的数据集合：手机端只读，只暴露读侧（写侧由 RN 侧原语表如实拒绝）
+    data: {
+      get: function (collection, key) { return callHost('data.get', { collection: collection, key: key }); },
+      list: function (collection, options) {
+        options = options || {};
+        return callHost('data.list', { collection: collection, prefix: options.prefix, limit: options.limit });
+      },
+      count: function (collection) { return callHost('data.count', { collection: collection }); }
+    },
     views: {
       registerPage: function (page) {
         pages.push({

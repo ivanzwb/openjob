@@ -5,13 +5,11 @@ import { useTheme } from '../theme';
 const LABELS: Record<EvidenceKind, string> = {
   model: '模型知识',
   web: '网络检索',
-  code: '代码实证',
 };
 
 const TONES: Record<EvidenceKind, 'amber' | 'sky' | 'emerald'> = {
   model: 'amber',
   web: 'sky',
-  code: 'emerald',
 };
 
 export function SourceBadge({ kind }: { kind: EvidenceKind }): React.JSX.Element {

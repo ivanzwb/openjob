@@ -5,8 +5,6 @@ import { ActivityIndicator, Text, View } from 'react-native';
 import { OverviewScreen } from '../screens/OverviewScreen';
 import { ScriptsScreen } from '../screens/ScriptsScreen';
 import { CampaignsScreen } from '../screens/CampaignsScreen';
-import { DesignScreen } from '../screens/DesignScreen';
-import { ReposScreen } from '../screens/ReposScreen';
 import { ResumesScreen } from '../screens/ResumesScreen';
 import { SyncScreen } from '../screens/SyncScreen';
 import { MoreScreen } from '../screens/MoreScreen';
@@ -20,9 +18,7 @@ export type RootTabParamList = {
   Plugins: undefined;
   Campaigns: { campaignId?: string; nodeId?: string; focusKey?: number } | undefined;
   Resumes: undefined;
-  Design: undefined;
   More: undefined;
-  Repos: undefined;
   Scripts: undefined;
   Sync: undefined;
 };
@@ -35,10 +31,8 @@ const TAB_ICONS: Record<string, { active: IoniconName; inactive: IoniconName }> 
   Overview: { active: 'analytics', inactive: 'analytics-outline' },
   Campaigns: { active: 'school', inactive: 'school-outline' },
   Resumes: { active: 'document-text', inactive: 'document-text-outline' },
-  Design: { active: 'mic-circle', inactive: 'mic-circle-outline' },
   More: { active: 'ellipsis-horizontal-circle', inactive: 'ellipsis-horizontal-circle-outline' },
   Plugins: { active: 'layers', inactive: 'layers-outline' },
-  Repos: { active: 'code-slash', inactive: 'code-slash-outline' },
   Scripts: { active: 'chatbubble-ellipses', inactive: 'chatbubble-ellipses-outline' },
   Sync: { active: 'sync', inactive: 'sync-outline' },
 };
@@ -140,15 +134,6 @@ export function RootTabs(): React.JSX.Element {
         }}
       />
       <Tab.Screen
-        name="Design"
-        component={DesignScreen}
-        options={{
-          title: '模拟面试',
-          tabBarLabel: '面试',
-          headerTitle: () => <AppHeaderTitle title="模拟面试" icon={TAB_ICONS.Design.active} />,
-        }}
-      />
-      <Tab.Screen
         name="More"
         component={MoreScreen}
         options={{
@@ -165,16 +150,6 @@ export function RootTabs(): React.JSX.Element {
           tabBarButton: () => null,
           tabBarItemStyle: { display: 'none' },
           headerTitle: () => <AppHeaderTitle title="插件" icon={TAB_ICONS.Plugins.active} />,
-        }}
-      />
-      <Tab.Screen
-        name="Repos"
-        component={ReposScreen}
-        options={{
-          title: '源码',
-          tabBarButton: () => null,
-          tabBarItemStyle: { display: 'none' },
-          headerTitle: () => <AppHeaderTitle title="源码" icon={TAB_ICONS.Repos.active} />,
         }}
       />
       <Tab.Screen

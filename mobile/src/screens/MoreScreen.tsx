@@ -15,12 +15,6 @@ const MORE_ITEMS: {
   route: keyof RootTabParamList;
 }[] = [
   {
-    title: '源码',
-    subtitle: '项目源码摘要、文件索引和代码问答',
-    icon: 'code-slash',
-    route: 'Repos',
-  },
-  {
     title: '插件',
     subtitle: '随岗位包启用的代码插件',
     icon: 'layers-outline',

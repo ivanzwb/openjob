@@ -10,7 +10,14 @@
  */
 import { DatabaseSync } from 'node:sqlite';
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+// 任务名/任务页按岗位包声明取，于是经 queries 拉进 planLocal 那一条链；链上的
+// expo-crypto 会 import 到 react-native 的 Flow 源码，Node 里解析不了。这条测试用不到它们。
+vi.mock('expo-crypto', () => ({ randomUUID: () => 'uuid-test' }));
+vi.mock('expo-secure-store', () => ({}));
+vi.mock('../remote/rpc', () => ({ invokeRemote: () => Promise.resolve({ result: null }) }));
+
 import { MIGRATIONS } from '../db/migrations/bundle';
 import { listSpeechSnippets } from './queries';
 

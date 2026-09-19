@@ -20,6 +20,9 @@ export const MOBILE_UNAVAILABLE_METHODS: readonly string[] = [
   'workspace.fetch',
   'artifact.read',
   'agent.ask',
+  // 手机端对包数据只读：读走配对桌面，写如实拒绝，不假装能落盘
+  'data.put',
+  'data.delete',
 ];
 
 function text(value: unknown): string {
@@ -42,6 +45,34 @@ export function mobileBridgePrimitives(
     },
     'storage.delete': {
       invoke: (params) => call('pluginRuntime:storage.delete', { key: text((params as { key?: unknown }).key) }),
+    },
+    // 包声明的数据集合（阶段 3 B2）：手机端只读，读走配对桌面的受控通道（本地插件作用域）；
+    // 写（data.put / data.delete）在 MOBILE_UNAVAILABLE_METHODS 里如实拒绝。
+    'data.get': {
+      invoke: (params) => {
+        const { collection, key } = params as { collection?: unknown; key?: unknown };
+        return call('pluginRuntime:data.get', { collection: text(collection), key: text(key) });
+      },
+    },
+    'data.list': {
+      invoke: (params) => {
+        const { collection, prefix, limit } = params as {
+          collection?: unknown;
+          prefix?: unknown;
+          limit?: unknown;
+        };
+        return call('pluginRuntime:data.list', {
+          collection: text(collection),
+          prefix: prefix === undefined ? undefined : text(prefix),
+          limit,
+        });
+      },
+    },
+    'data.count': {
+      invoke: (params) =>
+        call('pluginRuntime:data.count', {
+          collection: text((params as { collection?: unknown }).collection),
+        }),
     },
     'campaign.getDescriptor': {
       invoke: (params) =>

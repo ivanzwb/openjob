@@ -16,6 +16,9 @@ describe('移动端桥原语表', () => {
     const primitives = mobileBridgePrimitives(async () => undefined);
     expect(Object.keys(primitives).sort()).toEqual([
       'campaign.getDescriptor',
+      'data.count',
+      'data.get',
+      'data.list',
       'evidence.listConfirmed',
       'storage.delete',
       'storage.get',
@@ -31,6 +34,16 @@ describe('移动端桥原语表', () => {
     const primitives = mobileBridgePrimitives(call);
     await primitives['storage.get']!.invoke({ key: 'notes' });
     expect(call).toHaveBeenCalledWith('pluginRuntime:storage.get', { key: 'notes' });
+
+    await primitives['data.get']!.invoke({ collection: 'repositories', key: 'r1' });
+    expect(call).toHaveBeenCalledWith('pluginRuntime:data.get', {
+      collection: 'repositories',
+      key: 'r1',
+    });
+    await primitives['data.count']!.invoke({ collection: 'repositories' });
+    expect(call).toHaveBeenCalledWith('pluginRuntime:data.count', {
+      collection: 'repositories',
+    });
   });
 });
 
@@ -44,6 +57,22 @@ describe('手机端按声明放行，桌面的能力如实拒绝', () => {
     });
     expect(bridge.methods).toEqual(['storage.get']);
     await expect(bridge.call('workspace.read', {})).rejects.toMatchObject({ code: 'unavailable' });
+  });
+
+  it('声明了 data.put → unavailable（手机端对包数据只读）', async () => {
+    const bridge = createPluginBridge({
+      pluginId: 'ap.pack',
+      declared: ['data.get', 'data.put', 'data.delete'],
+      primitives: mobileBridgePrimitives(async () => null),
+      gate: allowAll,
+    });
+    expect(bridge.methods).toEqual(['data.get']);
+    await expect(bridge.call('data.put', { collection: 'repositories' })).rejects.toMatchObject({
+      code: 'unavailable',
+    });
+    await expect(bridge.call('data.delete', { collection: 'repositories' })).rejects.toMatchObject({
+      code: 'unavailable',
+    });
   });
 
   it('未声明一律拒（默认拒绝）', async () => {

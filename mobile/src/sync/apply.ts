@@ -1,6 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import type { AutoChange } from '@core/sync';
-import { deviceLocalInsertDefaults } from '../../../desktop/src/main/sync/deviceLocalDefaults';
 import {
   describeMissingParents,
   findMissingParentChanges,
@@ -56,12 +55,8 @@ function applyInsert(
   );
   const merged = { ...values };
   if (existing) {
+    // 本机专属列只保留本机原值，不接受对端推来的值
     for (const col of spec.deviceLocal) merged[col] = existing[col];
-  } else {
-    const defaults = deviceLocalInsertDefaults(table, merged);
-    for (const col of spec.deviceLocal) {
-      if (merged[col] === undefined && col in defaults) merged[col] = defaults[col];
-    }
   }
   const cols = Object.keys(merged);
   const placeholders = cols.map(() => '?').join(', ');

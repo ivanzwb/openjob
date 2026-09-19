@@ -5,7 +5,7 @@ import type { ExplanationTier } from '@core/enums';
 import type { FollowUpSummaryUpdate } from '@core/llm/followUpContext';
 import { getDeviceIdentity } from '../sync/identity';
 import { writingAs } from '../sync/triggers';
-import { nextMessageTimestamp, repoQaSessionId, type RepoQaMessage } from './repoQaThread';
+import { materialLabelForPlanDay, taskPresentationForPlanDay } from './planLocal';
 
 export type FollowUpMessage = { role: 'user' | 'assistant'; text: string };
 
@@ -123,62 +123,6 @@ export async function deleteFollowUpHistory(
   });
 }
 
-async function ensureRepoQaSession(
-  db: SQLiteDatabase,
-  repoId: string,
-  repoUrl: string,
-): Promise<string> {
-  const id = repoQaSessionId(repoId);
-  const existing = db.getFirstSync<{ id: string }>(`SELECT id FROM session WHERE id = ?`, id);
-  if (existing) return existing.id;
-
-  const identity = await getDeviceIdentity(db);
-  writingAs(db, identity.deviceId, () => {
-    db.runSync(
-      `INSERT INTO session (id, campaign_id, node_id, kind, title, created_at)
-       VALUES (?, NULL, NULL, 'repoQa', ?, ?)`,
-      id,
-      repoUrl,
-      Date.now(),
-    );
-  });
-  return id;
-}
-
-export async function appendRepoQaMessage(
-  db: SQLiteDatabase,
-  repoId: string,
-  repoUrl: string,
-  message: RepoQaMessage,
-): Promise<void> {
-  const sessionId = await ensureRepoQaSession(db, repoId, repoUrl);
-  const identity = await getDeviceIdentity(db);
-  const last = db.getFirstSync<{ created_at: number }>(
-    `SELECT created_at FROM message WHERE session_id = ? ORDER BY created_at DESC LIMIT 1`,
-    sessionId,
-  );
-  const createdAt = nextMessageTimestamp(last?.created_at ?? null, Date.now());
-  writingAs(db, identity.deviceId, () => {
-    db.runSync(
-      `INSERT INTO message (id, session_id, role, content_md, citations, created_at)
-       VALUES (?, ?, ?, ?, '[]', ?)`,
-      Crypto.randomUUID(),
-      sessionId,
-      message.role,
-      message.text,
-      createdAt,
-    );
-  });
-}
-
-export async function deleteRepoQaHistory(db: SQLiteDatabase, repoId: string): Promise<void> {
-  const identity = await getDeviceIdentity(db);
-  writingAs(db, identity.deviceId, () => {
-    // message.session_id 是 ON DELETE cascade，删会话即清空整串问答
-    db.runSync(`DELETE FROM session WHERE id = ?`, repoQaSessionId(repoId));
-  });
-}
-
 export async function updateFollowUpSummary(
   db: SQLiteDatabase,
   sessionId: string,
@@ -205,7 +149,8 @@ function taskView(db: SQLiteDatabase, taskId: string): TaskView {
     id: string;
     plan_day_id: string;
     node_id: string | null;
-    repo_id: string | null;
+    material_kind: string | null;
+    material_id: string | null;
     kind: string;
     est_minutes: number;
     actual_minutes: number | null;
@@ -219,14 +164,12 @@ function taskView(db: SQLiteDatabase, taskId: string): TaskView {
         t.node_id,
       )
     : null;
-  const repo = t.repo_id
-    ? db.getFirstSync<{ url: string }>(`SELECT url FROM repo WHERE id = ?`, t.repo_id)
-    : null;
   return {
     id: t.id,
     planDayId: t.plan_day_id,
     nodeId: t.node_id,
-    repoId: t.repo_id,
+    materialKind: t.material_kind,
+    materialId: t.material_id,
     kind: t.kind as TaskView['kind'],
     estMinutes: t.est_minutes,
     actualMinutes: t.actual_minutes,
@@ -234,7 +177,8 @@ function taskView(db: SQLiteDatabase, taskId: string): TaskView {
     orderIdx: t.order_idx,
     nodeName: node?.name ?? null,
     nodeCoverage: (node?.coverage_type as TaskView['nodeCoverage']) ?? null,
-    repoUrl: repo?.url ?? null,
+    materialLabel: materialLabelForPlanDay(db, t.plan_day_id, t.material_id),
+    ...taskPresentationForPlanDay(db, t.plan_day_id, t.kind),
   };
 }
 

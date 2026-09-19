@@ -301,7 +301,7 @@ function DayTaskRow({
             textDecorationLine: done ? 'line-through' : 'none',
           }}
         >
-          {task.nodeName ?? task.repoUrl ?? task.kind}
+          {task.nodeName ?? task.materialLabel ?? task.kind}
           {canOpen ? ' →' : ''}
         </Text>
       </Pressable>

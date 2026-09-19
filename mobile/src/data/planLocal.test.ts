@@ -73,9 +73,40 @@ interface FlatTask {
   date: string;
   kind: string;
   nodeId: string | null;
-  repoId: string | null;
+  materialKind: string | null;
+  materialId: string | null;
   estMinutes: number;
   orderIdx: number;
+}
+
+/** 岗位包模板声明的材料类型；排程只按它挑材料。 */
+const MATERIAL_KIND = 'code-repository';
+
+/** 包自己声明的 material 行；宿主按 (plugin_id, collection) 取数后交给 materialsFromRows 解析。 */
+interface MaterialRow {
+  id: string;
+  label: string;
+  ready: boolean;
+  url: string;
+  status: string;
+}
+
+/**
+ * 旧仓库登记表 → 包声明的材料行。
+ *
+ * label 就是仓库 url、ready 由 status 归一化——与 0027_task_material 迁移写进
+ * plugin_data 的取值逐字一致，所以这里的默认值与真实旧库升级后的形状同源。
+ */
+function materialRows(
+  rows: readonly { id: string; url: string; status: string }[],
+): MaterialRow[] {
+  return rows.map((row) => ({
+    id: row.id,
+    label: row.url,
+    ready: row.status === 'ready',
+    url: row.url,
+    status: row.status,
+  }));
 }
 
 /** 与 apply.fk.test.ts 相同的 node:sqlite 适配层 */
@@ -133,13 +164,18 @@ function seed(
     );
   }
 
-  for (const repo of CROSS_CLIENT_PLAN.repos) {
+  // 排程不再读 repo 表：材料由岗位包声明的 (materialKind, materialCollection) 取数，
+  // 宿主按 (plugin_id, collection) 查 plugin_data，把 value_json 原样交给 materialsFromRows。
+  // 行形状与 0027_task_material 迁移写进 plugin_data 的取值逐字一致。
+  for (const material of materialRows(CROSS_CLIENT_PLAN.repos)) {
     raw.runSync(
-      `INSERT INTO repo (id, url, local_path, status) VALUES (?, ?, ?, ?)`,
-      repo.id,
-      repo.url,
-      `/tmp/${repo.id}`,
-      repo.status,
+      `INSERT INTO plugin_data (id, plugin_id, collection, key, value_json, updated_at)
+       VALUES ('software-engineering' || char(31) || 'repositories' || char(31) || ?,
+               'software-engineering', 'repositories', ?, ?, ?)`,
+      material.id,
+      material.id,
+      JSON.stringify(material),
+      Date.now(),
     );
   }
 
@@ -173,11 +209,12 @@ function readTasks(raw: SQLiteDatabase): FlatTask[] {
       date: string;
       kind: string;
       node_id: string | null;
-      repo_id: string | null;
+      material_kind: string | null;
+      material_id: string | null;
       est_minutes: number;
       order_idx: number;
     }>(
-      `SELECT d.date AS date, t.kind, t.node_id, t.repo_id, t.est_minutes, t.order_idx
+      `SELECT d.date AS date, t.kind, t.node_id, t.material_kind, t.material_id, t.est_minutes, t.order_idx
        FROM task t JOIN plan_day d ON d.id = t.plan_day_id
        WHERE d.campaign_id = ?
        ORDER BY d.date, t.order_idx`,
@@ -187,7 +224,8 @@ function readTasks(raw: SQLiteDatabase): FlatTask[] {
       date: row.date,
       kind: row.kind,
       nodeId: row.node_id,
-      repoId: row.repo_id,
+      materialKind: row.material_kind,
+      materialId: row.material_id,
       estMinutes: row.est_minutes,
       orderIdx: row.order_idx,
     }));
@@ -195,7 +233,19 @@ function readTasks(raw: SQLiteDatabase): FlatTask[] {
 
 function expectedTasks(days: PrePluginPlanDay[]): FlatTask[] {
   return days
-    .flatMap((day) => day.tasks.map((task) => ({ date: day.date, ...task })))
+    .flatMap((day) =>
+      day.tasks.map((task) => ({
+        date: day.date,
+        kind: task.kind,
+        nodeId: task.nodeId,
+        // 插件化之前的计划只记仓库标识；迁移把它原样搬成 material_id，
+        // 材料种类由岗位包模板声明——只有挂了仓库的任务带材料。
+        materialKind: task.repoId === null ? null : MATERIAL_KIND,
+        materialId: task.repoId,
+        estMinutes: task.estMinutes,
+        orderIdx: task.orderIdx,
+      })),
+    )
     .sort((left, right) => left.date.localeCompare(right.date) || left.orderIdx - right.orderIdx);
 }
 
@@ -237,7 +287,8 @@ describe('手机端 generatePlan', () => {
         date: '2026-03-03',
         kind: 'readCode',
         nodeId: null,
-        repoId: CROSS_CLIENT_PLAN.readyRepoId,
+        materialKind: MATERIAL_KIND,
+        materialId: CROSS_CLIENT_PLAN.readyRepoId,
         estMinutes: 25,
         orderIdx: 5,
       },
@@ -245,7 +296,8 @@ describe('手机端 generatePlan', () => {
         date: '2026-03-05',
         kind: 'readCode',
         nodeId: null,
-        repoId: CROSS_CLIENT_PLAN.readyRepoId,
+        materialKind: MATERIAL_KIND,
+        materialId: CROSS_CLIENT_PLAN.readyRepoId,
         estMinutes: 25,
         orderIdx: 5,
       },
@@ -253,7 +305,8 @@ describe('手机端 generatePlan', () => {
         date: '2026-03-07',
         kind: 'readCode',
         nodeId: null,
-        repoId: CROSS_CLIENT_PLAN.readyRepoId,
+        materialKind: MATERIAL_KIND,
+        materialId: CROSS_CLIENT_PLAN.readyRepoId,
         estMinutes: 25,
         orderIdx: 2,
       },
@@ -327,6 +380,7 @@ describe('pluginTaskSupport', () => {
       availability: 'view-only',
       executable: false,
       blockedReason: REQUIRES_DESKTOP_REASON,
+      view: { pageId: 'source-repository' },
     });
   });
 

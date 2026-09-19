@@ -9,7 +9,7 @@
  * 岗位包是纯数据，拿到就能用；缓存按 id@version 存，descriptor 换版本就是另一条记录，
  * 不会拿旧版本的题型糊弄新绑定。
  *
- * 这份缓存不进同步表，理由与 repo.local_path 相同：它是设备属性，不是备考数据。
+ * 这份缓存不进同步表，理由与本机工作区路径相同：它是设备属性，不是备考数据。
  */
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { capabilityEntriesFromRolePack } from '@core/plugins/capabilityEntries';

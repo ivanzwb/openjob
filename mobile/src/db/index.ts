@@ -16,13 +16,7 @@ import {
   pruneBackups,
   type BackupInfo,
 } from '../sync/backup';
-import {
-  buildRepoFileSkipMessage,
-  canApplyRepoFileSync,
-  estimateRepoFileBytes,
-  getFreeDiskBytes,
-  partitionRepoFileChanges,
-} from '../sync/repoFileStorage';
+import { isDeviceLocalColumn } from '../sync/tables';
 import { exchangeWithDesktop, pairWithDesktop } from '../sync/client';
 import { setPeerCreds } from '../remote/rpc';
 import { fetchMissingRolePacks } from '../data/rolePackLocal';
@@ -198,47 +192,6 @@ export function unpairDesktop(): void {
   setPeerCreds(null);
 }
 
-function setSyncMeta(sqlite: SQLiteDatabase, key: string, value: string): void {
-  sqlite.runSync(
-    `INSERT INTO sync_meta (key, value) VALUES (?, ?)
-     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-    key,
-    value,
-  );
-}
-
-function clearRepoFileSyncNotice(sqlite: SQLiteDatabase): void {
-  setSyncMeta(sqlite, 'repoFileSyncSkipped', '0');
-  setSyncMeta(sqlite, 'repoFileSyncMessage', '');
-  setSyncMeta(sqlite, 'repoFilePendingBytes', '0');
-}
-
-function persistRepoFileSyncSkipped(
-  sqlite: SQLiteDatabase,
-  neededBytes: number,
-  freeBytes: number,
-): string {
-  const message = buildRepoFileSkipMessage(neededBytes, freeBytes);
-  setSyncMeta(sqlite, 'repoFileSyncSkipped', '1');
-  setSyncMeta(sqlite, 'repoFileSyncMessage', message);
-  setSyncMeta(sqlite, 'repoFilePendingBytes', String(neededBytes));
-  return message;
-}
-
-export function getRepoFileSyncNotice(): { skipped: boolean; message: string | null } {
-  const sqlite = getRawDb();
-  const skipped = sqlite.getFirstSync<{ value: string }>(
-    `SELECT value FROM sync_meta WHERE key = 'repoFileSyncSkipped'`,
-  );
-  const message = sqlite.getFirstSync<{ value: string }>(
-    `SELECT value FROM sync_meta WHERE key = 'repoFileSyncMessage'`,
-  );
-  return {
-    skipped: skipped?.value === '1',
-    message: message?.value ? message.value : null,
-  };
-}
-
 function saveOverwrites(
   sqlite: SQLiteDatabase,
   runId: string,
@@ -311,8 +264,6 @@ export interface SyncOutcome {
   backupFile: string | null;
   /** 本轮是否做了全表对账，仅用于说明耗时 */
   full: boolean;
-  repoFileSkipped?: boolean;
-  repoFileMessage?: string;
 }
 
 /**
@@ -419,17 +370,16 @@ async function runSyncOnce(): Promise<SyncOutcome> {
   try {
     const ctx = {
       clockOffsetMs: Date.now() - response.serverMs,
-      isDeviceLocal: (t: string, c: string) => t === 'repo' && c === 'local_path',
+      isDeviceLocal: isDeviceLocalColumn,
       primaryKey: () => 'id',
       labelFor: (table: string, rowId: string, values: Record<string, unknown>) =>
         `${table}:${String(values.name ?? values.title ?? rowId)}`,
     };
 
     const plan = planMerge(local, response.changes, ctx);
-    const { other, repoFile } = partitionRepoFileChanges(plan.auto);
 
     // 备份放在合并之后、落库之前：绝大多数同步其实无事可做，每 60 秒 VACUUM
-    // 一遍整库（含几十 MB 的源码快照）纯属自残，而没有写入的同步也没什么可退的
+    // 一遍整库纯属自残，而没有写入的同步也没什么可退的
     let backupFile: string | null = null;
     if (plan.auto.length > 0) {
       backupFile = createPresyncBackup(sqlite)?.file ?? null;
@@ -438,27 +388,11 @@ async function runSyncOnce(): Promise<SyncOutcome> {
     let appliedRemote = 0;
     let skippedLocal = 0;
     {
-      const out = applyAutoChanges(sqlite, peer.device_id, other);
+      const out = applyAutoChanges(sqlite, peer.device_id, plan.auto);
       appliedRemote += out.applied;
       // 会话已删、对端把它的子行按 insert 复活这一类变更落不了库，被跳过——
       // 同步照常收敛，计数交给 SyncOutcome 展示（父行已删除或从未存在）
       skippedLocal += out.skipped.length;
-    }
-
-    let repoFileSkipped = false;
-    let repoFileMessage: string | undefined;
-    if (repoFile.length > 0) {
-      const neededBytes = estimateRepoFileBytes(repoFile, sqlite);
-      const freeBytes = getFreeDiskBytes();
-      if (canApplyRepoFileSync(neededBytes, freeBytes)) {
-        const out = applyAutoChanges(sqlite, peer.device_id, repoFile);
-        appliedRemote += out.applied;
-        skippedLocal += out.skipped.length;
-        clearRepoFileSyncNotice(sqlite);
-      } else {
-        repoFileSkipped = true;
-        repoFileMessage = persistRepoFileSyncSkipped(sqlite, neededBytes, freeBytes);
-      }
     }
 
     if (plan.auto.some((c) => c.table === 'app_setting')) {
@@ -491,10 +425,9 @@ async function runSyncOnce(): Promise<SyncOutcome> {
       // 一轮同步要跑好几十秒，用户这期间的编辑也会进 oplog 并拿到更小的 seq，用此刻
       // 的 head 会把这些从没发出去的改动一并标成已发送，它们要等到下次全表对账才补回来
       local.headSeq,
-      repoFileSkipped ? peer.last_remote_seq : response.changes.headSeq,
+      response.changes.headSeq,
       now,
-      // repo_file 没搬完就不算对完账，下一轮还要再来一次
-      full && !repoFileSkipped ? now : peer.last_full_sync_at,
+      full ? now : peer.last_full_sync_at,
       peer.device_id,
     );
 
@@ -505,7 +438,6 @@ async function runSyncOnce(): Promise<SyncOutcome> {
       runId,
       backupFile,
       full,
-      ...(repoFileSkipped ? { repoFileSkipped, repoFileMessage } : {}),
     };
   } catch (e) {
     recordFailedRun(sqlite, peer.device_id, 'failed', e);

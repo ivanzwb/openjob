@@ -36,8 +36,6 @@ function needsReplay(sqlite: SQLiteDatabase, index: number): boolean {
   switch (index) {
     case 6:
       return !hasTable(sqlite, 'app_setting');
-    case 7:
-      return !hasTable(sqlite, 'repo_file');
     case 8:
       return !hasTable(sqlite, 'job_target');
     case 9:
