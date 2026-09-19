@@ -23,14 +23,14 @@ OpenJob 当前已经具备一条完整的有状态备考链路：
 
 这条链路本身并不只适用于软件开发岗位。Campaign、覆盖类型、优先级、计划、讲解、练习、评分、话术和复盘都可以复用于其他职业。
 
-当前限制主要来自领域假设被直接写进核心模型：
+平台把领域假设收敛成岗位包的声明，基础包里只留不认岗位的机制：
 
-- `ExamForm` 固定为概念、编码、系统设计、场景；
-- `TaskKind` 包含 `readCode`，排程会根据仓库存在自动插入源码任务；
-- `ResumeParsed` 主要抽取技能、项目和技术深挖点；
-- 公司情报以 `techStackMd` 为核心字段；
-- 诊断、讲解和模拟面试 Prompt 大量使用技术、API、底层机制、代码和系统设计语义；
-- ~~源码仓库与 `codeAgent` 被当成核心功能，而不是特定岗位能力。~~ 已拆完：两者都随 `software-engineering` 岗位包的内嵌声明分发（能力与角色见 7.8、7.9）。
+- 题型是岗位包声明的词汇（`RolePack.examForms`）：`id` 写进 `knowledge_node.exam_forms`，宿主只当
+  不透明字符串携带、按包查声明（见 7.2、7.8）；
+- 任务种类是包声明的字符串（`TaskTemplate.taskKind`），宿主只认自己生成的那几种；带材料的任务由包的
+  `materialKind` + `materialCollection` 声明，任务页由包页面承担（`view.pageId`）；
+- 简历模块、公司情报字段，以及诊断 / 讲解 / 出题 / 评分 / 辅导的 Prompt 片段都随岗位包分发；
+- 源码仓库与 `codeAgent` 随 `software-engineering` 岗位包的内嵌声明分发（能力与角色见 7.8、7.9）。
 
 如果仅通过放宽 Prompt 来支持更多岗位，会产生三个问题：
 
@@ -52,7 +52,7 @@ OpenJob 采用两层扩展模型：
 2. **岗位包（Role Pack）**  
    以声明式配置描述一个岗位如何面试：能力模型、面试形式、评分量规、Prompt 片段、任务模板和信息来源，并**内嵌该岗位需要的全部能力扩展**（工具、交互、文件解析及其实现），以及**全部插入点贡献**（导航入口、检索策略、简历模块）。
 
-不再存在独立的“能力插件”或“行业包”插件类型：
+插件类型收敛为岗位包一种：
 
 - 能力扩展（如源码分析、角色扮演、数据案例）内嵌在岗位包中，随岗位包一起声明、校验、版本化和分发；
 - 行业差异（术语、指标、案例背景、来源偏好）是岗位包内的可选字段，选择行业是 Campaign 参数，不是加载另一个插件。
@@ -68,9 +68,10 @@ OpenJob 采用两层扩展模型：
 
 岗位包回答“这个岗位族如何被面试”（能力、题型、量规），行业差异回答“同一岗位族在不同行业有什么不同”（术语、指标、案例、来源），具体 JD 的特殊性只在运行时调整包内默认权重，不产生新的包。
 
-软件开发能力不再属于基础 Agent，而是一个 `software-engineering` 岗位包（随 release 单独分发，基础包不带）：它声明“源码”导航入口、源码分析能力、技术向简历模块和检索来源策略，并实现这些能力。
+软件开发能力是一个独立分发的 `software-engineering` 岗位包（基础包不带）：它声明“源码”导航入口、源码分析能力、技术向简历模块和检索来源策略，并实现这些能力。
 
-> **迁移状态**：这里的「实现归包」还没落完——基础包目前仍替岗位簇实现功能（软件工程的源码能力、产品的案例解析、销售的对话接线）。盘点与分阶段计划见 `PLUGIN_DISTRIBUTION_PLAN.md` §11。
+> **实现归属**：岗位簇的功能实现随包分发，基础包只提供与岗位无关的通用原语。包侧实现与宿主原语的
+> 分工、阶段验收与决策记录见 `PLUGIN_DISTRIBUTION_PLAN.md` §11。
 
 插件形态对齐 VSCode / Obsidian 的「声明 + 代码」双通道（v3 决策）：
 
@@ -228,7 +229,7 @@ flowchart TB
 
 ## 6. 插件分类
 
-新模型中只有一种插件：岗位包。原“能力插件”和“行业包”不再是独立插件类型。
+新模型中只有一种插件：岗位包。能力扩展与行业差异都在岗位包内表达。
 
 ### 6.1 岗位包 Role Pack
 
@@ -290,7 +291,7 @@ flowchart TB
 
 同一能力可以出现在多个岗位包中（如 `analytics-case`）：声明是数据，重复成本低；每个 Campaign 只加载一个主岗位包，运行时只激活当前包的内嵌声明，天然没有跨包冲突。
 
-历史说明：前三个能力在 v1.0 是随应用发布的内置能力，后来一度合并为可单独分发的 `openjob-capabilities` 套件。该套件已**彻底取消**：能力不是独立的包，声明内嵌在岗位包里，descriptor 的能力引用、权限契约的 key、清单里的能力条目用的都是**能力自己的 id**（`source-repository` / `role-play` / `analytics-case`）。
+能力不是独立的包：声明内嵌在岗位包里，descriptor 的能力引用、权限契约的 key、清单里的能力条目用的都是**能力自己的 id**（`source-repository` / `role-play` / `analytics-case`）。能力用到哪些工具 / 交互 / 解析器 / 权限 / LLM 角色，都写在所属包的 `CapabilityDeclaration` 里（见 7.8）。
 
 backlog 中的能力缺席时只降级为 disabled，不让岗位解析失败，也不让任何一种题型不可用；具体行为见 [V1_UPGRADE_ROLLBACK.md](V1_UPGRADE_ROLLBACK.md) 第 5 节。
 
@@ -364,7 +365,10 @@ interface RolePack {
   competencyTemplates: CompetencyTemplate[];
   interviewStages: InterviewStageTemplate[];
   interviewFormats: InterviewFormatDefinition[];
+  // 插入点 F：本包声明的题型（id + label + formatId + 可选诊断提示），宿主只当不透明字符串
+  examForms?: ExamFormDefinition[];
   rubrics: RubricDefinition[];
+  // taskKind 是包声明的字符串；带材料的模板成对声明 materialKind + materialCollection；任务页见 view.pageId
   taskTemplates: TaskTemplate[];
   // 插入点 B：角色 Prompts（包内 prompts/ 片段文件的解析结果，见 9.2）
   promptFragments: PromptFragment[];
@@ -501,7 +505,7 @@ interface CapabilityDeclaration {
 
 运行时形态：resolver 把选中岗位包的每条内嵌声明解析成一条能力引用（id = 能力自己的 id，version = 所属包版本）写进 descriptor——下游（权限网关、能力视图、排程、移动端）按 id 匹配，消费方式与「装了一个同名能力包」时完全一样。能力不能直接访问数据库、密钥、同步服务或任意 IPC；运行期调用一律经过权限网关（见 9.4 与 13 章），资源访问一律经过原语。
 
-**迁移状态**：基础包目前仍然替岗位簇实现功能（`source-repository` 的实现是一整块 `desktop/src/main/repo/`，另有 `core/src/repo/`、代码问答的 LLM 分支、三张同步表与一套宿主 UI；产品与销售同理）。要把这些搬回包，得先补一条「包侧实现 + 宿主通用原语」的通道，盘点与分阶段计划见 `PLUGIN_DISTRIBUTION_PLAN.md` §11。
+**数据面（能力的数据落在哪）**：需要跨端保存的数据由包在 `manifest.dataCollections` 里声明集合，运行时经 `ctx.data`（`get` / `put` / `delete` / `list` / `count`）读写——宿主建通用承载表 `plugin_data`，只按 `(pluginId, collection, key)` 归档与取用，内容对它不透明，一次调用只允许本包声明过的集合。承载表参与既有同步，手机端对配对桌面只读。带材料的任务由包的 `TaskTemplate` 成对声明 `materialKind` + `materialCollection`，排程从该集合里挑一份 `ready` 的材料挂上，任务页由 `view.pageId` 指向包页面。包侧实现与宿主原语的分工见 `PLUGIN_DISTRIBUTION_PLAN.md` §11。
 
 ### 7.9 代码贡献与运行时（v3）
 
@@ -536,6 +540,7 @@ export function activate(ctx: PluginRuntimeContext) {
 | `ctx.agent` | `llm:complete` | **基础流式问答**：Agent 编排（工具/检索）+ 流式增量。领域问答（源码问答、案例问答）由插件用「本能力 + 自己的上下文」组合实现，宿主不为单个领域单开通道 |
 | `ctx.evidence` | `evidence:read-confirmed` | 只读已确认证据；新证据只能经 proposal 通道 |
 | `ctx.storage` | `plugin-storage` | 插件私有 KV，与主库物理隔离 |
+| `ctx.data` | — | 包声明的数据集合：`get` / `put` / `delete` / `list` / `count`，值一律字符串、内容对宿主不透明；声明即授权（只允许本包 `manifest.dataCollections` 声明过的集合），承载表参与两端同步，手机端只读 |
 | `ctx.workspace` | `filesystem:workspace` | **通用原语**：本包工作区内的读 / 写 / 删 / 遍历 / glob / grep / 文本快照 / 批量符号提取（解析在宿主侧的常驻 tree-sitter 引擎里做）；`fetch(url, { dir? })` 从远端拉取公开的 https 仓库到本包目录（**另需 `network:fetch`**，只下载、不带凭据、不指向内网、深度 1、有体积上限）。路径规范化后越出本包目录即拒 |
 | `ctx.artifact` | `artifact:read` | **通用原语**：读用户显式选择的文件（表格 / 文档） |
 | `ctx.campaign` | — | 只读当前 descriptor 与岗位包声明 |
@@ -587,11 +592,11 @@ export function activate(ctx: PluginRuntimeContext) {
 
 内嵌能力是否激活由当前 Campaign 的岗位包及其材料决定：未激活的能力，它的贡献（工具、交互、页面、任务模板）都不进这次运行。判定在 descriptor 上（`enabled`），**怎么做取决于包自己的实现**——宿主不认识这条能力在干什么，只按 enabled 放行权限与原语。
 
-以工程岗位为例（这块的实现在迁移中，见 §7.8 末）：
+以工程岗位为例：
 
-- 能力未启用时不加载代码工具定义、不加载 Repo Map；
+- 能力未启用时不加载它的工具定义、不加载仓库概览；
 - 不显示源码入口；
-- 排程不生成 `readCode` 任务；
+- 排程不生成带材料的源码任务（`se.read-code`）；
 - Prompt 不出现代码、API 或系统设计要求。
 
 ### 8.5 确定性加载流程
@@ -903,12 +908,12 @@ interface ResumeParsed {
 | `Campaign` | 继续作为中心对象，新增 `roleProfileId` |
 | `KnowledgeNode` | 表名暂不修改，语义逐步升级为 Competency |
 | `CoverageType` | 保留，解释从“技能覆盖”扩展为“能力证据覆盖” |
-| `ExamForm` | 旧值保留；新逻辑从岗位包的 InterviewFormat registry 读取 |
+| `ExamForm` | 旧值保留；题型是岗位包声明的词汇（`RolePack.examForms`），宿主按包查声明、界面按它取值 |
 | `DesignCase` | 短期兼容；长期迁移为通用 PracticeAttempt |
 | `ResumeParsed.skills` | 兼容保留，映射为工程岗位包默认简历模块；新增 `modules` 容器（插入点 D） |
-| `CompanyIntel.techStackMd` | 双读迁移到 `roleSignalsMd` 或结构化 sections |
-| `TaskKind.readCode` | 保留旧值，由工程岗位包内嵌源码能力启用 |
-| `Repo / CodeRef` | 下沉为岗位包内嵌 `source-repository` 能力的私有数据 |
+| `CompanyIntel.techStackMd` | 列名改为岗位中立的 `knowledge_tool_map_md`，取值原样保留 |
+| `TaskKind.readCode` | `TaskKind` 收敛为宿主自产的 `learn` / `drill` / `review` / `fallbackScript`；`readCode` 是工程岗位包声明的 `taskKind`，任务页由 `view.pageId` 指向包页面 |
+| `Repo / CodeRef` | 下沉为工程岗位包声明的数据集合（`repositories` / `code-refs` / `repository-files`），宿主只按集合名归档与同步 |
 | `SpeechSnippet` | 保留，可关联 Story、PracticeAttempt 和 Competency |
 
 ---
@@ -1075,9 +1080,9 @@ type RuntimeAvailability = {
 
 例如源码能力：
 
-- 桌面端：克隆、索引、更新、问答；
-- 手机端：读取已同步快照、问答；
-- 同步：同步数据、岗位包版本引用与插件代码资产（经签名信封，见 12.5 移动端运行时）。
+- 桌面端：拉取、索引、更新、问答（包页面编排工作区与 LLM 原语）；
+- 手机端：只读本包 `repositories` 数据集合，链接 / 更新 / 问答标「需桌面完成」；
+- 同步：数据集合（承载表 `plugin_data`）、岗位包版本引用与插件代码资产（经签名信封，见 12.5 移动端运行时）。
 
 `full / view-only / unsupported` 是**功能层级**，不是显示开关：view-only 意味着可看不可操作；unsupported 意味着功能不可执行，但入口与解释性状态仍渲染（“需桌面完成”）。把一个能力从界面上完全藏起来，需要包不声明它或所有 Campaign 都不启用它，而不是把它标成 unsupported。
 
@@ -1132,7 +1137,6 @@ type PluginPermission =
   | 'network:fetch'
   | 'llm:complete'
   | 'filesystem:workspace'
-  | 'repository:read'
   | 'microphone:read';
 ```
 
@@ -1331,12 +1335,13 @@ plugins/<pack>/
   matchers.ts             # RoleMatcher
   competencies.ts         # 能力模板
   formats.ts              # interviewFormats + interviewStages
+  examForms.ts            # 题型声明（也可直接写在 index.ts 里）
   rubrics/                # 一份量规一个文件 + anchors 辅助
   tasks.ts
   search-policy.ts        # 插入点 C
-  navigation.ts           # 插入点 A（预留）
-  resume-modules.ts       # 插入点 D（预留）
-  capabilities.ts         # 插入点 E（预留）
+  navigation.ts           # 插入点 A
+  resume-modules.ts       # 插入点 D
+  capabilities.ts         # 插入点 E
   prompts/                # 插入点 B：frontmatter + markdown 正文（9.2）
 ```
 
@@ -1349,7 +1354,7 @@ plugins/<pack>/
 - 打包：目录声明 → `.ojb` 单文件信封（gzip 压缩，内容清单 + 整体 hash），fixtures 与测试不入信封；`pnpm verify:plugins` 校验签名；验签发生在桌面安装时（12.5）；
 - contract / golden 测试与包同目录，随 CI 执行。
 
-迁移期现状（v1.2.0）：product-manager 与 sales-customer-success 的片段已全部文件化；software-engineering 的片段正文仍住在宿主注册表（插件化之前写下，角色侧重与阶段机器缠在一起），以显式 ref 条目引用并由 contract test 守住，把正文拆进包内 prompts/ 是待办的内容工程，拆出后换 file 片段即可。
+包内 prompts/ 现状：三个官方包的片段正文都在各自包的 `prompts/` 目录里（frontmatter 声明 slot 与 formatId，正文为 markdown），`defineRolePack` 加载时把正文内联进 `promptFragments`，随信封自包含；宿主 Prompt Registry 只保留 Core 自有的流水线 prompt（9.2）。
 
 ---
 
@@ -1381,10 +1386,10 @@ plugins/<pack>/
 | `core/src/entities.ts` | 新增 RoleProfile、CandidateEvidence、Competency、Story、PracticeAttempt；ResumeParsed 增加 modules 容器 |
 | `core/src/resume/*` | 解析 Prompt 组装加入模块抽取指令，模块数据写入扩展容器 |
 | `core/src/diagnosis/prompts.ts` | 从固定技能树改为岗位包提供能力模板 |
-| `core/src/design/prompts.ts` | 将题型和 Rubric 从硬编码常量迁出 |
-| `core/src/prompts/explain.ts` | 根据能力类别选择讲解结构，不再固定“代码/实例” |
+| `plugins/*/prompts/` | 题型与落题型别的出题 / 评分 / 辅导片段在岗位包内声明，正文以 markdown 文件承载（9.2） |
+| `core/src/prompts/explain.ts` | 根据能力类别选择讲解结构，能力类别来自岗位包声明的能力模板 |
 | `core/src/prompts/registry.ts` | 记录插件来源、版本和 Prompt Slot |
-| `desktop/src/main/plan/schedule.ts` | `readCode` 改为岗位包声明的可选任务 |
+| `desktop/src/main/plan/schedule.ts` | 任务、材料与任务页按岗位包声明派生（`taskKind` / `materialKind` + `materialCollection` / `view.pageId`） |
 | `core/src/config.ts` 与 `desktop/src/main/search/*` | 搜索来源、可信度、时效和路由按 `core 默认 < 岗位包 < 用户设置` 合并 |
 | `desktop/src/main/db/schema.ts` | 增量新增插件、证据、能力、故事和练习实体 |
 | `core/src/ipc.ts` | 新增插件查询、能力协商和通用 Practice contract |
@@ -1404,7 +1409,7 @@ plugins/<pack>/
 - 建立最小权限网关、共享 resolver 和运行时能力协商；
 - 新增 RoleProfile；
 - 用适配层将现有软件开发逻辑登记为 `software-engineering` 岗位包；
-- 将现有仓库能力登记为 `source-repository` 内嵌能力（声明归岗位包，实现暂留宿主 `desktop/src/main/repo/`，搬迁计划见 `PLUGIN_DISTRIBUTION_PLAN.md` §11），所有入口先经过权限网关；
+- 将仓库能力登记为 `source-repository` 内嵌能力（声明与实现都随岗位包，页面编排宿主通用原语；见 `PLUGIN_DISTRIBUTION_PLAN.md` §11），所有入口先经过权限网关；
 - 旧 Campaign 自动绑定工程岗位包；
 - 核心路径仍保持原行为。
 
@@ -1429,7 +1434,7 @@ plugins/<pack>/
 
 验收：
 
-- 非技术 JD 不再生成编码、源码或系统设计任务；
+- 非技术 JD 只生成该岗位的题型，不混入编码、源码或系统设计任务；
 - 个人化答案可以回溯到证据；
 - 产品岗位可走完诊断、计划、训练、评分和复盘。
 
@@ -1437,9 +1442,9 @@ plugins/<pack>/
 
 - 完善 `product-manager`，新增 `sales-customer-success`；
 - 去除 `software-engineering` 对旧逻辑的适配依赖；
-- 将 `source-repository` 实现移出旧 Core 路径，保留 Phase 0 已建立的插件协议；
-- 能力一律内嵌在岗位包里声明，**取消「能力合编包」这一层**：descriptor 的能力引用就是能力自己的 id；
-- 插入点 B 片段文件化与岗位包目录化（15.6）：defineRolePack、脚手架与 `pack validate`；`software-engineering` 的 promptId 引用迁移为包内片段文件；
+- `source-repository` 的实现随岗位包分发，页面编排 Phase 0 已建立的插件协议与通用原语；
+- 能力一律内嵌在岗位包里声明：descriptor 的能力引用就是能力自己的 id；
+- 插入点 B 片段文件化与岗位包目录化（15.6）：defineRolePack、脚手架与 `pack validate`；片段正文都在岗位包内 `prompts/` 里承载；
 - 导航入口声明化：硬编码页签显隐改为消费 `navigation[]`（插入点 A）；
 - 岗位化公司情报和搜索来源；
 - Role Pack 管理界面。
@@ -1645,9 +1650,9 @@ SDK 与环境变量的入口——网关只能拦经过它的请求，拦不住�
 - 手机端插入点遵循“功能可降级、展示必须成立”：runtime 是功能层级（正常 / 只读 / 需桌面完成）而非显示开关，入口与内容默认渲染，不静默隐藏；
 - 岗位包内容一包定义、两端消费：双端差异只来自 `runtime` 声明与宿主工具实现绑定，不存在端专属的包内容或文案；
 - 插件采用 VSCode/Obsidian 式「声明 + 代码」双通道：数据型贡献走静态声明（可校验、可同步），行为与 UI 走代码入口 + `openjob.*` 门面（含工作区与 artifact 原语）+ Webview 沙箱；入口代码在渲染进程内直跑（Obsidian 式），隔离靠准入四层而非扩展宿主进程，也不让包代码进主进程；移动端以同构 WebView 运行时激活同一份插件代码；
-- 软件开发变成一个独立分发的岗位包（`software-engineering`），不再定义整个核心模型；
+- 软件开发是一个独立分发的岗位包（`software-engineering`），核心模型不绑定任何岗位族；
 - 个人化回答统一建立在 CandidateEvidence 上；
 - 岗位能力、题型、Rubric、Prompt 和来源策略全部版本化；
 - shared contract 先于桌面和手机实现；
 - 首期先验证通用核心、工程、产品和销售/客户成功，不追求一次覆盖所有职业；
-- 代码插件按分级开放（签名 + 启用确认 + 静态隔离扫描 + API 面收敛 + Webview 沙箱）随 Phase 4 落地；在准入四层齐备前，无签名代码不加载。**岗位簇的实现随包分发、基础包只留基础设施与通用原语**，搬迁进度见 `PLUGIN_DISTRIBUTION_PLAN.md` §11。
+- 代码插件按分级开放（签名 + 启用确认 + 静态隔离扫描 + API 面收敛 + Webview 沙箱）随 Phase 4 落地；在准入四层齐备前，无签名代码不加载。**岗位簇的实现随包分发、基础包只留基础设施与通用原语**，分工与阶段验收见 `PLUGIN_DISTRIBUTION_PLAN.md` §11。

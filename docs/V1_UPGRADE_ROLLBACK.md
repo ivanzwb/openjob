@@ -14,9 +14,10 @@ v1.0 引入三个岗位包（软件工程、产品经理、销售/客户成功�
 
 | 类别 | 内容 | 是否改动旧数据 |
 |---|---|---|
-| 新增表 | `role_profile`、`campaign_plugin_binding`、`campaign_runtime_descriptor`、`migration_checkpoint`、`candidate_evidence`、`practice_attempt`、`story` 等 | 否 |
-| 新增列 | `campaign.role_profile_id` | 否（旧列一字不动） |
+| 新增表 | `role_profile`、`campaign_plugin_binding`、`campaign_runtime_descriptor`、`migration_checkpoint`、`candidate_evidence`、`practice_attempt`、`story`、`plugin_data`（岗位包声明的数据集合的通用承载表）等 | 否 |
+| 新增列 | `campaign.role_profile_id`；`task.material_kind`（新增）与 `task.repo_id` → `material_id`（改名，取值逐字保留） | 否（旧列取值一字不动） |
 | 回填 | 旧 Campaign 补一份「软件工程」岗位画像与运行描述符 | 只写新表与新列 |
+| 前向迁移 | 旧 `repo` 登记行一次性写进 `software-engineering` 包声明的 `repositories` 集合（`0029_task_material`） | 只写新承载表；旧三表原样保留 |
 
 旧 Campaign 的既有列在升级后是 **byte 级不变** 的，这一条由
 `desktop/src/main/db/phase0Compat.test.ts` 用 `captureContents` 逐字对比守住。
@@ -118,6 +119,15 @@ Drizzle 不会「降级」，只会在缺表缺列上直接失败。回滚必须
   （`buildClientCapabilityView` 与 `collectPlannerContributions`）；
 - 岗位包本身不受影响：三个岗位包的每一种题型在能力缺席时都能独立跑完，
   这一条由各自的 golden 测试守住。
+
+### 3.4 旧数据面的表仍在 schema 里
+
+数据面已改由岗位包声明的数据集合承载（承载表 `plugin_data`，进同步清单），而 `repo` / `code_ref` /
+`repo_file` 三张旧表仍留在 schema 里（`desktop/src/main/db/schema.ts`，手机端迁移 bundle 同）：
+它们是这次改动的**回退路径**，删表留到下一个版本、确认集合承载得住之后再单独做。升级时，旧 `repo`
+登记行由前向迁移（`0029_task_material`）一次性写进 `software-engineering` 包声明的 `repositories`
+集合；`code_ref` 与 `repo_file` 是可重建的本地索引缓存，不迁移。回滚到升级前的快照后，这三张表连同
+其余旧数据一起回来。
 
 ---
 

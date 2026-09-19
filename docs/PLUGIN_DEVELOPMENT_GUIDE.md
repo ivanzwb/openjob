@@ -31,19 +31,17 @@
 
 ### 1.2 包能用的通用原语
 
-包跑在沙箱里，不直接碰文件系统、子进程、数据库与网络，一切能力经 `openjob.*` 的通用原语（逐项签名与
-限制见 §4）：
+包跑在沙箱里，不直接碰文件系统、子进程、数据库与网络，一切能力经 `openjob.*` 的通用原语。命名空间
+一览就是一张地图：
 
-| 命名空间 | 权限项 | 能做什么 |
-|---------|--------|---------|
-| `ctx.storage` | — | 包私有 KV，两端共用一份（桌面写入，手机读得到） |
-| `ctx.campaign` | — | `getDescriptor()` 只读本 Campaign 的运行配置（启用了哪些能力、绑定了什么资源） |
-| `ctx.workspace` | `filesystem:workspace` | 本包私有工作区（`userData/plugin-workspace/<pluginId>/`）内的读 / 写 / 删 / 遍历 / glob / grep / 文本快照，以及批量符号提取（tree-sitter，14 种语言） |
-| `ctx.workspace.fetch` | `filesystem:workspace` + `network:fetch` | 把公开 https 的 git 仓库拉进本包工作区（深度 1）；同一个目录再拉一次即更新 |
-| `ctx.artifact` | `artifact:read` | 读用户显式选中的文件 |
-| `ctx.llm` / `ctx.agent` | `llm:complete` | 受控补全与流式问答；模型编排、证据校验与审计在宿主，领域上下文由包自己组合 |
-| `ctx.evidence` | `evidence:read-confirmed` | 只读本 Campaign 已确认的证据 |
-| `ctx.views` / `ctx.commands` / `ctx.events` | — | 注册页面（进主导航页签）、注册命令、订阅宿主事件 |
+- `ctx.storage`（包私有 KV，两端共用一份）、`ctx.campaign`（只读本 Campaign 的运行配置）、
+  `ctx.views` / `ctx.commands` / `ctx.events`（注册页面 / 命令、订阅宿主事件）——无权限门槛；
+- `ctx.data`（本包声明的数据集合，跨端同步）、`ctx.workspace`（含 `workspace.symbols` /
+  `workspace.fetch`）、`ctx.artifact`、`ctx.llm` / `ctx.agent`、`ctx.evidence`——按需声明，
+  未声明的命名空间在包里是 `undefined`。
+
+每个命名空间的逐个方法、参数与上限见 §4 的 `ctx.*` 一览；题型、材料与任务视图的声明见 §3.F，
+数据集合的声明与用法见 §4 的「包声明的数据集合与材料」。
 
 **包内的 Webview 页面走同一批原语**，只是换成桥方法名：入口代码里的 `ctx.workspace.glob(pattern)`，
 页面里是 `call('workspace.glob', { pattern })`。页面能调的方法 = 包声明 ∩ 本机原语表 ∩ 权限网关放行——
@@ -55,10 +53,10 @@
 | | 岗位包（role-pack） | 代码插件（plugin） |
 |---|---|---|
 | 回答的问题 | 这类岗位怎么被面试 | 在通用原语之上实现一块基础包不该有的功能 / UI |
-| 内容 | 声明数据（能力/题型/量规/Prompt 片段/检索策略/简历模块/能力声明），可选代码入口 | `desktop/main.ts` 与 `mobile/main.ts` 各端入口 + `ui/` Webview 资源 |
-| 典型例子 | `plugins/softwareEngineering` | `examples/portfolio-board` |
+| 内容 | 声明数据（能力 / 题型 / 量规 / 任务模板 / Prompt 片段 / 检索策略 / 简历模块 / 数据集合），可选 `desktop/` + `mobile/` 两份代码实现 | `desktop/main.ts` 与 `mobile/main.ts` 各端入口 + `ui/` Webview 资源 |
+| 典型例子 | `plugins/softwareEngineering`（同时是代码插件） | `examples/portfolio-board` |
 | 安装后 | 用户选岗即用 | 需用户确认权限清单后启用 |
-| 移动端 | 随同步数据自动可用 | WebView 运行时激活移动端那份代码 |
+| 移动端 | 声明数据随同步可用；代码入口在 WebView 运行时里激活移动端那份 | WebView 运行时激活移动端那份代码 |
 
 一个岗位包可以同时是代码插件：manifest 声明 `main` / `mobile` 后，包内 `desktop/` 与 `mobile/` 两份实现（各自的 `main.ts` 编译为 `main.js`）与 `ui/` 资产随包分发（如 software-engineering 的「源码」页）。
 
@@ -70,9 +68,9 @@
 
 | 包 | 提供什么 | 包内页面 |
 |----|---------|---------|
-| `software-engineering` | 技术知识问答、编码与算法、系统设计、项目技术深挖；技术准确性与设计权衡量规；`tech-stack` 与 `drillable-tech-topics` 简历模块；官方文档优先的检索策略。内嵌能力 `source-repository`：仓库拉取、符号提取、代码检索与问答，`codeAgent` 角色由本包声明 | 桌面与手机各一份实现：「源码」页 |
-| `product-manager` | 产品 Sense、用户问题定义、指标与数据分析、优先级、产品案例、路线图、跨团队推动；产品决策与复盘量规；`business-metrics` 与 `product-outcomes` 简历模块；行业报告优先的检索策略。内嵌能力 `analytics-case`：表格数据集解析与数据案例评分侧重 | 无 |
-| `sales-customer-success` | 客户发现、价值表达、异议处理、方案陈述、谈判、Pipeline 推进；应变、倾听与推进量规；内嵌能力 `role-play`：客户角色扮演（人设、开场白、异议库），需要 `llm:complete` 与 `microphone:read` | 无 |
+| `software-engineering` | 技术知识问答、编码与算法、系统设计、项目技术深挖；技术准确性与设计权衡量规；`tech-stack` 与 `drillable-tech-topics` 简历模块；官方文档优先的检索策略。内嵌能力 `source-repository`：仓库拉取、符号提取、代码检索与问答，`codeAgent` 角色由本包声明；数据集合 `repositories` / `code-refs` / `repository-files` | 桌面与手机各一份实现：「源码」页（`desktop/ui/repositories.html` + `mobile/ui/repositories.html`） |
+| `product-manager` | 产品 Sense、用户问题定义、指标与数据分析、优先级、产品案例、路线图、跨团队推动；产品决策与复盘量规；`business-metrics` 与 `product-outcomes` 简历模块；行业报告优先的检索策略。内嵌能力 `analytics-case`：表格数据集解析与数据案例评分侧重；数据集合 `cases` | 桌面与手机各一份实现：「案例训练」页（`desktop/ui/practice.html` + `mobile/ui/practice.html`） |
+| `sales-customer-success` | 客户发现、价值表达、异议处理、方案陈述、谈判、Pipeline 推进；应变、倾听与推进量规；内嵌能力 `role-play`：客户对话模拟（人设、开场白、异议库），需要 `llm:complete` 与 `microphone:read`；数据集合 `role-play-sessions` | 桌面与手机各一份实现：「客户对话模拟」页（`desktop/ui/role-play.html` + `mobile/ui/role-play.html`） |
 
 三个包住在 `plugins/` 下（`@plugins` 别名，只有打包脚本与测试会 import），随 release 以 `.ojb`
 分发；装、卸、升级与目录来源见 §6。
@@ -89,8 +87,9 @@ plugins/<your-pack>/
   matchers.ts             # RoleMatcher：JD 归族规则
   competencies.ts         # 能力模板（权重和必须为 1）
   formats.ts              # InterviewFormat + InterviewStage
+  examForms.ts            # 题型声明（也可直接写在 index.ts 里）
   rubrics/                # 一份量规一个文件 + anchors 辅助
-  tasks.ts                # 任务模板
+  tasks.ts                # 任务模板（taskKind / materialKind / materialCollection / view）
   capabilities.ts         # 插入点 E：内嵌能力声明
   resume-modules.ts       # 插入点 D：简历模块
   search-policy.ts        # 插入点 C：检索策略
@@ -109,6 +108,44 @@ plugins/<your-pack>/
 
 用到的 ID（能力、题型、量规）统一放 `ids.ts`，格式/量规/任务文件相互引用时从那里拿，避免字符串散落。
 
+### 一个包，两端两份实现
+
+包自带代码时，`desktop/` 与 `mobile/` 各成一份实现：各自的 `main.ts` 打包期编译成 `desktop/main.js`
+与 `mobile/main.js`，各自的 `ui/` 放该端的 Webview 资源。签名、隔离扫描与执行都针对编译产物，
+「签的 = 扫的 = 跑的」。两端共用同一套桥协议，差异只在**本机有哪些原语**：桌面有的原语手机上如实
+拒绝，所以手机端页面按「读得到、不假装能执行」来写。三个官方包就是这样落的：
+
+| 包 | `desktop/` | `mobile/` | 桌面做得到 | 手机做得到 |
+|----|-----------|-----------|-----------|-----------|
+| `software-engineering` | `main.ts` + `ui/repositories.html` | 同结构 | 拉取 / 更新仓库、概览、问源码 | 只读 `repositories` 集合（仓库列表） |
+| `product-manager` | `main.ts` + `ui/practice.html` | 同结构 | 选表格、出题、评分、推荐答案 | 只读 `cases` 集合（历史案例） |
+| `sales-customer-success` | `main.ts` + `ui/role-play.html` | 同结构 | 客户对话对练、意图标注 | 只读 `role-play-sessions` 集合（对练记录） |
+
+两端的 `main.ts`（以软件工程包为例）只做三件事：注册本包的页面、逐条声明桥方法、订阅需要的事件：
+
+```ts
+// desktop/main.ts —— 桌面端的全部请求面都在这一串声明里
+const BRIDGE_METHODS = [
+  'workspace.fetch', 'workspace.delete', 'workspace.glob', 'workspace.grep', 'workspace.symbols',
+  'data.list', 'data.get', 'data.put', 'data.delete', 'agent.ask',
+] as const;
+
+export function activate(ctx: PluginRuntimeContext): () => void {
+  ctx.views.registerPage({ id: 'source-repository', title: '源码', webviewPath: 'ui/repositories.html' });
+  const declared = BRIDGE_METHODS.map((method) => ctx.bridge.declare(method));
+  return () => declared.forEach((handle) => handle.dispose());
+}
+```
+
+```ts
+// mobile/main.ts —— 同一个页面 id，只声明只读的数据原语
+export function activate(ctx: PluginRuntimeContext): () => void {
+  ctx.views.registerPage({ id: 'source-repository', title: '源码', webviewPath: 'ui/repositories.html' });
+  const declared = ['data.list'].map((method) => ctx.bridge.declare(method));
+  return () => declared.forEach((handle) => handle.dispose());
+}
+```
+
 ### index.ts 模板
 
 ```ts
@@ -118,6 +155,7 @@ import { YOUR_PACK_ID, YOUR_PACK_VERSION } from './ids';
 import { yourMatchers } from './matchers';
 import { competencyTemplates } from './competencies';
 import { interviewFormats, interviewStages } from './formats';
+import { yourExamForms } from './examForms';
 import { yourRubrics } from './rubrics';
 import { taskTemplates } from './tasks';
 import { capabilities } from './capabilities';
@@ -137,12 +175,19 @@ export const yourRolePack: RolePack = defineRolePack({
     compatibility: { core: '^1.0.0', schema: 23 },
     // 权限必须等于 capabilities 里各贡献 permission 的并集，否则装配直接报错
     permissions: ['artifact:read'],
+    // 可选：本包自带的代码实现（两端各一份）。声明后必须提供 desktop/main.js 与 mobile/main.js
+    main: 'desktop/main.js',
+    mobile: 'mobile/main.js',
+    api: '^1.0',
+    // 本包自己的数据集合：宿主建通用承载表，内容对宿主不透明（用法见 §4）
+    dataCollections: [{ name: 'cases', schemaVersion: 1 }],
     dependencies: [],
   },
   roleMatchers: yourMatchers,
   competencyTemplates,
   interviewStages,
   interviewFormats,
+  examForms: yourExamForms,     // 本包声明的题型（§3.F）
   rubrics: yourRubrics,
   taskTemplates,
   promptFragments: [],      // prompts/ 目录会被自动扫描
@@ -248,10 +293,45 @@ export const capabilities: CapabilityDeclaration[] = [
 
 ### F. 领域模型
 
-能力模板、题型、量规、任务模板、RoleMatcher 是插件系统的地基，写法对照现有三个包即可。要点：
+能力模板、题型、量规、任务模板、RoleMatcher 是插件系统的地基，写法对照现有三个包即可。
+
+**题型 `examForms`**：本包声明的题型词汇。`id` 会写进 `knowledge_node.exam_forms`，练习、历史与界面都
+按它取值——宿主只当不透明字符串，不认识任何一个取值。
+
+```ts
+import type { ExamFormDefinition } from '@core/plugins/types';
+
+export const yourExamForms: ExamFormDefinition[] = [
+  {
+    id: 'da.case',                              // 题型 id，包内唯一
+    label: '数据案例',                           // 展示名（练习页题型下拉、历史行标注）
+    formatId: 'da.case',                        // 落到本包哪个 InterviewFormatDefinition
+    diagnosisHint: '数据案例：口径、推断与结论',   // 诊断时给模型的一句说明
+  },
+];
+```
+
+**任务模板 `taskTemplates`**：`taskKind` 是包自己声明的字符串（宿主的 `learn` / `drill` / `review` /
+`fallbackScript` 是宿主自己的种类）。带 `capabilityId` 的模板会成为排程贡献；需要一份外部材料时成对声明
+`materialKind` + `materialCollection`；任务页用 `view.pageId` 指向本包的页面。
+
+```ts
+{
+  id: 'da.read-data',
+  label: '结合数据理解口径',
+  taskKind: 'readData',
+  defaultMinutes: 25,
+  capabilityId: 'analytics-case',
+  materialKind: 'dataset',            // 任务需要一份材料
+  materialCollection: 'datasets',     // 材料放在本包哪个数据集合（必须在 manifest.dataCollections 里声明）
+  view: { pageId: 'case-practice' },  // 任务页由本包页面承担；缺省回落宿主的考点视图
+}
+```
+
+要点：
 
 - 能力 `defaultWeight` 总和为 1；量规维度 `weight` 总和为 1；每个等级必须有可观察行为锚点；
-- `taskTemplates` 里带 `capabilityId` 的模板会成为排程贡献（源码任务就是 `se.read-code`）；
+- `examForms[].formatId`、`taskTemplates[].supportedFormats`、`materialCollection` 都在装配时做交叉校验；
 - RoleMatcher 用岗位标题正则 + JD 职责信号归族，不以公司名判断；excludeSignals 防跨岗位污染。
 
 ---
@@ -311,6 +391,7 @@ export function activate(ctx: PluginRuntimeContext): () => void {
 | `ctx.events` | — | 订阅白名单事件：`campaign:attached` / `campaign:capability-changed` / `practice:completed` |
 | `ctx.campaign` | — | `getDescriptor(campaignId)` 只读运行配置 |
 | `ctx.storage` | — | 插件私有 KV：`get / set / delete`（键数与值长有限制） |
+| `ctx.data` | — | 本包声明的数据集合：`get / put / delete / list / count`，值一律字符串，内容对宿主不透明；一次调用只允许本包 `manifest.dataCollections` 里声明过的集合，手机端对配对桌面只读（见下节） |
 | `ctx.workspace` | `filesystem:workspace` | **通用原语**：本包工作区内的读 / 写 / 删 / 遍历 / glob / grep / 文本快照 / 批量符号提取；`fetch(url, { dir? })` 从远端拉取公开的 https 仓库到本包目录（**另需 `network:fetch`**；不带凭据、不指向内网、深度 1、有体积上限）。路径越出本包目录即拒 |
 | `ctx.artifact` | `artifact:read` | **通用原语**：读用户显式选择的文件（表格 / 文档） |
 | `ctx.llm` | `llm:complete` | `complete({ system, user, role? })` 受控 JSON 补全，同宿主网关与审计 |
@@ -318,6 +399,44 @@ export function activate(ctx: PluginRuntimeContext): () => void {
 | `ctx.evidence` | `evidence:read-confirmed` | `listConfirmed(campaignId)` 只读已确认证据 |
 
 未声明的权限对应命名空间**不存在**（不是报错，是 `ctx.llm === undefined`）。
+
+### 包声明的数据集合与材料
+
+需要跨端保存的数据（仓库登记、案例、对练会话……）走 `manifest.dataCollections` + `ctx.data`，不用自己
+建表：
+
+```json
+// manifest.json
+"dataCollections": [{ "name": "cases", "schemaVersion": 1 }]
+```
+
+```ts
+// 入口代码或页面里
+await ctx.data.put('cases', caseId, JSON.stringify(entry));   // 值一律字符串，包自己序列化与反序列化
+const rows = await ctx.data.list('cases', { prefix: 'case:', limit: 200 });
+const count = await ctx.data.count('cases');
+```
+
+规则：
+
+- **声明即授权**：调用只对「本包 `manifest.dataCollections` 里声明过」的集合放行，而且只看得到本包自己
+  的行；宿主不认识集合名，只按 `(pluginId, collection, key)` 归档与取用，内容对它不透明；
+- 承载表 `plugin_data` 参与既有同步：桌面写入，手机读得到；手机端对配对桌面只读（`put` / `delete`
+  在手机端如实拒绝）；
+- 键 / 值有长度上限，`list` 的前缀按字面匹配（`%` / `_` 不当通配符），结果按 `limit` 截断、可按前缀翻页。
+
+**材料约定**：任务模板成对声明 `materialKind` + `materialCollection` 时，排程从该集合里挑一份材料挂到
+任务上。集合里的行是包自己序列化的 JSON 字符串，宿主只读三个字段——`id`（必需）、`label`（缺省用
+`id`）、`ready`（布尔，缺省 false）；其余内容归包所有。有多份可用材料（`ready === true`）时按
+`(label, id)` 取第一份，两端因此排到同一份：
+
+```json
+{ "id": "repo-1", "label": "github.com/org/app", "ready": true, "url": "https://github.com/org/app.git" }
+```
+
+三个官方包的落点：软件工程把仓库登记写进 `repositories` 集合（`se.read-code` 任务按 `code-repository`
+取材料），产品经理的案例写进 `cases`，销售的客户对话写进 `role-play-sessions`；各自的任务页由
+`view.pageId` 指向本包页面（§2 的两端两份实现表）。
 
 ### Webview UI（ui/）
 
@@ -402,4 +521,6 @@ pnpm verify:plugins                     # 打包并验签（CI 同款）
 
 **Q：想加一个新功能或新页面？** 页面走 `ctx.views.registerPage` + `ui/`（§4）；功能写进包自己的入口代码，用 `openjob.*` 的通用原语实现。**不要往基础包塞岗位专属的实现**——基础包只放与岗位无关的基础设施与通用原语。确实缺原语（比如要访问一种宿主还没提供的资源）就来提 issue：那是平台扩展，不是包作者能绕过的边界。
 
-**Q：装了这个包，为什么基础包还留着另一个岗位的功能实现？** 那是历史遗留：`source-repository` 等能力的实现仍在基础包里，正在按 `PLUGIN_DISTRIBUTION_PLAN.md` §11 搬迁。新的岗位包不要照抄这种做法。
+**Q：任务排出来了，但材料没挂上？** 带材料的任务模板要成对声明 `materialKind` + `materialCollection`，而且那个集合要在 `manifest.dataCollections` 里声明；排程只挑集合里 `ready === true` 的行。集合里没有可用材料时这个任务不排，而不是排一条空任务。
+
+**Q：岗位簇的实现应该放哪儿？** 放进包里：功能实现、页面 UI、专属数据集合都随包分发，基础包只提供与岗位无关的基础设施和通用原语。包侧实现与通用原语的分工见 `PLUGIN_DISTRIBUTION_PLAN.md` §11。

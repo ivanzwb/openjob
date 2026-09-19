@@ -34,7 +34,7 @@ zip，理由见 §3），解压后是 `{ files: { <包内文件名>: <内容> } 
 <id>@<version>/
   manifest.json      # 现有 PluginManifest，已保证可 JSON 往返
   pack.json          # 仅岗位包：全部数据
-  contributions.json # 仅独立能力包（已不再分发，格式保留）：注册声明（见 §3）
+  contributions.json # 仅独立能力包：注册声明（见 §3）
   openjob.sig        # Ed25519 签名，内嵌签名者公钥，覆盖上面所有文件的规范化摘要
 ```
 
@@ -77,8 +77,8 @@ zip，理由见 §3），解压后是 `{ files: { <包内文件名>: <内容> } 
 代码，在沙箱里编排宿主的**通用原语**（工作区、artifact、LLM、证据、存储）实现自己的功能，
 页面用包自己的 Webview。
 
-于是基础包与岗位包的分界是「**与岗位无关的基础设施 vs 岗位簇的实现**」：基础包不实现任何岗位簇
-的功能，岗位簇的实现随包分发。这条分界的现状盘点与搬迁计划见 §11（尚未完成，正在迁移中）。
+于是基础包与岗位包的分界是「**与岗位无关的基础设施 vs 岗位簇的实现**」：基础包提供不认岗位的原语与
+机制，岗位簇的实现随包分发。这条分界的落地形态、阶段验收与决策记录见 §11。
 
 ## 4. 信任链
 
@@ -89,7 +89,7 @@ zip，理由见 §3），解压后是 `{ files: { <包内文件名>: <内容> } 
 ## 5. 安装清单
 
 `userData/plugins/<id>@<version>/`，文件系统即事实源，启动时扫描进内存清单。
-装了什么是**设备本地**属性，和 `repo_file.local_path`、搜索缓存同类，**不进同步**。
+装了什么是**设备本地**属性，和搜索缓存、仓库本机路径（`local_path`）同类，**不进同步**。
 Campaign 里 pin 的仍然是 `id@version`，缺包时沿用现有 `plugin-not-installed` /
 `pinned-version-unavailable` 降级为 view-only。
 
@@ -143,13 +143,14 @@ GitHub 接口不通（限额、镜像没代理 `api.github.com`）时退回读 `
 2. 基础包源码里不出现岗位专属的通道名、表名、枚举取值；
 3. 渲染层的桥方法表不硬编码任何岗位簇方法——包在自己的入口代码里声明桥方法，宿主按声明放行。
 
-这三条同时是搬迁进度表：现状盘点（哪些地方还越界、规模多大）与分阶段计划见 §11。
+这三条同时是关卡测试的判据：`core/src/hostUi/roleNeutralGate.test.ts` 按它们扫基础包源码，把命中
+定位到具体文件与行数，判定清单见 §11.1。
 
-旧数据的读取不能依赖「用户装了岗位包」。`quiz_attempt` 与 `design_case` 行里存着当年
-软件工程包的题型和量规 ID，而一台只装了产品岗的机器照样要能翻历史。这些映射被冻结成
-已安装岗位包的内嵌声明（`RolePack.examFormMappings`），历史投影、计划贡献与
-`pluginRuntime` 回填都读同一份常量：既让缺包时历史仍然可读，也让老战役的
-`configSnapshotHash` 保持不变。
+旧数据的读取不能依赖「用户装了岗位包」。`quiz_attempt` 与 `design_case` 行里存着题型取值，而一台只
+装了产品岗的机器照样要能翻历史。题型是岗位包自己声明的词汇（`RolePack.examForms`：id + label + 落到
+本包哪个面试形式 + 诊断提示），宿主只当不透明字符串携带、按包查声明（
+`core/src/plugins/examForms.ts`）。包不在本机或未声明该题型时按空串兜底，历史投影、计划贡献与
+`pluginRuntime` 回填仍照常读到那几行，老战役的 `configSnapshotHash` 因此保持不变。
 
 ## 7. 手机端
 
@@ -180,7 +181,8 @@ GitHub 接口不通（限额、镜像没代理 `api.github.com`）时退回读 `
 `productManager/golden.test.ts`、`salesCustomerSuccess/golden.test.ts`、
 `roleAgnosticUi.test.ts`、`rolePlugins.test.ts`。
 
-搬迁岗位簇实现时（§11）还会新增一条判据关卡：基础包源码里不出现岗位簇名词与专属通道/表/枚举。
+这条边界由一条静态关卡守着：`core/src/hostUi/roleNeutralGate.test.ts` 扫 core / desktop / mobile
+三个源码根，基础包源码里出现岗位簇名词或专属通道 / 表 / 枚举就报红（清单见 §11.1）。
 
 ## 9. 分阶段任务
 
@@ -208,30 +210,27 @@ GitHub 接口不通（限额、镜像没代理 `api.github.com`）时退回读 `
 - **同一主干多个预发布**：包版本沿用 `compareExactSemVer`，已支持 prerelease 段。
 - **手机端不做执行**：能力要靠桌面才有的原语才能跑，手机上只有查看，功能差异要在 UI 里说清。
 
-## 11. 岗位簇实现的搬迁（进行中）
+## 11. 岗位簇实现：包侧实现与宿主通用原语
 
 基础包只装面试 Agent 的基础设施：跨岗位闭环、不认岗位的机制、通用原语。§6 的三条判据是这条边界的
-可执行形态——岗位簇的功能实现、领域概念、专属表、专属通道与专属文案都归各自的岗位包。本节给出目标
-形态（§11.2）、搬迁顺序（§11.3）、仍在基础包里的实现清单（§11.1），以及原语层的决策与用法
-（§11.4–§11.6）。
+可执行形态——岗位簇的功能实现、领域概念、专属表、专属通道与专属文案都归各自的岗位包。本节记录这条
+边界的落地形态：包侧实现与宿主通用原语的分工（§11.2）、阶段与验收（§11.3）、基础包里合法保留的部分
+（§11.1），以及原语层的决策与用法（§11.4–§11.6）。
 
-### 11.1 仍在基础包里的岗位簇实现
+### 11.1 基础包里合法保留的部分
 
-| 岗位簇 | 位置 | 规模（估） |
+岗位簇的实现已全部随包分发，基础包里只剩三类**刻意保留**的东西——它们各有用途，不是缺口：
+
+| 保留项 | 位置 | 为什么保留 |
 |--------|------|-----------|
-| 软件工程 | `desktop/src/main/repo/*`（clone / 索引 / 符号 / 工具循环 / tree-sitter / git / 快照） | ~1.4k LOC |
-| 软件工程 | `core/src/repo/*`（virtualFs / symbolScan / pathSuggest / reanchor / snapshotDiff） | ~0.5k |
-| 软件工程 | `desktop/src/main/llm/index.ts` 的 repo 分支 + `llm/repoAnswerPolicy.ts` + `toolPolicy.ts` | ~0.45k |
-| 软件工程 | `core/src/prompts/repo.ts` 与 registry 的 `repo.*` | ~0.2k |
-| 软件工程 | 数据面：`repo` / `code_ref` / `repo_file` 三表 + `task.repo_id` + `session.kind='repoQa'` + `annotation.target_type='codeRef'` + `speech_snippet.source_type='codeRef'` | 3 表 + 4 处枚举 |
-| 软件工程 | 通道：`repo:*` / `codeRef:ensure` / `annotation:listForRepo`（含 `sync/rpc.ts` 与 preload 白名单） | ~15 通道 |
-| 软件工程 | 渲染层：`RepoWorkspace` / `ReadCodePanel` / `CodePanel` / `TaskStudyPanel` 的 `readCode` 分派 / `TaskCard` 文案 | ~1.2k |
-| 软件工程 | 手机：`ReposScreen` / `RepoQaPanel` / `ReadCodePanel` / `data/repo*` / `llm/agentChat.ts` | ~0.9k |
-| 产品经理 | `core/src/case/*`（tabular-dataset 契约与解析、分析校验）、`design_case` 表、`design:*` 通道、`core/src/design/prompts.ts` | ~1.3k |
-| 销售客服 | 宿主侧岗位接线（`rolePlaySession` / `interactionRuntime` 的策略部分）、`RolePlayRunner`、`interaction:*RolePlay` 通道 | ~0.5k |
-| 跨岗 | planner 只认 `taskKind === 'readCode'`；`enums.ts` 的岗位取值（`readCode` / `repoQa` / `codeRef` / `design` / `EXAM_FORMS` / `REPO_STATUSES`）；`PRE_PLUGIN_DEFAULT_ROLE_PACK_ID`；`TaskCard` / `MoreScreen` / `RootTabs` 文案；`company_intel.tech_stack_md`；桥里硬编码的 `repo.*` | — |
+| 旧数据面三表 `repo` / `code_ref` / `repo_file` | `desktop/src/main/db/schema.ts` 的定义 + 手机端迁移 bundle | 数据面改由包声明的集合承载之后的**回退路径**：删表留到下一个版本、确认集合承载得住之后再单独做。应用代码已不按这三张表名读写，历史行由前向迁移搬进包声明的集合（§11.3 阶段 3） |
+| 历史夹具 | `core/src/planner/__fixtures__/prePluginPlan.ts`、`core/src/plugins/__fixtures__/phase0Campaign.ts` / `phase1Campaign.ts`、`core/src/competency/__fixtures__/productManagementRolePack.ts` | 它们复刻插件化之前落库的行（旧题型取值、旧任务种类、旧表名），用来验证宽容读路径。取值逐字保留，改了就不再是那份历史 |
+| 岗位中立关卡 | `core/src/hostUi/roleNeutralGate.test.ts` | §6 三条判据的可执行形态（§11.3 阶段 0）：规则常驻，任何一条新的越界命中都会让关卡变红 |
 
-### 11.2 目标形态：包侧实现 + 宿主通用原语
+除此之外，基础包源码里不出现岗位簇名词、专属通道、专属表名或枚举取值——这是关卡实际扫出来的结论，
+不是一句目标。
+
+### 11.2 分工形态：包侧实现 + 宿主通用原语
 
 包侧实现跑在渲染层沙箱里（§3），只能编排宿主放行的通用原语：
 
@@ -240,24 +239,25 @@ GitHub 接口不通（限额、镜像没代理 `api.github.com`）时退回读 `
 | 工作区 | `filesystem:workspace`（词汇已存在） | 本包工作区内的读 / 写 / 删 / 遍历 / glob / grep / 文本快照 / 批量符号提取；从远端 git 拉取到该目录（另需 `network:fetch`，见 §11.5） |
 | artifact | `artifact:read`（`artifact:write` 词汇已存在） | 用户显式提供的文件读入（表格 / 文档） |
 | 桥自注册 | — | **页面能调的桥方法 = 包声明 ∩ 本机通用原语表**。包在入口代码里逐条 `ctx.bridge.declare('workspace.glob')`；未声明的方法页面够不到，声明了但本机没有该原语同样够不到。每个原语自带权限项，放行由权限网关判（端侧一次、主进程一次） |
-| 数据面 | — | 包声明需要跨端的数据集合，宿主建通用承载表并沿用既有同步；内容对宿主不透明 |
+| 数据面 | — | 包在 `manifest.dataCollections` 声明要用的集合，运行时经 `ctx.data`（`get` / `put` / `delete` / `list` / `count`，值一律字符串）读写；宿主建通用承载表 `plugin_data` 并沿用既有同步；内容对宿主不透明，一次调用只允许本包声明过的集合，手机端对配对桌面只读 |
 
-工作区原语用 `filesystem:workspace` 授权。SE 包内嵌的旧工具声明里仍带 `repository:read`，它只服务于
-宿主侧的工具实现（§11.1），包的页面不经过它。
+每类原语自带权限项，由权限网关按包声明放行：工作区用 `filesystem:workspace`，远端拉取另需
+`network:fetch`，artifact 用 `artifact:read`，LLM 相关用 `llm:complete`。岗位包只声明它实际用到的那几项；
+`repository:read` 这类岗位味词汇已退出权限词表（见 `core/src/plugins/permissions.ts`）。
 
 ### 11.3 阶段
 
 | 阶段 | 内容 | 验收 |
 |------|------|------|
-| 0 | 落地 §6 的三条判据为关卡；文档同步 | **已完成**：`core/src/hostUi/roleNeutralGate.test.ts` 把三条判据固化成关卡，命中清单与 §11.1 一一对应 |
+| 0 | 把 §6 的三条判据落成关卡；文档同步 | **已完成**：`core/src/hostUi/roleNeutralGate.test.ts` 扫 core / desktop / mobile 三个源码根，把三条判据固化成用例；`desktop/src/main/plugins/basePackage.test.ts` 另守 `@plugins` 别名与源码引用 |
 | 1 | 原语层骨架（工作区 / artifact / 桥自注册）+ 权限接线 + 手机端如实降级 | **已完成**：工作区、artifact、桥自注册三类原语可用，边界用例（路径越界 / 未授权 / 超限）就位，手机端按声明如实拒绝；远端拉取见 §11.5 |
-| 2 | 软件工程试点：实现搬进 SE 包，宿主 `repo` 模块、`llm` 的 repo 分支、`repo:*` 通道、宿主 UI 一并下线；planner 去 `readCode` 特判，任务面板改通用视图槽位 | 装 SE 包后源码能力与插件化之前等价；卸载后基础包无源码痕迹；索引性能基准通过。**进行中**：SE 包的页面已用 §11.6 那套原语跑通，宿主侧 `repo/*`、`repo:*` 通道、宿主 UI 与 `llm` 的 repo 分支还在拆 |
-| 3 | 数据面：`repo_file` / `code_ref` 迁出主库，改为包声明的通用数据面与同步 | 跨端同步用例通过；历史数据一次性迁移且可回滚 |
-| 4 | 清扫产品经理与销售，以及跨岗的枚举取值、文案与兜底常量 | §6 三条判据全绿 |
+| 2 | 软件工程：源码页与问答随 SE 包分发，任务模型去特判（`taskKind` 是字符串、材料成对声明、任务页走 `view.pageId`） | **已完成**：`plugins/softwareEngineering/desktop/main.ts` 与 `desktop/ui/repositories.html` 用 §11.6 的原语跑通源码页，`mobile/` 提供只读视图；排程按包声明派生任务与材料（`core/src/planner/contributions.ts`）；索引性能基准见 §11.4 |
+| 3 | 数据面：`plugin_data` 承载表 + `ctx.data` 原语；包在 `manifest.dataCollections` 声明集合 | **已完成**：`desktop/src/main/plugins/pluginData.ts` 提供 `get` / `put` / `delete` / `list` / `count`（值一律字符串、内容对宿主不透明），`plugin_data` 进同步清单；`0029_task_material` 把旧仓库登记一次性迁进 SE 包声明的 `repositories` 集合，任务收敛为 `material_kind` + `material_id` |
+| 4 | 产品经理与销售的岗位簇实现随包分发，跨岗枚举取值与文案回到中立 | **已完成**：产品案例页（`plugins/productManager/desktop/ui/practice.html`）与销售客户对话页（`plugins/salesCustomerSuccess/desktop/ui/role-play.html`）各自编排通用原语并把数据存进本包集合；题型由 `RolePack.examForms` 声明（`core/src/plugins/examForms.ts` 只做按包查声明）；旧战役兜底改由 `selectPrePluginRolePack` 按包的声明形状回答 |
 
 **不选的路**：不把包代码放进主进程执行。那要撤销 P03 与 `externalIsolation.test.ts` 的 import
 禁令，并作废「插件代码不提供裸能力」这条非目标（ARCH §3.2）——Node 进程内没有技术沙箱，
-隔离只能靠签名与用户确认。若将来要走，是一次独立的安全决策，不混在这条搬迁里。
+隔离只能靠签名与用户确认。若将来要走，是一次独立的安全决策，不混在这次边界落地里。
 
 **已知使能缺口**：tree-sitter 在宿主侧（`web-tree-sitter` + `symbols/treeSitter.ts`），包的沙箱既
 `require` 不到它，静态扫描也禁 `new Function` / `fetch`，所以符号提取由宿主做成语言无关的通用原语
@@ -288,7 +288,7 @@ parse 的长尾在单文件体积上：<4 KB 0.76 ms、4–16 KB 1.46 ms、**>16
    逐文件一万次就是一万次沙箱往返（进程内 mock 下限 0.32 ms/次 ≈ 3.2 s，真实 IPC 只会更高）
    加一万次 `structuredClone`。批量把这部分摊成一次。
 3. **带摘要增量口**。返回每文件 `{ path, digest, language, symbols }`，digest 用 sha256（与工作区
-   原语的快照摘要同一算法，不复用 `repo/*` 的 sha1-on-string）；包传回上次的摘要映射，未变的
+   原语的快照摘要同一算法，包侧拿到两个摘要能直接比）；包传回上次的摘要映射，未变的
    文件只回摘要、不解析。依据：增量是全量的 0.20×，而且「什么都没变」时的底价就是读 + 摘要
    （3.3 s）——parse 那 12 s 可省，「把文件读一遍算摘要」不可省，所以这个口必须由原语提供，
    指望包自己省不掉。
@@ -304,7 +304,7 @@ parse 的长尾在单文件体积上：<4 KB 0.76 ms、4–16 KB 1.46 ms、**>16
    摘要不解析——长尾就在这（>16 KB 的文件 parse 已是 57 ms 量级）；工作区里没有对应 grammar 的
    文件 `language: null`，不算错误。
 7. **不放进原语的**：跨文件引用图、语料索引、排序与检索、落盘持久化——那是包的实现加上阶段 3 的
-   数据面。宿主现在也不落盘符号（`find_symbol` 是查询时现扫），保持一致。
+   数据面。宿主也不在原语里落盘符号：符号按调用当场提取，包要持久化就写进自己声明的数据集合。
 
 **实现分布**
 
@@ -312,7 +312,7 @@ parse 的长尾在单文件体积上：<4 KB 0.76 ms、4–16 KB 1.46 ms、**>16
 `WorkspaceSymbolsResult` 是产物形状），实现在 `desktop/src/main/plugins/pluginWorkspace.ts`
 （`workspaceSymbols`，与读 / glob 共用同一条路径约束），解析引擎在
 `desktop/src/main/symbols/treeSitter.ts`：扩展名映射、节点类型映射与 AST 遍历都不认岗位，属于基础
-设施——`repo/symbols.ts`（源码能力的符号骨架）也 import 它。
+设施，工作区原语与语法冒烟用例共用它。
 
 与上面决策的差异，都是实现时才看清的，记在这里而不是改决策：
 
@@ -334,18 +334,16 @@ parse 的长尾在单文件体积上：<4 KB 0.76 ms、4–16 KB 1.46 ms、**>16
 
 ### 11.5 决策记录：远端拉取（`workspace.fetch`）
 
-阶段 2 卡在第一块的原因很直接：§11.1 里软件工程那一簇之所以搬不动，是因为包侧**根本拿不到仓库**
-——clone 走的是宿主的 `simple-git`，而包沙箱既 `require` 不到 `child_process`，也没有网络原语。
-所以先把「拉取到本包工作区」补成原语，再谈搬实现。
+包沙箱既 `require` 不到 `child_process`，也没有网络出口，所以「把公开仓库拉进本包工作区」是一条独立
+原语（`workspace.fetch`）：它给源码页提供取得仓库的入口，让岗位实现长在通用原语之上。
 
 **决策**
 
 1. **动词是「拉取到本包工作区」，不是「跑 git」**。包只给 `{ url, dir? }`，argv 全部由宿主拼
    （clone：`--depth 1 --single-branch --no-tags --quiet -- <url> <dir>`；更新：`fetch --depth 1`
    + `reset --hard FETCH_HEAD`）。不开「跑任意 git 子命令」的口子——那等于把宿主的进程执行能力借出去。
-2. **两项声明都要**：`filesystem:workspace`（落盘）+ `network:fetch`（网络出口）。`network:fetch`
-   本来就在权限词汇表里、一直没有实现，这次给它语义。两次授权都发生在**建目录之前**：留一个
-   「先建了目录再发现没授权」的窗口，等于让未授权的调用改了工作区状态。
+2. **两项声明都要**：`filesystem:workspace`（落盘）+ `network:fetch`（网络出口）。两次授权都发生在
+   **建目录之前**：留一个「先建了目录再发现没授权」的窗口，等于让未授权的调用改了工作区状态。
 3. **只放行公开的 https 地址**。`ext::`（能执行命令）、`file://` 与本地路径（能读本机任意目录）、
    `ssh://` / `git://` 一律拒；URL 里带用户名密码拒（包没有理由拿用户的凭据）；回环与内网地址拒
    （否则包能拿用户的机器当 SSRF 跳板）。**刻意不支持私有仓库**：那需要凭据托管与授权界面，是另一个
@@ -354,8 +352,8 @@ parse 的长尾在单文件体积上：<4 KB 0.76 ms、4–16 KB 1.46 ms、**>16
    `GIT_CONFIG_SYSTEM` 指向空设备再叠 `GIT_CONFIG_NOSYSTEM`，用户 `~/.gitconfig` 里的 credential
    helper、`url.*.insteadOf`、`filter.*` 程序、`core.hooksPath` 都读不到；命令行上再带
    `-c protocol.ext.allow=never`、`-c credential.helper=`、`-c core.symlinks=false`；超时**杀整棵树**
-   （Windows 上只 kill 父进程，`git-remote-https` 会留下继续占着目录句柄）。岗位实现照旧读用户自己的
-   配置——它拉的是用户自己的仓库，两者的安全前提不同，所以通用管道与岗位实现分了层。
+   （Windows 上只 kill 父进程，`git-remote-https` 会留下继续占着目录句柄）。这条管道把环境收紧到只认
+   显式参数——包拉的是它自己的临时检出，不需要用户 `~/.gitconfig` 里的任何东西。
 5. **上限与不变量**：深度 1、体积 512 MB、文件数 5 万、墙钟 120 s（探针命令 10 s）；超限或失败
    **清理目标目录**，不留半个检出（否则重试会撞上「目录非空」）；目标目录非空且不是检出即拒（不覆盖
    包自己的数据）；更新前核对 origin，两个不同仓库不许指到同一个目录；错误文本里的本机路径一律抹掉。
@@ -388,12 +386,16 @@ clone / 更新 / 占用 / 超限 / 超时五条流程）；`desktop/src/main/wor
 | 删除本地检出 | `workspace.delete` | `filesystem:workspace` |
 | 概览：文件与符号 | `workspace.glob` → `workspace.symbols` | `filesystem:workspace` |
 | 问源码 | 先 `workspace.grep` 取片段，再 `agent.ask`（`role: 'codeAgent'`） | `filesystem:workspace` + `llm:complete` |
-| 仓库登记表 | `storage.get` / `storage.set`（包私有存储） | —（无需权限项） |
+| 仓库登记表 | `data.list` / `data.get` / `data.put` / `data.delete`（本包声明的 `repositories` 集合） | —（声明即授权） |
 
-仓库落在包工作区 `userData/plugin-workspace/<pluginId>/`，登记表存在包私有存储里。问答的领域上下文由
-页面自己组合：拿问题里的标识符在**本包工作区**里 grep，把命中行拼成片段随问题一起发出——`agent.ask`
-的参数里没有「指定哪个仓库」这类岗位概念，模型编排与证据校验仍在宿主。
+仓库落在包工作区 `userData/plugin-workspace/<pluginId>/`，登记表存在本包声明的 `repositories` 数据集合里
+（承载表 `plugin_data`，随两端同步）。任务 `se.read-code` 声明 `materialKind: 'code-repository'` +
+`materialCollection: 'repositories'` + `view.pageId: 'source-repository'`：排程按 kind 与 `ready` 从集合里
+挑一份可用材料挂上，任务页就是本包的「源码」页。问答的领域上下文由页面自己组合：拿问题里的标识符在
+**本包工作区**里 grep，把命中行拼成片段随问题一起发出——`agent.ask` 的参数里没有「指定哪个仓库」这类
+岗位概念，模型编排与证据校验仍在宿主。
 
-**同一个包、两端两个页面**。`mobile/ui/repositories.html` 读同一份私有存储（存储两端共用），列出已
-拉下来的仓库及其分支、提交、文件数；链接、更新、概览、问源码在桌面做，因为工作区与远端拉取这两类原语
-只在桌面存在。手机上不摆按下去会失败的按钮——外置能力在手机端 view-only 这条上限（§7）与此一致。
+**同一个包、两端两个页面**。`mobile/ui/repositories.html` 只声明 `data.list`，读同一份 `repositories`
+集合并列出已拉下来的仓库及其分支、提交、文件数；链接、更新、概览、问源码在桌面做，因为工作区与远端
+拉取这两类原语只在桌面存在。手机上不摆按下去会失败的按钮——外置能力在手机端 view-only 这条上限（§7）
+与此一致。
