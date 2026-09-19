@@ -33,14 +33,33 @@ export function TaskStudyPanel({
 
   if (task && page) {
     return (
-      <PluginRuntimeWebView
-        key={`${task.id}:${page.item.fullId}`}
-        pluginId={page.plugin.pluginId}
-        version={page.plugin.version}
-        webviewPath={page.item.webviewPath}
-        permissions={page.plugin.permissions}
-        declaredBridgeMethods={page.plugin.bridgeMethods}
-      />
+      <div className="flex h-full flex-col gap-2">
+        <div className="min-h-0 flex-1">
+          <PluginRuntimeWebView
+            key={`${task.id}:${page.item.fullId}`}
+            pluginId={page.plugin.pluginId}
+            version={page.plugin.version}
+            webviewPath={page.item.webviewPath}
+            permissions={page.plugin.permissions}
+            declaredBridgeMethods={page.plugin.bridgeMethods}
+          />
+        </div>
+        {/* 任务页在沙箱里，收尾动作留在宿主这一侧：包不需要为此开一条桥 */}
+        {onComplete && task.status === 'pending' && (
+          <div className="flex items-center gap-2 border-t border-[var(--color-border)] pt-2">
+            <span className="text-xs text-[var(--color-muted)]">
+              学完这一条就收尾，任务会记入计划
+            </span>
+            <button
+              type="button"
+              onClick={onComplete}
+              className="ml-auto rounded bg-[var(--color-accent)] px-3 py-1 text-xs text-white"
+            >
+              完成
+            </button>
+          </div>
+        )}
+      </div>
     );
   }
 
