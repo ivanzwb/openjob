@@ -275,10 +275,6 @@ const updateEmbedding = (patch: Partial<AppConfig['llm']['embedding']>): void =>
       <section className="space-y-3">
         <div>
           <h3 className="text-sm font-medium text-[var(--color-muted)]">角色映射</h3>
-          <p className="mt-1 text-xs text-[var(--color-muted)]">
-            每个角色指定走哪个档位。未列出的角色默认走「主力」档；带来源标注的角色由对应
-            岗位包声明，装上那个包才会出现。
-          </p>
         </div>
 
         {llmRoles.map((role) => (

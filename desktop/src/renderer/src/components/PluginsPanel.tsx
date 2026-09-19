@@ -326,11 +326,6 @@ export function PluginsPanel({
     <section className="space-y-4">
       <div>
         <h3 className="text-sm font-medium text-[var(--color-muted)]">插件</h3>
-        <p className="mt-1 text-xs text-[var(--color-muted)]">
-          岗位包决定面试考什么、怎么评分；能力插件决定可以用哪些工具。插件只装一个：换插件
-          要先卸载现在这个。带代码入口的包（代码插件或内嵌了页面的岗位包）装上后要在启用前
-          确认权限，跑在 Webview 沙箱里，拿不到主库与宿主 Node 能力。
-        </p>
       </div>
 
       <div className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-xs">
