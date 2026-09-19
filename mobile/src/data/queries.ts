@@ -133,7 +133,12 @@ export function listSpeechSnippets(db: SQLiteDatabase): SpeechSnippetView[] {
       contentMd: row.content_md,
       isUserEdited: Boolean(row.is_user_edited),
       createdAt: row.created_at,
-      sourceLabel: resolveSpeechSourceLabel(db, sourceType, row.source_id),
+      sourceLabel: resolveSpeechSourceLabel(
+        db,
+        sourceType,
+        row.source_id,
+        campaign !== null,
+      ),
       campaignId: campaign?.campaignId ?? null,
       campaignLabel: campaign?.label ?? null,
     };
@@ -170,6 +175,7 @@ function resolveSpeechSourceLabel(
   db: SQLiteDatabase,
   sourceType: SpeechSnippetView['sourceType'],
   sourceId: string,
+  campaignScoped = false,
 ): string {
   if (sourceType === 'node') {
     const node = db.getFirstSync<{ name: string }>(`SELECT name FROM knowledge_node WHERE id = ?`, sourceId);
@@ -196,9 +202,12 @@ function resolveSpeechSourceLabel(
     );
     return story ? `经历 · ${story.title}` : '经历';
   }
-  // 未知/历史来源（插件化之前由岗位簇链路写入的取值）一律中性兜底：话术本身照常
-  // 展示，不因为来源取值认不出而被丢掉或抛错。
-  return '话术';
+  // 宿主不认识这个来源取值：它可能是包自己起的 sourceKind（如 code-ref），包把可读的来源
+  // 标签（file:line）存进了 source_id——这里直接用存下来的标签渲染，与桌面端同一套文案。
+  // 历史/未知取值照常展示，绝不因为来源取值认不出而被丢掉或抛错：那些行的 source_id 是一场
+  // 备考（插件化之前的岗位簇链路写的），不是标签，仍回中性兜底。
+  if (campaignScoped) return '话术';
+  return sourceId || '话术';
 }
 
 export function listTodayCampaigns(db: SQLiteDatabase): TodayCampaignOption[] {

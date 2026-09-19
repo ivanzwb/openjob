@@ -91,6 +91,24 @@
     </div>
     <pre id="code" class="code">选中仓库后，从上面的列表打开文件。</pre>
 
+    <h2>话术与标记</h2>
+    <p class="muted" style="font-size: 12px">
+      在代码正文里选中一段文字，或直接用当前这一页的行区间，点「存为话术」存进用户的话术库：
+      来源类型（code-ref）与来源标签（file:line）由本页给出，宿主不认识这两个值，只按你给的
+      这一来源取回；同来源同内容只留一条。也可以给当前行区间留一条位置标记，回头从下面的
+      列表跳回去——标记存在本包声明的 code-marks 数据集合里，宿主同样不理解内容。
+    </p>
+    <div class="bar">
+      <button id="save-snippet">存为话术</button>
+      <span id="snippet-status" class="muted"></span>
+    </div>
+    <ul id="snippets" class="muted">还没有存过话术。</ul>
+    <div class="bar">
+      <input id="mark-note" placeholder="标记说明（可选）" />
+      <button id="mark-range">标记本页行区间</button>
+    </div>
+    <ul id="marks" class="muted">还没有位置标记。</ul>
+
     <h2>概览</h2>
     <p class="muted" style="font-size: 12px">
       拉取或更新检出后，本包会把目录与符号整理成「摘要」与「仓库地图」，存在本包声明的
@@ -178,6 +196,12 @@
       let pageHasMore = false;
       let highlightFrom = null;  // 从引用跳转时高亮的行区间
       let highlightTo = null;
+
+      // 话术与位置标记的页面状态。话术走宿主的话术库原语（来源类型 code-ref 由本页起），
+      // 标记存在本包声明的 code-marks 数据集合里；两者都只承载本页自己写下的内容。
+      const SNIPPET_SOURCE_KIND = 'code-ref';
+      const MARK_COLLECTION = 'code-marks';
+      let currentLines = [];     // 当前这一页的正文行（无选区时按它整段存话术 / 标记）
 
       const msg = (text) => { document.getElementById('msg').textContent = text; };
 
@@ -416,6 +440,7 @@
         pageHasMore = false;
         highlightFrom = null;
         highlightTo = null;
+        currentLines = [];
         document.getElementById('code').textContent = CODE_HINT;
         document.getElementById('file-label').textContent = '未打开文件';
         document.getElementById('range').textContent = '';
@@ -436,6 +461,7 @@
       }
 
       function renderLines(lines, start) {
+        currentLines = lines;
         const lang = openPath ? langForKey(openPath) : null;
         const rows = lines.map((line, index) => {
           const number = start + index;
@@ -980,6 +1006,151 @@
         renderCitations(node, citations);
       }
 
+      // ── 话术：把选中 / 整页的代码存进用户的话术库 ──────────────────────────
+      function selectionText() {
+        const selection = window.getSelection ? window.getSelection() : null;
+        return selection ? String(selection).trim() : '';
+      }
+
+      /** 当前这一页的行区间（1 起）；没有打开文件或这一页为空时为 null。 */
+      function currentRange() {
+        if (!openPath || currentLines.length === 0) return null;
+        return { start: pageOffset, end: pageOffset + currentLines.length - 1 };
+      }
+
+      /** 按本页自己给的来源类型（code-ref）取回存过的话术：只列来源标签与开头几个字。 */
+      async function loadSnippets() {
+        const node = document.getElementById('snippets');
+        const list = await call('library.listSnippets', {
+          sourceKind: SNIPPET_SOURCE_KIND,
+          limit: 50,
+        });
+        node.innerHTML = '';
+        if (!list || list.length === 0) {
+          node.className = 'muted';
+          node.textContent = '还没有存过话术。';
+          return;
+        }
+        node.className = '';
+        for (const snippet of list) {
+          const li = document.createElement('li');
+          const label = document.createElement('span');
+          label.className = 'file-link';
+          label.textContent = snippet.label;
+          const preview = document.createElement('span');
+          preview.className = 'muted';
+          preview.textContent = String(snippet.text || '').replace(/\s+/g, ' ').slice(0, 80);
+          li.append(label, preview);
+          node.appendChild(li);
+        }
+      }
+
+      /**
+       * 存话术：有选区就存选中的文字，否则存当前这一页的行区间。
+       *
+       * 来源类型与来源标签都由本页给出——宿主不认识它们，只把一段文字归档进用户的话术库，
+       * 再按同一个来源类型取回。同来源同内容宿主会去重，反复点不会堆重复条目。
+       */
+      async function saveSnippet() {
+        if (!openPath) throw new Error('先打开一个文件，或选中一段文字');
+        const selected = selectionText();
+        const text = selected || currentLines.join('\n').trim();
+        if (!text) throw new Error('没有可存的内容');
+        const range = currentRange();
+        const suffix =
+          range === null
+            ? ''
+            : `:${range.start}${range.end > range.start ? '-' + range.end : ''}`;
+        const label = openPath + (selected ? `:${pageOffset}` : suffix);
+        await call('library.saveSnippet', {
+          text,
+          sourceKind: SNIPPET_SOURCE_KIND,
+          sourceLabel: label,
+        });
+        document.getElementById('snippet-status').textContent = '已存入话术库';
+        await loadSnippets();
+      }
+
+      // ── 位置标记：本包自己的 code-marks 集合，只有本页理解内容 ─────────────
+      function parseMark(raw) {
+        if (typeof raw !== 'string' || !raw) return null;
+        let value;
+        try {
+          value = JSON.parse(raw);
+        } catch {
+          return null;
+        }
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+        if (typeof value.path !== 'string' || typeof value.startLine !== 'number') return null;
+        return {
+          path: value.path,
+          startLine: value.startLine,
+          endLine: typeof value.endLine === 'number' ? value.endLine : value.startLine,
+          note: typeof value.note === 'string' ? value.note : '',
+          at: typeof value.at === 'number' ? value.at : 0,
+        };
+      }
+
+      function markLabel(mark) {
+        return (
+          mark.path +
+          ':' +
+          mark.startLine +
+          (mark.endLine > mark.startLine ? '-' + mark.endLine : '')
+        );
+      }
+
+      async function loadMarks() {
+        const node = document.getElementById('marks');
+        const rows = await call('data.list', { collection: MARK_COLLECTION, limit: 200 });
+        const marks = rows.map((row) => parseMark(row.value)).filter(Boolean);
+        marks.sort((left, right) => right.at - left.at);
+        node.innerHTML = '';
+        if (marks.length === 0) {
+          node.className = 'muted';
+          node.textContent = '还没有位置标记。';
+          return;
+        }
+        node.className = '';
+        for (const mark of marks) {
+          const li = document.createElement('li');
+          const link = document.createElement('span');
+          link.className = 'file-link';
+          link.textContent = markLabel(mark);
+          link.title = '回到这段代码';
+          link.onclick = () => run(() => openFile(mark.path, mark.startLine, mark.endLine));
+          li.appendChild(link);
+          if (mark.note) {
+            const note = document.createElement('span');
+            note.className = 'muted';
+            note.textContent = mark.note;
+            li.appendChild(note);
+          }
+          node.appendChild(li);
+        }
+      }
+
+      /** 给当前这一页的行区间留一条标记；同一个区间再标一次即更新说明。 */
+      async function saveMark() {
+        const range = currentRange();
+        if (!openPath || !range) throw new Error('先打开一个文件再标记');
+        const note = document.getElementById('mark-note').value.trim();
+        const key = `${openPath}:${range.start}-${range.end}`;
+        await call('data.put', {
+          collection: MARK_COLLECTION,
+          key,
+          value: JSON.stringify({
+            path: openPath,
+            startLine: range.start,
+            endLine: range.end,
+            note,
+            at: Date.now(),
+          }),
+        });
+        document.getElementById('mark-note').value = '';
+        await loadMarks();
+      }
+
       document.getElementById('up').onclick = () => run(async () => {
         const repo = currentRepo();
         if (!browseDir || !repo || !repo.dir || browseDir === repo.dir) return;
@@ -1069,10 +1240,15 @@
         }
       });
 
+      document.getElementById('save-snippet').onclick = () => run(saveSnippet);
+      document.getElementById('mark-range').onclick = () => run(saveMark);
+
       void run(async () => {
         await load();
         render();
         await refreshBrowse();
+        await loadSnippets();
+        await loadMarks();
       });
     </script>
   </body>

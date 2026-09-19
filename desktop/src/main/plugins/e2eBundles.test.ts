@@ -156,12 +156,13 @@ describe('release 附件端到端', () => {
       expect(findInstalledRolePack(pack.manifest.id, pack.manifest.version)).not.toBeNull();
     }
 
-    // 能力条目的权限取各自声明：SE 的源码能力自己声明通用原语（工作区 / 远端拉取）与基础
-    // 问答，三项就是它的权限并集；声明不声明工具，也就没有工具带来的权限
+    // 能力条目的权限取各自声明：SE 的源码能力自己声明通用原语（工作区 / 远端拉取 / 话术库）
+    // 与基础问答，四项就是它的权限并集；声明不声明工具，也就没有工具带来的权限
     const repo = installed.find((p) => p.id === 'source-repository');
     expect(repo).toMatchObject({ version: SOFTWARE_ENGINEERING_ROLE_PACK_VERSION, type: 'capability' });
     expect(repo!.permissions).toEqual([
       'filesystem:workspace',
+      'library:write',
       'llm:complete',
       'network:fetch',
     ]);

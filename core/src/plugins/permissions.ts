@@ -14,6 +14,9 @@ export const PLUGIN_PERMISSIONS = [
   'llm:complete',
   'filesystem:workspace',
   'microphone:read',
+  // 写入宿主的话术库（用户自己的演讲/话术收藏）。来源取值由包自己起，权限词本身
+  // 不含任何岗位含义——它只说「这个包可以把一段文字存进用户的话术库」。
+  'library:write',
 ] as const;
 
 export type PluginPermission = (typeof PLUGIN_PERMISSIONS)[number];

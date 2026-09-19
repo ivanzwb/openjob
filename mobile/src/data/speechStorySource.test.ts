@@ -104,13 +104,28 @@ describe('历史/未知来源的话术', () => {
     expect(snippet.campaignLabel).toBe('ACME · 后端工程师');
   });
 
-  it('指不到任何备考的历史来源不会硬挂到某场备考上', () => {
+  it('指不到任何备考的历史来源不会硬挂到某场备考上，来源标签原样回显', () => {
+    // 既不是宿主自己那三种取值、source_id 又指不到备考：它按「包写下的来源标签」渲染。
     insertSnippet('sp4', 'codeRef', 'ref-gone');
 
     const [snippet] = listSpeechSnippets(db);
 
-    expect(snippet.sourceLabel).toBe('话术');
+    expect(snippet.sourceLabel).toBe('ref-gone');
     expect(snippet.campaignId).toBeNull();
     expect(snippet.campaignLabel).toBeNull();
+  });
+});
+
+describe('包写入话术库（library 原语）的来源', () => {
+  it('来源取值宿主不认识时，source_id 就是包写下的可读标签', () => {
+    // 包（如软件工程源码页）把一段代码存进话术库：source_type 是它自己起的 code-ref，
+    // source_id 是它算出的来源标签（file:line）。宿主不解释这两个值，只用后者渲染来源。
+    insertSnippet('sp5', 'code-ref', 'src/foo.ts:12');
+
+    const [snippet] = listSpeechSnippets(db);
+
+    expect(snippet.sourceType).toBe('code-ref');
+    expect(snippet.sourceLabel).toBe('src/foo.ts:12');
+    expect(snippet.campaignId).toBeNull();
   });
 });

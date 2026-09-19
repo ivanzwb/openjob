@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { WebView } from 'react-native-webview';
@@ -6,6 +6,7 @@ import {
   createPluginBridge,
   declaredPermissionBridgeGate,
 } from '@core/plugins/pluginRuntime/bridge';
+import type { SyncRpcResponse } from '@core/sync';
 import { buildMobileRuntimeHtml, type MobilePluginRuntime } from '../plugins/mobileRuntime';
 import { mobileBridgePrimitives } from '../plugins/mobileBridgePrimitives';
 import { listMobilePluginRuntimes } from '../data/pluginRuntimeLocal';
@@ -74,20 +75,52 @@ function PluginRuntimeView({ plugin }: { plugin: MobilePluginRuntime }): React.J
   const [declared, setDeclared] = useState<readonly string[]>([]);
 
   const html = buildMobileRuntimeHtml(plugin);
+  // 配对桌面回传的宿主事件（stream:*）：落到 state，下一次渲染后经 effect 推给页面。
+  // 拉一帧的顺序保证「回复」先注入、页面拿到 streamId，再按 id 过滤增量，不会把增量丢掉。
+  const [pendingEvents, setPendingEvents] = useState<SyncRpcResponse['events']>([]);
 
-  // 桥自注册（§11.2）：包在入口代码里声明要用的桥方法，宿主按声明放行。手机端
-  // 原语表里没有桌面才有的能力（workspace / artifact / agent），声明了也如实拒绝。
+  useEffect(() => {
+    if (!pendingEvents || pendingEvents.length === 0) return;
+    for (const event of pendingEvents) {
+      const payload = JSON.stringify({
+        event: event.channel,
+        ...(event.payload as Record<string, unknown>),
+      });
+      webRef.current?.injectJavaScript(
+        `window.__openjobEvent && window.__openjobEvent(${payload}); true;`,
+      );
+    }
+    // 不在这里清空：effect 只在事件对象换新（下一次桥调用带回事件）时重跑，清理反而多一轮渲染
+  }, [pendingEvents]);
+
+  // 桥调用的传输层：pluginRuntime:* 通道带上 pluginId（桌面按它解析本包工作区 / 数据集合，
+  // 范围与桌面自己的渲染层一致），其余通道（llm:chat / campaign / evidence）原样转发。
+  const bridgeCall = useCallback(
+    async (channel: string, payload?: unknown): Promise<unknown> => {
+      const outbound = channel.startsWith('pluginRuntime:')
+        ? {
+            ...((payload as Record<string, unknown> | undefined) ?? {}),
+            pluginId: plugin.pluginId,
+          }
+        : payload;
+      const { result, events } = await invokeRemote(channel, outbound);
+      if (events && events.length > 0) setPendingEvents(events);
+      return result;
+    },
+    [plugin.pluginId],
+  );
+
+  // 桥自注册（§11.2）：包在入口代码里声明要用的桥方法，宿主按声明放行。手机端原语表里
+  // 只有读侧与基础问答，写侧方法声明了也如实拒绝（unavailable）。
   const declaredBridge = useMemo(
     () =>
       createPluginBridge({
         pluginId: plugin.pluginId,
         declared,
-        primitives: mobileBridgePrimitives((channel, payload) =>
-          invokeRemote(channel, payload).then((r) => r.result),
-        ),
+        primitives: mobileBridgePrimitives(bridgeCall),
         gate: declaredPermissionBridgeGate(plugin.permissions),
       }),
-    [plugin.pluginId, plugin.permissions, declared],
+    [plugin.pluginId, plugin.permissions, declared, bridgeCall],
   );
 
   const onMessage = useCallback(

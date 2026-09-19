@@ -63,9 +63,9 @@ describe('softwareEngineeringRolePack contract', () => {
       version: '1.0.0',
       type: 'role-pack',
       compatibility: { core: '^1.0.0', schema: 23 },
-      // 本包页面自己用到的通用原语（工作区 + 远端拉取）与基础问答。权限 = 内嵌
+      // 本包页面自己用到的通用原语（工作区 + 远端拉取 + 话术库）与基础问答。权限 = 内嵌
       // source-repository 声明的并集；该声明不声明任何工具，所以权限里没有工具带来的项。
-      permissions: ['filesystem:workspace', 'llm:complete', 'network:fetch'],
+      permissions: ['filesystem:workspace', 'library:write', 'llm:complete', 'network:fetch'],
       dependencies: [],
     });
   });
@@ -132,11 +132,19 @@ describe('softwareEngineeringRolePack contract', () => {
       'data.delete',
       'llm.complete',
       'agent.ask',
+      // 用户的话术库：存 / 取都按本包自己的来源类型（code-ref），宿主不认识
+      'library.saveSnippet',
+      'library.listSnippets',
     ]);
 
-    // 手机端不做执行：只声明读取本包声明的数据集合（登记表 + 同步来的索引）
+    // 手机端只能读：数据集合、配对桌面的工作区读侧，以及基础问答
     const mobile = activateEntry(mobileActivate);
-    expect(mobile.bridgeMethods).toEqual(['data.list']);
+    expect(mobile.bridgeMethods).toEqual([
+      'data.list',
+      'workspace.list',
+      'workspace.read',
+      'agent.ask',
+    ]);
   });
 
   it('数据集合随包声明：登记表、问答历史与索引产物都在 manifest 里', () => {
@@ -148,6 +156,7 @@ describe('softwareEngineeringRolePack contract', () => {
       'repository-files',
       'qa-history',
       'repository-indexes',
+      'code-marks',
     ]);
   });
 });

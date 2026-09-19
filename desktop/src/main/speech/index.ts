@@ -5,6 +5,7 @@ import { dialog } from 'electron';
 import type { ExplanationTier } from '@core/enums';
 import type { SpeechSnippet } from '@core/entities';
 import type { SpeechExportInput, SpeechExportResult, SpeechSnippetView } from '@core/ipc';
+import type { LibrarySnippet } from '@core/plugins/pluginRuntime/host';
 import { getDb, schema } from '../db';
 import { writeSpeechPdf } from './pdf';
 
@@ -20,7 +21,11 @@ function rowToSnippet(row: typeof schema.speechSnippet.$inferSelect): SpeechSnip
   };
 }
 
-function resolveSourceLabel(sourceType: SpeechSnippet['sourceType'], sourceId: string): string {
+function resolveSourceLabel(
+  sourceType: SpeechSnippet['sourceType'],
+  sourceId: string,
+  campaignId: string | null = null,
+): string {
   const db = getDb();
   if (sourceType === 'node') {
     const node = db
@@ -52,9 +57,13 @@ function resolveSourceLabel(sourceType: SpeechSnippet['sourceType'], sourceId: s
     const row = db.select().from(schema.story).where(eq(schema.story.id, sourceId)).get();
     return row ? `经历 · ${row.title}` : '经历';
   }
-  // 未知/历史来源（插件化之前由岗位簇链路写入的取值）一律中性兜底：话术本身照常
-  // 展示，不因为来源取值认不出而被丢掉或抛错。
-  return '话术';
+  // 宿主不认识这个来源取值：它可能是包自己起的 sourceKind（如 code-ref），包把可读的
+  // 来源标签（file:line）存进了 source_id——这里直接用存下来的标签渲染，而不是硬编码一个
+  // 中性词，「已存入话术库」与全局话术库里都据此显示来源。
+  // 历史/未知取值照常展示，绝不因为来源取值认不出而被丢掉或抛错：那些行的 source_id 是
+  // 一场备考（插件化之前的岗位簇链路写的），不是标签，仍回中性兜底。
+  if (campaignId !== null) return '话术';
+  return sourceId || '话术';
 }
 
 /**
@@ -124,7 +133,7 @@ export function listSpeechSnippets(): SpeechSnippetView[] {
       const campaign = resolveCampaign(row.sourceType, row.sourceId);
       return {
         ...rowToSnippet(row),
-        sourceLabel: resolveSourceLabel(row.sourceType, row.sourceId),
+        sourceLabel: resolveSourceLabel(row.sourceType, row.sourceId, campaign?.campaignId ?? null),
         campaignId: campaign?.campaignId ?? null,
         campaignLabel: campaign?.label ?? null,
       };
@@ -187,6 +196,46 @@ export function listSpeechSnippetsForSource(
     .all()
     .map(rowToSnippet)
     .sort((a, b) => b.createdAt - a.createdAt);
+}
+
+/**
+ * 把包页整理的一段文字存进**用户的话术库**（`library` 原语）。
+ *
+ * 宿主把包自己起的 `sourceKind` 原样写进 `source_type`（一列裸 text，读取侧对认不出的
+ * 取值走中性兜底），把包算出的可读 `sourceLabel` 存进既有的来源标签机制（`source_id`）
+ * ——宿主不认识这两个值的语义，也不为某个岗位开专用字段。去重沿用同一套：同来源同内容
+ * 只留一条，包页反复点「存为话术」不会堆重复条目。
+ */
+export function saveLibrarySnippet(
+  sourceKind: string,
+  sourceLabel: string,
+  contentMd: string,
+  tier: ExplanationTier = 'spoken',
+): LibrarySnippet {
+  const text = contentMd.trim();
+  if (!text) throw new Error('话术内容为空');
+  const kind = sourceKind.trim();
+  if (!kind) throw new Error('话术来源类型为空');
+  const label = sourceLabel.trim() || kind;
+  const snippet = saveSpeech(kind as SpeechSnippet['sourceType'], label, text, tier);
+  return { id: snippet.id, text: snippet.contentMd, label, createdAt: snippet.createdAt };
+}
+
+/**
+ * 取回用户话术库里包自己那一类来源（`sourceKind`）的片段；不传则取全部。
+ *
+ * 只回包需要显示的四项（正文 / 来源标签 / 时间 / id），并按时间倒序、按上限收窄——
+ * 包页据此显示「已存入话术库」并列表，看不见宿主自己那些来源的话术。
+ */
+export function listLibrarySnippets(sourceKind?: string, limit = 500): LibrarySnippet[] {
+  const all = listSpeechSnippets();
+  const scoped = sourceKind === undefined ? all : all.filter((s) => s.sourceType === sourceKind);
+  return scoped.slice(0, Math.max(0, limit)).map((s) => ({
+    id: s.id,
+    text: s.contentMd,
+    label: s.sourceLabel,
+    createdAt: s.createdAt,
+  }));
 }
 
 function saveSpeech(

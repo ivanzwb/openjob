@@ -1,13 +1,17 @@
 /**
  * 软件工程岗位包的移动端代码入口（§7.9）：「源码」页属于本包。
  *
- * 手机端**不做执行**（§11.4）：工作区与远端拉取只在桌面存在，所以这里只声明读取本包声明的
- * repositories 数据集合 —— 页面上如实写明「链接与更新在桌面端做」，而不是摆一个点了必然报错的
- * 按钮。数据集合两端同步共用，桌面拉下来的仓库登记在手机上能看到；手机端对包数据是只读的。
+ * 手机端**只能读**（§11.4）：写侧（链接 / 更新 / 建索引）留在桌面。手机自己不装插件包、
+ * 也没有宿主工作区实现，所以工作区与问答都**代理到已配对的桌面端**——桌面按包声明的
+ * filesystem:workspace 解析出本包工作区，读到的就是桌面那份检出。页面据此：
+ * - 读本包声明的 repositories 数据集合与同步来的索引（`data.list`，两端共用一份）；
+ * - 只读浏览 / 按行号读取配对桌面的检出（`workspace.list` / `workspace.read`）；
+ * - 问源码（`agent.ask`），回答经宿主事件流推回页面。
+ * 写侧方法（`workspace.write/delete/fetch`）本端没有，页面上不摆点了必然失败的按钮。
  */
 import type { PluginRuntimeContext } from '@core/plugins/pluginRuntime/host';
 
-const BRIDGE_METHODS = ['data.list'] as const;
+const BRIDGE_METHODS = ['data.list', 'workspace.list', 'workspace.read', 'agent.ask'] as const;
 
 export function activate(ctx: PluginRuntimeContext): () => void {
   ctx.views.registerPage({

@@ -55,6 +55,7 @@ export function buildMobileRuntimeHtml(plugin: MobilePluginRuntime): string {
   var pages = [];
   var commands = {};
   var bridgeMethods = [];
+  var currentFrame = null;
 
   function postToRn(message) {
     if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
@@ -76,6 +77,14 @@ export function buildMobileRuntimeHtml(plugin: MobilePluginRuntime): string {
     delete pending[reply.reqId];
     if (reply.error) entry.reject(new Error(reply.error));
     else entry.resolve(reply.result);
+  };
+
+  // RN → WebView 的宿主事件注入：与桌面同构（openjobEvent），页面按它刷新 / 接流式回答。
+  // RN 侧在桥调用拿到事件后经 injectJavaScript 调这里，再由本 shim 转给当前 iframe。
+  window.__openjobEvent = function (payload) {
+    if (currentFrame && currentFrame.contentWindow) {
+      currentFrame.contentWindow.postMessage({ openjobEvent: payload }, '*');
+    }
   };
 
   document.addEventListener('message', function (event) {
@@ -200,6 +209,7 @@ export function buildMobileRuntimeHtml(plugin: MobilePluginRuntime): string {
     frame.style.width = '100%';
     frame.style.height = '100vh';
     host.appendChild(frame);
+    currentFrame = frame;
     var html = uiAssets[page.webviewPath] || '<p>缺少资源</p>';
     frame.srcdoc = resolveWebviewHtml(page.webviewPath, html);
   }

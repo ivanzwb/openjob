@@ -82,8 +82,9 @@ export const softwareEngineeringRolePack: RolePack = defineRolePack({
     description: '软件工程岗位的技术诊断、训练和模拟面试声明',
     compatibility: { core: '^1.0.0', schema: 23 },
     // 内嵌 source-repository 能力：权限 = 其声明的并集（contracts 校验，按字典序）。
-    // 三项都是本包页面自己用的通用原语与基础问答。
-    permissions: ['filesystem:workspace', 'llm:complete', 'network:fetch'],
+    // 四项都是本包页面自己用的通用原语与基础问答；library:write 让页面能把一段代码
+    // 存进用户的话术库（来源类型由本包自己起，宿主不认识）。
+    permissions: ['filesystem:workspace', 'library:write', 'llm:complete', 'network:fetch'],
     // 「源码」页已移入本包：页面跑在 Webview 沙箱，宿主 Repos 页退役。
     // 桌面与移动各一份实现，包内平铺在 desktop/ 与 mobile/ 下
     main: 'desktop/main.js',
@@ -93,7 +94,8 @@ export const softwareEngineeringRolePack: RolePack = defineRolePack({
     // 本包自己的数据集合：宿主只按这些名字归档与取用，不理解里面的内容。
     // - repositories：检出登记表（排程按 (kind, collection) 取代码材料）；
     // - qa-history：按检出分片的问答历史（问题 / 回答 / 引用 / 时间），跨端同步共用；
-    // - repository-indexes：按检出存的索引产物（摘要 / 仓库地图 / 状态 / 建立时间）。
+    // - repository-indexes：按检出存的索引产物（摘要 / 仓库地图 / 状态 / 建立时间）；
+    // - code-marks：代码位置标记（路径 + 行区间 + 备注），本包自己的工作台数据。
     // code-refs 与 repository-files 是旧通道留下的登记名，保留以兼容既有声明形状。
     dataCollections: [
       { name: 'repositories', schemaVersion: 1 },
@@ -101,6 +103,7 @@ export const softwareEngineeringRolePack: RolePack = defineRolePack({
       { name: 'repository-files', schemaVersion: 1 },
       { name: 'qa-history', schemaVersion: 1 },
       { name: 'repository-indexes', schemaVersion: 1 },
+      { name: 'code-marks', schemaVersion: 1 },
     ],
   },
   roleMatchers: softwareEngineeringMatchers,

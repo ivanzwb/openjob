@@ -56,22 +56,35 @@ describe('RPC 白名单与契约一致', () => {
     });
   });
 
-  it('工作区原语不进手机端白名单：手持端没有该原语，调用如实拿到「通道未开放」', () => {
-    // 手机端不装载插件包、也没有宿主工作区实现（§11.2 原语只在主进程 + 桌面）；
-    // 白名单不登记，插件页面在手机上的 workspace 调用会显式失败，而不是假装成功。
+  it('手机端只拿工作区的读侧：读 / 遍历 / glob / grep / 符号进白名单，写 / 删 / 快照 / 拉取不进', () => {
+    // 手机端不装载插件包、也没有宿主工作区实现（§11.2 原语只在主进程 + 桌面），但读侧可以
+    // 代理到配对的桌面端：桌面按 pluginId + 包声明的 filesystem:workspace 解析本包工作区，
+    // 范围与桌面自己的渲染层一致。写侧留在桌面，手机端在桥那一侧如实拒绝。
     const contract = new Set<string>(IPC_INVOKE_CHANNELS);
     const handled = new Set(mainHandledChannels());
     const rpc = new Set(rpcWhitelist());
-    const workspaceChannels = IPC_INVOKE_CHANNELS.filter((channel) =>
-      channel.startsWith('pluginRuntime:workspace.'),
-    );
+    const readOnly = [
+      'pluginRuntime:workspace.read',
+      'pluginRuntime:workspace.list',
+      'pluginRuntime:workspace.glob',
+      'pluginRuntime:workspace.grep',
+      'pluginRuntime:workspace.symbols',
+    ];
+    const mutating = [
+      'pluginRuntime:workspace.write',
+      'pluginRuntime:workspace.delete',
+      'pluginRuntime:workspace.snapshot',
+      'pluginRuntime:workspace.fetch',
+    ];
 
-    expect(workspaceChannels.length).toBeGreaterThan(0);
-    workspaceChannels.forEach((channel) => {
-      // 桌面端实现了这个原语……
+    for (const channel of [...readOnly, ...mutating]) {
       expect(contract.has(channel), `契约缺少 ${channel}`).toBe(true);
       expect(handled.has(channel), `main 未注册 ${channel}`).toBe(true);
-      // ……但手机端不登记
+    }
+    readOnly.forEach((channel) => {
+      expect(rpc.has(channel), `RPC 白名单缺少 ${channel}`).toBe(true);
+    });
+    mutating.forEach((channel) => {
       expect(rpc.has(channel), `RPC 白名单不该有 ${channel}`).toBe(false);
     });
   });

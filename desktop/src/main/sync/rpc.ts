@@ -1,4 +1,5 @@
 import type { IpcEventChannel, IpcEventMap, IpcInvokeChannel, IpcReq, IpcRes } from '@core/ipc';
+import type { ExplanationTier } from '@core/enums';
 import { subscribeEmit } from '../ipc/bridge';
 import { getCampaignOverview } from '../campaign/overview';
 import { compareCampaigns } from '../campaign/compare';
@@ -33,6 +34,17 @@ import {
   pluginDataList,
   pluginDataSet,
 } from '../plugins/pluginData';
+// 工作区原语的手机端只读代理（§11.2 / §7）：桌面按 pluginId + 包声明的
+// filesystem:workspace 解析本包工作区，范围与桌面自己的渲染层完全一致。
+import {
+  workspaceGlob,
+  workspaceGrep,
+  workspaceList,
+  workspaceRead,
+  workspaceSymbols,
+} from '../plugins/pluginWorkspace';
+import { permissionGateway } from '../plugins/permissionGateway';
+import { pluginLibraryList, pluginLibrarySave } from '../plugins/pluginLibrary';
 import { createNode, deleteNode, updateNode } from '../campaign/nodes';
 import { createEdge, deleteEdge, listEdges } from '../campaign/edges';
 import { applyHistorySignals, getCampaignNudges } from '../insights';
@@ -165,6 +177,63 @@ const RPC_HANDLERS: Partial<Record<IpcInvokeChannel, RpcHandler>> = {
   'pluginRuntime:data.count': (p) => {
     const { pluginId, collection } = p as { pluginId: string; collection: string };
     return pluginDataCount(pluginId, collection);
+  },
+  // 工作区原语的**只读子集**（§11.2 / §7 手机端）：手机端不装载插件包、也没有宿主工作区
+  // 实现，但读侧可以代理到已配对的桌面端——桌面按 pluginId + 包声明的 filesystem:workspace
+  // 解析出本包工作区，路径约束与上限判定与桌面自己的渲染层完全一致，包够不到自己工作区之外。
+  // 写 / 删 / 快照 / 远端拉取不在此列：手机端在桥这一侧如实拒绝（见 mobileBridgePrimitives）。
+  'pluginRuntime:workspace.read': (p) => {
+    const { pluginId, path, startLine, endLine } = p as {
+      pluginId: string;
+      path: string;
+      startLine?: number;
+      endLine?: number;
+    };
+    return workspaceRead(pluginId, { path, startLine, endLine }, { permissionGateway });
+  },
+  'pluginRuntime:workspace.list': (p) => {
+    const { pluginId, path } = p as { pluginId: string; path: string };
+    return workspaceList(pluginId, { path }, { permissionGateway });
+  },
+  'pluginRuntime:workspace.glob': (p) => {
+    const { pluginId, pattern } = p as { pluginId: string; pattern: string };
+    return workspaceGlob(pluginId, { pattern }, { permissionGateway });
+  },
+  'pluginRuntime:workspace.grep': (p) => {
+    const { pluginId, pattern, path } = p as {
+      pluginId: string;
+      pattern: string;
+      path?: string;
+    };
+    return workspaceGrep(pluginId, { pattern, path }, { permissionGateway });
+  },
+  'pluginRuntime:workspace.symbols': (p) => {
+    const { pluginId, paths, digests } = p as {
+      pluginId: string;
+      paths: string[];
+      digests?: Record<string, string>;
+    };
+    return workspaceSymbols(pluginId, { paths, digests }, { permissionGateway });
+  },
+  // 话术库原语（library:write）：手机端可以存（片段落进同步的话术库，随同步回到桌面）与读，
+  // 授权同样按配对桌面端已装包的 manifest 声明判。
+  'pluginRuntime:library.saveSnippet': (p) => {
+    const { pluginId, text, sourceKind, sourceLabel, tier } = p as {
+      pluginId: string;
+      text: string;
+      sourceKind: string;
+      sourceLabel: string;
+      tier?: ExplanationTier;
+    };
+    return pluginLibrarySave(pluginId, { text, sourceKind, sourceLabel, tier });
+  },
+  'pluginRuntime:library.listSnippets': (p) => {
+    const { pluginId, sourceKind, limit } = p as {
+      pluginId: string;
+      sourceKind?: string;
+      limit?: number;
+    };
+    return pluginLibraryList(pluginId, { sourceKind, limit });
   },
   // 手机端不装插件包，岗位包只能从这台桌面要一份数据回去（见 rolePackTransfer.ts）
   'plugin:getRolePack': (p) => {

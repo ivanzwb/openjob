@@ -14,6 +14,7 @@ import {
   type PluginRuntimeServices,
   type PluginWorkspaceService,
   type PluginArtifactService,
+  type PluginLibraryService,
 } from '@core/plugins/pluginRuntime/host';
 import type { LlmRole } from '@core/enums';
 import { invoke } from '../ipc';
@@ -69,6 +70,20 @@ function workspaceService(pluginId: string): PluginWorkspaceService {
 function artifactService(pluginId: string): PluginArtifactService {
   return {
     read: () => invoke('pluginRuntime:artifact.read', { pluginId }),
+  };
+}
+
+/**
+ * 话术库原语的门面（§11.2 通用原语）：包把一段文字按自己起的来源类型存进用户的话术库，
+ * 再按同一来源类型取回自己存过的那几条。每次调用都是一条 IPC，主进程的网关逐次校验
+ * `library:write`（声明即上限）。
+ */
+function libraryService(pluginId: string): PluginLibraryService {
+  return {
+    saveSnippet: (request) =>
+      invoke('pluginRuntime:library.saveSnippet', { pluginId, ...request }),
+    listSnippets: (query) =>
+      invoke('pluginRuntime:library.listSnippets', { pluginId, ...(query ?? {}) }),
   };
 }
 
@@ -159,6 +174,10 @@ function loadModule(
   if (permissions.includes('filesystem:workspace')) {
     facade.workspace = workspaceService(pluginId);
   }
+  // 话术库：未声明 library:write 时门面上没有 library
+  if (permissions.includes('library:write')) {
+    facade.library = libraryService(pluginId);
+  }
   const requireShim = (id: string): unknown => {
     if (id === 'openjob') return facade;
     throw new Error(`插件只允许 require('openjob')，实际请求了 ${id}`);
@@ -217,6 +236,10 @@ export async function activateInstalledPluginRuntimes(): Promise<void> {
             // artifact 原语；未声明 artifact:read 时为 undefined（ctx.artifact 不存在）
             artifact: plugin.permissions.includes('artifact:read')
               ? artifactService(plugin.id)
+              : undefined,
+            // 话术库原语；未声明 library:write 时为 undefined（ctx.library 不存在）
+            library: plugin.permissions.includes('library:write')
+              ? libraryService(plugin.id)
               : undefined,
           },
           hub,

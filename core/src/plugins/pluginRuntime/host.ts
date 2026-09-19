@@ -11,7 +11,7 @@
  * 3. 事件白名单：插件只能订阅宿主显式开放的事件，不能造通道。
  */
 
-import type { LlmRole } from '../../enums';
+import type { ExplanationTier, LlmRole } from '../../enums';
 import type { CampaignRuntimeDescriptor } from '../types';
 import { assertPluginBridgeMethod } from './bridge';
 
@@ -176,6 +176,41 @@ export interface PluginWorkspaceService {
   fetch(input: { url: string; dir?: string }): Promise<WorkspaceFetchResult>;
 }
 
+/**
+ * 一条存进**用户话术库**的片段（`library` 命名空间）。
+ *
+ * 话术库是宿主拥有的用户面（`speech_snippet`）：包只往里存、只按自己起的 `sourceKind`
+ * 取回自己存过的那几条，宿主不理解岗位语义。`label` 是包自己算出的可读来源
+ * （如 file:line），存进宿主既有的来源标签机制，包据此显示「已存入话术库」并列表。
+ */
+export interface LibrarySnippet {
+  id: string;
+  /** 正文（包自己给的纯文本 / markdown） */
+  text: string;
+  /** 人类可读的来源标签（包自己算，如 `src/foo.ts:12`） */
+  label: string;
+  createdAt: number;
+}
+
+/**
+ * 话术库原语：把一段文字存进用户的话术库，并按包自己起的 sourceKind 取回。
+ *
+ * 语义边界：宿主把 `sourceKind` 原样写进 `source_type`（一列裸 text，读取侧对认不出的取值
+ * 走中性兜底），把 `sourceLabel` 存进既有的来源标签机制——宿主不解释这两个值，也不为某个
+ * 岗位开专用字段。取回只回包自己这一类来源的片段。
+ */
+export interface PluginLibraryService {
+  saveSnippet(request: {
+    text: string;
+    /** 包自己起的来源类型（如 `code-ref`），宿主不认识 */
+    sourceKind: string;
+    /** 包自己算的可读来源标签（如 file:line） */
+    sourceLabel: string;
+    tier?: ExplanationTier;
+  }): Promise<LibrarySnippet>;
+  listSnippets(query?: { sourceKind?: string; limit?: number }): Promise<LibrarySnippet[]>;
+}
+
 /** 用户显式提供的文件读入结果（§11.2 artifact 原语）：对包是只读数据。 */
 export interface PluginArtifact {
   /** 用户选中的文件名（basename）；刻意不带本机目录，避免把路径泄进沙箱 */
@@ -260,6 +295,8 @@ export interface PluginRuntimeServices {
   readonly workspace?: PluginWorkspaceService;
   /** artifact 原语（用户显式提供的文件读入）；仅 manifest 声明 artifact:read 时注入 */
   readonly artifact?: PluginArtifactService;
+  /** 话术库原语（写入用户的话术库）；仅 manifest 声明 library:write 时注入 */
+  readonly library?: PluginLibraryService;
 }
 
 export interface PluginRuntimeContext {
@@ -280,6 +317,8 @@ export interface PluginRuntimeContext {
   readonly workspace: PluginRuntimeServices['workspace'];
   /** artifact 原语；未声明 artifact:read 权限时为 undefined */
   readonly artifact: PluginRuntimeServices['artifact'];
+  /** 话术库原语；未声明 library:write 权限时为 undefined */
+  readonly library: PluginRuntimeServices['library'];
   views: {
     registerPage(page: PluginRuntimePage): { dispose(): void };
   };
@@ -364,6 +403,7 @@ export function activatePluginRuntime(input: PluginRuntimeInput): ActivePluginRu
     evidence: services.evidence,
     workspace: services.workspace,
     artifact: services.artifact,
+    library: services.library,
     views: {
       registerPage(page: PluginRuntimePage) {
         guard();
@@ -481,6 +521,8 @@ export function pluginRuntimeNamespaces(permissions: readonly string[]): string[
   if (permissions.includes('artifact:read')) namespaces.push('artifact');
   if (permissions.includes('llm:complete')) namespaces.push('llm', 'agent');
   if (permissions.includes('evidence:read-confirmed')) namespaces.push('evidence');
+  // 话术库：打包自己选的来源类型写进用户的话术库；未声明 library:write 的包看不见它
+  if (permissions.includes('library:write')) namespaces.push('library');
   return namespaces;
 }
 

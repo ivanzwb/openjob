@@ -8,6 +8,7 @@
  * 岗位簇方法刻意不在这里：它们是阶段 2 的搬迁对象，暂由
  * `PluginRuntimeWebView` 的 legacy 表兜着，搬走后就只剩这张通用表。
  */
+import type { ExplanationTier } from '@core/enums';
 import type { PluginBridgePrimitives } from '@core/plugins/pluginRuntime/bridge';
 import { invoke } from '../ipc';
 
@@ -158,6 +159,33 @@ export function desktopBridgePrimitives(
     'artifact.read': {
       permission: 'artifact:read',
       invoke: () => invoke('pluginRuntime:artifact.read', { pluginId }),
+    },
+    // 话术库原语（§11.2 通用原语）：把页面里的一段文字存进**用户的话术库**。来源类型
+    // （sourceKind）与来源标签由包自己给，宿主不理解——这条原语没有岗位语义。
+    'library.saveSnippet': {
+      permission: 'library:write',
+      invoke: (params) => {
+        const { text, sourceKind, sourceLabel, tier } = params as {
+          text: string;
+          sourceKind: string;
+          sourceLabel: string;
+          tier?: ExplanationTier;
+        };
+        return invoke('pluginRuntime:library.saveSnippet', {
+          pluginId,
+          text,
+          sourceKind,
+          sourceLabel,
+          ...(tier !== undefined ? { tier } : {}),
+        });
+      },
+    },
+    'library.listSnippets': {
+      permission: 'library:write',
+      invoke: (params) => {
+        const { sourceKind, limit } = params as { sourceKind?: string; limit?: number };
+        return invoke('pluginRuntime:library.listSnippets', { pluginId, sourceKind, limit });
+      },
     },
     // 受控 LLM 补全（§11.2 通用原语）：System / User 文本由包自己带，宿主只负责端点、
     // 审计与 JSON 解析。提示词正文是包自己的内容，宿主不认识任何岗位簇的题型。

@@ -33,6 +33,10 @@ const BRIDGE_METHODS = [
   // System / User 文本由页面自己带，宿主只提供端点、审计与 JSON 解析
   'llm.complete',
   'agent.ask',
+  // 用户的话术库：把选中/整段代码按本包自己的来源类型（code-ref）存进去，并取回自己
+  // 存过的那几条——来源类型与标签由本包给，宿主不认识（见 ui/repositories.html）
+  'library.saveSnippet',
+  'library.listSnippets',
 ] as const;
 
 export function activate(ctx: PluginRuntimeContext): () => void {

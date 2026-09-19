@@ -37,23 +37,80 @@
         background: rgba(127, 127, 127, 0.25);
         color: inherit;
       }
+      button:disabled { opacity: 0.45; }
       .hint { font-size: 13px; opacity: 0.75; line-height: 1.5; }
+      /* 文件浏览与带行号读取：只用通用工作区原语，无外部依赖 */
+      .row-actions { display: flex; flex-direction: row; gap: 8px; flex-wrap: wrap; }
+      .row-actions button { flex: 0 0 auto; }
+      .path {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 13px; word-break: break-all;
+      }
+      .code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Courier New', monospace;
+        font-size: 12px; line-height: 1.5; white-space: pre; overflow: auto;
+        max-height: 45vh; margin: 0; padding: 8px;
+        border: 1px solid rgba(127, 127, 127, 0.35); border-radius: 10px;
+        background: rgba(127, 127, 127, 0.08);
+      }
+      .ln { color: rgba(127, 127, 127, 0.85); user-select: none; -webkit-user-select: none; }
+      input {
+        width: 100%;
+        font-size: 15px;
+        min-height: 46px;
+        padding: 10px 12px;
+        border: 1px solid rgba(127, 127, 127, 0.4);
+        border-radius: 10px;
+        background: transparent;
+        color: inherit;
+      }
+      .answer { white-space: pre-wrap; font-size: 14px; line-height: 1.5; margin: 0; }
     </style>
   </head>
   <body>
     <h2>仓库</h2>
+    <p id="offline" class="muted" hidden></p>
     <ul id="repos"></ul>
     <button id="refresh">刷新</button>
     <p id="msg" class="muted"></p>
     <p class="hint">
-      手机端只读本包声明的数据集合：链接、更新、建索引与问源码都在桌面端做——工作区与远端拉取这两类
-      原语只有桌面有，这里不摆一个点了必然失败的按钮。桌面建好的摘要与仓库地图会随数据集合同步过来，
-      这里只展示，不重新生成。
+      手机端只读本包声明的数据集合：链接、更新与建索引都在桌面端做。下面的文件浏览与提问读的是
+      「已配对桌面端的检出」——桌面按本包声明的 filesystem:workspace 解析出本包工作区，范围与桌面
+      自己的页面完全一致。桌面不可达时这里如实说明，不会留一排点了必然失败的按钮。
     </p>
 
+    <h2>代码（读配对桌面端的检出）</h2>
+    <div class="row-actions">
+      <button id="up" disabled>上级</button>
+      <span id="cwd" class="path muted">选中仓库后可浏览</span>
+    </div>
+    <ul id="entries"></ul>
+    <div class="row-actions">
+      <span id="file-label" class="path muted">未打开文件</span>
+      <span id="range" class="muted"></span>
+    </div>
+    <div class="row-actions">
+      <button id="prev" disabled>上一页</button>
+      <button id="next" disabled>下一页</button>
+    </div>
+    <pre id="code" class="code">选中仓库后，从上面的列表打开文件。</pre>
+
+    <h2>问源码</h2>
+    <p class="hint">
+      问答由宿主的基础 Agent 编排，上下文由本页自己拼（问的是配对桌面端的这份检出）。回答经宿主
+      事件流逐段回来，与桌面端页面同一条路径。
+    </p>
+    <input id="question" placeholder="如：登录流程在哪实现？" />
+    <div class="row-actions" style="margin-top: 8px">
+      <button id="ask">提问</button>
+    </div>
+    <pre id="answer" class="answer muted" style="min-height: 40px"></pre>
+    <div id="sources"></div>
+
     <script>
-      // 受控桥：只放行本包声明过的方法（见 mobile/main.ts）。手机端对包数据只读，页面只调
-      // data.list；写（data.put / data.delete）留给桌面端。
+      // 受控桥：只放行本包声明过的方法（见 mobile/main.ts）。手机端只有读侧：数据集合读、
+      // 工作区读、基础问答。写侧（workspace.* 的写 / artifact / 数据写入）本端没有，
+      // 声明了也如实拒绝，所以这里不摆写按钮。
       function call(method, params) {
         return new Promise((resolve, reject) => {
           const reqId = Date.now() + Math.random();
@@ -73,9 +130,33 @@
       const COLLECTION = 'repositories';
       // 索引产物（摘要 / 仓库地图）：桌面建好随数据集合同步过来，手机端只读展示。
       const INDEX_COLLECTION = 'repository-indexes';
+      // 一页读多少行：大文件翻页看，不整份塞进页面（宿主单次读有字节上限，超了如实报错）。
+      const PAGE_LINES = 200;
+      const CODE_HINT = '选中仓库后，从上面的列表打开文件。';
+
+      let repos = [];
+      let selected = null;
+      let reachable = true;
+      let browseDir = null;   // 当前浏览目录（工作区相对路径）
+      let openPath = null;    // 当前打开的文件（工作区相对路径）
+      let pageOffset = 1;     // 当前页起始行（1 起）
+      let pageHasMore = false;
+      let answerStreamId = null;
+      let answerPending = false; // 已发起提问、还没收到收尾事件；用于容忍事件早到
 
       function setMsg(text) {
         document.getElementById('msg').textContent = text;
+      }
+
+      /** 桌面不可达：如实说明，并把依赖配对桌面的按钮停掉，而不是让它们点了必然失败。 */
+      function markOffline(error) {
+        reachable = false;
+        const hint = document.getElementById('offline');
+        hint.hidden = false;
+        hint.textContent = `桌面端不可达：${error && error.message ? error.message : String(error)}。`;
+        for (const id of ['up', 'prev', 'next', 'ask']) {
+          document.getElementById(id).disabled = true;
+        }
       }
 
       function formatSize(bytes) {
@@ -102,6 +183,7 @@
           label,
           url: typeof value.url === 'string' && value.url ? value.url : label,
           ready: value.ready === true,
+          dir: typeof value.dir === 'string' && value.dir ? value.dir : id,
           branch: typeof value.branch === 'string' ? value.branch : null,
           commit: typeof value.commit === 'string' ? value.commit : null,
           fileCount: typeof value.fileCount === 'number' ? value.fileCount : null,
@@ -148,9 +230,13 @@
         li.appendChild(wrap);
       }
 
+      function currentRepo() {
+        return repos.find((item) => item.id === selected) || null;
+      }
+
       async function refresh() {
         const rows = await call('data.list', { collection: COLLECTION, limit: 1000 });
-        const repos = rows.map((row) => parseEntry(row.value)).filter(Boolean);
+        repos = rows.map((row) => parseEntry(row.value)).filter(Boolean);
         // 索引产物与登记表同一份同步数据：桌面建好，手机端只读展示
         const indexRows = await call('data.list', { collection: INDEX_COLLECTION, limit: 1000 });
         const indexByKey = new Map(indexRows.map((row) => [row.key, parseIndex(row.value)]));
@@ -174,22 +260,233 @@
             : // 桌面还没拉下来（或本机不共享检出目录）：只如实说登记过
               (entry.ready ? '已在桌面登记' : '尚未就绪');
 
-          const url = document.createElement('span');
-          url.className = 'muted';
-          url.textContent = entry.url;
+          const actions = document.createElement('div');
+          actions.className = 'row-actions';
+          const browse = document.createElement('button');
+          browse.textContent = '浏览代码';
+          browse.disabled = !entry.dir;
+          browse.onclick = () =>
+            run(async () => {
+              selected = entry.id;
+              renderRepos();
+              await showDir(entry.dir);
+            });
+          actions.appendChild(browse);
 
-          li.append(name, meta, url);
+          const ask = document.createElement('button');
+          ask.textContent = '问这个仓库';
+          ask.onclick = () =>
+            run(async () => {
+              selected = entry.id;
+              renderRepos();
+              document.getElementById('question').focus();
+            });
+          actions.appendChild(ask);
+
+          li.append(name, meta, actions);
           // 索引键取检出目录，与登记行的 id 一致；没有同步过来就什么都不显示
           appendIndex(li, indexByKey.get(entry.id));
           node.appendChild(li);
         }
       }
 
-      document.getElementById('refresh').onclick = () => {
-        refresh().catch((error) => setMsg(error.message));
-      };
+      function renderRepos() {
+        // 只更新选中态样式，不重建列表（点了不必重排整屏）
+        const items = document.getElementById('repos').children;
+        for (let index = 0; index < items.length; index += 1) {
+          const name = items[index].querySelector('.name');
+          if (!name || !repos[index]) continue;
+          name.style.textDecoration = repos[index].id === selected ? 'underline' : 'none';
+        }
+      }
 
-      void refresh();
+      // ── 只读浏览 / 带行号读取（读的是配对桌面端的检出） ─────────────────────
+      async function showDir(dir) {
+        const that = currentRepo();
+        if (!that) throw new Error('先选中一个仓库');
+        const entries = await call('workspace.list', { path: dir });
+        browseDir = dir;
+        document.getElementById('cwd').textContent = dir === '.' ? './' : dir + '/';
+        // 不越出选中的检出：到了仓库根就没有「上级」
+        document.getElementById('up').disabled = dir === that.dir;
+        renderEntries(entries);
+      }
+
+      function renderEntries(entries) {
+        const node = document.getElementById('entries');
+        node.innerHTML = '';
+        const sorted = [...entries].sort((left, right) => {
+          if (left.type !== right.type) return left.type === 'dir' ? -1 : 1;
+          return left.path < right.path ? -1 : left.path > right.path ? 1 : 0;
+        });
+        for (const entry of sorted) {
+          const li = document.createElement('li');
+          li.style.flexDirection = 'row';
+          li.style.alignItems = 'baseline';
+          li.style.padding = '10px 12px';
+          const base = entry.path.slice(entry.path.lastIndexOf('/') + 1);
+
+          const name = document.createElement('span');
+          name.className = 'name';
+          name.style.fontSize = '14px';
+          name.textContent = entry.type === 'dir' ? base + '/' : base;
+          name.onclick = () =>
+            run(() => (entry.type === 'dir' ? showDir(entry.path) : openFile(entry.path)));
+
+          const meta = document.createElement('span');
+          meta.className = 'muted';
+          meta.style.marginLeft = 'auto';
+          meta.textContent = entry.type === 'dir' ? '' : formatSize(entry.size);
+
+          li.append(name, meta);
+          node.appendChild(li);
+        }
+        if (sorted.length === 0) {
+          const li = document.createElement('li');
+          li.className = 'muted';
+          li.textContent = '（空目录）';
+          node.appendChild(li);
+        }
+      }
+
+      /** 读一页；多读一行用来判断后面还有没有内容。 */
+      async function readRange(path, offset) {
+        const text = await call('workspace.read', {
+          path,
+          startLine: offset,
+          endLine: offset + PAGE_LINES,
+        });
+        const all = String(text === undefined || text === null ? '' : text).split('\n');
+        const hasMore = all.length > PAGE_LINES;
+        return { lines: hasMore ? all.slice(0, PAGE_LINES) : all, hasMore };
+      }
+
+      function renderLines(lines, start) {
+        const rows = lines.map((line, index) => {
+          const number = start + index;
+          return `${number}\t${line}`;
+        });
+        document.getElementById('code').textContent = rows.join('\n');
+      }
+
+      function updateViewerChrome(lines) {
+        document.getElementById('file-label').textContent = openPath || '未打开文件';
+        const count = lines.length;
+        const end = count > 0 ? pageOffset + count - 1 : pageOffset;
+        document.getElementById('range').textContent = count > 0 ? `第 ${pageOffset}–${end} 行` : '';
+        document.getElementById('prev').disabled = pageOffset <= 1;
+        document.getElementById('next').disabled = !pageHasMore;
+      }
+
+      async function openFile(path) {
+        const page = await readRange(path, 1);
+        openPath = path;
+        pageOffset = 1;
+        pageHasMore = page.hasMore;
+        renderLines(page.lines, 1);
+        updateViewerChrome(page.lines);
+      }
+
+      async function gotoPage(offset) {
+        if (!openPath) return;
+        const page = await readRange(openPath, offset);
+        pageOffset = offset;
+        pageHasMore = page.hasMore;
+        renderLines(page.lines, offset);
+        updateViewerChrome(page.lines);
+      }
+
+      // ── 问源码：agent.ask + 宿主事件流（openjobEvent），与桌面端同一路径 ─────
+      function renderSources(citations) {
+        const node = document.getElementById('sources');
+        node.innerHTML = '';
+        if (!citations || citations.length === 0) return;
+        const title = document.createElement('div');
+        title.className = 'muted';
+        title.textContent = '来源：';
+        node.appendChild(title);
+        for (const citation of citations) {
+          const row = document.createElement('div');
+          row.className = 'muted';
+          row.style.fontSize = '12px';
+          row.textContent = ('- ' + (citation.filePath || citation.title || citation.url || '')).trim();
+          node.appendChild(row);
+        }
+      }
+
+      async function ask() {
+        const question = document.getElementById('question').value.trim();
+        if (!question) return;
+        const repo = currentRepo();
+        if (!repo) throw new Error('先选中一个仓库再提问');
+        const answer = document.getElementById('answer');
+        document.getElementById('sources').innerHTML = '';
+        answer.textContent = '正在问配对桌面端…';
+        answerPending = true;
+        answerStreamId = null;
+        const started = await call('agent.ask', { question, role: 'codeAgent', allowTools: false });
+        answerStreamId = started && started.streamId ? started.streamId : null;
+        answerPending = false;
+      }
+
+      window.addEventListener('message', (event) => {
+        const payload = event.data && event.data.openjobEvent;
+        if (!payload) return;
+        // 只处理这次提问的事件：桌面回传的 streamId 可能晚于事件到达（见 RN 侧转发顺序），
+        // 所以在拿到 streamId 前按「正在提问」放行，拿到之后按 streamId 精确过滤。
+        if (answerStreamId && payload.streamId && payload.streamId !== answerStreamId) return;
+        if (!answerStreamId && !answerPending) return;
+        const answer = document.getElementById('answer');
+        if (payload.event === 'stream:delta') {
+          // 第一段增量到达时清掉占位文案
+          if (answer.textContent.indexOf('正在问') === 0) answer.textContent = '';
+          answer.textContent += payload.delta || '';
+        } else if (payload.event === 'stream:done') {
+          if (payload.contentMd) answer.textContent = payload.contentMd;
+          renderSources(payload.citations || []);
+          answerStreamId = null;
+          answerPending = false;
+        } else if (payload.event === 'stream:error') {
+          answer.textContent = `[错误] ${payload.message || ''}`;
+          answerStreamId = null;
+          answerPending = false;
+        }
+      });
+
+      async function run(action) {
+        try {
+          await action();
+        } catch (error) {
+          setMsg(error && error.message ? error.message : String(error));
+        }
+      }
+
+      document.getElementById('refresh').onclick = () =>
+        run(async () => {
+          await refresh();
+          setMsg('已刷新');
+        });
+
+      document.getElementById('up').onclick = () =>
+        run(async () => {
+          const repo = currentRepo();
+          if (!browseDir || !repo || browseDir === repo.dir) return;
+          const cut = browseDir.lastIndexOf('/');
+          await showDir(cut === -1 ? repo.dir : browseDir.slice(0, cut));
+        });
+
+      document.getElementById('prev').onclick = () =>
+        run(() => gotoPage(Math.max(1, pageOffset - PAGE_LINES)));
+      document.getElementById('next').onclick = () => run(() => gotoPage(pageOffset + PAGE_LINES));
+      document.getElementById('ask').onclick = () => run(ask);
+
+      void run(async () => {
+        try {
+          await refresh();
+        } catch (error) {
+          markOffline(error);
+        }
+      });
     </script>
   </body>
 </html>

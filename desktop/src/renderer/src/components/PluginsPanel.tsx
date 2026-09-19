@@ -32,6 +32,7 @@ const PERMISSION_LABEL: Record<string, string> = {
   'network:search': '联网检索',
   'artifact:read': '读取简历、表格等附件',
   'microphone:read': '使用麦克风（语音作答）',
+  'library:write': '把你选中的内容存进话术库（来源类型由插件自己起）',
 };
 
 const TYPE_LABEL: Record<PluginType, string> = {

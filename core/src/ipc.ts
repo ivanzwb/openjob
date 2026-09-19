@@ -61,6 +61,7 @@ import type { PluginType } from './enums';
 import type { CampaignRuntimeDescriptor, ClientPlatform, RolePack } from './plugins/types';
 import type { PluginPermission } from './plugins/permissions';
 import type {
+  LibrarySnippet,
   PluginArtifact,
   WorkspaceEntry,
   WorkspaceFetchResult,
@@ -1194,6 +1195,26 @@ export interface IpcInvokeMap {
     req: { pluginId: string };
     res: PluginArtifact;
   };
+  /**
+   * 代码插件的 **话术库原语**：把一段文字存进用户的话术库（`speech_snippet`），并按包自己
+   * 起的 sourceKind 取回自己存过的那几条。宿主把 sourceKind 原样写进 source_type、把
+   * sourceLabel 存进既有的来源标签机制，不理解岗位语义；每次调用都经权限网关校验
+   * `library:write`（声明即上限，与其它原语同款）。
+   */
+  'pluginRuntime:library.saveSnippet': {
+    req: {
+      pluginId: string;
+      text: string;
+      sourceKind: string;
+      sourceLabel: string;
+      tier?: ExplanationTier;
+    };
+    res: LibrarySnippet;
+  };
+  'pluginRuntime:library.listSnippets': {
+    req: { pluginId: string; sourceKind?: string; limit?: number };
+    res: LibrarySnippet[];
+  };
   /** 代码插件清单（含启用状态）：设置页展示与激活门槛共用 */
   'pluginRuntime:list': {
     req: void;
@@ -1504,6 +1525,8 @@ export const IPC_INVOKE_CHANNELS = [
   'pluginRuntime:workspace.fetch',
   'pluginRuntime:workspace.symbols',
   'pluginRuntime:artifact.read',
+  'pluginRuntime:library.saveSnippet',
+  'pluginRuntime:library.listSnippets',
   'pluginRuntime:list',
   'pluginRuntime:setEnabled',
   'campaign:list',

@@ -90,6 +90,7 @@ import {
   workspaceWrite,
 } from '../plugins/pluginWorkspace';
 import { artifactRead } from '../plugins/pluginArtifact';
+import { pluginLibraryList, pluginLibrarySave } from '../plugins/pluginLibrary';
 import { completePluginJson } from '../llm/json';
 import { emit } from '../ipc/bridge';
 import { pluginInventoryView } from '../plugins/bootstrap';
@@ -349,6 +350,15 @@ export function registerIpcHandlers(): void {
   // 渲染层拿不到也就传不了本机路径；每次调用都经 permissionGateway 校验 artifact:read
   handle('pluginRuntime:artifact.read', ({ pluginId }) =>
     artifactRead(pluginId, { permissionGateway }),
+  );
+  // 话术库原语（library:write）：把包页的一段文字存进用户的话术库，并按包自己起的
+  // sourceKind 取回。授权来自包自己的 manifest 声明（pluginLibrary 里统一判），
+  // 宿主不认识任何具体来源取值。
+  handle('pluginRuntime:library.saveSnippet', ({ pluginId, text, sourceKind, sourceLabel, tier }) =>
+    pluginLibrarySave(pluginId, { text, sourceKind, sourceLabel, tier }),
+  );
+  handle('pluginRuntime:library.listSnippets', ({ pluginId, sourceKind, limit }) =>
+    pluginLibraryList(pluginId, { sourceKind, limit }),
   );
   handle('plugin:install', async ({ trustUnknownSigner, overwrite, confirmDataLoss }) => {
     // 弹框放在主进程：渲染层不传路径，也就没有「渲染层指定任意文件让主进程去读」这条路
