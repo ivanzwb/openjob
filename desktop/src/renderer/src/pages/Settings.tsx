@@ -8,7 +8,6 @@ import { invoke } from '../ipc';
 import { runTask, useTask, useTaskResult } from '../ipc/taskStore';
 import { SecretField } from '../components/SecretField';
 import { SearchQualityPanel } from '../components/SearchQualityPanel';
-import { PackSearchPolicyPanel } from '../components/PackSearchPolicyPanel';
 import { PluginsPanel } from '../components/PluginsPanel';
 import { UpdatePanel } from '../components/UpdatePanel';
 import { SyncPanel } from '../components/SyncPanel';
@@ -351,8 +350,6 @@ const updateEmbedding = (patch: Partial<AppConfig['llm']['embedding']>): void =>
       </section>
 
       <SearchQualityPanel value={config.search} onChange={updateSearch} />
-
-      <PackSearchPolicyPanel />
 
       <section className="space-y-4">
         <div>

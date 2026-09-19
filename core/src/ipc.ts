@@ -1262,6 +1262,8 @@ export interface IpcInvokeMap {
     res: Array<{
       id: string;
       version: string;
+      /** 包类型：岗位包的代码入口随岗位启用（装好即用），独立代码插件才需要逐个确认 */
+      type: PluginType;
       displayName: string;
       description: string;
       permissions: PluginPermission[];

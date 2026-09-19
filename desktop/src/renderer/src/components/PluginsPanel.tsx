@@ -98,6 +98,16 @@ function permissionSummary(permissions: string[]): string {
 }
 
 /**
+ * 这个包要不要给「启用/停用」开关。
+ *
+ * 岗位包的代码入口随岗位启用：装好即用、重启也还在用，无需用户再确认（选岗/装包就是确认）。
+ * 独立的代码插件才需要逐个确认——那是「用户看过权限清单并点确认」这道准入。
+ */
+function offersEnableToggle(pluginId: string, runtimes: readonly { id: string; type: string }[]): boolean {
+  return runtimes.find((item) => item.id === pluginId)?.type !== 'role-pack';
+}
+
+/**
  * 插件面板。
  *
  * `onPluginsChanged` 让宿主页面知道「本机装了哪些包」变了——角色映射那份清单跟着岗位包走，
@@ -383,7 +393,7 @@ export function PluginsPanel({
                 >
                   卸载
                 </button>
-                {plugin.main !== null && (
+                {plugin.main !== null && offersEnableToggle(plugin.id, pluginRuntimes) && (
                   <button
                     type="button"
                     onClick={() => {

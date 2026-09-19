@@ -286,6 +286,7 @@ export function registerIpcHandlers(): void {
       .map((item) => ({
         id: item.package.manifest.id,
         version: item.package.manifest.version,
+        type: item.package.manifest.type,
         displayName: item.package.manifest.displayName,
         description: item.package.manifest.description,
         permissions: item.package.manifest.permissions,
