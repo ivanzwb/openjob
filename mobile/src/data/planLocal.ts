@@ -2,7 +2,6 @@ import * as Crypto from 'expo-crypto';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import type { DateOnly } from '@core/entities';
 import type { PlanGenerateResult } from '@core/ipc';
-import type { TaskKind } from '@core/enums';
 import { sortNodesByStudyOrder } from '@core/campaign/studyOrder';
 import {
   PRE_PLUGIN_CAMPAIGN_SCOPE_KIND,
