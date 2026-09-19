@@ -24,6 +24,7 @@
     </p>
     <p class="muted" style="font-size: 12px">
       仓库拉进本包自己的工作区（只放行公开的 https 地址，深度 1、不带凭据）；重复链接同一地址即为更新。
+      登记表存在本包声明的 repositories 数据集合里，桌面端是唯一写入方。
     </p>
     <ul id="repos"></ul>
 
@@ -55,7 +56,10 @@
         });
       }
 
-      const STORAGE_KEY = 'repositories';
+      // 登记表放在本包 manifest 声明的 repositories 数据集合里：宿主按 (集合, 键) 原样归档与
+      // 同步，看不懂内容。行是这里自己序列化的 JSON 字符串，键取仓库 id——排程挑材料时按
+      // {id, label, ready} 三个字段读，所以这三个字段必须写对（label 给展示，ready 才行）。
+      const COLLECTION = 'repositories';
       const SOURCE_EXTENSIONS = /\.(c|cc|cpp|cs|go|h|hpp|java|js|jsx|kt|php|py|rb|rs|scala|swift|ts|tsx|vue)$/i;
 
       let repos = [];
@@ -64,29 +68,79 @@
 
       const msg = (text) => { document.getElementById('msg').textContent = text; };
 
+      /** 行是包自己的 JSON，宿主不理解：解析不出、没有 id 的行一律跳过。 */
+      function parseEntry(raw) {
+        if (typeof raw !== 'string' || !raw) return null;
+        let value;
+        try {
+          value = JSON.parse(raw);
+        } catch {
+          return null;
+        }
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+        const id = typeof value.id === 'string' && value.id ? value.id : null;
+        if (!id) return null;
+        const label = typeof value.label === 'string' && value.label ? value.label : id;
+        return {
+          id,
+          label,
+          url: typeof value.url === 'string' && value.url ? value.url : label,
+          ready: value.ready === true,
+          // 其余是本页自己的登记细节（本机目录、分支、提交…），宿主不解释
+          dir: typeof value.dir === 'string' && value.dir ? value.dir : null,
+          branch: typeof value.branch === 'string' ? value.branch : null,
+          commit: typeof value.commit === 'string' ? value.commit : null,
+          fileCount: typeof value.fileCount === 'number' ? value.fileCount : null,
+          bytes: typeof value.bytes === 'number' ? value.bytes : null,
+          fetchedAt: typeof value.fetchedAt === 'number' ? value.fetchedAt : null,
+        };
+      }
+
       async function load() {
-        const raw = await call('storage.get', { key: STORAGE_KEY });
-        repos = raw ? JSON.parse(raw) : [];
-        selected = repos[0] ? repos[0].dir : null;
+        const rows = await call('data.list', { collection: COLLECTION, limit: 1000 });
+        repos = rows.map((row) => parseEntry(row.value)).filter(Boolean);
+        selected = repos[0] ? repos[0].id : null;
       }
 
-      async function save() {
-        await call('storage.set', { key: STORAGE_KEY, value: JSON.stringify(repos) });
+      /** 读回一行：本机检出目录只登记在这一行里，读回来才知道该更新哪个目录。 */
+      async function readEntry(id) {
+        return parseEntry(await call('data.get', { collection: COLLECTION, key: id }));
       }
 
-      /** 把一次拉取的结果记进登记表：同一个目录只留最新一条 */
+      async function writeEntry(entry) {
+        await call('data.put', {
+          collection: COLLECTION,
+          key: entry.id,
+          value: JSON.stringify(entry),
+        });
+      }
+
+      async function forgetEntry(id) {
+        await call('data.delete', { collection: COLLECTION, key: id });
+      }
+
+      /**
+       * 把一次拉取的结果记进登记表：同一个目录只留最新一条。
+       *
+       * ready 由「拉取成功」决定——排程只会挑 ready 的材料，所以只有真正落盘的仓库才写 true。
+       */
       function remember(url, result) {
-        repos = repos.filter((entry) => entry.dir !== result.dir);
-        repos.unshift({
+        repos = repos.filter((entry) => entry.id !== result.dir);
+        const entry = {
+          id: result.dir,
+          label: url,
           url,
+          ready: true,
           dir: result.dir,
           branch: result.branch,
           commit: result.commit,
           fileCount: result.fileCount,
           bytes: result.bytes,
           fetchedAt: Date.now(),
-        });
-        selected = result.dir;
+        };
+        repos.unshift(entry);
+        selected = entry.id;
+        return entry;
       }
 
       function render() {
@@ -96,17 +150,25 @@
           const li = document.createElement('li');
 
           const name = document.createElement('span');
-          name.className = entry.dir === selected ? 'name selected' : 'name';
-          name.textContent = entry.dir;
-          name.onclick = () => { selected = entry.dir; render(); };
+          name.className = entry.id === selected ? 'name selected' : 'name';
+          name.textContent = entry.label;
+          name.onclick = () => { selected = entry.id; render(); };
 
           const meta = document.createElement('span');
           meta.className = 'muted';
-          const when = new Date(entry.fetchedAt).toLocaleString();
-          meta.textContent = `${entry.branch || 'detached'}@${entry.commit.slice(0, 7)} · ${entry.fileCount} 文件 · ${when}`;
+          if (entry.dir && entry.commit) {
+            const when = entry.fetchedAt ? new Date(entry.fetchedAt).toLocaleString() : '';
+            meta.textContent =
+              `${entry.branch || 'detached'}@${entry.commit.slice(0, 7)} · ${entry.fileCount ?? 0} 文件` +
+              (when ? ` · ${when}` : '');
+          } else {
+            // 迁移过来的登记行还没有本机检出（本机路径不跨设备）：如实写明，按钮不假装能点
+            meta.textContent = entry.ready ? '已登记，本机还没有检出' : '尚未就绪';
+          }
 
           const overview = document.createElement('button');
           overview.textContent = '概览';
+          overview.disabled = !entry.dir;
           overview.onclick = () => run(() => showOverview(entry));
 
           const update = document.createElement('button');
@@ -114,9 +176,10 @@
           update.onclick = () => run(async () => {
             msg('正在更新…');
             // 同一个目录再拉一次就是更新（宿主侧核对 origin 后才允许）
-            const result = await call('workspace.fetch', { url: entry.url, dir: entry.dir });
-            remember(entry.url, result);
-            await save();
+            const current = await readEntry(entry.id);
+            const dir = current?.dir || entry.dir;
+            const result = await call('workspace.fetch', dir ? { url: entry.url, dir } : { url: entry.url });
+            await writeEntry(remember(entry.url, result));
             msg('已更新到 ' + result.commit.slice(0, 7));
             render();
           });
@@ -124,11 +187,11 @@
           const remove = document.createElement('button');
           remove.textContent = '删除';
           remove.onclick = () => run(async () => {
-            await call('workspace.delete', { path: entry.dir });
-            repos = repos.filter((item) => item.dir !== entry.dir);
-            if (selected === entry.dir) selected = repos[0] ? repos[0].dir : null;
-            await save();
-            msg('已删除本地检出');
+            if (entry.dir) await call('workspace.delete', { path: entry.dir });
+            await forgetEntry(entry.id);
+            repos = repos.filter((item) => item.id !== entry.id);
+            if (selected === entry.id) selected = repos[0] ? repos[0].id : null;
+            msg('已删除登记与本机检出');
             render();
           });
 
@@ -147,6 +210,7 @@
 
       /** 概览：文件数按语言分档 + 符号数。glob 单次上限 200 条，超了就如实写明只看了一部分。 */
       async function showOverview(entry) {
+        if (!entry.dir) throw new Error('这个仓库本机还没有检出');
         const out = document.getElementById('overview');
         out.textContent = '正在扫描…';
         const files = await call('workspace.glob', { pattern: entry.dir + '/**/*' });
@@ -203,8 +267,7 @@
         msg('正在拉取…');
         const result = await call('workspace.fetch', { url });
         document.getElementById('url').value = '';
-        remember(url, result);
-        await save();
+        await writeEntry(remember(url, result));
         msg(`已拉到 ${result.dir}（${result.fileCount} 文件）`);
         render();
       });
@@ -213,7 +276,8 @@
         const question = document.getElementById('question').value.trim();
         if (!question) return;
         if (!selected) throw new Error('先选中一个仓库再提问');
-        const entry = repos.find((item) => item.dir === selected);
+        const entry = repos.find((item) => item.id === selected);
+        if (!entry || !entry.dir) throw new Error('这个仓库本机还没有检出');
         const answer = document.getElementById('answer');
         answer.textContent = '正在检索本包工作区…';
         const context = await gatherContext(entry, question);
@@ -231,6 +295,19 @@
         const answer = document.getElementById('answer');
         if (payload.event === 'stream:delta') {
           answer.textContent += payload.delta || '';
+        } else if (payload.event === 'stream:done') {
+          // 收尾以 contentMd 为准：增量与最终正文可能不完全一致（宿主会做引用剥离等后处理）
+          if (payload.contentMd) answer.textContent = payload.contentMd;
+          const citations = payload.citations || [];
+          if (citations.length > 0) {
+            const lines = citations.map((citation) => {
+              const where = citation.filePath
+                ? `${citation.filePath}${citation.startLine ? ':' + citation.startLine : ''}`
+                : citation.title || citation.url || '';
+              return `- ${where}${citation.url ? '  ' + citation.url : ''}`.trimEnd();
+            });
+            answer.textContent += `\n\n来源：\n${lines.join('\n')}`;
+          }
         } else if (payload.event === 'stream:error') {
           answer.textContent += `[错误] ${payload.message || ''}`;
         }

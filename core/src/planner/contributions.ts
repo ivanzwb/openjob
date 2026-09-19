@@ -5,8 +5,7 @@
  * 和落库；任务节奏、时长、仓库选择和本机降级状态全部由这里决定，两端传入相同
  * PlannerContext 必须得到逐条相同的 PlannedTask。
  */
-import type { RuntimeAvailability, TaskKind } from '../enums';
-// readCode 任务的常量：工程岗位包专属，snapshot 值与包 tasks.ts 保持一致
+import type { RuntimeAvailability } from '../enums';
 import {
   buildClientCapabilityView,
   type ClientDegradationReason,
@@ -20,10 +19,18 @@ import type { CampaignRuntimeDescriptor, ClientPlatform } from '../plugins/types
 /** 本机跑不动时给用户的提示。内置能力插件的桌面端都是 full，降级只会发生在手机。 */
 export const REQUIRES_DESKTOP_REASON = '需桌面完成';
 
-export interface PlannerRepo {
+/**
+ * 排程看到的一份材料。
+ *
+ * 材料行的约定：行是包自己序列化的 JSON 字符串，宿主只认三个可选字段——
+ * `id`（必需）、`label`（缺省用 id）、`ready`（布尔，缺省 false）。其余内容归
+ * 包所有，宿主不解释。`materialsFromRows` 负责把原始行解析成这个形状。
+ */
+export interface PlannerMaterial {
+  kind: string;
   id: string;
-  url: string;
-  status: string;
+  label: string;
+  ready: boolean;
 }
 
 export interface PlannerContext {
@@ -35,8 +42,8 @@ export interface PlannerContext {
   budgetMinutes: number;
   /** 当天已被基础任务占用的分钟数。 */
   usedMinutes: number;
-  /** 全部仓库，可用与否由贡献者判断。 */
-  repos: readonly PlannerRepo[];
+  /** 全部材料，可用与否由贡献者按 ready 判断。 */
+  materials: readonly PlannerMaterial[];
   /**
    * 本机的插件安装清单。
    *
@@ -64,13 +71,19 @@ export interface PlannedTaskClientView {
   availability: RuntimeAvailability;
   executable: boolean;
   blockedReason: string | null;
+  /** 该任务由哪个包页面承担；缺省表示用宿主的考点视图。 */
+  view?: { pageId: string };
 }
 
 /** 会真正落库的字段，两端必须逐条相同。 */
 export interface PlannedTaskPayload {
-  kind: TaskKind;
+  /** 任务种类；岗位包可以声明自己的种类，所以是字符串而不是闭集。 */
+  kind: string;
   nodeId: string | null;
-  repoId: string | null;
+  /** 任务挂的材料类型；null 表示这个任务不带材料。 */
+  materialKind: string | null;
+  /** 材料标识，取自材料行的 id；null 表示不带材料。 */
+  materialId: string | null;
   estMinutes: number;
 }
 
@@ -82,13 +95,19 @@ export interface PlannedTask extends PlannedTaskPayload {
 
 export interface PlannerContribution {
   id: string;
+  /** 模板声明的任务名，宿主 UI 直接用它显示；岗位包换语言不需要宿主改文案。 */
+  label: string;
   capabilityId: string;
   /** 声明了该任务模板的岗位包；其它岗位包即使启用同一能力也不排这个任务。 */
   rolePackIds: readonly string[];
   /** 由该贡献者产出的任务类型，已落库的任务靠它反查归属。 */
-  taskKinds: readonly TaskKind[];
+  taskKinds: readonly string[];
   /** 本机需要达到的运行能力，低于它就只能降级显示。 */
   minimumAvailability: RuntimeAvailability;
+  /** 任务需要的材料类型；null 表示模板没声明，当前不排程。 */
+  materialKind: string | null;
+  /** 任务页落在哪个包页面。 */
+  view?: { pageId: string };
   createTasks(context: PlannerContext): PlannedTaskPayload[];
 }
 
@@ -98,12 +117,47 @@ const AVAILABILITY_RANK: Record<RuntimeAvailability, number> = {
   full: 2,
 };
 
-/** 有多个已索引仓库时按 (url, id) 取第一个，保证两端选到同一个仓库。 */
-function defaultRepo(repos: readonly PlannerRepo[]): PlannerRepo | null {
+/**
+ * 把包声明的材料行解析成排程认识的材料。
+ *
+ * 行是 JSON 字符串，宿主只读 id（必需）、label（缺省用 id）、ready（布尔，缺省
+ * false）：解析不出、不是对象、或没有 id 的行一律跳过。两端传同一批行必须得到
+ * 逐条相同的结果，所以不依赖任何读库顺序。
+ */
+export function materialsFromRows(
+  kind: string,
+  values: readonly (string | null)[],
+): PlannerMaterial[] {
+  const materials: PlannerMaterial[] = [];
+  for (const value of values) {
+    if (typeof value !== 'string') continue;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      continue;
+    }
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) continue;
+    const record = parsed as Record<string, unknown>;
+    const id = record.id;
+    if (typeof id !== 'string' || id.length === 0) continue;
+    const label = typeof record.label === 'string' && record.label.length > 0 ? record.label : id;
+    materials.push({ kind, id, label, ready: record.ready === true });
+  }
+  return materials;
+}
+
+/** 有多份可用材料时按 (label, id) 取第一份，保证两端排到同一份。 */
+function selectMaterial(
+  materials: readonly PlannerMaterial[],
+  kind: string,
+): PlannerMaterial | null {
   return (
-    [...repos]
-      .filter((repo) => repo.status === 'ready')
-      .sort((left, right) => left.url.localeCompare(right.url) || left.id.localeCompare(right.id))
+    [...materials]
+      .filter((material) => material.kind === kind && material.ready)
+      .sort(
+        (left, right) => left.label.localeCompare(right.label) || left.id.localeCompare(right.id),
+      )
       .at(0) ?? null
   );
 }
@@ -111,14 +165,14 @@ function defaultRepo(repos: readonly PlannerRepo[]): PlannerRepo | null {
 /**
  * 岗位包 taskTemplates → 排程贡献。
  *
- * 这是「core 认识任务节奏、不认识具体能力」的落点：包声明了带 capabilityId 的
- * 任务模板（如 se.read-code → source-repository 能力），这里把它变成一个贡献者；
- * 包没声明就自然没有贡献——换一个没有源码能力的工程包，源码任务自动消失，
- * core 不需要为任何具体岗位包写一行。
+ * 这是「core 认识任务节奏、不认识具体能力，也不认识任务种类」的落点：包声明了
+ * 带 capabilityId 的任务模板（如 se.read-code → source-repository 能力），这里把它
+ * 变成一个贡献者；包没声明就自然没有贡献——换一个没有源码能力的工程包，源码任务
+ * 自动消失，core 不需要为任何具体岗位包写一行。
  *
- * 调度节奏按 taskKind 由宿主语义决定（目前只有 readCode 有排程节奏：隔天一次、
- * 选已索引仓库、时长取模板 defaultMinutes）；其它 taskKind 的能力任务暂无节奏
- * 语义，不排。
+ * 任务种类完全由模板声明（`taskKind`），宿主只按模板声明的 `materialKind` 判断
+ * 「这个任务需要一份材料」：隔一天排一次、挑一份可用材料挂上、时长取模板
+ * defaultMinutes。节奏是所有的材料型任务共用的通用语义，不认识任何具体种类。
  */
 function contributionsFromRolePack(rolePack: RolePack): readonly PlannerContribution[] {
   return rolePack.taskTemplates
@@ -126,20 +180,31 @@ function contributionsFromRolePack(rolePack: RolePack): readonly PlannerContribu
       template.capabilityId !== undefined)
     .map((template) => ({
       id: template.id,
+      label: template.label,
       capabilityId: template.capabilityId,
       rolePackIds: [rolePack.manifest.id],
-      taskKinds: [template.taskKind as TaskKind],
-      // 克隆、索引和更新只有桌面能做，手机只能读已同步的快照
+      taskKinds: [template.taskKind],
+      // 拉取、索引和更新只有桌面能做，手机只能读已同步的快照
       minimumAvailability: 'full' as RuntimeAvailability,
+      materialKind: template.materialKind ?? null,
+      ...(template.view ? { view: template.view } : {}),
       createTasks(context: PlannerContext): PlannedTaskPayload[] {
-        if (template.taskKind !== 'readCode') return [];
-        // 隔一天排一次，且当天预算装得下才排——与插件化之前两端的排程节奏一致
+        // 没声明材料类型的任务当前没有排程语义：排出来也没东西可做
+        if (template.materialKind === undefined) return [];
         if (context.dayIndex % 2 !== 1) return [];
-        const repo = defaultRepo(context.repos);
-        if (!repo) return [];
+        const material = selectMaterial(context.materials, template.materialKind);
+        if (!material) return [];
         const estMinutes = template.defaultMinutes;
         if (context.usedMinutes + estMinutes > context.budgetMinutes) return [];
-        return [{ kind: 'readCode', nodeId: null, repoId: repo.id, estMinutes }];
+        return [
+          {
+            kind: template.taskKind,
+            nodeId: null,
+            materialKind: template.materialKind,
+            materialId: material.id,
+            estMinutes,
+          },
+        ];
       },
     }));
 }
@@ -204,7 +269,20 @@ function activeClientView(
     availability: status.mode,
     executable,
     blockedReason: executable ? null : REQUIRES_DESKTOP_REASON,
+    ...(contribution.view ? { view: contribution.view } : {}),
   };
+}
+
+/**
+ * 任务名与任务页都取自岗位包声明：宿主不认识任务种类，也不为任何种类写文案。
+ * 包不在本机或种类未声明时都返回 null，UI 回落到宿主的考点视图。
+ */
+export function taskPresentation(
+  rolePack: RolePack | null,
+  kind: string,
+): { kindLabel: string | null; pageId: string | null } {
+  const template = rolePack?.taskTemplates.find((item) => item.taskKind === kind);
+  return { kindLabel: template?.label ?? null, pageId: template?.view?.pageId ?? null };
 }
 
 /**
@@ -247,7 +325,7 @@ export function collectPlannerContributions(
  */
 export function pluginTaskClientView(
   runtime: CampaignRuntimeDescriptor | null,
-  taskKind: TaskKind,
+  taskKind: string,
   platform: ClientPlatform,
   installed: readonly InstalledPlugin[],
   rolePack: RolePack | null,
@@ -273,14 +351,36 @@ export function pluginTaskClientView(
 export const PRE_PLUGIN_CAMPAIGN_SCOPE_KIND = 'generic-interview-v1:prePlugin';
 
 /**
- * 插件化之前本应用唯一的岗位族：pre-plugin 标记的旧战役默认按它执行，装上它即恢复
- * 原功能。装其它岗位包时，若库里有尚未映射岗位的旧战役，安装前要提示数据丢失风险。
+ * 迁移前的旧战役该落到哪个岗位包。
+ *
+ * 基础包不再点名任何岗位族（§6 判据一）：规则改成「取声明了**带材料任务模板**的岗位包」。
+ * 迁移前的旧战役都是「带材料任务」的形态（当时的源码阅读任务挂着一份检出），所以本机装了
+ * 那个包，旧战役就恢复原功能；没装就没有插件任务。多个候选取 id 最小者，保证两端一致。
+ *
+ * 这也是 `install.ts` 数据丢失把关的判据：装上的正是这个包，才算是「让旧数据恢复原功能」的
+ * 路径，不触发确认。
  */
-export const PRE_PLUGIN_DEFAULT_ROLE_PACK_ID = 'software-engineering';
+export function selectPrePluginRolePack(packs: readonly RolePack[]): RolePack | null {
+  const candidates = packs
+    .filter((pack) => isPrePluginRolePack(pack))
+    .sort((left, right) => left.manifest.id.localeCompare(right.manifest.id));
+  return candidates[0] ?? null;
+}
 
 /**
- * 带上述凭据、但 descriptor 还没回填出来的旧 Campaign 继续按工程岗位包执行。
+ * 这个岗位包是不是「让迁移前旧数据恢复原功能」的那一个。
  *
+ * 判据是包自己声明的形状（有带材料的任务模板），不是包 id——基础包不认识任何岗位族。
+ * 安装路径用它决定装这个包要不要先提示数据丢失风险。
+ */
+export function isPrePluginRolePack(pack: RolePack): boolean {
+  return pack.taskTemplates.some((template) => template.materialKind !== undefined);
+}
+
+/**
+ * 带上述凭据、但 descriptor 还没回填出来的旧 Campaign，按本机判定的兜底岗位包执行。
+ *
+ * 兜底包由调用方用 `selectPrePluginRolePack` 从本机安装清单里选出，基础包不点名任何岗位族。
  * 字段与 `src/main/db/backfill/pluginRuntime.ts` 的回填默认值一致，使回填前后的
  * 排程结果不发生跳变。没有凭据的战役不走这里，见 `collectPlannerContributions`。
  *

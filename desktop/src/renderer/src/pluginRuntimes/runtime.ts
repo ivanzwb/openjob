@@ -11,6 +11,7 @@ import {
   createEventHub,
   type ActivePluginRuntime,
   type PluginRuntimeModule,
+  type PluginRuntimeServices,
   type PluginWorkspaceService,
   type PluginArtifactService,
 } from '@core/plugins/pluginRuntime/host';
@@ -71,6 +72,23 @@ function artifactService(pluginId: string): PluginArtifactService {
   };
 }
 
+/**
+ * 数据集合门面（阶段 3 B2）：集合名与键原样交给主进程，值一律是字符串，序列化由包自己做。
+ * 每次调用都是一条 IPC，主进程按包自己的 manifest 声明判是否放行——未声明的集合拒。
+ */
+function dataService(pluginId: string): PluginRuntimeServices['data'] {
+  return {
+    get: (collection, key) => invoke('pluginRuntime:data.get', { pluginId, collection, key }),
+    put: (collection, key, value) =>
+      invoke('pluginRuntime:data.put', { pluginId, collection, key, value }),
+    delete: (collection, key) =>
+      invoke('pluginRuntime:data.delete', { pluginId, collection, key }),
+    list: (collection, options) =>
+      invoke('pluginRuntime:data.list', { pluginId, collection, ...(options ?? {}) }),
+    count: (collection) => invoke('pluginRuntime:data.count', { pluginId, collection }),
+  };
+}
+
 /** CommonJS 装配：`require('openjob')` 是插件拿到宿主门面的唯一入口 */
 function loadModule(
   source: string,
@@ -85,6 +103,19 @@ function loadModule(
       get: (key: string) => invoke('pluginRuntime:storage.get', { pluginId, key }),
       set: (key: string, value: string) => invoke('pluginRuntime:storage.set', { pluginId, key, value }),
       delete: (key: string) => invoke('pluginRuntime:storage.delete', { pluginId, key }),
+    },
+    // 数据集合：值为字符串，集合是否可用由包自己的 manifest 声明决定
+    data: {
+      get: (collection: string, key: string) =>
+        invoke('pluginRuntime:data.get', { pluginId, collection, key }),
+      put: (collection: string, key: string, value: string) =>
+        invoke('pluginRuntime:data.put', { pluginId, collection, key, value }),
+      delete: (collection: string, key: string) =>
+        invoke('pluginRuntime:data.delete', { pluginId, collection, key }),
+      list: (collection: string, options?: { prefix?: string; limit?: number }) =>
+        invoke('pluginRuntime:data.list', { pluginId, collection, ...(options ?? {}) }),
+      count: (collection: string) =>
+        invoke('pluginRuntime:data.count', { pluginId, collection }),
     },
     campaign: {
       getDescriptor: async (campaignId: string) =>
@@ -106,17 +137,14 @@ function loadModule(
         question: string;
         role?: LlmRole;
         allowTools?: boolean;
-        repoId?: string;
         campaignId?: string;
       }) =>
         invoke('llm:chat', {
-          // 不给默认角色：带 repoId 的请求由宿主按源码能力声明的角色提升，其余落 main 档。
-          // 角色名归岗位包所有，渲染层不认识 codeAgent
+          // 不给默认角色：角色名归岗位包所有，渲染层不认识任何具体角色，缺省落 main 档
           ...(request.role !== undefined ? { role: request.role } : {}),
           messages: [{ role: 'user', content: request.question }],
           allowTools: request.allowTools ?? false,
           allowWebSearch: false,
-          ...(request.repoId !== undefined ? { repoId: request.repoId } : {}),
           ...(request.campaignId !== undefined ? { campaignId: request.campaignId } : {}),
         }),
     };
@@ -180,6 +208,8 @@ export async function activateInstalledPluginRuntimes(): Promise<void> {
                 invoke('pluginRuntime:storage.set', { pluginId: plugin.id, key, value }),
               delete: (key) => invoke('pluginRuntime:storage.delete', { pluginId: plugin.id, key }),
             },
+            // 数据集合：人人可用，读写哪些集合由包自己的 manifest 声明决定
+            data: dataService(plugin.id),
             // 工作区原语；未声明 filesystem:workspace 时为 undefined（ctx.workspace 不存在）
             workspace: plugin.permissions.includes('filesystem:workspace')
               ? workspaceService(plugin.id)

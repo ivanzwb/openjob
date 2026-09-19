@@ -5,7 +5,6 @@
  * 只有测试引用本文件。
  */
 import type { DateOnly } from '../../entities';
-import type { TaskKind } from '../../enums';
 
 export interface PrePluginPlanNode {
   id: string;
@@ -15,7 +14,8 @@ export interface PrePluginPlanNode {
 }
 
 export interface PrePluginPlanTask {
-  kind: TaskKind;
+  /** 历史计划里的任务种类：既有宿主种类，也有当时由岗位包声明的种类。 */
+  kind: string;
   nodeId: string | null;
   repoId: string | null;
   estMinutes: number;

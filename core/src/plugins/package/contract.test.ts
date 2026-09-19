@@ -9,7 +9,6 @@ import { describe, expect, it } from 'vitest';
 import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
 import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
 import { productManagerRolePack } from '@plugins/productManager';
-import { salesCustomerSuccessRolePack } from '@plugins/salesCustomerSuccess';
 import type {
   ArtifactParserDefinition,
   CapabilityDeclaration,
@@ -106,18 +105,55 @@ function declarationPlugin(id: string, declaration: CapabilityDeclaration): Capa
   };
 }
 
-const SE_CAPABILITY = declarationPlugin(
-  'demo-source-repository',
-  softwareEngineeringRolePack.capabilities[0]!,
-);
+/**
+ * 能力包格式用例的素材：从 SE 包的内嵌声明里取一条来包。
+ *
+ * SE 的内嵌声明只有权限与 LLM 角色，外部能力包至少要有一项注册内容，所以这里补一个
+ * 工作区工具贡献，顺带给「贡献权限必须与 manifest 对齐」那条用例备好素材。
+ */
+const SE_CAPABILITY = declarationPlugin('demo-source-repository', {
+  ...softwareEngineeringRolePack.capabilities[0]!,
+  tools: [
+    {
+      name: 'grep',
+      description: 'Search workspace file contents.',
+      permission: 'filesystem:workspace',
+      inputSchemaVersion: 1,
+    },
+  ],
+});
 const PM_CAPABILITY = declarationPlugin(
   'demo-analytics-case',
   productManagerRolePack.capabilities[0]!,
 );
-const SALES_CAPABILITY = declarationPlugin(
-  'demo-role-play',
-  salesCustomerSuccessRolePack.capabilities[0]!,
-);
+
+/**
+ * 宿主渲染交互正在退场：销售包（及其它内置岗位包）不再声明交互类型，改成由包自己的页面
+ * 渲染（见 salesCustomerSuccess/capabilities.ts）。交互规则本身还留在 contract 里——
+ * validateInteraction 仍在校验交互版本与 manifest.interactionSchemas 对齐——所以这里自带一份
+ * 本地构造的交互声明来验它，不再借用岗位包的内嵌声明。
+ */
+const ROLE_PLAY_INTERACTION: HostRenderedInteraction = {
+  type: 'customer-conversation',
+  schemaVersion: 1,
+  availability: { desktop: 'full', mobile: 'view-only' },
+  inputSchema: {
+    protocolVersion: 1,
+    fields: [
+      { id: 'brief', kind: 'note', label: '场景与本轮目标' },
+      { id: 'reply', kind: 'reply', label: '你的回应', maxChars: 1200, voiceCapable: true },
+    ],
+  },
+  resultSchema: {
+    protocolVersion: 1,
+    fields: [{ id: 'reply', valueType: 'text', required: true }],
+  },
+};
+
+const INTERACTION_CAPABILITY = declarationPlugin('demo-role-play', {
+  id: 'demo-role-play',
+  interactions: [ROLE_PLAY_INTERACTION],
+});
 
 describe('插件包格式', () => {
   it('每个内置岗位包序列化成外置包后都合法，且解析回来一字不差', () => {
@@ -168,7 +204,7 @@ describe('插件包格式', () => {
   });
 
   it('能力插件声明了 manifest 里没写的权限时拒装', () => {
-    // 这条声明的 manifest 只含 repository:read：改权限到 microphone:read 后
+    // 这条声明的 manifest 里没有 microphone:read：把工具权限改成它之后
     // 与 manifest 不一致才会被拒
     const plugin = SE_CAPABILITY;
 
@@ -212,7 +248,7 @@ describe('插件包格式', () => {
   });
 
   it('交互类型的版本必须与 manifest.interactionSchemas 对齐', () => {
-    const plugin = [SALES_CAPABILITY].find(
+    const plugin = [INTERACTION_CAPABILITY].find(
       (item) => recordContributions(item).interactions!.length > 0,
     );
     expect(plugin, '需要一个注册了交互类型的能力包').toBeDefined();

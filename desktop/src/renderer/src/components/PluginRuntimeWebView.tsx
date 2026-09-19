@@ -25,11 +25,14 @@ import { desktopBridgePrimitives } from '../pluginRuntimes/bridgePrimitives';
 
 export function PluginRuntimeWebView({
   pluginId,
+  version,
   webviewPath,
   permissions,
   declaredBridgeMethods,
 }: {
   pluginId: string;
+  /** 已装版本：原语按「id@version」定位已安装包（LLM 补全的审计也用它） */
+  version: string;
   webviewPath: string;
   permissions: readonly string[];
   /** 包在入口代码里声明的桥方法（§11.2 桥自注册）：未声明的页面够不到 */
@@ -47,7 +50,7 @@ export function PluginRuntimeWebView({
   const declaredBridge = createPluginBridge({
     pluginId,
     declared: declaredBridgeMethods,
-    primitives: desktopBridgePrimitives(pluginId),
+    primitives: desktopBridgePrimitives(pluginId, version),
     gate: declaredPermissionBridgeGate(permissions),
   });
   for (const method of declaredBridge.methods) {

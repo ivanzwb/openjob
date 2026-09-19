@@ -2,17 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { decideToolKind } from './toolPolicy';
 
 describe('decideToolKind', () => {
-  it('源码问答必须拿到读代码的工具', () => {
-    // 这条曾经是反的：指定 repoId 反而把工具全关了，模型一个文件都读不到
-    expect(decideToolKind({ repoId: 'r1' })).toBe('code');
-  });
-
-  it('源码问答没开联网时照样能读代码', () => {
-    expect(decideToolKind({ repoId: 'r1', allowWebSearch: false })).toBe('code');
-  });
-
-  it('调用方显式关闭时，源码问答也不给工具', () => {
-    expect(decideToolKind({ repoId: 'r1', allowTools: false })).toBe('none');
+  it('调用方显式关闭时不给任何工具', () => {
+    expect(decideToolKind({ allowTools: false })).toBe('none');
   });
 
   it('考点追问默认不带工具', () => {

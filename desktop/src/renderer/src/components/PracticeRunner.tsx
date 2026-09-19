@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { EXAM_FORMS, type ExamForm } from '@core/enums';
-import { MOCK_INTERVIEW_TYPE_LABELS, type CampaignRuntimeView } from '@core/ipc';
+import { EXAM_FORM_LABELS, type CampaignRuntimeView } from '@core/ipc';
 import type { PracticeDimensionScore, PracticeEvaluation, PracticeSession } from '@core/practice';
 import {
   derivePracticeView,
@@ -203,7 +203,7 @@ export function PracticeRunner({ campaignId }: { campaignId: string }): React.JS
           >
             {EXAM_FORMS.map((form) => (
               <option key={form} value={form}>
-                {MOCK_INTERVIEW_TYPE_LABELS[form]}
+                {EXAM_FORM_LABELS[form]}
               </option>
             ))}
           </select>

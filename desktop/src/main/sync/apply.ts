@@ -1,6 +1,5 @@
 import type { Database } from 'better-sqlite3';
 import type { AutoChange } from '@core/sync';
-import { deviceLocalInsertDefaults } from './deviceLocalDefaults';
 import {
   describeMissingParents,
   findMissingParentChanges,
@@ -62,13 +61,9 @@ function applyInsert(
 
   const merged = { ...values };
   if (existing) {
+    // 本机专属列只保留本机原值，不接受对端推来的值
     for (const col of spec.deviceLocal) {
       merged[col] = existing[col];
-    }
-  } else {
-    const defaults = deviceLocalInsertDefaults(table, merged);
-    for (const col of spec.deviceLocal) {
-      if (merged[col] === undefined && col in defaults) merged[col] = defaults[col];
     }
   }
 
@@ -221,7 +216,7 @@ const changeKey = (c: AutoChange): string => `${c.table}:${c.rowId}:${c.kind}`;
  *
  * 反查在内存里迭代到不动点，不靠"回滚—重试—再回滚"推进链式场景：被丢掉的
  * 变更恰好是另一条变更的父行时，下一轮迭代把下游一并揪出来。整批带着
- * repo_file 源码快照时，少一次重跑就是少几十 MB 的重复写入。
+ * 本地索引快照时，少一次重跑就是少几十 MB 的重复写入。
  */
 function salvageOrphans(
   raw: Database,

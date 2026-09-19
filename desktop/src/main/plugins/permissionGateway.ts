@@ -194,7 +194,7 @@ class DatabasePermissionScopeProvider implements PermissionScopeProvider {
       .where(
         and(
           eq(schema.planDay.campaignId, request.campaignId),
-          eq(schema.task.repoId, request.resource.id),
+          eq(schema.task.materialId, request.resource.id),
         ),
       )
       .get();

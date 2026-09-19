@@ -116,11 +116,12 @@ describe('installedPermissionContracts', () => {
   });
 
   it('一个外置能力借不到另一个外置能力的权限', () => {
-    // 合编包有 repository:read，不代表一个只声明 artifact:read 的外置包也能读仓库
+    // source-repository 声明了 filesystem:workspace，不代表一个只声明空权限的外置包也能用；
+    // 没装的能力同样拿不到——「别人声明了」≠「你声明了」
     setExternalPlugins([entry({ permissions: [] })]);
 
-    expect(authorize(SOURCE_REPOSITORY_CAPABILITY_ID, 'repository:read').allowed).toBe(false);
-    expect(authorize('demo.cap', 'repository:read')).toMatchObject({
+    expect(authorize(SOURCE_REPOSITORY_CAPABILITY_ID, 'filesystem:workspace').allowed).toBe(false);
+    expect(authorize('demo.cap', 'filesystem:workspace')).toMatchObject({
       allowed: false,
       code: 'permission-undeclared',
     });

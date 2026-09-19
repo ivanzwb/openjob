@@ -16,7 +16,7 @@ import {
 const request: CapabilityRequest = {
   campaignId: 'campaign-a',
   capabilityId: 'source-repository',
-  permission: 'repository:read',
+  permission: 'artifact:read',
   resource: { kind: 'repository', id: 'repo-secret-a' },
 };
 
@@ -32,7 +32,7 @@ function gateway(scope: CampaignCapabilityScope) {
   const provider: PermissionScopeProvider = { resolve };
   return {
     gateway: new DefaultDenyPermissionGateway(provider, () =>
-      new Map([['source-repository', new Set(['repository:read' as const])]]),
+      new Map([['source-repository', new Set(['artifact:read' as const])]]),
     ),
     resolve,
   };
@@ -46,7 +46,7 @@ describe('DefaultDenyPermissionGateway', () => {
       allowed: true,
       campaignId: 'campaign-a',
       capabilityId: 'source-repository',
-      permission: 'repository:read',
+      permission: 'artifact:read',
     });
   });
 

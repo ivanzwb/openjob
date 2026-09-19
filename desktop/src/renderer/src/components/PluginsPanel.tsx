@@ -27,7 +27,6 @@ interface InstallDecisions {
 const PERMISSION_LABEL: Record<string, string> = {
   'llm:complete': '调用模型补全（经统一网关与审计）',
   'evidence:read-confirmed': '读取你已确认的个人证据（只读）',
-  'repository:read': '读取已链接的代码仓库（只读）',
   'filesystem:workspace': '读写插件自己的目录',
   'network:fetch': '从远端下载公开仓库到插件自己的目录（只下载，不带你的凭据）',
   'network:search': '联网检索',

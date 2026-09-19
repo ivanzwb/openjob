@@ -45,9 +45,12 @@ describe('software engineering exam-form mappings', () => {
   });
 
   it('adapts all existing task kinds and scopes repository work explicitly', () => {
-    expect(softwareEngineeringRolePack.taskTemplates.map((task) => task.taskKind)).toEqual(
-      TASK_KINDS,
-    );
+    const kinds = softwareEngineeringRolePack.taskTemplates.map((task) => task.taskKind);
+    // 宿主自己生成的四种任务都要有适配；readCode 是本包自己的种类（宿主不认识它）
+    for (const kind of TASK_KINDS) {
+      expect(kinds, kind).toContain(kind);
+    }
+    expect(kinds).toContain('readCode');
 
     const readCode = softwareEngineeringRolePack.taskTemplates.find(
       (task) => task.taskKind === 'readCode',
@@ -56,6 +59,9 @@ describe('software engineering exam-form mappings', () => {
       id: 'se.read-code',
       defaultMinutes: 25,
       capabilityId: SOURCE_REPOSITORY_CAPABILITY_ID,
+      // 需要一份代码材料，且任务页由本包提供
+      materialKind: 'code-repository',
+      view: { pageId: 'source-repository' },
     });
     expect(
       softwareEngineeringRolePack.taskTemplates

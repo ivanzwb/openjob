@@ -3,6 +3,15 @@ import { composePrompt } from '@core/prompts/composer';
 import type { PromptEvidence, PromptRuntimeSnapshot } from '@core/prompts/composer';
 import type { PromptSlot } from '@core/prompts/registry';
 import { validateRolePack } from '@core/plugins/contracts';
+import type { CampaignRuntimeDescriptor } from '@core/plugins/types';
+import {
+  activatePluginRuntime,
+  createEventHub,
+  type PluginRuntimeModule,
+  type PluginRuntimeServices,
+} from '@core/plugins/pluginRuntime/host';
+import { activate as desktopActivate } from './desktop/main';
+import { activate as mobileActivate } from './mobile/main';
 import {
   PRODUCT_MANAGER_FORMAT_IDS,
   PRODUCT_MANAGER_OPTIONAL_CAPABILITY_IDS,
@@ -37,6 +46,36 @@ const EVIDENCE: PromptEvidence[] = [
   },
 ];
 
+/** 最小可用运行时服务：案例页只注册页面与桥方法，不碰宿主任何服务。 */
+function runtimeServices(): PluginRuntimeServices {
+  return {
+    campaign: { getDescriptor: async () => null as CampaignRuntimeDescriptor | null },
+    storage: {
+      get: async () => null,
+      set: async () => undefined,
+      delete: async () => undefined,
+    },
+    data: {
+      get: async () => null,
+      put: async () => undefined,
+      delete: async () => undefined,
+      list: async () => [],
+      count: async () => 0,
+    },
+  };
+}
+
+/** 用最小运行时激活某个端入口（desktop/main.ts / mobile/main.ts），拿到页面与桥方法声明。 */
+function activateEntry(activate: PluginRuntimeModule['activate']) {
+  return activatePluginRuntime({
+    pluginId: PRODUCT_MANAGER_ROLE_PACK_ID,
+    version: PRODUCT_MANAGER_ROLE_PACK_VERSION,
+    module: { activate },
+    services: runtimeServices(),
+    hub: createEventHub(),
+  });
+}
+
 function compose(slot: PromptSlot, formatId?: string): ReturnType<typeof composePrompt> {
   return composePrompt({
     runtime: RUNTIME,
@@ -52,13 +91,21 @@ describe('productManagerRolePack contract', () => {
     expect(validateRolePack(productManagerRolePack)).toEqual([]);
   });
 
-  it('是不申请任何执行权限的岗位包，能力插件只作为可选依赖', () => {
+  it('执行权限全部来自内嵌能力，「案例训练」页随包分发，能力插件只作为可选依赖', () => {
     expect(productManagerRolePack.manifest).toMatchObject({
       id: 'product-manager',
       version: '1.3.0',
       type: 'role-pack',
       compatibility: { core: '^1.0.0', schema: 23 },
-      permissions: ['artifact:read'],
+      // 解析器要 artifact:read，案例页的 LLM 流程要 llm:complete——两项都由内嵌的
+      // analytics-case 声明贡献，manifest 只是它们的并集（contracts 校验）
+      permissions: ['artifact:read', 'llm:complete'],
+      // 「案例训练」页属于本包：桌面与移动各一份实现
+      main: 'desktop/main.js',
+      mobile: 'mobile/main.js',
+      api: '^1.0',
+      // 案例（题目 / 作答 / 评分）存在本包声明的集合里，内容对宿主不透明
+      dataCollections: [{ name: 'cases', schemaVersion: 1 }],
       dependencies: [
         { id: 'portfolio-review', version: '^1.0.0', optional: true },
       ],
@@ -67,6 +114,64 @@ describe('productManagerRolePack contract', () => {
     for (const dependency of productManagerRolePack.manifest.dependencies ?? []) {
       expect(dependency.optional, `${dependency.id} 必须是可选依赖`).toBe(true);
     }
+  });
+
+  it('「案例训练」页随包分发：两端入口各注册同一个页面 id，deactivate 后撤干净', () => {
+    // manifest.main / manifest.mobile 指向的两份入口各自注册「案例训练」页，页面 id
+    // 归本包所有——宿主侧完整 id 由运行时拼成 `<pluginId>:case-practice`
+    for (const activate of [desktopActivate, mobileActivate]) {
+      const active = activateEntry(activate);
+      expect(active.pages).toEqual([
+        {
+          pluginId: PRODUCT_MANAGER_ROLE_PACK_ID,
+          fullId: `${PRODUCT_MANAGER_ROLE_PACK_ID}:case-practice`,
+          id: 'case-practice',
+          title: '案例训练',
+          webviewPath: 'ui/practice.html',
+        },
+      ]);
+      active.deactivate();
+      expect(active.pages).toEqual([]);
+    }
+  });
+
+  it('桥自注册：桌面声明案例页用到的通用原语，手机只读同一份数据', () => {
+    // 案例页编排的全是通用原语：artifact.read 取用户显式提供的表格、llm.complete 出题与
+    // 评分、data.* 读写本包声明的集合。手机端不做执行，只声明读取。
+    const desktop = activateEntry(desktopActivate);
+    expect(desktop.bridgeMethods).toEqual(
+      expect.arrayContaining([
+        'artifact.read',
+        'llm.complete',
+        'data.list',
+        'data.get',
+        'data.put',
+        'data.delete',
+      ]),
+    );
+
+    const mobile = activateEntry(mobileActivate);
+    expect(mobile.bridgeMethods).toEqual(['data.list']);
+  });
+
+  it('练习格式映射到本包自己的面试形式，数据集合随包声明', () => {
+    // 宿主按旧题型取值（ExamForm）挑练习格式：每个映射值都必须落回本包声明的形式上，
+    // 否则产品岗的练习在宿主侧解析不出题型。
+    const declaredFormats = new Set<string>(formatIds);
+    for (const [examForm, formatId] of Object.entries(
+      productManagerRolePack.examFormMappings ?? {},
+    )) {
+      expect(declaredFormats.has(formatId as string), `${examForm} → ${formatId}`).toBe(true);
+    }
+    // 宿主还认得的三种练习题型都各指向本包的一种形式
+    expect(new Set(Object.keys(productManagerRolePack.examFormMappings ?? {}))).toEqual(
+      new Set(['concept', 'coding', 'scenario']),
+    );
+
+    // 页面按名字读写案例数据，集合必须在 manifest 里登记过，否则主进程按未声明拒掉
+    expect((productManagerRolePack.manifest.dataCollections ?? []).map((item) => item.name)).toEqual(
+      ['cases'],
+    );
   });
 
   it('三种题型都提供出题、评分和话术片段，落到练习与 Story 流程上不会缺片段', () => {

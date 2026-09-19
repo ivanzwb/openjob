@@ -170,7 +170,18 @@ function loadCodeAssets(root: string): Record<string, string> | undefined {
         if (entry.isDirectory()) {
           throw new PackAuthoringError(`${platform}/ui/ 目前不支持子目录：${platform}/ui/${entry.name}`);
         }
-        assets[`${platform}/ui/${entry.name}`] = readFileSync(join(uiDir, entry.name), 'utf8');
+        // 测试与类型声明不是 shipped 资产，不进包、不参与隔离扫描
+        if (/\.test\.ts$/.test(entry.name) || entry.name.endsWith('.d.ts')) continue;
+        const raw = readFileSync(join(uiDir, entry.name), 'utf8');
+        // Webview 里的纯逻辑模块与入口同一条规则：作者写 .ts，编译成同名 .js 才是被扫描、
+        // 被签名、被页面 `<script src>` 内联的那一份原文（「签的 = 扫的 = 跑的」）。
+        // 输出是 CJS：页面在自己的一小段脚本里预备 module/exports，模块即挂在其上。
+        if (entry.name.endsWith('.ts')) {
+          const compiled = transformSync(raw, { loader: 'ts', format: 'cjs' });
+          assets[`${platform}/ui/${entry.name.slice(0, -3)}.js`] = compiled.code;
+        } else {
+          assets[`${platform}/ui/${entry.name}`] = raw;
+        }
       }
     }
   }

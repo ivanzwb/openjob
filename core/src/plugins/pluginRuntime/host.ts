@@ -215,6 +215,22 @@ export interface PluginRuntimeServices {
     set(key: string, value: string): Promise<void>;
     delete(key: string): Promise<void>;
   };
+  /**
+   * 包声明的数据集合：宿主建通用承载表，内容对宿主不透明。
+   *
+   * 值一律是字符串（与 storage 同一份契约），包自己序列化与反序列化；集合名必须是本包
+   * manifest 声明过的，否则调用被拒。
+   */
+  readonly data: {
+    get(collection: string, key: string): Promise<string | null>;
+    put(collection: string, key: string, value: string): Promise<void>;
+    delete(collection: string, key: string): Promise<void>;
+    list(
+      collection: string,
+      options?: { prefix?: string; limit?: number },
+    ): Promise<Array<{ key: string; value: string }>>;
+    count(collection: string): Promise<number>;
+  };
   /** 受控 LLM 补全（同网关同审计）；仅 manifest 声明 llm:complete 时注入 */
   readonly llm?: {
     complete(request: {
@@ -233,7 +249,6 @@ export interface PluginRuntimeServices {
       question: string;
       role?: LlmRole;
       allowTools?: boolean;
-      repoId?: string;
       campaignId?: string;
     }): Promise<{ streamId: string; sessionId: string | null }>;
   };
@@ -253,6 +268,8 @@ export interface PluginRuntimeContext {
   readonly campaign: PluginRuntimeServices['campaign'];
   /** 插件私有 KV */
   readonly storage: PluginRuntimeServices['storage'];
+  /** 包声明的数据集合（内容对宿主不透明） */
+  readonly data: PluginRuntimeServices['data'];
   /** 受控 LLM 补全；未声明 llm:complete 权限时为 undefined */
   readonly llm: PluginRuntimeServices['llm'];
   /** 基础流式问答；未声明 llm:complete 权限时为 undefined */
@@ -341,6 +358,7 @@ export function activatePluginRuntime(input: PluginRuntimeInput): ActivePluginRu
     pluginId,
     campaign: services.campaign,
     storage: services.storage,
+    data: services.data,
     llm: services.llm,
     agent: services.agent,
     evidence: services.evidence,
@@ -456,8 +474,9 @@ export function activatePluginRuntime(input: PluginRuntimeInput): ActivePluginRu
  * llm / evidence 只对 manifest 声明了对应权限的插件注入（渲染层装配时使用）。
  */
 export function pluginRuntimeNamespaces(permissions: readonly string[]): string[] {
-  // bridge 与基础命名空间同级：声明桥方法没有权限门槛，放行与否由权限网关判
-  const namespaces = ['views', 'commands', 'events', 'campaign', 'storage', 'bridge'];
+  // bridge 与基础命名空间同级：声明桥方法没有权限门槛，放行与否由权限网关判。
+  // data 也在这里：读写哪些集合由包自己的 manifest 声明决定，不额外挂权限。
+  const namespaces = ['views', 'commands', 'events', 'campaign', 'storage', 'data', 'bridge'];
   if (permissions.includes('filesystem:workspace')) namespaces.push('workspace');
   if (permissions.includes('artifact:read')) namespaces.push('artifact');
   if (permissions.includes('llm:complete')) namespaces.push('llm', 'agent');

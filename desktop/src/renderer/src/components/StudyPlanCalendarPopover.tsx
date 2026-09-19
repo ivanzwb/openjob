@@ -301,7 +301,7 @@ function DayTaskRow({
         className="min-w-0 flex-1 truncate text-left text-[11px] disabled:cursor-default"
       >
         <span className={done ? 'text-[var(--color-muted)] line-through' : ''}>
-          {task.nodeName ?? task.repoUrl ?? task.kind}
+          {task.nodeName ?? task.materialLabel ?? task.kind}
         </span>
         {canOpen && <span className="ml-1 text-sky-400">→</span>}
       </button>

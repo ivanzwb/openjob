@@ -19,25 +19,13 @@ import {
 import { createRoleClient, createTierClient } from './client';
 import { agentTools, AGENT_TOOLS, GRAPH_TOOLS, runTool, type ToolContext } from './tools';
 import { decideToolKind } from './toolPolicy';
-import { getRepo, getRepoLocalPath } from '../repo/repository';
-import { mergedCodeAgentTools, runCodeRepoTool } from '../repo/tools';
-import { declaredLlmRole } from '../plugins/runtime';
 import { getCampaignRow } from '../campaign/repository';
 import { buildNodeFollowUpSystem } from '../campaign/candidateContext';
 import { decideSearchTrigger, triggerInstruction } from '../search/trigger';
 import { normalizeChatMessages } from './messages';
-import { buildRepoAnalyzeSystem } from '@core/prompts/repo';
-import {
-  buildRepoSynthesisMessages,
-  looksLikeToolProtocol,
-  READ_CODE_BEFORE_ANSWER,
-  shouldRetryRepoSynthesis,
-} from './repoAnswerPolicy';
 
 /** 工具调用的最大轮数，防止 Agent 陷入反复检索 */
 const MAX_TOOL_ROUNDS = 4;
-const MAX_REPO_TOOL_ROUNDS = 8;
-const MAX_REPO_SYNTHESIS_ATTEMPTS = 2;
 
 const active = new Map<string, AbortController>();
 
@@ -116,16 +104,14 @@ async function runChat(
   let sessionId = req.sessionId ?? null;
 
   try {
-    // 带 repoId 的请求由宿主提升为源码能力声明的角色（角色名归岗位包所有）；
-    // 没装声明它的包时为 undefined，按「未声明角色」落 main 档
-    const role = req.repoId ? declaredLlmRole('source-repository') : req.role;
+    const role = req.role;
     const { client, model, temperature } = createRoleClient(role);
 
     const userMessages = req.messages.filter((m) => m.role === 'user');
     const lastUser = userMessages[userMessages.length - 1]?.content ?? '对话';
     if (!sessionId) {
       sessionId = createSession(
-        req.sessionKind ?? (req.repoId ? 'repoQa' : 'freeChat'),
+        req.sessionKind ?? 'freeChat',
         lastUser.slice(0, 80),
         req.campaignId ?? null,
         req.nodeId ?? null,
@@ -185,64 +171,26 @@ async function runChat(
 
     const toolCtx: ToolContext = { campaignId: req.campaignId ?? null, purpose: lastUser };
 
-    let repoRoot: string | null = null;
-    if (req.repoId) {
-      const repo = getRepo(req.repoId);
-      repoRoot = getRepoLocalPath(req.repoId);
-      if (repo.status !== 'ready') {
-        throw new Error('仓库尚未索引完成，请稍候');
-      }
-      messages.unshift({
-        role: 'system',
-        content: buildRepoAnalyzeSystem(repo.url, repo.summaryMd ?? '（无）', repo.repoMapMd ?? ''),
-      });
-    }
-
     const citations: Citation[] = [];
     let usedWeb = false;
-    let usedCode = false;
     let finalText = '';
     let usage: TokenUsage | null = null;
     const totals: TokenUsage = { promptTokens: 0, completionTokens: 0 };
     let lastPromptTokens: number | null = null;
-    let successfulReads = 0;
-    const repoReadEvidence: Array<{ path: string; content: string }> = [];
-    const repoReadRanges: Array<{ path: string; startLine: number; endLine: number }> = [];
-    const repoCandidates: Array<{ path: string; line: number }> = [];
-    let autoEvidenceHydrated = false;
-    let forceFinalAnswer = false;
-    let synthesisAttempts = 0;
-    const maxRounds = req.repoId ? MAX_REPO_TOOL_ROUNDS : MAX_TOOL_ROUNDS;
-    const lastRound = req.repoId
-      ? maxRounds + MAX_REPO_SYNTHESIS_ATTEMPTS - 1
-      : maxRounds;
+    const maxRounds = MAX_TOOL_ROUNDS;
     const tools =
-      toolKind === 'code'
-        ? mergedCodeAgentTools(toolCtx)
-        : toolKind === 'web'
-          ? agentTools(toolCtx)
-          : toolKind === 'graph'
-            ? GRAPH_TOOLS
-            : undefined;
+      toolKind === 'web'
+        ? agentTools(toolCtx)
+        : toolKind === 'graph'
+          ? GRAPH_TOOLS
+          : undefined;
 
-    for (let round = 0; round <= lastRound; round++) {
-      const finalOnly = Boolean(req.repoId && (forceFinalAnswer || round >= maxRounds));
-      forceFinalAnswer = false;
-      if (finalOnly) synthesisAttempts++;
-      const roundMessages =
-        finalOnly && req.repoId
-          ? buildRepoSynthesisMessages(
-              lastUser,
-              repoReadEvidence,
-              synthesisAttempts > 1,
-            )
-          : messages;
-
+    for (let round = 0; round <= maxRounds; round++) {
       const stream = await openStream(client, controller, {
         model,
-        messages: normalizeChatMessages(roundMessages),
+        messages: normalizeChatMessages(messages),
         temperature,
-        tools: tools && round < maxRounds && !finalOnly ? tools : undefined,
+        tools: tools && round < maxRounds ? tools : undefined,
       });
 
       let roundText = '';
@@ -265,9 +213,7 @@ async function runChat(
 
         if (delta.content) {
           roundText += delta.content;
-          // repo Agent 的工具轮 content 常混着 provider 私有的 XML 协议。必须等本轮
-          // 结束、确认没有 tool_calls 后才展示；推理过程由 ToolTrace 单独呈现。
-          if (!req.repoId) emit('stream:delta', { streamId, delta: delta.content });
+          emit('stream:delta', { streamId, delta: delta.content });
         }
 
         // tool_calls 是分片下发的，需要按 index 累积拼接
@@ -280,7 +226,7 @@ async function runChat(
         }
       }
 
-      if (!req.repoId) finalText += roundText;
+      finalText += roundText;
 
       if (roundUsage) {
         totals.promptTokens += roundUsage.promptTokens;
@@ -301,135 +247,14 @@ async function runChat(
         throw new Error('模型的工具调用参数被截断，未执行不完整调用，请重试');
       }
 
-      if (pending.size === 0) {
-        if (!req.repoId) break;
-
-        // 模型经常先 grep 到 219 行，却随后 read_file(path) 只读默认的 1–200 行，
-        // 然后因证据缺口在总结阶段再次吐工具协议。把尚未被读取区间覆盖的定位结果
-        // 自动补读一小段，再用隔离上下文总结；这相当于替用户完成那次手动重试。
-        if (repoRoot && repoCandidates.length > 0 && !autoEvidenceHydrated) {
-          const selected: Array<{ path: string; line: number }> = [];
-          for (const candidate of repoCandidates) {
-            const covered = repoReadRanges.some(
-              (range) =>
-                range.path === candidate.path &&
-                candidate.line >= range.startLine &&
-                candidate.line <= range.endLine,
-            );
-            const nearSelected = selected.some(
-              (item) =>
-                item.path === candidate.path && Math.abs(item.line - candidate.line) <= 80,
-            );
-            if (!covered && !nearSelected) selected.push(candidate);
-            if (selected.length >= 3) break;
-          }
-
-          let hydrated = false;
-          autoEvidenceHydrated = true;
-          for (const candidate of selected) {
-            const args = {
-              path: candidate.path,
-              start_line: Math.max(1, candidate.line - 30),
-              end_line: candidate.line + 100,
-            };
-            const startedAt = Date.now();
-            const outcome = await runCodeRepoTool(
-              'read_file',
-              args,
-              repoRoot,
-              controller.signal,
-              { ...toolCtx, repoId: req.repoId },
-            );
-            const durationMs = Date.now() - startedAt;
-            if (outcome.citations.length === 0) continue;
-
-            const citation = outcome.citations[0]!;
-            successfulReads++;
-            usedCode = true;
-            hydrated = true;
-            repoReadEvidence.push({ path: candidate.path, content: outcome.content });
-            repoReadRanges.push({
-              path: candidate.path,
-              startLine: citation.startLine!,
-              endLine: citation.endLine!,
-            });
-            citations.push(...outcome.citations);
-            emit('stream:tool', {
-              streamId,
-              toolName: 'read_file',
-              args,
-              resultSummary: outcome.summary,
-              durationMs,
-            });
-            pendingToolRecords.push({
-              name: 'read_file',
-              args,
-              summary: outcome.summary,
-              durationMs,
-              resultChars: outcome.content.length,
-              tokenCost: null,
-            });
-          }
-          if (hydrated) {
-            forceFinalAnswer = true;
-            continue;
-          }
-        }
-
-        if (successfulReads === 0) {
-          if (round >= maxRounds) {
-            throw new Error('代码 Agent 未能打开源码，已停止生成以避免无依据回答，请重试');
-          }
-          // grep/glob 只是导航；没读过文件就不接受模型提前给出的“答案”。
-          messages.push({ role: 'system', content: READ_CODE_BEFORE_ANSWER });
-          continue;
-        }
-
-        const protocolLeak = looksLikeToolProtocol(roundText);
-        const truncated = roundFinishReason === 'length';
-        // 是否适合画流程图由模型根据已读源码判断；应用层只拦截真正不可交付的结果。
-        const unusable = shouldRetryRepoSynthesis({
-          text: roundText,
-          truncated,
-        });
-        if (unusable) {
-          if (finalOnly && synthesisAttempts >= MAX_REPO_SYNTHESIS_ATTEMPTS) {
-            const reason = truncated
-              ? '模型最终回答被截断'
-              : protocolLeak
-                ? '模型把工具协议当成了最终回答'
-                : '模型没有生成最终回答';
-            throw new Error(`${reason}，已停止输出，请重试`);
-          }
-          // 正文草稿可回喂给模型重写；协议泄漏不能回喂，否则它会继续模仿 XML。
-          if (roundText.trim() && !protocolLeak && !truncated) {
-            messages.push({ role: 'assistant', content: roundText });
-          }
-          forceFinalAnswer = true;
-          continue;
-        }
-
-        finalText = roundText;
-        emit('stream:delta', { streamId, delta: roundText });
-        break;
-      }
-
-      if (finalOnly) {
-        if (synthesisAttempts >= MAX_REPO_SYNTHESIS_ATTEMPTS) {
-          throw new Error('模型在最终总结阶段仍请求工具，已停止输出，请重试');
-        }
-        forceFinalAnswer = true;
-        continue;
-      }
+      if (pending.size === 0) break;
 
       const roundToolIndexes: number[] = [];
       toolIndexByRound[round] = roundToolIndexes;
 
       messages.push({
         role: 'assistant',
-        // repo 工具轮里的 content 可能是 provider 泄漏的 XML 工具协议，不把它带进
-        // 后续上下文，避免最后一轮照样学着输出 <tool_call>。
-        content: req.repoId ? null : roundText || null,
+        content: roundText || null,
         tool_calls: [...pending.values()].map((p) => ({
           id: p.id,
           type: 'function' as const,
@@ -448,44 +273,14 @@ async function runChat(
 
         let outcome;
         try {
-          outcome = repoRoot
-            ? await runCodeRepoTool(call.name, args, repoRoot, controller.signal, {
-                ...toolCtx,
-                repoId: req.repoId,
-              })
-            : await runTool(call.name, args, controller.signal, toolCtx);
+          outcome = await runTool(call.name, args, controller.signal, toolCtx);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           outcome = { content: `工具执行失败: ${msg}`, summary: `${call.name} 失败`, citations: [] };
         }
 
         if (call.name === 'web_search' || call.name === 'fetch_url') usedWeb = true;
-        if (['glob', 'find_symbol', 'list_dir', 'read_file', 'grep'].includes(call.name)) {
-          usedCode = true;
-        }
-        if (call.name === 'read_file' && outcome.citations.length > 0) {
-          successfulReads++;
-          const citation = outcome.citations[0]!;
-          repoReadEvidence.push({
-            path: String(args['path'] ?? citation.filePath ?? 'unknown'),
-            content: outcome.content,
-          });
-          repoReadRanges.push({
-            path: String(args['path'] ?? citation.filePath ?? 'unknown'),
-            startLine: citation.startLine!,
-            endLine: citation.endLine!,
-          });
-        }
-        if (call.name === 'grep' || call.name === 'find_symbol') {
-          for (const citation of outcome.citations) {
-            if (!citation.filePath || citation.startLine == null) continue;
-            repoCandidates.push({ path: citation.filePath, line: citation.startLine });
-          }
-        }
-        // grep 的命中只是候选位置，不能在最终引用区伪装成“已读证据”。
-        if (!repoRoot || call.name === 'read_file' || call.name === 'web_search' || call.name === 'fetch_url') {
-          citations.push(...outcome.citations);
-        }
+        citations.push(...outcome.citations);
 
         emit('stream:tool', {
           streamId,
@@ -520,7 +315,7 @@ async function runChat(
 
     const deduped = dedupeCitations(citations);
     const totalUsage = totals.promptTokens > 0 ? totals : usage;
-    const evidenceKind: EvidenceKind = usedCode ? 'code' : usedWeb ? 'web' : 'model';
+    const evidenceKind: EvidenceKind = usedWeb ? 'web' : 'model';
     if (sessionId) {
       const assistantMsgId = appendMessage(
         sessionId,

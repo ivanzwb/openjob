@@ -23,9 +23,9 @@ describe('softwareEngineeringRolePack contract', () => {
       version: '1.0.0',
       type: 'role-pack',
       compatibility: { core: '^1.0.0', schema: 23 },
-      // 通用原语（工作区 + 远端拉取）与基础问答归本包页面用；repository:read 是宿主侧
-      // 旧工具实现的遗留，随它下线一并删（那份实现已经不服务本包页面了）
-      permissions: ['filesystem:workspace', 'llm:complete', 'network:fetch', 'repository:read'],
+      // 本包页面自己用到的通用原语（工作区 + 远端拉取）与基础问答。权限 = 内嵌
+      // source-repository 声明的并集；该声明不声明任何工具，所以权限里没有工具带来的项。
+      permissions: ['filesystem:workspace', 'llm:complete', 'network:fetch'],
       dependencies: [],
     });
   });

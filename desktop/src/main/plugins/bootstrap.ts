@@ -9,12 +9,12 @@ import { getAppPaths } from '../paths';
 import { scanPluginInventory, type PluginInventory } from './inventory';
 import { loadTrustedPublicKeys } from './package/trustedKeys';
 import {
-  findLatestRolePack,
+  listExternalPlugins,
   setExternalPlugins,
 } from './runtime';
 import { getRawDb } from '../db';
 import { backfillPrePluginCampaignRuntime } from '../db/backfill/pluginRuntime';
-import { PRE_PLUGIN_DEFAULT_ROLE_PACK_ID } from '@core/planner/contributions';
+import { selectPrePluginRolePack } from '@core/planner/contributions';
 
 let lastInventory: PluginInventory = { entries: [], rejected: [] };
 
@@ -80,11 +80,16 @@ export function pluginInventoryView(): PluginInventoryView {
 
 
 /**
- * 旧战役回填（插件化之前的 Campaign）：descriptor 从当前安装的软件工程包构建。
- * 包未安装时内部会跳过且不写 checkpoint，装包后的下一次装载/安装事件重试。
+ * 旧战役回填（插件化之前的 Campaign）：descriptor 从当前安装的、声明了材料型任务的
+ * 那个岗位包构建（基础包不点名岗位族）。包未安装时内部会跳过且不写 checkpoint，
+ * 装包后的下一次装载/安装事件重试。
  */
 export function backfillPrePluginCampaigns(): void {
-  const pack = findLatestRolePack(PRE_PLUGIN_DEFAULT_ROLE_PACK_ID);
+  const pack = selectPrePluginRolePack(
+    listExternalPlugins()
+      .map((entry) => entry.package.rolePack)
+      .filter((item): item is NonNullable<typeof item> => item !== undefined),
+  );
   if (!pack) return;
   backfillPrePluginCampaignRuntime(getRawDb(), { pack });
 }

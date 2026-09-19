@@ -101,14 +101,21 @@ export const softwareEngineeringRolePack: RolePack = defineRolePack({
     description: '软件工程岗位的技术诊断、训练和模拟面试声明',
     compatibility: { core: '^1.0.0', schema: 23 },
     // 内嵌 source-repository 能力：权限 = 其声明的并集（contracts 校验，按字典序）。
-    // `repository:read` 由能力内嵌的旧工具声明带来，其余三项是本包页面自己用的通用原语与基础问答。
-    permissions: ['filesystem:workspace', 'llm:complete', 'network:fetch', 'repository:read'],
+    // 三项都是本包页面自己用的通用原语与基础问答。
+    permissions: ['filesystem:workspace', 'llm:complete', 'network:fetch'],
     // 「源码」页已移入本包：页面跑在 Webview 沙箱，宿主 Repos 页退役。
     // 桌面与移动各一份实现，包内平铺在 desktop/ 与 mobile/ 下
     main: 'desktop/main.js',
     mobile: 'mobile/main.js',
     api: '^1.0',
     dependencies: [],
+    // 本包自己的数据集合：宿主只按这三个名字归档与取用，不理解里面的内容。
+    // 页面当前仍走 ctx.storage，改为按集合读写是后续步骤。
+    dataCollections: [
+      { name: 'repositories', schemaVersion: 1 },
+      { name: 'code-refs', schemaVersion: 1 },
+      { name: 'repository-files', schemaVersion: 1 },
+    ],
   },
   roleMatchers: softwareEngineeringMatchers,
   competencyTemplates,

@@ -21,10 +21,6 @@ import {
   SALES_CUSTOMER_SUCCESS_ROLE_PACK_ID,
   SALES_CUSTOMER_SUCCESS_ROLE_PACK_VERSION,
 } from './ids';
-import {
-  CUSTOMER_CONVERSATION_INTERACTION,
-  CUSTOMER_CONVERSATION_SCHEMA_VERSION,
-} from './capabilities';
 import { salesCustomerSuccessMatchers } from './matchers';
 import { competencyTemplates } from './competencies';
 import { interviewFormats, interviewStages } from './formats';
@@ -54,11 +50,15 @@ export const salesCustomerSuccessRolePack: RolePack = defineRolePack({
     compatibility: { core: '^1.0.0', schema: 23 },
     // 内嵌 role-play：权限 = 其声明的并集（llm:complete 生成台词，microphone:read 语音作答）
     permissions: ['llm:complete', 'microphone:read'],
-    // 内嵌声明贡献的交互版本：manifest 是宿主判定「认不认得这份交互」的唯一事实源，
-    // 声明归包所有，版本也就得由包自己写清楚
-    interactionSchemas: {
-      [CUSTOMER_CONVERSATION_INTERACTION]: CUSTOMER_CONVERSATION_SCHEMA_VERSION,
-    },
+    // 客户对话页属于本包：桌面与移动各一份实现，包内平铺在 desktop/ 与 mobile/ 下。
+    // 页面跑在 Webview 沙箱里，只编排通用原语（llm.complete + 本包数据集合），宿主不再
+    // 认识「客户对话」这个功能，也不再持有它的交互协议与场景素材。
+    main: 'desktop/main.js',
+    mobile: 'mobile/main.js',
+    api: '^1.0',
+    // 本包自己的数据集合：对练会话（场景、对话记录、意图标注）存在这里，宿主按名字归档与
+    // 取用，内容对它不透明；手机端只读同一份数据
+    dataCollections: [{ name: 'role-play-sessions', schemaVersion: 1 }],
     dependencies: [],
   },
   roleMatchers: salesCustomerSuccessMatchers,

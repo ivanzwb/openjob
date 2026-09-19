@@ -2,21 +2,28 @@ import type { TaskKind } from '@core/enums';
 import type { TaskView } from '@core/ipc';
 import { CoverageBadge } from './CoverageBadge';
 
-const KIND_LABEL: Record<TaskKind, string> = {
+/** 宿主自己生成的四种任务。岗位包声明的种类不走这张表：任务名由包给出（`kindLabel`）。 */
+const HOST_KIND_LABEL: Record<TaskKind, string> = {
   learn: '新学',
   drill: '口述练习',
-  readCode: '读源码',
   review: '复习',
   fallbackScript: '兜底话术',
 };
 
-const KIND_COLOR: Record<TaskKind, string> = {
+const HOST_KIND_COLOR: Record<TaskKind, string> = {
   learn: 'text-sky-300',
   drill: 'text-amber-300',
-  readCode: 'text-emerald-300',
   review: 'text-purple-300',
   fallbackScript: 'text-slate-400',
 };
+
+function kindLabel(task: TaskView): string {
+  return task.kindLabel ?? HOST_KIND_LABEL[task.kind as TaskKind] ?? task.kind;
+}
+
+function kindColor(task: TaskView): string {
+  return HOST_KIND_COLOR[task.kind as TaskKind] ?? 'text-emerald-300';
+}
 
 export function TaskCard({
   task,
@@ -33,7 +40,7 @@ export function TaskCard({
 }): React.JSX.Element {
   const done = task.status === 'done';
   const skipped = task.status === 'skipped';
-  const canStudy = linkToStudy && Boolean(task.nodeId) && !done && !skipped;
+  const canStudy = linkToStudy && Boolean(task.nodeId ?? task.pageId) && !done && !skipped;
 
   return (
     <div
@@ -48,16 +55,12 @@ export function TaskCard({
         className="w-full text-left disabled:cursor-default"
       >
         <div className="flex items-center gap-2">
-          <span className={`text-xs font-medium ${KIND_COLOR[task.kind]}`}>
-            {KIND_LABEL[task.kind]}
-          </span>
+          <span className={`text-xs font-medium ${kindColor(task)}`}>{kindLabel(task)}</span>
           {task.nodeCoverage && <CoverageBadge type={task.nodeCoverage} />}
           <span className="ml-auto text-xs text-[var(--color-muted)]">{task.estMinutes} min</span>
         </div>
         <div className="mt-1 text-sm font-medium">
-          {task.kind === 'readCode'
-            ? (task.repoUrl?.replace(/^https?:\/\//, '') ?? '源码阅读')
-            : (task.nodeName ?? '（无关联考点）')}
+          {task.nodeName ?? task.kindLabel ?? '（无关联考点）'}
         </div>
         {done && <div className="mt-1 text-xs text-emerald-400">已完成</div>}
         {skipped && <div className="mt-1 text-xs text-[var(--color-muted)]">已跳过</div>}

@@ -111,28 +111,6 @@ export function listAnnotationsForCampaign(campaignId: string): AnnotationView[]
     .sort((a, b) => b.createdAt - a.createdAt);
 }
 
-/** 一个仓库下的代码位置标记，带出文件与行号供跳转 */
-export function listCodeAnnotations(repoId: string): AnnotationView[] {
-  const db = getDb();
-  const refs = db
-    .select()
-    .from(schema.codeRef)
-    .where(eq(schema.codeRef.repoId, repoId))
-    .all();
-  if (refs.length === 0) return [];
-
-  const labelById = new Map(refs.map((r) => [r.id, `${r.filePath}:${r.startLine}`]));
-
-  return db
-    .select()
-    .from(schema.annotation)
-    .where(eq(schema.annotation.targetType, 'codeRef'))
-    .all()
-    .filter((a) => labelById.has(a.targetId))
-    .map((a) => ({ ...rowToAnnotation(a), targetLabel: labelById.get(a.targetId) ?? '' }))
-    .sort((a, b) => b.createdAt - a.createdAt);
-}
-
 /**
  * 同一段选区上的同类标记只留一条。
  *

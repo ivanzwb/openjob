@@ -13,7 +13,7 @@ import {
   REQUIRES_DESKTOP_REASON,
   collectPlannerContributions,
   type PlannerContext,
-  type PlannerRepo,
+  type PlannerMaterial,
 } from '../planner/contributions';
 import { composePrompt } from '../prompts/composer';
 import {
@@ -33,8 +33,20 @@ import type { CampaignRuntimeDescriptor } from './types';
 
 const CAMPAIGN_ID = PHASE0_CAMPAIGN.id;
 
-function repos(): PlannerRepo[] {
-  return PHASE0_REPOS.map((repo) => ({ id: repo.id, url: repo.url, status: repo.status }));
+/** 岗位包模板声明的材料类型；排程只按它挑材料。 */
+const MATERIAL_KIND = 'code-repository';
+
+/**
+ * 历史仓库登记表 → 排程材料：label 取 url、ready 由 status 归一化，与迁移写入
+ * plugin_data 的取值同形。材料的类型由岗位包模板声明（se.read-code）。
+ */
+function materials(): PlannerMaterial[] {
+  return PHASE0_REPOS.map((repo) => ({
+    kind: MATERIAL_KIND,
+    id: repo.id,
+    label: repo.url,
+    ready: repo.status === 'ready',
+  }));
 }
 
 /** dayIndex 取奇数：readCode 隔天一次，偶数天本来就不排。 */
@@ -45,7 +57,7 @@ function context(overrides: Partial<PlannerContext> = {}): PlannerContext {
     dayCount: 7,
     budgetMinutes: PHASE0_CAMPAIGN.dailyMinutes,
     usedMinutes: 0,
-    repos: repos(),
+    materials: materials(),
     installed: installedWith(softwareEngineeringRolePack),
     rolePack: softwareEngineeringRolePack,
     ...overrides,
@@ -109,18 +121,19 @@ describe('Phase 0 兼容性闸门', () => {
     expect(tasks[0]).toMatchObject({
       kind: 'readCode',
       nodeId: null,
-      repoId: PHASE0_READY_REPO_ID,
+      materialKind: MATERIAL_KIND,
+      materialId: PHASE0_READY_REPO_ID,
       estMinutes: PHASE0_READ_CODE_MINUTES,
       capabilityId: SOURCE_REPOSITORY_CAPABILITY_ID,
     });
     expect(tasks[0].client.executable).toBe(true);
   });
 
-  it('只有未索引仓库时不排 readCode', () => {
-    const pendingOnly = repos().filter((repo) => repo.status !== 'ready');
+  it('只有未就绪材料时不排 readCode', () => {
+    const pendingOnly = materials().filter((material) => !material.ready);
     const tasks = collectPlannerContributions(
       prePluginRuntimeDescriptor(CAMPAIGN_ID),
-      context({ repos: pendingOnly }),
+      context({ materials: pendingOnly }),
     );
 
     expect(tasks).toEqual([]);
@@ -147,7 +160,8 @@ describe('Phase 0 兼容性闸门', () => {
 
     // 会落库的字段必须逐条相同，差异只允许出现在客户端视图里
     expect(mobile.map((task) => task.kind)).toEqual(desktop.map((task) => task.kind));
-    expect(mobile.map((task) => task.repoId)).toEqual(desktop.map((task) => task.repoId));
+    expect(mobile.map((task) => task.materialId)).toEqual(desktop.map((task) => task.materialId));
+    expect(mobile.map((task) => task.materialKind)).toEqual(desktop.map((task) => task.materialKind));
     expect(mobile.map((task) => task.estMinutes)).toEqual(desktop.map((task) => task.estMinutes));
 
     expect(mobile[0].client).toMatchObject({

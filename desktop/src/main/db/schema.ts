@@ -25,11 +25,9 @@ import type {
   NodeStatus,
   PlanDayStatus,
   ReportSourceType,
-  RepoStatus,
   SessionKind,
   SourceProvider,
   SpeechSourceType,
-  TaskKind,
   TaskStatus,
   ToolName,
   FollowUpStrategy,
@@ -429,8 +427,14 @@ export const task = sqliteTable(
       .notNull()
       .references(() => planDay.id, { onDelete: 'cascade' }),
     nodeId: text('node_id').references(() => knowledgeNode.id, { onDelete: 'cascade' }),
-    repoId: text('repo_id'),
-    kind: text('kind').$type<TaskKind>().notNull(),
+    /**
+     * 任务挂的材料：类型由岗位包声明（宿主当不透明标签），标识取自材料行。
+     * 材料内容住在包自己声明的数据集合里（plugin_data），这里只存引用。
+     */
+    materialKind: text('material_kind').$type<string>(),
+    materialId: text('material_id'),
+    // 岗位包可以声明自己的任务种类，所以这里是自由字符串而不是 TaskKind 闭集
+    kind: text('kind').$type<string>().notNull(),
     estMinutes: integer('est_minutes').notNull().default(20),
     actualMinutes: integer('actual_minutes'),
     status: text('status').$type<TaskStatus>().notNull().default('pending'),
@@ -598,7 +602,7 @@ export const repo = sqliteTable('repo', {
   repoMapMd: text('repo_map_md'),
   summaryMd: text('summary_md'),
   indexedAt: integer('indexed_at'),
-  status: text('status').$type<RepoStatus>().notNull().default('pending'),
+  status: text('status').$type<string>().notNull().default('pending'),
 });
 
 export const codeRef = sqliteTable(
@@ -1051,4 +1055,24 @@ export const storyDelivery = sqliteTable(
     uniqueIndex('uq_story_delivery_duration').on(t.storyId, t.durationSeconds),
     index('idx_story_delivery_snippet').on(t.snippetId),
   ],
+);
+
+/**
+ * 插件声明的数据集合的通用承载表。
+ *
+ * 宿主不理解 `value_json` 的语义，只按 `(plugin_id, collection)` 归档与取用；跨端同步
+ * 走与业务表同一条 oplog + 后写覆盖，所以这里要有单列主键——`id` 由宿主按
+ * `plugin_id / collection / key` 拼出（分隔符在打包期就挡在输入之外）。
+ */
+export const pluginData = sqliteTable(
+  'plugin_data',
+  {
+    id: text('id').primaryKey(),
+    pluginId: text('plugin_id').notNull(),
+    collection: text('collection').notNull(),
+    key: text('key').notNull(),
+    valueJson: text('value_json'),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (t) => [index('idx_plugin_data_collection').on(t.pluginId, t.collection, t.updatedAt)],
 );

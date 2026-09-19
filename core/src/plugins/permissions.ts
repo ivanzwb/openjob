@@ -13,7 +13,6 @@ export const PLUGIN_PERMISSIONS = [
   'network:fetch',
   'llm:complete',
   'filesystem:workspace',
-  'repository:read',
   'microphone:read',
 ] as const;
 

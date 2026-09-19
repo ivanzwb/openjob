@@ -5,7 +5,7 @@
  * 断言只是各自和自己比。数据刻意做成插件化之前的形状——没有 role_profile、
  * 没有 binding、没有 descriptor，全靠回填补齐。
  */
-import type { CoverageType, ExamForm, NodeKind, PlanDayStatus, RepoStatus, TaskKind, TaskStatus } from '../../enums';
+import type { CoverageType, ExamForm, NodeKind, PlanDayStatus, TaskStatus } from '../../enums';
 
 export const PHASE0_CAMPAIGN = {
   id: 'phase0-campaign',
@@ -115,7 +115,8 @@ export interface Phase0Repo {
   id: string;
   url: string;
   localPath: string;
-  status: RepoStatus;
+  /** 材料状态取值由岗位包定义，夹具按历史形状写字符串 */
+  status: string;
 }
 
 /**
@@ -158,7 +159,8 @@ export interface Phase0Task {
   planDayId: string;
   nodeId: string | null;
   repoId: string | null;
-  kind: TaskKind;
+  /** 历史计划里的任务种类，含当时由岗位包声明的种类。 */
+  kind: string;
   estMinutes: number;
   status: TaskStatus;
   orderIdx: number;

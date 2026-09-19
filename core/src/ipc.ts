@@ -25,6 +25,7 @@ import type {
   AnnotationKind,
   SessionKind,
   EdgeRelation,
+  ExamForm,
   TaskKind,
 } from './enums';
 import type {
@@ -38,7 +39,6 @@ import type {
   KnowledgeNode,
   PlanDay,
   QuizAttempt,
-  Repo,
   Resume,
   SpeechSnippet,
   Task,
@@ -53,7 +53,6 @@ import type {
   SyncRunSummary,
   SyncStatus,
 } from './sync';
-import type { MockInterviewKind, MockInterviewLanguage } from './design/prompts';
 import type {
   ArtifactSchemaRef,
   ClientCapabilityView,
@@ -70,12 +69,6 @@ import type {
   WorkspaceSnapshot,
   WorkspaceSymbolsResult,
 } from './plugins/pluginRuntime/host';
-import type {
-  EndRolePlayRequest,
-  RolePlaySessionView,
-  StartRolePlayRequest,
-  SubmitRolePlayTurnRequest,
-} from './plugins/interactions/sessionView';
 import type { EvidenceProposal, EvidenceScope } from './evidence/types';
 import type {
   PracticeAttempt,
@@ -181,7 +174,6 @@ export interface PluginCatalogView {
 export interface AppPaths {
   userData: string;
   dbFile: string;
-  reposDir: string;
   cacheDir: string;
   backupsDir: string;
   /** 外置插件包的安装位置，每个包一个 `<id>@<version>` 子目录 */
@@ -212,17 +204,14 @@ export interface ChatRequest {
   /**
    * 由角色决定用哪个 provider 和 model，调用方不直接指定模型。
    *
-   * 省略时按能力声明的角色解析（带 repoId 的请求由宿主提升为源码能力声明的角色），
-   * 都没有则落 main 档。
+   * 省略时落 main 档。
    */
   role?: LlmRole;
   messages: ChatMessage[];
   /** 开启后 Agent 可自行决定是否联网检索 */
   allowWebSearch?: boolean;
-  /** 关闭时不注入任何工具（图谱/联网/读代码等），仅多轮对话 */
+  /** 关闭时不注入任何工具（图谱/联网等），仅多轮对话 */
   allowTools?: boolean;
-  /** 指定后启用代码 Agent 工具集（list_dir / read_file / grep） */
-  repoId?: string;
   sessionId?: string;
   campaignId?: string;
   /** nodeFollowUp 会话所属知识点，用于跨端恢复同一段历史 */
@@ -711,7 +700,12 @@ export interface TodayCampaignOption {
 export interface TaskView extends Task {
   nodeName: string | null;
   nodeCoverage: CoverageType | null;
-  repoUrl: string | null;
+  /** 任务挂的材料的展示名，取自材料行的 label；没有材料或取不到时为 null。 */
+  materialLabel: string | null;
+  /** 任务名，取自岗位包的任务模板声明；宿主不认识任务种类，未声明时为 null。 */
+  kindLabel: string | null;
+  /** 承担该任务页面的包页面 id；null 表示用宿主的考点视图。 */
+  pageId: string | null;
 }
 
 export interface TodayPlan {
@@ -749,7 +743,9 @@ export interface TaskAddInput {
   date: string;
   kind: TaskKind;
   nodeId?: string | null;
-  repoId?: string | null;
+  /** 手动新建任务时挂的材料类型与标识；材料内容对宿主不透明。 */
+  materialKind?: string | null;
+  materialId?: string | null;
   estMinutes?: number;
 }
 
@@ -851,52 +847,10 @@ export interface GitStatus {
   hint: string | null;
 }
 
-export interface RepoAddInput {
-  url: string;
-}
-
-/**
- * 删除仓库的结果。
- *
- * 本地 clone 删不掉时条目照样移除——目录删不掉就不让删条目的话，同一个仓库
- * 每次点删除都撞同一个错，永远清不掉。残留目录连同原因交给用户手删。
- */
-export interface RepoDeleteResult {
-  /** 没能删掉的本地目录完整路径；全部删干净时为 null */
-  leftoverPath: string | null;
-  /** 删不掉的原因，界面原样展示 */
-  reason: string | null;
-}
-
-export interface RepoReadFileInput {
-  repoId: string;
-  filePath: string;
-  startLine?: number;
-  endLine?: number;
-}
-
-export interface RepoReadFileResult {
-  content: string;
-  totalLines: number;
-  startLine: number;
-  endLine: number;
-}
-
-export interface SpeechSaveInput {
-  repoId: string;
-  contentMd: string;
-  tier?: ExplanationTier;
-}
-
 export interface SpeechSaveFromNodeInput {
   nodeId: string;
   contentMd: string;
   tier?: ExplanationTier;
-}
-
-export interface SpeechSaveFromDesignInput {
-  campaignId: string;
-  contentMd: string;
 }
 
 export interface SpeechSaveFromQuizInput {
@@ -935,119 +889,22 @@ export interface SpeechExportResult {
 }
 
 // ---------------------------------------------------------------------------
-// 模拟面试（原系统设计，现覆盖多类题型）
+// 题型取值的展示名
 // ---------------------------------------------------------------------------
 
-export type MockInterviewType = MockInterviewKind | 'mixed';
-
-export const MOCK_INTERVIEW_TYPE_OPTIONS: Array<{
-  value: MockInterviewType;
-  label: string;
-  hint: string;
-}> = [
-  { value: 'selfIntro', label: '自我介绍', hint: '开场介绍、亮点匹配、表达自然度' },
-  { value: 'concept', label: '概念 / 八股', hint: '原理、机制、对比追问' },
-  { value: 'coding', label: '编码 / 算法', hint: '手写代码、复杂度分析' },
-  { value: 'design', label: '系统设计', hint: '架构、扩展性、权衡' },
-  { value: 'scenario', label: '项目 / 场景', hint: '简历深挖、行为场景' },
-  { value: 'mixed', label: '综合模拟', hint: '根据公司/JD/简历自动选题' },
-];
-
-export const MOCK_INTERVIEW_TYPE_LABELS: Record<MockInterviewKind, string> = {
+/**
+ * 题型取值（ExamForm）的展示名。
+ *
+ * 放共享层是因为它已经跑偏过一次：同一道题在桌面端与手机端的列表里叫两个名字。
+ * 题型本身归岗位包声明（interviewFormats），这里只放旧题型取值的展示名，
+ * 供练习页与只读历史列表共用。
+ */
+export const EXAM_FORM_LABELS: Record<ExamForm, string> = {
   concept: '概念 / 八股',
   coding: '编码 / 算法',
   design: '系统设计',
   scenario: '项目 / 场景',
-  selfIntro: '自我介绍',
 };
-
-export const MOCK_INTERVIEW_LANGUAGE_OPTIONS: Array<{
-  value: MockInterviewLanguage;
-  label: string;
-}> = [
-  { value: 'zh', label: '中文面试' },
-  { value: 'en', label: '英文面试' },
-];
-
-export const MOCK_INTERVIEW_LANGUAGE_LABELS: Record<MockInterviewLanguage, string> = {
-  zh: '中文',
-  en: '英文',
-};
-
-/**
- * 题目里那组约束的小标题。
- *
- * 放共享层是因为它已经跑偏过一次：桌面端叫「约束 / 考察点」，手机端叫「考察点」，
- * 同一道题在两块屏幕上像是两个不同的字段。各写一份的文案迟早会各自漂移。
- */
-export const MOCK_INTERVIEW_CONSTRAINTS_LABEL = '约束 / 考察点';
-
-export interface DesignCaseResult {
-  campaignId: string;
-  company: string;
-  roleTitle: string;
-  interviewType: MockInterviewKind;
-  interviewLanguage: MockInterviewLanguage;
-  relatedNodeName: string | null;
-  title: string;
-  scenarioMd: string;
-  constraints: string[];
-  evaluationCriteria: string[];
-  userAnswerMd?: string | null;
-  recommendedAnswerMd?: string | null;
-}
-
-export interface DesignSubmitInput {
-  campaignId: string;
-  caseTitle: string;
-  scenarioMd: string;
-  userAnswer: string;
-  interviewType?: MockInterviewKind;
-  interviewLanguage?: MockInterviewLanguage;
-  requestedType?: MockInterviewType;
-}
-
-export interface DesignSubmitResult {
-  score: number;
-  feedbackMd: string;
-  improvedOutlineMd: string;
-  speechSnippetId: string;
-}
-
-export interface DesignUpdateAnswersInput {
-  campaignId: string;
-  interviewType: MockInterviewType;
-  interviewLanguage: MockInterviewLanguage;
-  userAnswerMd?: string | null;
-  recommendedAnswerMd?: string | null;
-}
-
-export interface DesignGenerateAnswerInput {
-  campaignId: string;
-  caseTitle: string;
-  scenarioMd: string;
-  interviewType: MockInterviewKind;
-  interviewLanguage: MockInterviewLanguage;
-  constraints?: string[];
-}
-
-export interface DesignGenerateAnswerResult {
-  recommendedAnswerMd: string;
-}
-
-export interface DesignElaborateInput {
-  selectedText: string;
-  contextMd: string;
-  /**
-   * 主进程据此回查简历，细化时才不会拿 JD 当候选人做过的项目。
-   * 可选是因为手机端远程调用这条链路时不一定带得上，缺了就退化成不带简历上下文。
-   */
-  campaignId?: string;
-}
-
-export interface DesignElaborateResult {
-  elaborationMd: string;
-}
 
 // ---------------------------------------------------------------------------
 // 标注
@@ -1071,13 +928,6 @@ export interface AnnotationToggleInput {
 /** 标记 + 目标的可读名字，供「我的标记」这类跨类型汇总列表使用 */
 export interface AnnotationView extends Annotation {
   targetLabel: string;
-}
-
-export interface EnsureCodeRefInput {
-  repoId: string;
-  filePath: string;
-  startLine: number;
-  endLine?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -1277,6 +1127,30 @@ export interface IpcInvokeMap {
   'pluginRuntime:storage.get': { req: { pluginId: string; key: string }; res: string | null };
   'pluginRuntime:storage.set': { req: { pluginId: string; key: string; value: string }; res: void };
   'pluginRuntime:storage.delete': { req: { pluginId: string; key: string }; res: void };
+  /**
+   * 代码插件声明的数据集合（阶段 3 B2）：宿主建通用承载表，内容对宿主不透明。
+   *
+   * 值一律是字符串，由包自己序列化与反序列化。集合名必须是调用方 manifest 声明过的，
+   * 否则按「未声明的数据集合」拒；每次读写都按 pluginId 收窄。
+   */
+  'pluginRuntime:data.get': {
+    req: { pluginId: string; collection: string; key: string };
+    res: string | null;
+  };
+  'pluginRuntime:data.put': {
+    req: { pluginId: string; collection: string; key: string; value: string };
+    res: void;
+  };
+  'pluginRuntime:data.delete': {
+    req: { pluginId: string; collection: string; key: string };
+    res: void;
+  };
+  /** 结果被 limit 上限截断，调用方按 prefix 翻页 */
+  'pluginRuntime:data.list': {
+    req: { pluginId: string; collection: string; prefix?: string; limit?: number };
+    res: Array<{ key: string; value: string }>;
+  };
+  'pluginRuntime:data.count': { req: { pluginId: string; collection: string }; res: number };
   /** 代码插件受控 LLM 补全：同网关同审计，promptId 记为 plugin:<id> */
   'pluginRuntime:llm.complete': {
     req: { pluginId: string; version: string; system: string; user: string; role?: LlmRole };
@@ -1463,42 +1337,19 @@ export interface IpcInvokeMap {
   /**
    * 通用练习协议。
    *
-   * 与上面的 quiz:* / 下面的 design:* 并存而不是取代它们：旧通道要保持可用一个
-   * 发布周期，手机端升级不同步时仍然走旧链路。
+   * 与上面的 quiz:* 并存而不是取代它：旧通道要保持可用一个发布周期，手机端升级
+   * 不同步时仍然走旧链路。
    */
   'practice:createSession': { req: PracticeSessionInput; res: PracticeSession };
   'practice:getSession': { req: { sessionId: string }; res: PracticeSession | null };
   'practice:nextTurn': { req: PracticeTurnInput; res: PracticeTurn };
   'practice:evaluate': { req: PracticeEvaluationInput; res: PracticeEvaluation };
-  /** 三种来源合并的练习历史；quiz/design 行为只读投影 */
+  /** 三种来源合并的练习历史；quiz 行为只读投影 */
   'practice:listAttempts': { req: PracticeAttemptQuery; res: PracticeAttempt[] };
   /** 单条练习记录的逐维度分数、量规锚点与原回答引用 */
   'practice:listScores': { req: { attemptId: string }; res: PracticeDimensionScore[] };
 
-  /**
-   * 宿主渲染交互：客户对话模拟。
-   *
-   * 三个通道都把角色状态快照带进带出，主进程不留会话状态。因此刷新渲染进程、
-   * 重启应用都不影响续练，也不需要为交互会话新增一张表。
-   */
-  'interaction:startRolePlay': { req: StartRolePlayRequest; res: RolePlaySessionView };
-  'interaction:submitRolePlayTurn': {
-    req: SubmitRolePlayTurnRequest;
-    res: RolePlaySessionView;
-  };
-  'interaction:endRolePlay': { req: EndRolePlayRequest; res: RolePlaySessionView };
-
-  'repo:gitStatus': { req: void; res: GitStatus };
-  'repo:list': { req: void; res: Repo[] };
-  'repo:get': { req: { id: string }; res: Repo };
-  'repo:add': { req: RepoAddInput; res: DiagnosisJobStarted };
-  /** 把本地 clone 拉到上游最新并重建索引 */
-  'repo:update': { req: { id: string }; res: DiagnosisJobStarted };
-  'repo:delete': { req: { id: string }; res: RepoDeleteResult };
-  'repo:readFile': { req: RepoReadFileInput; res: RepoReadFileResult };
-  'speech:save': { req: SpeechSaveInput; res: SpeechSnippet };
   'speech:saveFromNode': { req: SpeechSaveFromNodeInput; res: SpeechSnippet };
-  'speech:saveFromDesign': { req: SpeechSaveFromDesignInput; res: SpeechSnippet };
   'speech:saveFromQuiz': { req: SpeechSaveFromQuizInput; res: SpeechSnippet };
   'speech:list': { req: void; res: SpeechSnippetView[] };
   'speech:listForSource': { req: SpeechListForSourceInput; res: SpeechSnippet[] };
@@ -1506,30 +1357,12 @@ export interface IpcInvokeMap {
   'speech:delete': { req: { id: string }; res: void };
   'speech:export': { req: SpeechExportInput; res: SpeechExportResult };
 
-  'design:case': {
-    req: {
-      campaignId: string;
-      interviewType?: MockInterviewType;
-      interviewLanguage?: MockInterviewLanguage;
-      force?: boolean;
-    };
-    res: DesignCaseResult;
-  };
-  'design:submit': { req: DesignSubmitInput; res: DesignSubmitResult };
-  'design:updateAnswers': { req: DesignUpdateAnswersInput; res: DesignCaseResult };
-  'design:generateAnswer': { req: DesignGenerateAnswerInput; res: DesignGenerateAnswerResult };
-  'design:elaborate': { req: DesignElaborateInput; res: DesignElaborateResult };
-
   'annotation:list': { req: { targetType: AnnotationTarget; targetId: string }; res: Annotation[] };
-  /** 一场面试下五类目标的全部标记 */
+  /** 一场面试下全部目标的标记 */
   'annotation:listForCampaign': { req: { campaignId: string }; res: AnnotationView[] };
-  /** 一个仓库下的代码位置标记 */
-  'annotation:listForRepo': { req: { repoId: string }; res: AnnotationView[] };
   'annotation:create': { req: AnnotationCreateInput; res: Annotation };
   'annotation:delete': { req: { id: string }; res: void };
   'annotation:toggleBookmark': { req: AnnotationToggleInput; res: { bookmarked: boolean } };
-  /** 标记代码位置前先落一条 code_ref，返回其 id */
-  'codeRef:ensure': { req: EnsureCodeRefInput; res: { id: string } };
 
   'session:list': {
     req: { kind?: SessionKind; nodeId?: string; limit?: number };
@@ -1673,6 +1506,11 @@ export const IPC_INVOKE_CHANNELS = [
   'pluginRuntime:storage.get',
   'pluginRuntime:storage.set',
   'pluginRuntime:storage.delete',
+  'pluginRuntime:data.get',
+  'pluginRuntime:data.put',
+  'pluginRuntime:data.delete',
+  'pluginRuntime:data.list',
+  'pluginRuntime:data.count',
   'pluginRuntime:llm.complete',
   'pluginRuntime:evidence.listConfirmed',
   'pluginRuntime:workspace.read',
@@ -1761,37 +1599,18 @@ export const IPC_INVOKE_CHANNELS = [
   'practice:evaluate',
   'practice:listAttempts',
   'practice:listScores',
-  'interaction:startRolePlay',
-  'interaction:submitRolePlayTurn',
-  'interaction:endRolePlay',
-  'repo:gitStatus',
-  'repo:list',
-  'repo:get',
-  'repo:add',
-  'repo:update',
-  'repo:delete',
-  'repo:readFile',
-  'speech:save',
   'speech:saveFromNode',
-  'speech:saveFromDesign',
   'speech:saveFromQuiz',
   'speech:list',
   'speech:listForSource',
   'speech:update',
   'speech:delete',
   'speech:export',
-  'design:case',
-  'design:submit',
-  'design:updateAnswers',
-  'design:generateAnswer',
-  'design:elaborate',
   'annotation:list',
   'annotation:listForCampaign',
-  'annotation:listForRepo',
   'annotation:create',
   'annotation:delete',
   'annotation:toggleBookmark',
-  'codeRef:ensure',
   'session:list',
   'session:getMessages',
   'session:getMessagesForNode',

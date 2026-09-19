@@ -26,6 +26,13 @@ import {
   pluginStorageGet,
   pluginStorageSet,
 } from '../plugins/pluginRuntimeStorage';
+import {
+  pluginDataCount,
+  pluginDataDelete,
+  pluginDataGet,
+  pluginDataList,
+  pluginDataSet,
+} from '../plugins/pluginData';
 import { createNode, deleteNode, updateNode } from '../campaign/nodes';
 import { createEdge, deleteEdge, listEdges } from '../campaign/edges';
 import { applyHistorySignals, getCampaignNudges } from '../insights';
@@ -43,16 +50,8 @@ import {
   deleteAnnotation,
   listAnnotations,
   listAnnotationsForCampaign,
-  listCodeAnnotations,
   toggleBookmark,
 } from '../annotation';
-import {
-  elaborateDesignAnswer,
-  generateDesignCase,
-  generateRecommendedAnswer,
-  submitDesignAnswer,
-  updateDesignCaseAnswers,
-} from '../design';
 import { generateExplanation, generateFallbackScript, getExplanation, updateExplanation, elaborateExplanationSelection, rewriteExplanationSelection } from '../explain';
 import { startJob } from '../jobs';
 import { cancelStream, startChat, testTier } from '../llm';
@@ -74,23 +73,13 @@ import {
 } from '../plan/edit';
 import { getPracticeService, listPracticeAttempts, listPracticeScores } from '../practice';
 import { generateQuizAnswer, generateQuizQuestion, getQuizDraft, submitQuizAnswer, updateQuizDraft } from '../quiz';
-import {
-  deleteRepo,
-  ensureCodeRef,
-  getRepo,
-  listRepos,
-  readRepoFile,
-} from '../repo';
-import { cloneAndIndex, updateRepoToLatest } from '../repo/repository';
 import { fetchUrl, search } from '../search';
 import {
   deleteSpeechSnippet,
   listSpeechSnippets,
   listSpeechSnippetsForSource,
-  saveSpeechFromDesign,
   saveSpeechFromNode,
   saveSpeechFromQuizNode,
-  saveSpeechFromRepo,
   updateSpeechSnippet,
 } from '../speech';
 import {
@@ -137,6 +126,45 @@ const RPC_HANDLERS: Partial<Record<IpcInvokeChannel, RpcHandler>> = {
   'pluginRuntime:storage.delete': (p) => {
     const { pluginId, key } = p as { pluginId: string; key: string };
     pluginStorageDelete(pluginId, key);
+  },
+  // 包声明的数据集合（阶段 3 B2）：手机端只读订阅，读取走这里，写入由手机端如实拒绝
+  'pluginRuntime:data.get': (p) => {
+    const { pluginId, collection, key } = p as {
+      pluginId: string;
+      collection: string;
+      key: string;
+    };
+    return pluginDataGet(pluginId, collection, key);
+  },
+  'pluginRuntime:data.put': (p) => {
+    const { pluginId, collection, key, value } = p as {
+      pluginId: string;
+      collection: string;
+      key: string;
+      value: string;
+    };
+    pluginDataSet(pluginId, collection, key, value);
+  },
+  'pluginRuntime:data.delete': (p) => {
+    const { pluginId, collection, key } = p as {
+      pluginId: string;
+      collection: string;
+      key: string;
+    };
+    pluginDataDelete(pluginId, collection, key);
+  },
+  'pluginRuntime:data.list': (p) => {
+    const { pluginId, collection, prefix, limit } = p as {
+      pluginId: string;
+      collection: string;
+      prefix?: string;
+      limit?: number;
+    };
+    return pluginDataList(pluginId, collection, { prefix, limit });
+  },
+  'pluginRuntime:data.count': (p) => {
+    const { pluginId, collection } = p as { pluginId: string; collection: string };
+    return pluginDataCount(pluginId, collection);
   },
   // 手机端不装插件包，岗位包只能从这台桌面要一份数据回去（见 rolePackTransfer.ts）
   'plugin:getRolePack': (p) => {
@@ -270,31 +298,9 @@ const RPC_HANDLERS: Partial<Record<IpcInvokeChannel, RpcHandler>> = {
   'practice:listAttempts': (p) => listPracticeAttempts(p as IpcReq<'practice:listAttempts'>),
   'practice:listScores': (p) =>
     listPracticeScores((p as IpcReq<'practice:listScores'>).attemptId),
-  'repo:list': () => listRepos(),
-  'repo:get': (p) => getRepo((p as { id: string }).id),
-  'repo:add': (p) => ({
-    jobId: startJob('克隆并索引仓库', (jobId) => cloneAndIndex((p as { url: string }).url, jobId)),
-  }),
-  // 手机端读的是同步来的快照，代码要更新只能请桌面端去拉
-  'repo:update': (p) => ({
-    jobId: startJob('更新仓库', (jobId) => updateRepoToLatest((p as { id: string }).id, jobId)),
-  }),
-  'repo:delete': (p) => deleteRepo((p as { id: string }).id),
-  'repo:readFile': (p) => {
-    const input = p as IpcReq<'repo:readFile'>;
-    return readRepoFile(input.repoId, input.filePath, input.startLine, input.endLine);
-  },
-  'speech:save': (p) => {
-    const input = p as IpcReq<'speech:save'>;
-    return saveSpeechFromRepo(input.repoId, input.contentMd, input.tier);
-  },
   'speech:saveFromNode': (p) => {
     const input = p as IpcReq<'speech:saveFromNode'>;
     return saveSpeechFromNode(input.nodeId, input.contentMd, input.tier);
-  },
-  'speech:saveFromDesign': (p) => {
-    const input = p as IpcReq<'speech:saveFromDesign'>;
-    return saveSpeechFromDesign(input.campaignId, '', input.contentMd);
   },
   'speech:saveFromQuiz': (p) => {
     const input = p as IpcReq<'speech:saveFromQuiz'>;
@@ -310,61 +316,11 @@ const RPC_HANDLERS: Partial<Record<IpcInvokeChannel, RpcHandler>> = {
     return updateSpeechSnippet(input.id, input.contentMd);
   },
   'speech:delete': (p) => deleteSpeechSnippet((p as { id: string }).id),
-  'design:case': (p) => {
-    const input = p as IpcReq<'design:case'>;
-    return generateDesignCase(
-      input.campaignId,
-      input.interviewType ?? 'mixed',
-      input.interviewLanguage ?? 'zh',
-      input.force ?? false,
-    );
-  },
-  'design:submit': (p) => {
-    const input = p as IpcReq<'design:submit'>;
-    return submitDesignAnswer(
-      input.campaignId,
-      input.caseTitle,
-      input.scenarioMd,
-      input.userAnswer,
-      input.interviewType,
-      input.interviewLanguage,
-      input.requestedType ?? input.interviewType ?? 'mixed',
-    );
-  },
-  'design:updateAnswers': (p) => {
-    const input = p as IpcReq<'design:updateAnswers'>;
-    return updateDesignCaseAnswers(
-      input.campaignId,
-      input.interviewType,
-      input.interviewLanguage ?? 'zh',
-      {
-        userAnswerMd: input.userAnswerMd,
-        recommendedAnswerMd: input.recommendedAnswerMd,
-      },
-    );
-  },
-  'design:generateAnswer': (p) => {
-    const input = p as IpcReq<'design:generateAnswer'>;
-    return generateRecommendedAnswer(
-      input.campaignId,
-      input.caseTitle,
-      input.scenarioMd,
-      input.interviewType,
-      input.interviewLanguage ?? 'zh',
-      input.constraints,
-    );
-  },
-  'design:elaborate': (p) => {
-    const input = p as IpcReq<'design:elaborate'>;
-    return elaborateDesignAnswer(input.selectedText, input.contextMd, input.campaignId);
-  },
   'annotation:list': (p) => listAnnotations((p as { targetType: string; targetId: string }).targetType as IpcReq<'annotation:list'>['targetType'], (p as { targetType: string; targetId: string }).targetId),
   'annotation:listForCampaign': (p) => listAnnotationsForCampaign((p as { campaignId: string }).campaignId),
-  'annotation:listForRepo': (p) => listCodeAnnotations((p as { repoId: string }).repoId),
   'annotation:create': (p) => createAnnotation(p as IpcReq<'annotation:create'>),
   'annotation:delete': (p) => deleteAnnotation((p as { id: string }).id),
   'annotation:toggleBookmark': (p) => toggleBookmark((p as { targetType: string; targetId: string }).targetType as IpcReq<'annotation:toggleBookmark'>['targetType'], (p as { targetType: string; targetId: string }).targetId),
-  'codeRef:ensure': (p) => ({ id: ensureCodeRef(p as IpcReq<'codeRef:ensure'>) }),
   'session:list': (p) => listSessions((p as { kind?: string; limit?: number }).kind as IpcReq<'session:list'>['kind'], (p as { kind?: string; limit?: number }).limit),
   'session:getMessages': (p) => getSessionMessages((p as { sessionId: string }).sessionId),
   'session:search': (p) => searchSessions((p as { query: string; limit?: number }).query, (p as { query: string; limit?: number }).limit),
@@ -424,8 +380,6 @@ export function isJobChannel(channel: IpcInvokeChannel): boolean {
     'diagnosis:attachResume',
     'diagnosis:expandNode',
     'diagnosis:fetchIntel',
-    'repo:add',
-    'repo:update',
   ].includes(channel);
 }
 

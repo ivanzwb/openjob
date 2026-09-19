@@ -22,10 +22,6 @@ function rowToSnippet(row: typeof schema.speechSnippet.$inferSelect): SpeechSnip
 
 function resolveSourceLabel(sourceType: SpeechSnippet['sourceType'], sourceId: string): string {
   const db = getDb();
-  if (sourceType === 'codeRef') {
-    const repo = db.select().from(schema.repo).where(eq(schema.repo.id, sourceId)).get();
-    return repo ? `源码 · ${repo.url.replace(/^https?:\/\//, '')}` : '源码';
-  }
   if (sourceType === 'node') {
     const node = db
       .select()
@@ -133,14 +129,6 @@ export function listSpeechSnippets(): SpeechSnippetView[] {
       };
     })
     .sort((a, b) => b.createdAt - a.createdAt);
-}
-
-export function saveSpeechFromRepo(
-  repoId: string,
-  contentMd: string,
-  tier: ExplanationTier = 'spoken',
-): SpeechSnippet {
-  return saveSpeech('codeRef', repoId, contentMd, tier);
 }
 
 export function saveSpeechFromQuiz(

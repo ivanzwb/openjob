@@ -16,7 +16,7 @@ import {
   type PluginPackageFiles,
   parsePluginPackage,
 } from '@core/plugins/package/contract';
-import { PRE_PLUGIN_DEFAULT_ROLE_PACK_ID } from '@core/planner/contributions';
+import { isPrePluginRolePack } from '@core/planner/contributions';
 import { scanPluginSources } from '@core/plugins/pluginRuntime/scan';
 import { getAppPaths } from '../paths';
 import { loadExternalPlugins } from './bootstrap';
@@ -217,15 +217,15 @@ export function installPluginBundle(raw: Buffer, options: InstallOptions = {}): 
     );
   }
 
-  // 数据丢失把关：插件化升级前的旧战役全是软件工程语义。装默认岗位包之外的角色包，
-  // 旧数据不会自动变成新岗位——用户若把新岗位套用到旧战役，原面试数据会丢失。库里
-  // 还有这类待映射战役时先让用户确认，而不是装完让用户自己踩坑。
-  // 装默认岗位包（软件工程）不拦：那正是让旧数据恢复原功能的路径。
+  // 数据丢失把关：插件化升级前的旧战役都是「带材料任务」的形态，只有声明了这种任务的
+  // 岗位包才是让旧数据恢复原功能的那一个。装其它角色包时旧数据不会自动变成新岗位——
+  // 用户若把新岗位套用到旧战役，原面试数据会丢失；库里还有这类待映射战役就先让用户确认，
+  // 而不是装完让用户自己踩坑。
   if (
     !options.confirmDataLoss &&
     options.countPendingPrePluginCampaigns !== undefined &&
     manifest.type === 'role-pack' &&
-    manifest.id !== PRE_PLUGIN_DEFAULT_ROLE_PACK_ID
+    !(parsedForScan.rolePack !== undefined && isPrePluginRolePack(parsedForScan.rolePack))
   ) {
     const pending = options.countPendingPrePluginCampaigns();
     if (pending > 0) {

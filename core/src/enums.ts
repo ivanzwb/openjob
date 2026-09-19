@@ -118,21 +118,21 @@ export type ReportSourceType = (typeof REPORT_SOURCE_TYPES)[number];
 export const PLAN_DAY_STATUSES = ['pending', 'done', 'skipped', 'deferred'] as const;
 export type PlanDayStatus = (typeof PLAN_DAY_STATUSES)[number];
 
-/** fallbackScript = 时间不够的知识点，生成 30 秒兜底话术 */
-export const TASK_KINDS = ['learn', 'drill', 'readCode', 'review', 'fallbackScript'] as const;
+/**
+ * 宿主自己生成的任务种类。
+ *
+ * 岗位包可以声明自己的任务种类（`TaskTemplate.taskKind` 是字符串），落在
+ * `task.kind` 上的值宿主只当不透明标签——插件任务的任务页由包提供（见
+ * `TaskTemplate.view`），宿主不为任何岗位种类写分派分支。
+ */
+export const TASK_KINDS = ['learn', 'drill', 'review', 'fallbackScript'] as const;
 export type TaskKind = (typeof TASK_KINDS)[number];
 
 export const TASK_STATUSES = ['pending', 'done', 'skipped'] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 
 /** 标记的目标类型，统一 annotation 表靠它区分 */
-export const ANNOTATION_TARGETS = [
-  'node',
-  'explanation',
-  'codeRef',
-  'question',
-  'intel',
-] as const;
+export const ANNOTATION_TARGETS = ['node', 'explanation', 'question', 'intel'] as const;
 export type AnnotationTarget = (typeof ANNOTATION_TARGETS)[number];
 
 export const ANNOTATION_KINDS = ['highlight', 'note', 'elaboration', 'bookmark'] as const;
@@ -145,23 +145,20 @@ export type AnnotationKind = (typeof ANNOTATION_KINDS)[number];
  * 两端解析 sourceType 的地方（桌面 src/main/speech，手机 mobile/src/data/queries），
  * 否则话术库里会出现一条标题是「话术」、又归不到任何一场备考下的孤儿条目。
  */
-export const SPEECH_SOURCE_TYPES = ['node', 'codeRef', 'quiz', 'design', 'story'] as const;
+export const SPEECH_SOURCE_TYPES = ['node', 'quiz', 'design', 'story'] as const;
 export type SpeechSourceType = (typeof SPEECH_SOURCE_TYPES)[number];
 
-export const SESSION_KINDS = ['quiz', 'repoQa', 'freeChat', 'nodeFollowUp', 'planning'] as const;
+export const SESSION_KINDS = ['quiz', 'freeChat', 'nodeFollowUp', 'planning'] as const;
 export type SessionKind = (typeof SESSION_KINDS)[number];
 
 export const MESSAGE_ROLES = ['system', 'user', 'assistant', 'tool'] as const;
 export type MessageRole = (typeof MESSAGE_ROLES)[number];
 
-export const REPO_STATUSES = ['pending', 'cloning', 'indexing', 'ready', 'failed'] as const;
-export type RepoStatus = (typeof REPO_STATUSES)[number];
-
 /**
  * 信息来源可信度分级，UI 上用角标区分，可信度递增。
  * 技术内容尤其需要让用户知道哪些结论值得再验证一遍。
  */
-export const EVIDENCE_KINDS = ['model', 'web', 'code'] as const;
+export const EVIDENCE_KINDS = ['model', 'web'] as const;
 export type EvidenceKind = (typeof EVIDENCE_KINDS)[number];
 
 /**

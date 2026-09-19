@@ -1,0 +1,95 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body { font-family: system-ui, sans-serif; padding: 16px; color: inherit; background: transparent; }
+      h2 { font-size: 15px; margin: 4px 0 10px; }
+      p.hint { font-size: 12px; opacity: 0.7; margin: 4px 0 12px; }
+      ul { margin: 0; padding-left: 0; list-style: none; }
+      li { margin: 10px 0; font-size: 13px; }
+      .name { font-weight: 600; }
+      .muted { opacity: 0.65; }
+      pre { white-space: pre-wrap; margin: 4px 0; font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <h2>客户对话模拟</h2>
+    <p class="hint">
+      手机端只读：实时对话要用桌面的 LLM 网关，这一端没有。桌面端对练过的会话随数据集合同步
+      过来，这里能看场景与整段对话记录。
+    </p>
+    <ul id="sessions"></ul>
+
+    <script>
+      // 只声明了 data.list（见 mobile/main.ts）：手机端对包数据是只读的，任何写入路径都不会
+      // 出现在这一端的桥方法表里。
+      function call(method, params) {
+        return new Promise((resolve, reject) => {
+          const reqId = Date.now() + Math.random();
+          const onReply = (event) => {
+            const reply = event.data && event.data.openjobResponse;
+            if (reply && reply.reqId === reqId) {
+              window.removeEventListener('message', onReply);
+              reply.error ? reject(new Error(reply.error)) : resolve(reply.result);
+            }
+          };
+          window.addEventListener('message', onReply);
+          window.parent.postMessage({ openjob: { reqId, method, params } }, '*');
+        });
+      }
+
+      const COLLECTION = 'role-play-sessions';
+
+      function readEntry(raw) {
+        if (typeof raw !== 'string' || !raw) return null;
+        let value;
+        try {
+          value = JSON.parse(raw);
+        } catch (error) {
+          return null;
+        }
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+        return typeof value.id === 'string' && value.id ? value : null;
+      }
+
+      function render(sessions) {
+        const node = document.getElementById('sessions');
+        node.innerHTML = '';
+        if (sessions.length === 0) {
+          const empty = document.createElement('li');
+          empty.className = 'muted';
+          empty.textContent = '还没有对练记录。在桌面端「客户对话模拟」里开始一次对练。';
+          node.appendChild(empty);
+          return;
+        }
+        for (const entry of sessions) {
+          const li = document.createElement('li');
+          const title = document.createElement('div');
+          title.className = 'name';
+          title.textContent = entry.title || entry.id;
+          const meta = document.createElement('div');
+          meta.className = 'muted';
+          meta.textContent = entry.status === 'active' ? '进行中' : '已结束';
+          const body = document.createElement('pre');
+          body.className = 'muted';
+          body.textContent = (entry.turns || [])
+            .map((turn) => (turn.speaker === 'customer' ? '客户' : '你') + '：' + turn.text)
+            .join('\n');
+          li.append(title, meta, body);
+          node.appendChild(li);
+        }
+      }
+
+      void (async () => {
+        const node = document.getElementById('sessions');
+        try {
+          const rows = await call('data.list', { collection: COLLECTION, limit: 200 });
+          render(rows.map((row) => readEntry(row.value)).filter(Boolean));
+        } catch (error) {
+          node.textContent = error.message;
+        }
+      })();
+    </script>
+  </body>
+</html>

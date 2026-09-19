@@ -15,8 +15,6 @@ const TABLE_LABELS: Record<string, string> = {
   plan_day: '计划日',
   task: '任务',
   quiz_attempt: '测验',
-  repo: '源码仓库',
-  code_ref: '代码引用',
   annotation: '标记',
   speech_snippet: '话术',
   session: '对话',

@@ -11,7 +11,10 @@
 import type { PluginBridgePrimitives } from '@core/plugins/pluginRuntime/bridge';
 import { invoke } from '../ipc';
 
-export function desktopBridgePrimitives(pluginId: string): PluginBridgePrimitives {
+export function desktopBridgePrimitives(
+  pluginId: string,
+  version: string,
+): PluginBridgePrimitives {
   return {
     'storage.get': {
       invoke: (params) =>
@@ -32,6 +35,46 @@ export function desktopBridgePrimitives(pluginId: string): PluginBridgePrimitive
           pluginId,
           key: (params as { key: string }).key,
         }),
+    },
+    // 包声明的数据集合（阶段 3 B2）：与 storage.* 一样没有权限门槛，是否放行由包自己的
+    // manifest 声明决定（主进程按声明判，未声明的集合拒）。
+    'data.get': {
+      invoke: (params) => {
+        const { collection, key } = params as { collection: string; key: string };
+        return invoke('pluginRuntime:data.get', { pluginId, collection, key });
+      },
+    },
+    'data.put': {
+      invoke: (params) => {
+        const { collection, key, value } = params as {
+          collection: string;
+          key: string;
+          value: string;
+        };
+        return invoke('pluginRuntime:data.put', { pluginId, collection, key, value });
+      },
+    },
+    'data.delete': {
+      invoke: (params) => {
+        const { collection, key } = params as { collection: string; key: string };
+        return invoke('pluginRuntime:data.delete', { pluginId, collection, key });
+      },
+    },
+    'data.list': {
+      invoke: (params) => {
+        const { collection, prefix, limit } = params as {
+          collection: string;
+          prefix?: string;
+          limit?: number;
+        };
+        return invoke('pluginRuntime:data.list', { pluginId, collection, prefix, limit });
+      },
+    },
+    'data.count': {
+      invoke: (params) => {
+        const { collection } = params as { collection: string };
+        return invoke('pluginRuntime:data.count', { pluginId, collection });
+      },
     },
     'campaign.getDescriptor': {
       invoke: (params) =>
@@ -115,6 +158,25 @@ export function desktopBridgePrimitives(pluginId: string): PluginBridgePrimitive
     'artifact.read': {
       permission: 'artifact:read',
       invoke: () => invoke('pluginRuntime:artifact.read', { pluginId }),
+    },
+    // 受控 LLM 补全（§11.2 通用原语）：System / User 文本由包自己带，宿主只负责端点、
+    // 审计与 JSON 解析。提示词正文是包自己的内容，宿主不认识任何岗位簇的题型。
+    'llm.complete': {
+      permission: 'llm:complete',
+      invoke: (params) => {
+        const { system, user, role } = params as {
+          system: string;
+          user: string;
+          role?: string;
+        };
+        return invoke('pluginRuntime:llm.complete', {
+          pluginId,
+          version,
+          system,
+          user,
+          ...(role !== undefined ? { role } : {}),
+        });
+      },
     },
     // 基础流式问答（§7.9）：编排与工具在宿主，**领域上下文由包自己拼**——这里刻意没有
     // 「指定哪个仓库」这类岗位参数，包要问源码就自己用工作区原语取出片段再问。

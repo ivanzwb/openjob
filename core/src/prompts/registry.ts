@@ -43,7 +43,6 @@ import {
 import { buildNodeFollowUpSystemPrompt } from './followUp';
 import { COMPRESS_SYSTEM } from './compress';
 import { MATCH_SYSTEM } from './ingest';
-import { REPO_SUMMARY_SYSTEM, buildRepoAnalyzeSystem } from './repo';
 
 /**
  * 岗位包能贡献片段的 Prompt Slot，定义在 plugins/types 的 PROMPT_SLOTS。
@@ -267,23 +266,6 @@ export const PROMPT_REGISTRY: Record<string, PromptEntry> = {
   'compress.forContext': {
     id: 'compress.forContext',
     versions: [{ id: 'compress.forContext@v1', text: COMPRESS_SYSTEM, note: '初始版本' }],
-  },
-
-  // ── 仓库（原 main/repo/repository 与 main/llm/index startChat 内联）──
-  'repo.summary': {
-    id: 'repo.summary',
-    versions: [{ id: 'repo.summary@v1', text: REPO_SUMMARY_SYSTEM, note: '初始版本' }],
-  },
-  'repo.analyze': {
-    id: 'repo.analyze',
-    versions: [
-      {
-        id: 'repo.analyze@v1',
-        build: (p) =>
-          buildRepoAnalyzeSystem(p.url ?? '', p.summaryMd ?? '（无）', p.repoMapMd ?? ''),
-        note: '初始版本',
-      },
-    ],
   },
 };
 

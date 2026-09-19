@@ -133,14 +133,38 @@ describe('声明的权限就是上限', () => {
     }
   });
 
-  it('某个能力有 repository:read，不代表另一个能力也能读仓库', () => {
-    // 装岗位包 ≠ 所有能力都拿到全部权限：每条契约各管自己
-    const withoutRepo = [...CAPABILITY_CONTRACTS].find(([, permissions]) =>
-      !permissions.has('repository:read'),
+  it('某个能力声明的权限，不代表另一个能力也能用', () => {
+    // 装岗位包 ≠ 所有能力都拿到全部权限：每条契约各管自己。
+    // 源码能力（software-engineering）声明 filesystem:workspace；产品岗位内嵌的
+    // analytics-case 只用表格与 LLM，不碰工作区——两条权限互不借用。
+    const withWorkspace = [...CAPABILITY_CONTRACTS].find(([, permissions]) =>
+      permissions.has('filesystem:workspace'),
     );
-    expect(withoutRepo, '需要一个不含 repository:read 的能力做对照').toBeDefined();
+    const withoutWorkspace = [...CAPABILITY_CONTRACTS].find(([, permissions]) =>
+      !permissions.has('filesystem:workspace'),
+    );
+    const withMicrophone = [...CAPABILITY_CONTRACTS].find(([, permissions]) =>
+      permissions.has('microphone:read'),
+    );
+    const withoutMicrophone = [...CAPABILITY_CONTRACTS].find(([, permissions]) =>
+      !permissions.has('microphone:read'),
+    );
+    expect(withWorkspace, '需要一个声明 filesystem:workspace 的能力').toBeDefined();
+    expect(withoutWorkspace, '需要一个不含 filesystem:workspace 的能力做对照').toBeDefined();
+    expect(withMicrophone, '需要一个声明 microphone:read 的能力').toBeDefined();
+    expect(withoutMicrophone, '需要一个不含 microphone:read 的能力做对照').toBeDefined();
 
-    expect(authorize(withoutRepo![0], 'repository:read').decision).toMatchObject({
+    expect(authorize(withWorkspace![0], 'filesystem:workspace').decision).toMatchObject({
+      allowed: true,
+    });
+    expect(authorize(withMicrophone![0], 'microphone:read').decision).toMatchObject({
+      allowed: true,
+    });
+    expect(authorize(withoutWorkspace![0], 'filesystem:workspace').decision).toMatchObject({
+      allowed: false,
+      code: 'permission-undeclared',
+    });
+    expect(authorize(withoutMicrophone![0], 'microphone:read').decision).toMatchObject({
       allowed: false,
       code: 'permission-undeclared',
     });
@@ -148,7 +172,7 @@ describe('声明的权限就是上限', () => {
 
   it('没安装的能力一律拒绝', () => {
     for (const capabilityId of ['not-installed-capability', 'source-repository@1.0.0']) {
-      expect(authorize(capabilityId, 'repository:read').decision).toMatchObject({
+      expect(authorize(capabilityId, 'filesystem:workspace').decision).toMatchObject({
         allowed: false,
         code: 'permission-undeclared',
       });
@@ -163,7 +187,7 @@ describe('声明的权限就是上限', () => {
   });
 
   it('拒绝理由不带出资源标识', () => {
-    const { decision } = authorize('not-installed-capability', 'repository:read');
+    const { decision } = authorize('not-installed-capability', 'filesystem:workspace');
     expect(JSON.stringify(decision)).not.toContain('repo-secret-a');
   });
 });

@@ -8,16 +8,20 @@
  */
 import { describe, expect, it } from 'vitest';
 import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
-import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
 
 /**
- * 重放样例：一个自带声明的能力包。
+ * 重放样例：一个自带工具声明的能力包。
  *
  * 基础包不再内置能力包——能力随岗位包分发；但**能力包这个类型还在**，第三方可以单独发
- * 一个。这个样例从 SE 包的内嵌声明里取一条打成独立能力包，用来验证「原地注册」与
- * 「过一遍包格式再重放」两条路径逐字等价。
+ * 一个。这个样例声明一个工作区工具贡献，用来验证「原地注册」与「过一遍包格式再重放」
+ * 两条路径逐字等价。
  */
-const DEMO_DECLARATION = softwareEngineeringRolePack.capabilities[0]!;
+const DEMO_TOOL: ScopedToolDefinition = {
+  name: 'grep',
+  description: 'Search workspace file contents.',
+  permission: 'filesystem:workspace',
+  inputSchemaVersion: 1,
+};
 
 const DEMO_CAPABILITY_PLUGIN: CapabilityPlugin = {
   manifest: {
@@ -27,11 +31,11 @@ const DEMO_CAPABILITY_PLUGIN: CapabilityPlugin = {
     displayName: '演示能力',
     description: '重放等价性用例的能力包',
     compatibility: { core: '^1.0.0', schema: 24 },
-    permissions: ['repository:read'],
+    permissions: ['filesystem:workspace'],
     runtime: { desktop: 'full', mobile: 'view-only' },
   },
   register(registry) {
-    for (const tool of DEMO_DECLARATION.tools ?? []) registry.registerTool(tool);
+    registry.registerTool(DEMO_TOOL);
   },
 };
 

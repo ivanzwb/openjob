@@ -11,7 +11,7 @@ import {
   pluginTaskClientView,
   type PlannedTask,
   type PlannerContext,
-  type PlannerRepo,
+  type PlannerMaterial,
 } from './contributions';
 import {
   CROSS_CLIENT_PLAN,
@@ -24,7 +24,25 @@ import type { CampaignRuntimeDescriptor, ClientPlatform } from '../plugins/types
 import { installedWith } from '../plugins/__fixtures__/installed';
 import { SOURCE_REPOSITORY_CAPABILITY_ID, softwareEngineeringRolePack } from '@plugins/softwareEngineering';
 
-const REPOS: PlannerRepo[] = [...CROSS_CLIENT_PLAN.repos];
+/** 岗位包模板声明的材料类型；排程只按它挑材料。 */
+const MATERIAL_KIND = 'code-repository';
+
+/**
+ * 历史仓库登记表 → 排程材料。
+ *
+ * 旧行的 label 就是仓库 url（迁移把 url 抄进 label），ready 由 status 归一化——
+ * 与 0029_task_material 迁移写进 plugin_data 的取值逐字一致。
+ */
+function materialsFrom(rows: readonly { id: string; url: string; status: string }[]): PlannerMaterial[] {
+  return rows.map((row) => ({
+    kind: MATERIAL_KIND,
+    id: row.id,
+    label: row.url,
+    ready: row.status === 'ready',
+  }));
+}
+
+const MATERIALS: PlannerMaterial[] = materialsFrom(CROSS_CLIENT_PLAN.repos);
 
 function descriptor(
   overrides: Partial<CampaignRuntimeDescriptor> = {},
@@ -37,7 +55,7 @@ function contextFor(
   dayCount: number,
   dailyMinutes: number,
   platform: ClientPlatform = 'desktop',
-  repos: PlannerRepo[] = REPOS,
+  materials: PlannerMaterial[] = MATERIALS,
 ): PlannerContext {
   return {
     platform,
@@ -45,7 +63,7 @@ function contextFor(
     dayCount,
     budgetMinutes: dailyBudget(dailyMinutes),
     usedMinutes: day.baseMinutes,
-    repos,
+    materials,
     installed: installedWith(softwareEngineeringRolePack),
     rolePack: softwareEngineeringRolePack,
   };
@@ -74,10 +92,11 @@ describe('collectPlannerContributions', () => {
         );
 
         expect(
-          payloads(tasks).map(({ kind, nodeId, repoId, estMinutes }) => ({
+          payloads(tasks).map(({ kind, nodeId, materialKind, materialId, estMinutes }) => ({
             kind,
             nodeId,
-            repoId,
+            materialKind,
+            materialId,
             estMinutes,
           })),
           `${dailyMinutes} 分钟 / 第 ${day.dayIndex} 天`,
@@ -87,7 +106,9 @@ describe('collectPlannerContributions', () => {
             .map(({ kind, nodeId, repoId, estMinutes }) => ({
               kind,
               nodeId,
-              repoId,
+              // 历史计划里的 repoId 就是现在的 materialId，材料类型由模板声明
+              materialKind: MATERIAL_KIND,
+              materialId: repoId,
               estMinutes,
             })),
         );
@@ -110,13 +131,16 @@ describe('collectPlannerContributions', () => {
         capabilityId: SOURCE_REPOSITORY_CAPABILITY_ID,
         kind: 'readCode',
         nodeId: null,
-        repoId: 'repo-ready',
+        materialKind: MATERIAL_KIND,
+        materialId: 'repo-ready',
         estMinutes: 25,
         client: {
           platform: 'desktop',
           availability: 'full',
           executable: true,
           blockedReason: null,
+          // 任务页由岗位包提供：宿主只把包声明的页面挂进任务栏
+          view: { pageId: 'source-repository' },
         },
       },
     ]);
@@ -174,25 +198,27 @@ describe('collectPlannerContributions', () => {
     expect(tasks[0]).toMatchObject({ kind: 'readCode', client: { executable: true } });
   });
 
-  it('没有已索引仓库时不生成 readCode', () => {
+  it('没有可用材料时不生成 readCode', () => {
     const days = crossClientPrePluginPlan();
 
     expect(
       collectPlannerContributions(
         descriptor(),
-        contextFor(days[1]!, days.length, CROSS_CLIENT_PLAN.dailyMinutes, 'desktop', [
-          { id: 'repo-cloning', url: 'https://example.com/other', status: 'cloning' },
-        ]),
+        contextFor(days[1]!, days.length, CROSS_CLIENT_PLAN.dailyMinutes, 'desktop',
+          materialsFrom([
+            { id: 'repo-cloning', url: 'https://example.com/other', status: 'cloning' },
+          ]),
+        ),
       ),
     ).toEqual([]);
   });
 
-  it('多个已索引仓库时按 url 定序，两端选到同一个', () => {
+  it('多个可用材料时按 label 定序，两端选到同一个', () => {
     const days = crossClientPrePluginPlan();
-    const shuffled: PlannerRepo[] = [
+    const shuffled: PlannerMaterial[] = materialsFrom([
       { id: 'repo-z', url: 'https://example.com/zeta', status: 'ready' },
       { id: 'repo-a', url: 'https://example.com/alpha', status: 'ready' },
-    ];
+    ]);
 
     const desktop = collectPlannerContributions(
       descriptor(),
@@ -205,8 +231,8 @@ describe('collectPlannerContributions', () => {
       ].reverse()),
     );
 
-    expect(desktop[0]?.repoId).toBe('repo-a');
-    expect(mobile[0]?.repoId).toBe('repo-a');
+    expect(desktop[0]?.materialId).toBe('repo-a');
+    expect(mobile[0]?.materialId).toBe('repo-a');
   });
 
   it('两端相同输入产生逐条相同的插件任务，只有本机可执行状态不同', () => {
@@ -230,6 +256,7 @@ describe('collectPlannerContributions', () => {
           availability: 'view-only',
           executable: false,
           blockedReason: REQUIRES_DESKTOP_REASON,
+          view: { pageId: 'source-repository' },
         });
       }
     }
@@ -279,6 +306,7 @@ describe('pluginTaskClientView', () => {
       availability: 'view-only',
       executable: false,
       blockedReason: REQUIRES_DESKTOP_REASON,
+      view: { pageId: 'source-repository' },
     });
   });
 
@@ -290,6 +318,7 @@ describe('pluginTaskClientView', () => {
       availability: 'full',
       executable: true,
       blockedReason: null,
+      view: { pageId: 'source-repository' },
     });
   });
 

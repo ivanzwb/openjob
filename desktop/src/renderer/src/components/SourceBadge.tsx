@@ -2,7 +2,7 @@ import type { Citation } from '@core/entities';
 import type { EvidenceKind } from '@core/enums';
 
 /**
- * 信息来源角标。可信度递增：模型自身知识 < 网络检索 < 代码实证。
+ * 信息来源角标。可信度递增：模型自身知识 < 网络检索。
  * 技术内容答错比不知道更糟，用户需要一眼看出哪些结论值得再验证。
  */
 const STYLES: Record<EvidenceKind, { label: string; className: string; hint: string }> = {
@@ -15,11 +15,6 @@ const STYLES: Record<EvidenceKind, { label: string; className: string; hint: str
     label: '网络检索',
     className: 'border-sky-800/60 bg-sky-950/40 text-sky-300',
     hint: '基于联网检索结果，可点开出处核对',
-  },
-  code: {
-    label: '代码实证',
-    className: 'border-emerald-800/60 bg-emerald-950/40 text-emerald-300',
-    hint: '结论有具体代码位置支撑',
   },
 };
 
@@ -35,19 +30,13 @@ export function SourceBadge({ kind }: { kind: EvidenceKind }): React.JSX.Element
   );
 }
 
-export function CitationList({
-  citations,
-  onCodeClick,
-}: {
-  citations: Citation[];
-  onCodeClick?: (c: Citation) => void;
-}): React.JSX.Element | null {
+export function CitationList({ citations }: { citations: Citation[] }): React.JSX.Element | null {
   if (citations.length === 0) return null;
 
   return (
     <ol className="mt-3 space-y-1 border-t border-[var(--color-border)] pt-2 text-xs">
       {citations.map((c, i) => (
-        <li key={`${c.url ?? c.filePath}-${i}`} className="flex gap-2">
+        <li key={`${c.url ?? c.title}-${i}`} className="flex gap-2">
           <span className="text-[var(--color-muted)]">[{i + 1}]</span>
           {c.url ? (
             <a
@@ -58,18 +47,8 @@ export function CitationList({
             >
               {c.title || c.url}
             </a>
-          ) : c.filePath && onCodeClick ? (
-            <button
-              type="button"
-              onClick={() => onCodeClick(c)}
-              className="font-mono text-emerald-400 hover:underline"
-            >
-              {c.filePath}:{c.startLine}
-            </button>
           ) : (
-            <span className="font-mono">
-              {c.filePath}:{c.startLine}
-            </span>
+            <span>{c.title ?? '未命名来源'}</span>
           )}
         </li>
       ))}

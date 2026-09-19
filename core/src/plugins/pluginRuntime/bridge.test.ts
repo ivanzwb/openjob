@@ -28,6 +28,13 @@ function services(): PluginRuntimeServices {
       set: async () => undefined,
       delete: async () => undefined,
     },
+    data: {
+      get: async () => null,
+      put: async () => undefined,
+      delete: async () => undefined,
+      list: async () => [],
+      count: async () => 0,
+    },
   };
 }
 

@@ -1,0 +1,285 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body { font-family: system-ui, sans-serif; padding: 16px; color: inherit; background: transparent; }
+      h2 { font-size: 15px; margin: 4px 0 10px; }
+      h3 { font-size: 13px; margin: 16px 0 6px; }
+      p.hint { font-size: 12px; opacity: 0.65; margin: 4px 0 10px; }
+      ul { margin: 0; padding-left: 0; list-style: none; }
+      li { margin: 4px 0; font-size: 13px; display: flex; gap: 8px; align-items: baseline; }
+      .name { font-weight: 600; cursor: pointer; }
+      .selected { font-weight: 700; text-decoration: underline; }
+      .muted { opacity: 0.65; }
+      button { font-size: 12px; }
+      textarea { width: 100%; min-height: 110px; font-size: 13px; box-sizing: border-box; }
+      pre { white-space: pre-wrap; margin: 6px 0; }
+    </style>
+  </head>
+  <body>
+    <h2>案例训练</h2>
+    <p class="hint">
+      表格由你显式选进来（宿主弹选择器，页面拿不到本机路径），解析与作答校验是本包自己的纯
+      逻辑；出题、评分与推荐答案走宿主的 LLM 网关，提示词正文由本包自带。案例存进本包声明的
+      cases 数据集合里，宿主不认识内容，手机端只读同一份。
+    </p>
+
+    <h3>数据</h3>
+    <p>
+      <button id="pick">选择表格文件</button>
+      <span id="dataMsg" class="muted"></span>
+    </p>
+    <pre id="overview" class="muted">还没有读入数据</pre>
+
+    <h3>题目</h3>
+    <p>
+      <button id="gen">出题</button>
+      <span id="caseMsg" class="muted"></span>
+    </p>
+    <pre id="case" class="muted">还没有题目</pre>
+
+    <h3>作答</h3>
+    <textarea id="answer" placeholder="写下你的分析：指标观察 → 假设 → 建议 → 风险，并说明各自的依据。"></textarea>
+    <p>
+      <button id="score">提交评分</button>
+      <button id="rec">生成推荐答案</button>
+      <span id="scoreMsg" class="muted"></span>
+    </p>
+    <pre id="result" class="muted"></pre>
+
+    <h3>已存案例</h3>
+    <ul id="cases"></ul>
+
+    <!-- 页面资产是 CJS：先预备 module/exports，随后的 case-data.js / case-analysis.js
+         由宿主把包内同名 .ts 编译后内联进这里，模块即挂在这个对象上。 -->
+    <script>
+      var module = { exports: {} };
+      var exports = module.exports;
+    </script>
+    <script src="case-data.js"></script>
+    <script src="case-analysis.js"></script>
+    <script>
+      // 受控桥：只能调本包声明过的方法（见 desktop/main.ts），未声明的调用落到「未开放的桥方法」。
+      function call(method, params) {
+        return new Promise((resolve, reject) => {
+          const reqId = Date.now() + Math.random();
+          const onReply = (event) => {
+            const reply = event.data && event.data.openjobResponse;
+            if (reply && reply.reqId === reqId) {
+              window.removeEventListener('message', onReply);
+              reply.error ? reject(new Error(reply.error)) : resolve(reply.result);
+            }
+          };
+          window.addEventListener('message', onReply);
+          window.parent.postMessage({ openjob: { reqId, method, params } }, '*');
+        });
+      }
+
+      const caseData = module.exports;
+      const COLLECTION = 'cases';
+
+      // ── 提示词：正文归本包所有，宿主只负责端点与审计 ──────────────────────
+      const CASE_SYSTEM = `你是资深产品面试官。根据候选人给的表格数据出一道产品案例题。
+题目必须真的需要读这份数据才能回答，不要出「请谈谈你对增长的理解」这类与数据无关的泛题。
+只描述数据里存在的事实，不要替数据补上它没有的口径（比如把「活跃数」当成「留存率」）。
+输出 JSON：{ "title": "短标题", "scenarioMd": "markdown 题目正文（含 1-2 个追问方向）", "constraints": ["作答必须覆盖的考察点"], "evaluationCriteria": ["评分维度 3-6 条"] }`;
+
+      const SCORE_SYSTEM = `你是产品面试评委。按 1-5 分评分（5=能扛追问），给出逐点反馈与改进后的答题稿（markdown）。
+反馈按点写、控制在 5 条以内；改进稿给要点大纲，控制在 3 分钟能讲完的篇幅。
+评分只看作答本身：引用了数据里没有的列、把相关性当成因果、没有承认数据局限，都要扣分并写明。
+输出 JSON：{ "score": 1-5, "feedbackMd": "逐点反馈", "improvedOutlineMd": "改进后的答题稿" }`;
+
+      const ANSWER_SYSTEM = `你是资深产品面试教练。根据题目与表格数据，写一份可直接口头作答的参考答案（markdown）。
+结构按「指标观察 → 假设（各自怎么验证）→ 建议（各自基于哪条假设、预期影响）→ 风险」展开。
+只使用数据里存在的列名与事实；数据有截断或缺失时必须在风险里说明。不要写评分或点评。
+输出 JSON：{ "answerMd": "..." }`;
+
+      const PREVIEW_ROWS = 40;
+
+      let dataset = null;
+      let artifact = null;
+      let currentCase = null;
+      let cases = [];
+
+      const msg = (id, text) => { document.getElementById(id).textContent = text; };
+
+      /** 数据集概览 + 供模型看的前若干行；行数截断如实写明，不让模型以为看到了全表 */
+      function datasetForPrompt() {
+        const overview = caseData.describeDataset(dataset);
+        const lines = [
+          `文件：${artifact.name}（${artifact.format}，${artifact.bytes} 字节）`,
+          `列：${overview.columns.map((column) => `${column.name}:${column.type}`).join('、')}`,
+          `行数：读到 ${overview.rowCount} 行，文件共 ${overview.totalRows} 行${overview.truncated ? '（已截断）' : ''}`,
+        ];
+        const limitations = caseData.datasetLimitations(overview);
+        if (limitations.length > 0) lines.push(`数据局限：${limitations.join('；')}`);
+        lines.push('数据预览（制表符分隔）：');
+        lines.push([dataset.columns.map((column) => column.name).join('\t')]
+          .concat(dataset.rows.slice(0, PREVIEW_ROWS).map((row) => row.map((cell) => (cell === null ? '' : String(cell))).join('\t')))
+          .join('\n'));
+        return lines.join('\n');
+      }
+
+      function readEntry(raw) {
+        if (typeof raw !== 'string' || !raw) return null;
+        let value;
+        try {
+          value = JSON.parse(raw);
+        } catch (error) {
+          return null;
+        }
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+        return typeof value.id === 'string' && value.id ? value : null;
+      }
+
+      async function loadCases() {
+        const rows = await call('data.list', { collection: COLLECTION, limit: 200 });
+        cases = rows.map((row) => readEntry(row.value)).filter(Boolean);
+      }
+
+      async function saveCase(entry) {
+        await call('data.put', {
+          collection: COLLECTION,
+          key: entry.id,
+          value: JSON.stringify(entry),
+        });
+        await loadCases();
+        renderCases();
+      }
+
+      function renderCases() {
+        const node = document.getElementById('cases');
+        node.innerHTML = '';
+        for (const entry of cases) {
+          const li = document.createElement('li');
+          const label = document.createElement('span');
+          label.className = 'name';
+          label.textContent = entry.label;
+          label.onclick = () => openCase(entry);
+          const meta = document.createElement('span');
+          meta.className = 'muted';
+          meta.textContent = entry.score ? `已评分 ${entry.score}/5` : '未评分';
+          li.append(label, meta);
+          node.appendChild(li);
+        }
+      }
+
+      function openCase(entry) {
+        currentCase = entry;
+        document.getElementById('case').textContent =
+          `${entry.title}\n\n${entry.scenarioMd}` +
+          (entry.constraints && entry.constraints.length
+            ? `\n\n约束 / 考察点：\n${entry.constraints.map((item) => `· ${item}`).join('\n')}`
+            : '');
+        document.getElementById('answer').value = entry.userAnswerMd || '';
+        document.getElementById('result').textContent = entry.feedbackMd
+          ? `得分 ${entry.score}/5\n\n${entry.feedbackMd}\n\n推荐答案：\n${entry.recommendedAnswerMd || '（未生成）'}`
+          : '';
+      }
+
+      async function run(action) {
+        try {
+          await action();
+        } catch (error) {
+          msg('dataMsg', error.message);
+        }
+      }
+
+      document.getElementById('pick').onclick = () => run(async () => {
+        msg('dataMsg', '等待选择文件…');
+        artifact = await call('artifact.read', {});
+        // 分隔文本按 RFC 4180 切成网格再校验；纯文本按每行一个单元格处理
+        const grid = artifact.format === 'delimited'
+          ? (() => {
+              const parsed = caseData.parseDelimitedText(artifact.text);
+              if (!parsed.ok) throw new Error(parsed.message);
+              return parsed.grid;
+            })()
+          : artifact.rows.map((row) => row);
+        const built = caseData.buildTabularDataset({ sourceFormat: 'csv', grid });
+        if (!built.ok) throw new Error(built.message);
+        dataset = built.dataset;
+        currentCase = null;
+        const overview = caseData.describeDataset(dataset);
+        msg('dataMsg', `已读入 ${artifact.name}`);
+        document.getElementById('overview').textContent =
+          `列：${overview.columns.map((column) => `${column.name}(${column.type})`).join('、')}\n` +
+          `行：${overview.rowCount}/${overview.totalRows}${overview.truncated ? '（已截断）' : ''}\n` +
+          (caseData.datasetLimitations(overview).length
+            ? `局限：${caseData.datasetLimitations(overview).join('；')}`
+            : '数据完整');
+      });
+
+      document.getElementById('gen').onclick = () => run(async () => {
+        if (!dataset) throw new Error('先选择一份表格数据');
+        msg('caseMsg', '正在出题…');
+        const generated = await call('llm.complete', {
+          system: CASE_SYSTEM,
+          user: `${datasetForPrompt()}\n\n请出一道需要读这份数据才能回答的产品案例题。`,
+        });
+        const entry = {
+          id: `case-${Date.now()}`,
+          label: `${generated.title}（${new Date().toLocaleString()}）`,
+          ready: true,
+          title: generated.title,
+          scenarioMd: generated.scenarioMd,
+          constraints: generated.constraints || [],
+          evaluationCriteria: generated.evaluationCriteria || [],
+          dataName: artifact.name,
+          createdAt: Date.now(),
+        };
+        await saveCase(entry);
+        openCase(entry);
+        msg('caseMsg', '已出题并存入本包案例集合');
+      });
+
+      document.getElementById('score').onclick = () => run(async () => {
+        if (!currentCase) throw new Error('先生成或选中一道题');
+        const answer = document.getElementById('answer').value.trim();
+        if (!answer) throw new Error('先写下你的作答');
+        msg('scoreMsg', '正在评分…');
+        const scored = await call('llm.complete', {
+          system: SCORE_SYSTEM,
+          user: `题目：${currentCase.title}\n${currentCase.scenarioMd}\n\n${dataset ? datasetForPrompt() : ''}\n\n候选人回答：${answer}`,
+        });
+        const score = Math.min(5, Math.max(1, Math.round(scored.score)));
+        currentCase = { ...currentCase, userAnswerMd: answer, score, feedbackMd: scored.feedbackMd, improvedOutlineMd: scored.improvedOutlineMd };
+        // 结构化校验只拦「引用了不存在的列」这类造假：模型给的分析先在这里过一遍
+        let note = '';
+        try {
+          const parsed = JSON.parse(scored.improvedOutlineMd);
+          if (dataset && parsed && Array.isArray(parsed.metrics)) {
+            const issues = caseData.validateAnalyticsCaseAnalysis(parsed, dataset);
+            if (issues.length > 0) note = `\n（结构校验提醒：${issues.map((issue) => issue.message).join('；')}）`;
+          }
+        } catch (error) {
+          // 改进稿是自由文本时没有结构化分析可校验，如实跳过
+        }
+        await saveCase(currentCase);
+        openCase(currentCase);
+        document.getElementById('result').textContent =
+          `得分 ${score}/5\n\n${scored.feedbackMd}\n\n改进稿：\n${scored.improvedOutlineMd}${note}`;
+        msg('scoreMsg', '已评分');
+      });
+
+      document.getElementById('rec').onclick = () => run(async () => {
+        if (!currentCase) throw new Error('先生成或选中一道题');
+        msg('scoreMsg', '正在生成推荐答案…');
+        const generated = await call('llm.complete', {
+          system: ANSWER_SYSTEM,
+          user: `题目：${currentCase.title}\n${currentCase.scenarioMd}\n\n${dataset ? datasetForPrompt() : ''}`,
+        });
+        currentCase = { ...currentCase, recommendedAnswerMd: generated.answerMd };
+        await saveCase(currentCase);
+        openCase(currentCase);
+        msg('scoreMsg', '推荐答案已存入案例');
+      });
+
+      void run(async () => {
+        await loadCases();
+        renderCases();
+      });
+    </script>
+  </body>
+</html>

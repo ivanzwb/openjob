@@ -8,7 +8,6 @@ import { DEFAULT_HIGHLIGHT_COLOR } from './AnnotationTools';
 const TARGET_LABEL: Record<AnnotationTarget, string> = {
   node: '知识点',
   explanation: '讲解',
-  codeRef: '代码',
   question: '真题',
   intel: '情报',
 };
@@ -16,7 +15,6 @@ const TARGET_LABEL: Record<AnnotationTarget, string> = {
 const TARGET_TONE: Record<AnnotationTarget, string> = {
   node: 'text-sky-300 border-sky-500/30 bg-sky-950/30',
   explanation: 'text-violet-300 border-violet-500/30 bg-violet-950/30',
-  codeRef: 'text-emerald-300 border-emerald-500/30 bg-emerald-950/30',
   question: 'text-amber-300 border-amber-500/30 bg-amber-950/30',
   intel: 'text-rose-300 border-rose-500/30 bg-rose-950/30',
 };
@@ -27,7 +25,6 @@ const FILTERS: Array<{ id: AnnotationTarget | 'all'; label: string }> = [
   { id: 'explanation', label: '讲解' },
   { id: 'question', label: '真题' },
   { id: 'intel', label: '情报' },
-  { id: 'codeRef', label: '代码' },
 ];
 
 export function AnnotationDigest({

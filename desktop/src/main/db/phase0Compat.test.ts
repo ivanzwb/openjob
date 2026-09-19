@@ -139,8 +139,18 @@ describe('Phase 0 旧库兼容性', () => {
       failures: [],
     });
 
-    // 只比较旧列：新增列不算旧数据被改动，要盯的是旧列的值有没有被悄悄重写
-    expect(captureContents(raw, prePluginShapes)).toEqual(before);
+    // 只比较旧列：新增列不算旧数据被改动，要盯的是旧列的值有没有被悄悄重写。
+    // 0029 把 task.repo_id 原地改名为 material_id（取值不变），所以按新列名回读、
+    // 换回旧列名后再逐列比对；新增的 material_kind 列与 plugin_data 承载表都不进比较。
+    const upgradedShapes: TableShapes = {
+      ...prePluginShapes,
+      task: prePluginShapes.task.map((column) => (column === 'repo_id' ? 'material_id' : column)),
+    };
+    const after = captureContents(raw, upgradedShapes);
+    after.task = (after.task as Array<Record<string, unknown>>).map(
+      ({ material_id, ...rest }) => ({ repo_id: material_id, ...rest }),
+    );
+    expect(after).toEqual(before);
   });
 
   it('回填只在 campaign 上补一个 role_profile_id', () => {
@@ -200,17 +210,41 @@ describe('Phase 0 旧库兼容性', () => {
     );
     expect([...examForms].sort()).toEqual([...EXAM_FORMS].sort());
 
-    const readCode = one<{ repo_id: string; est_minutes: number; status: string }>(
+    // 已排好的 readCode：材料标识由 repo_id 原地改名成 material_id，材料本体随
+    // 0029 迁移搬进岗位包声明的 plugin_data.repositories 集合（status/url 原样保留），
+    // 所以这次升级不该让已排好的源码任务失去落点。
+    const readCode = one<{
+      material_id: string;
+      material_kind: string | null;
+      est_minutes: number;
+      value_json: string;
+    }>(
       raw,
-      `SELECT t.repo_id, t.est_minutes, r.status
-       FROM task t JOIN repo r ON r.id = t.repo_id
+      `SELECT t.material_id, t.material_kind, t.est_minutes, p.value_json
+       FROM task t
+       JOIN plugin_data p
+         ON p.plugin_id = 'software-engineering'
+        AND p.collection = 'repositories'
+        AND p.key = t.material_id
        WHERE t.kind = 'readCode'`,
     );
-    expect(readCode).toEqual({
-      repo_id: PHASE0_READY_REPO_ID,
+    const material = JSON.parse(readCode.value_json) as {
+      id: string;
+      label: string;
+      ready: boolean;
+      status: string;
+    };
+    expect({
+      material_id: readCode.material_id,
+      est_minutes: readCode.est_minutes,
+      status: material.status,
+    }).toEqual({
+      material_id: PHASE0_READY_REPO_ID,
       est_minutes: 25,
       status: 'ready',
     });
+    // 迁移只把旧列的取值改名搬过来、不回填种类：材料类型由岗位包模板声明，旧行保持 null
+    expect(readCode.material_kind).toBeNull();
   });
 
   it('插件迁移紧跟在旧库最后一条之后，中间没有断档', () => {

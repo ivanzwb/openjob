@@ -31,7 +31,8 @@ interface PlanDayRow {
 interface TaskRow {
   planDayId: string;
   nodeId: string | null;
-  repoId: string | null;
+  materialKind: string | null;
+  materialId: string | null;
   kind: string;
   estMinutes: number;
   orderIdx: number;
@@ -41,9 +42,32 @@ interface FlatTask {
   date: string;
   kind: string;
   nodeId: string | null;
-  repoId: string | null;
+  materialKind: string | null;
+  materialId: string | null;
   estMinutes: number;
   orderIdx: number;
+}
+
+/** 岗位包模板声明的材料类型；排程只按它挑材料。 */
+const MATERIAL_KIND = 'code-repository';
+
+/** 包自己声明的材料行；宿主只按 (kind, collection) 取数后交给 materialsFromRows 解析。 */
+interface MaterialRow {
+  id: string;
+  label: string;
+  ready: boolean;
+}
+
+/**
+ * 旧仓库登记表 → 包声明的材料行。
+ *
+ * label 就是仓库 url、ready 由 status 归一化——与 0029_task_material 迁移写进
+ * plugin_data 的取值逐字一致，所以这里的默认值与真实旧库升级后的形状同源。
+ */
+function materialRows(
+  rows: readonly { id: string; url: string; status: string }[],
+): MaterialRow[] {
+  return rows.map((row) => ({ id: row.id, label: row.url, ready: row.status === 'ready' }));
 }
 
 const dbRef = vi.hoisted(() => ({ current: null as unknown }));
@@ -82,7 +106,8 @@ interface Captured {
 /** 只实现 generatePlan 用到的那几条 drizzle 链，按表返回对应行 */
 function fakeDb(options: {
   descriptor: Record<string, unknown> | null;
-  repos?: Array<{ id: string; url: string; status: string }>;
+  /** 包声明的数据集合里的材料行；缺省取共享夹具（插件化迁移后的旧库形状）。 */
+  materials?: MaterialRow[];
   /** 是否带「插件化之前就存在」的凭据：决定没有 descriptor 时走不走工程岗兜底 */
   prePluginScoped?: boolean;
 }): Captured {
@@ -97,7 +122,12 @@ function fakeDb(options: {
         coverageType: 'deepDive',
       }));
     }
-    if (table === schema.repo) return options.repos ?? [...CROSS_CLIENT_PLAN.repos];
+    // 排程不再读 repo 表：材料由岗位包声明的 (materialKind, materialCollection) 取数，
+    // 宿主按 (plugin_id, collection) 查 plugin_data，把 value_json 原样交给 materialsFromRows。
+    if (table === schema.pluginData) {
+      const materials = options.materials ?? materialRows(CROSS_CLIENT_PLAN.repos);
+      return materials.map((material) => ({ value: JSON.stringify(material) }));
+    }
     if (table === schema.planDay) return captured.planDays;
     if (table === schema.campaignRuntimeDescriptor) {
       return options.descriptor ? [options.descriptor] : [];
@@ -174,7 +204,8 @@ function flatten(captured: Captured): FlatTask[] {
       date: dateById.get(task.planDayId)!,
       kind: task.kind,
       nodeId: task.nodeId,
-      repoId: task.repoId,
+      materialKind: task.materialKind,
+      materialId: task.materialId,
       estMinutes: task.estMinutes,
       orderIdx: task.orderIdx,
     }))
@@ -183,7 +214,19 @@ function flatten(captured: Captured): FlatTask[] {
 
 function expectedTasks(days: PrePluginPlanDay[]): FlatTask[] {
   return days
-    .flatMap((day) => day.tasks.map((task) => ({ date: day.date, ...task })))
+    .flatMap((day) =>
+      day.tasks.map((task) => ({
+        date: day.date,
+        kind: task.kind,
+        nodeId: task.nodeId,
+        // 插件化之前的计划只记仓库标识；迁移把它原样搬成 material_id，
+        // 材料种类由岗位包模板声明——只有挂了仓库的任务带材料。
+        materialKind: task.repoId === null ? null : MATERIAL_KIND,
+        materialId: task.repoId,
+        estMinutes: task.estMinutes,
+        orderIdx: task.orderIdx,
+      })),
+    )
     .sort((left, right) => left.date.localeCompare(right.date) || left.orderIdx - right.orderIdx);
 }
 
@@ -230,7 +273,8 @@ describe('generatePlan', () => {
         date: '2026-03-03',
         kind: 'readCode',
         nodeId: null,
-        repoId: CROSS_CLIENT_PLAN.readyRepoId,
+        materialKind: MATERIAL_KIND,
+        materialId: CROSS_CLIENT_PLAN.readyRepoId,
         estMinutes: 25,
         orderIdx: 5,
       },
@@ -238,7 +282,8 @@ describe('generatePlan', () => {
         date: '2026-03-05',
         kind: 'readCode',
         nodeId: null,
-        repoId: CROSS_CLIENT_PLAN.readyRepoId,
+        materialKind: MATERIAL_KIND,
+        materialId: CROSS_CLIENT_PLAN.readyRepoId,
         estMinutes: 25,
         orderIdx: 5,
       },
@@ -246,7 +291,8 @@ describe('generatePlan', () => {
         date: '2026-03-07',
         kind: 'readCode',
         nodeId: null,
-        repoId: CROSS_CLIENT_PLAN.readyRepoId,
+        materialKind: MATERIAL_KIND,
+        materialId: CROSS_CLIENT_PLAN.readyRepoId,
         estMinutes: 25,
         orderIdx: 2,
       },
@@ -279,7 +325,7 @@ describe('generatePlan', () => {
   it('仓库还没索引完时不生成 readCode', () => {
     const captured = fakeDb({
       descriptor: descriptorRow(),
-      repos: [{ id: 'repo-cloning', url: 'https://example.com/other', status: 'cloning' }],
+      materials: [{ id: 'repo-cloning', label: 'https://example.com/other', ready: false }],
     });
 
     generatePlan(

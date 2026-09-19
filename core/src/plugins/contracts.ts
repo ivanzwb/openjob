@@ -45,6 +45,9 @@ export class PluginContractError extends Error {
 }
 
 const ID_RE = /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
+/** 数据集合名：小写短横线命名，首个字符必须是字母。 */
+const DATA_COLLECTION_NAME_RE = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
+const DATA_COLLECTION_NAME_MAX = 64;
 const SEMVER_RE =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 const SEMVER_RANGE_CHARS_RE = /^[0-9A-Za-z.*+<>=~^|\s-]+$/;
@@ -231,6 +234,43 @@ export function validatePluginManifest(manifest: PluginManifest): PluginContract
       );
     }
   });
+
+  // 数据集合声明：名字只用于归档与取用，宿主不理解内容，所以这里只校验形状——
+  // 非空、包内不重名、名字是小写短横线且不超过上限、schemaVersion 是正整数。
+  const declaredCollections = manifest.dataCollections;
+  if (declaredCollections !== undefined) {
+    if (!Array.isArray(declaredCollections) || declaredCollections.length === 0) {
+      issue(issues, 'manifest.dataCollections', 'invalid-value', 'dataCollections 必须是非空数组');
+    } else {
+      const seenCollections = new Set<string>();
+      declaredCollections.forEach((collection, index) => {
+        const path = `manifest.dataCollections[${index}]`;
+        const name: unknown = collection?.name;
+        if (
+          typeof name !== 'string' ||
+          name.length > DATA_COLLECTION_NAME_MAX ||
+          !DATA_COLLECTION_NAME_RE.test(name)
+        ) {
+          issue(
+            issues,
+            `${path}.name`,
+            'invalid-id',
+            `集合名必须是小写短横线命名且不超过 ${DATA_COLLECTION_NAME_MAX} 字符`,
+          );
+        }
+        if (typeof name === 'string') {
+          if (seenCollections.has(name)) {
+            issue(issues, `${path}.name`, 'duplicate-id', `重复集合名：${name}`);
+          }
+          seenCollections.add(name);
+        }
+        const schemaVersion: unknown = collection?.schemaVersion;
+        if (!Number.isInteger(schemaVersion) || (schemaVersion as number) < 1) {
+          issue(issues, `${path}.schemaVersion`, 'invalid-value', 'schemaVersion 必须是正整数');
+        }
+      });
+    }
+  }
 
   return issues;
 }
@@ -444,16 +484,21 @@ function validateCapabilities(
   const declared = new Set<string>();
   const declaredRoles = new Set<string>();
   for (const declaration of pack.capabilities) {
-    const contributionCount =
+    // 注册内容、权限、LLM 角色都算声明的内容：页面自己编排通用原语的能力只有权限与角色，
+    // 没有可注册的东西，也是一条有内容的能力；三者全空的声明才等于装上没装。
+    const declaresSomething =
       (declaration.tools?.length ?? 0) +
-      (declaration.interactions?.length ?? 0) +
-      (declaration.artifactParsers?.length ?? 0);
-    if (contributionCount === 0) {
+        (declaration.interactions?.length ?? 0) +
+        (declaration.artifactParsers?.length ?? 0) +
+        (declaration.permissions?.length ?? 0) +
+        (declaration.llmRoles?.length ?? 0) >
+      0;
+    if (!declaresSomething) {
       issue(
         issues,
         `capabilities[${declaration.id}]`,
         'invalid-value',
-        '能力声明至少要包含一项贡献（tools / interactions / artifactParsers），否则装上等于没装',
+        '能力声明至少要声明一项内容（工具 / 交互 / 解析器 / 权限 / LLM 角色），否则装上等于没装',
       );
     }
     for (const tool of declaration.tools ?? []) {
@@ -648,6 +693,10 @@ export function validateRolePack(pack: RolePack): PluginContractIssue[] {
     }
   });
 
+  const declaredCollectionNames = new Set(
+    (pack.manifest.dataCollections ?? []).map((collection) => collection.name),
+  );
+
   pack.taskTemplates.forEach((task, index) => {
     const path = `taskTemplates[${index}]`;
     if (!isNonEmpty(task.taskKind)) {
@@ -655,6 +704,26 @@ export function validateRolePack(pack: RolePack): PluginContractIssue[] {
     }
     if (!Number.isFinite(task.defaultMinutes) || task.defaultMinutes <= 0) {
       issue(issues, `${path}.defaultMinutes`, 'invalid-value', '默认时长必须大于 0');
+    }
+    // materialKind 与 materialCollection 必须成对：只要材料类型却不说材料放在哪个集合，
+    // 排程就无表可读；反过来只声明集合却不声明类型，宿主也不知道该拿它做什么。
+    const hasMaterialKind = task.materialKind !== undefined;
+    const hasMaterialCollection = task.materialCollection !== undefined;
+    if (hasMaterialKind !== hasMaterialCollection) {
+      issue(
+        issues,
+        `${path}.${hasMaterialKind ? 'materialCollection' : 'materialKind'}`,
+        'missing-reference',
+        'materialKind 与 materialCollection 必须成对声明',
+      );
+    }
+    if (hasMaterialCollection && !declaredCollectionNames.has(task.materialCollection!)) {
+      issue(
+        issues,
+        `${path}.materialCollection`,
+        'missing-reference',
+        `材料集合必须在本包 manifest.dataCollections 中声明：${task.materialCollection}`,
+      );
     }
     (task.supportedFormats ?? []).forEach((formatId, formatIndex) => {
       if (!formatIds.has(formatId)) {

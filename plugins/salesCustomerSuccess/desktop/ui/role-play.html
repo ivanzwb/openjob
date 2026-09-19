@@ -1,0 +1,338 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body { font-family: system-ui, sans-serif; padding: 16px; color: inherit; background: transparent; }
+      h2 { font-size: 15px; margin: 4px 0 10px; }
+      h3 { font-size: 13px; margin: 16px 0 6px; }
+      p.hint { font-size: 12px; opacity: 0.65; margin: 4px 0 10px; }
+      ul { margin: 0; padding-left: 0; list-style: none; }
+      li { margin: 4px 0; font-size: 13px; }
+      .name { font-weight: 600; cursor: pointer; }
+      .muted { opacity: 0.65; }
+      .customer { color: var(--color-accent, #2563eb); }
+      button { font-size: 12px; }
+      textarea { width: 100%; min-height: 90px; font-size: 13px; box-sizing: border-box; }
+      select { font-size: 12px; }
+      pre { white-space: pre-wrap; margin: 6px 0; font-size: 13px; }
+      dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 4px 0; font-size: 13px; }
+      dt { opacity: 0.65; }
+    </style>
+  </head>
+  <body>
+    <h2>客户对话模拟</h2>
+    <p class="hint">
+      由模型扮演客户，你按真实节奏应对。客户台词走宿主的 LLM 网关，提示词正文与场景素材由本包
+      自带；对练会话存进本包声明的 role-play-sessions 数据集合里，宿主不认识内容，手机端只读。
+    </p>
+
+    <h3>场景</h3>
+    <p>
+      <select id="scenario"></select>
+      <button id="start">开始对练</button>
+      <span id="startMsg" class="muted"></span>
+    </p>
+    <div id="brief"></div>
+
+    <h3>对练</h3>
+    <pre id="transcript" class="muted">还没有开始。选一个场景，然后点「开始对练」。</pre>
+    <textarea id="reply" placeholder="写下你这一轮要说的话——先弄清顾虑，再谈价值与下一步。"></textarea>
+    <p>
+      <span class="muted">本轮意图：</span>
+      <select id="intent"></select>
+      <button id="submit">回应客户</button>
+      <button id="finish">结束并交卷</button>
+      <span id="turnMsg" class="muted"></span>
+    </p>
+
+    <h3>历史对练</h3>
+    <ul id="sessions"></ul>
+
+    <script>
+      // 受控桥：只能调本包声明过的方法（见 desktop/main.ts），未声明的调用落到「未开放的桥方法」。
+      function call(method, params) {
+        return new Promise((resolve, reject) => {
+          const reqId = Date.now() + Math.random();
+          const onReply = (event) => {
+            const reply = event.data && event.data.openjobResponse;
+            if (reply && reply.reqId === reqId) {
+              window.removeEventListener('message', onReply);
+              reply.error ? reject(new Error(reply.error)) : resolve(reply.result);
+            }
+          };
+          window.addEventListener('message', onReply);
+          window.parent.postMessage({ openjob: { reqId, method, params } }, '*');
+        });
+      }
+
+      const COLLECTION = 'role-play-sessions';
+      const TOTAL_SECONDS = 1800;
+
+      // ── 场景素材：正文归本包所有，随页面走，宿主不持有 ──────────────────────
+      const SCENARIOS = [
+        {
+          id: 'renewal-at-risk',
+          title: '续约风险客户',
+          persona: [
+            { label: '角色', value: '中型制造企业的 IT 负责人' },
+            { label: '合作现状', value: '已使用两年，下季度续约待定' },
+            { label: '当前情绪', value: '对上季度的故障处理不满' },
+            { label: '关心的事', value: '稳定性、内部问责、预算合理性' },
+          ],
+          brief: '客户在续约前提出降价并质疑服务质量。你需要先弄清真实顾虑，再谈价值与下一步。',
+          opening: '你们上个季度那次故障，我在管理层会上很难解释。这次续约，价格得给我一个说法。',
+          objections: [
+            '你说的改进，怎么保证不是又一次口头承诺？',
+            '同类产品报价比你们低两成，我为什么不换？',
+          ],
+        },
+      ];
+
+      const INTENTS = [
+        { value: 'discover', label: '探询需求' },
+        { value: 'propose', label: '提出方案价值' },
+        { value: 'handle-objection', label: '处理异议' },
+        { value: 'advance', label: '推进下一步' },
+      ];
+
+      // ── 提示词：正文归本包所有，宿主只负责端点与审计 ──────────────────────
+      const CUSTOMER_SYSTEM = `你是销售对练里扮演客户的演员。根据给你的客户人设、场景与对话记录，说出这位客户接下来说的那一句话。
+保持这位客户的立场、情绪与关心的事，不要评价候选人，不要跳出角色，不要替候选人说话。
+如果给了「可提出的顾虑」，在时机合适时用它，不要生硬堆砌。
+输出 JSON：{ "reply": "客户接下来说的一句话" }`;
+
+      function scenarioById(id) {
+        return SCENARIOS.find((item) => item.id === id) || SCENARIOS[0];
+      }
+
+      function personaLine(scenario) {
+        return scenario.persona.map((fact) => fact.label + '=' + fact.value).join('；');
+      }
+
+      function transcriptText(session) {
+        return session.turns
+          .map((turn) => (turn.speaker === 'customer' ? '客户' : '候选人') + '：' + turn.text)
+          .join('\n');
+      }
+
+      // 异议按对练进度逐条抛出；客户轮次已经用掉几条就推进到第几条
+      function suggestedObjection(scenario, session) {
+        const used = session.turns.filter((turn) => turn.speaker === 'customer').length - 1;
+        return scenario.objections[used] || null;
+      }
+
+      let current = null;
+      let sessions = [];
+
+      const msg = (id, text) => { document.getElementById(id).textContent = text; };
+
+      function readEntry(raw) {
+        if (typeof raw !== 'string' || !raw) return null;
+        let value;
+        try {
+          value = JSON.parse(raw);
+        } catch (error) {
+          return null;
+        }
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+        return typeof value.id === 'string' && value.id ? value : null;
+      }
+
+      async function loadSessions() {
+        const rows = await call('data.list', { collection: COLLECTION, limit: 200 });
+        sessions = rows.map((row) => readEntry(row.value)).filter(Boolean);
+      }
+
+      async function saveSession(session) {
+        await call('data.put', {
+          collection: COLLECTION,
+          key: session.id,
+          value: JSON.stringify(session),
+        });
+        await loadSessions();
+        renderSessions();
+      }
+
+      function remainingSeconds(session) {
+        return Math.max(0, Math.ceil((session.deadlineAt - Date.now()) / 1000));
+      }
+
+      function renderBrief(scenario) {
+        const node = document.getElementById('brief');
+        if (!scenario) { node.innerHTML = ''; return; }
+        node.innerHTML = '';
+        const list = document.createElement('dl');
+        for (const fact of scenario.persona) {
+          const dt = document.createElement('dt');
+          dt.textContent = fact.label;
+          const dd = document.createElement('dd');
+          dd.textContent = fact.value;
+          list.append(dt, dd);
+        }
+        const brief = document.createElement('p');
+        brief.className = 'muted';
+        brief.textContent = scenario.brief;
+        node.append(list, brief);
+      }
+
+      function renderSession() {
+        const node = document.getElementById('transcript');
+        if (!current) {
+          node.textContent = '还没有开始。选一个场景，然后点「开始对练」。';
+          return;
+        }
+        const scenario = scenarioById(current.scenarioId);
+        const lines = current.turns.map((turn) => {
+          const who = turn.speaker === 'customer' ? '客户' : '你';
+          const intent = turn.intent ? '（意图：' + turn.intent + '）' : '';
+          return who + '：' + turn.text + intent;
+        });
+        const statusText =
+          current.status === 'active'
+            ? '剩余 ' + Math.floor(remainingSeconds(current) / 60) + ' 分'
+            : current.status === 'completed'
+              ? '已交卷'
+              : '已中止';
+        node.textContent = '场景：' + scenario.title + '（' + statusText + '）\n\n' + lines.join('\n\n');
+      }
+
+      function renderSessions() {
+        const node = document.getElementById('sessions');
+        node.innerHTML = '';
+        if (sessions.length === 0) {
+          const empty = document.createElement('li');
+          empty.className = 'muted';
+          empty.textContent = '还没有对练记录。';
+          node.appendChild(empty);
+          return;
+        }
+        for (const entry of sessions) {
+          const li = document.createElement('li');
+          const label = document.createElement('span');
+          label.className = 'name';
+          label.textContent = entry.title;
+          label.onclick = () => { current = entry; renderSession(); };
+          const meta = document.createElement('span');
+          meta.className = 'muted';
+          meta.textContent = ' ' + (entry.status === 'active' ? '进行中' : '已结束') +
+            ' · ' + (entry.turns ? entry.turns.length : 0) + ' 轮';
+          li.append(label, meta);
+          node.appendChild(li);
+        }
+      }
+
+      function fillScenarios() {
+        const select = document.getElementById('scenario');
+        for (const scenario of SCENARIOS) {
+          const option = document.createElement('option');
+          option.value = scenario.id;
+          option.textContent = scenario.title;
+          select.appendChild(option);
+        }
+      }
+
+      function fillIntents() {
+        const select = document.getElementById('intent');
+        const none = document.createElement('option');
+        none.value = '';
+        none.textContent = '不标注';
+        select.appendChild(none);
+        for (const intent of INTENTS) {
+          const option = document.createElement('option');
+          option.value = intent.value;
+          option.textContent = intent.label;
+          select.appendChild(option);
+        }
+      }
+
+      function showScenarioBrief() {
+        renderBrief(scenarioById(document.getElementById('scenario').value));
+      }
+
+      async function run(action) {
+        try {
+          await action();
+        } catch (error) {
+          msg('turnMsg', error.message);
+        }
+      }
+
+      document.getElementById('scenario').onchange = showScenarioBrief;
+
+      document.getElementById('start').onclick = () => run(async () => {
+        const scenario = scenarioById(document.getElementById('scenario').value);
+        const now = Date.now();
+        current = {
+          id: 'rp-' + now,
+          scenarioId: scenario.id,
+          title: scenario.title + '（' + new Date().toLocaleString() + '）',
+          ready: true,
+          status: 'active',
+          startedAt: now,
+          deadlineAt: now + TOTAL_SECONDS * 1000,
+          turns: [{ speaker: 'customer', text: scenario.opening, intent: null, at: now }],
+        };
+        await saveSession(current);
+        renderSession();
+        msg('startMsg', '已开始对练');
+      });
+
+      document.getElementById('submit').onclick = () => run(async () => {
+        if (!current) throw new Error('先开始一次对练');
+        if (current.status !== 'active') throw new Error('这次对练已经结束');
+        const reply = document.getElementById('reply').value.trim();
+        if (!reply) throw new Error('先写下你这一轮要说的话');
+        const intent = document.getElementById('intent').value || null;
+        if (Date.now() >= current.deadlineAt) {
+          current = { ...current, status: 'timeout' };
+          await saveSession(current);
+          renderSession();
+          throw new Error('已到本轮对练时限，对话记录已保留');
+        }
+        const scenario = scenarioById(current.scenarioId);
+        const next = {
+          ...current,
+          turns: current.turns.concat([{ speaker: 'candidate', text: reply, intent, at: Date.now() }]),
+        };
+        const objection = suggestedObjection(scenario, next);
+        msg('turnMsg', '客户正在回应…');
+        const generated = await call('llm.complete', {
+          system: CUSTOMER_SYSTEM,
+          user:
+            '你在扮演这位客户：' + personaLine(scenario) +
+            '\n\n场景：' + scenario.brief +
+            '\n\n对话记录：\n' + transcriptText(next) +
+            (objection ? '\n\n如果时机合适，可以提出这个顾虑：' + objection : '') +
+            '\n\n请只输出客户接下来说的那一句话。',
+        });
+        const text = (generated.reply || generated.questionMd || '').trim();
+        if (!text) throw new Error('客户台词为空，请重试');
+        current = {
+          ...next,
+          turns: next.turns.concat([{ speaker: 'customer', text, intent: null, at: Date.now() }]),
+        };
+        document.getElementById('reply').value = '';
+        await saveSession(current);
+        renderSession();
+        msg('turnMsg', '已回应客户');
+      });
+
+      document.getElementById('finish').onclick = () => run(async () => {
+        if (!current) throw new Error('先开始一次对练');
+        current = { ...current, status: 'completed' };
+        await saveSession(current);
+        renderSession();
+        msg('turnMsg', '本轮对练已完成，记录已保存');
+      });
+
+      fillScenarios();
+      fillIntents();
+      showScenarioBrief();
+      void run(async () => {
+        await loadSessions();
+        renderSessions();
+      });
+    </script>
+  </body>
+</html>

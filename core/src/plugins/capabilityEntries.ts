@@ -23,11 +23,20 @@ import type {
  */
 const CAPABILITY_RUNTIME = { desktop: 'full', mobile: 'view-only' } as const;
 
-function contributionCount(declaration: CapabilityDeclaration): number {
+/**
+ * 一条声明是否产生本机可寻址的能力条目。
+ *
+ * 注册内容、权限、LLM 角色有其一即可：只有权限与角色的能力（页面自己编排通用原语）同样
+ * 要进清单——clientView 判定「本机有没有这个能力」、权限网关推导契约都靠它。
+ */
+function declaresSomething(declaration: CapabilityDeclaration): boolean {
   return (
     (declaration.tools?.length ?? 0) +
-    (declaration.interactions?.length ?? 0) +
-    (declaration.artifactParsers?.length ?? 0)
+      (declaration.interactions?.length ?? 0) +
+      (declaration.artifactParsers?.length ?? 0) +
+      (declaration.permissions?.length ?? 0) +
+      (declaration.llmRoles?.length ?? 0) >
+    0
   );
 }
 
@@ -53,7 +62,7 @@ function declarationManifest(pack: RolePack, declaration: CapabilityDeclaration)
   }
 
   return {
-    // 能力用**自己的** id。宿主按名字绑定实现（如 source-repository 的实现住在 repo/），
+    // 能力用**自己的** id。宿主按名字绑定实现（如 source-repository 的实现住在宿主的能力实现目录），
     // 而这条 id 同时是 descriptor 的能力引用、权限契约的 key 与 binding 行的 plugin_id。
     id: declaration.id,
     version: pack.manifest.version,
@@ -75,7 +84,7 @@ function declarationManifest(pack: RolePack, declaration: CapabilityDeclaration)
  */
 export function capabilityEntriesFromRolePack(pack: RolePack): InstalledPlugin[] {
   return (pack.capabilities ?? [])
-    .filter((declaration) => contributionCount(declaration) > 0)
+    .filter(declaresSomething)
     .map((declaration) => toInstalledPlugin(declarationManifest(pack, declaration)));
 }
 

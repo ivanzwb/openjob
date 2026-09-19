@@ -13,7 +13,7 @@ import { diagnoseCompetencies } from '../competency/diagnose';
 import {
   collectPlannerContributions,
   type PlannerContext,
-  type PlannerRepo,
+  type PlannerMaterial,
 } from '../planner/contributions';
 import { composePrompt } from '../prompts/composer';
 import type { PromptSlot } from '../prompts/registry';
@@ -61,8 +61,22 @@ function phase1Runtime(): CampaignRuntimeDescriptor {
 }
 
 
-function repos(): PlannerRepo[] {
-  return PHASE0_REPOS.map((repo) => ({ id: repo.id, url: repo.url, status: repo.status }));
+/** 岗位包模板声明的材料类型；排程只按它挑材料。 */
+const MATERIAL_KIND = 'code-repository';
+
+/**
+ * 历史仓库登记表 → 排程材料：label 取 url、ready 由 status 归一化。
+ *
+ * 产品战役即使库里留着这些已就绪材料也不该排源码任务——材料是否存在不是判据，
+ * 判据是岗位包模板有没有声明这类材料。
+ */
+function materials(): PlannerMaterial[] {
+  return PHASE0_REPOS.map((repo) => ({
+    kind: MATERIAL_KIND,
+    id: repo.id,
+    label: repo.url,
+    ready: repo.status === 'ready',
+  }));
 }
 
 /** dayIndex 取奇数：readCode 隔天一次，偶数天本来就不排，测不出区别。 */
@@ -73,7 +87,7 @@ function context(overrides: Partial<PlannerContext> = {}): PlannerContext {
     dayCount: 7,
     budgetMinutes: PHASE0_CAMPAIGN.dailyMinutes,
     usedMinutes: 0,
-    repos: repos(),
+    materials: materials(),
     installed: installedWith(productManagerRolePack, softwareEngineeringRolePack),
     rolePack: softwareEngineeringRolePack,
     ...overrides,
@@ -211,10 +225,10 @@ describe('Phase 1 通用核心闸门', () => {
     expect([...scores].sort((a, b) => b - a)).toEqual(scores);
   });
 
-  it('产品战役即使装着已索引仓库也不排源码任务', () => {
+  it('产品战役即使装着已就绪材料也不排源码任务', () => {
     // 仓库是 Campaign 层面的既有数据，换岗位包不会把它删掉，只应该不再被排进计划
     expect(collectPlannerContributions(runtime, context())).toEqual([]);
-    expect(repos().some((repo) => repo.status === 'ready')).toBe(true);
+    expect(materials().some((material) => material.ready)).toBe(true);
   });
 
   it('工程战役在同一份核心下没有回归，仍然排得出源码任务', () => {

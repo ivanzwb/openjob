@@ -4,7 +4,7 @@
  * 包一律是纯数据。这不是保守起见，而是现有契约本来就够用：CapabilityRegistry 的三个
  * 注册方法（registerTool / registerArtifactParser / registerInteractionType）接受的全是
  * 可序列化结构，工具的真实实现留在宿主里（见 builtin/sourceRepository/index.ts 的
- * 「declaration only」注释，实现在 src/main/repo/tools.ts）。既然插件从来只贡献声明，
+ * 「declaration only」注释，实现在宿主的能力实现目录）。既然插件从来只贡献声明，
  * 就没有理由把外部代码加载进主进程——隔离保障因此完整保留，而不是退到运行时拦截。
  *
  * 代价要说清楚：外置包只能声明宿主已经实现的东西。它扩展的是配置面（岗位、题型、

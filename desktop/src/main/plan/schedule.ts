@@ -2,21 +2,24 @@ import { randomUUID } from 'node:crypto';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import type { DateOnly } from '@core/entities';
 import type { PlanGenerateResult, TaskView, TodayCampaignOption, TodayPlan } from '@core/ipc';
-import type { TaskKind } from '@core/enums';
 import {
   PRE_PLUGIN_CAMPAIGN_SCOPE_KIND,
-  PRE_PLUGIN_DEFAULT_ROLE_PACK_ID,
   descriptorFromRolePack,
   collectPlannerContributions,
-  type PlannerRepo,
+  materialsFromRows,
+  selectPrePluginRolePack,
+  taskPresentation,
+  type PlannerMaterial,
 } from '@core/planner/contributions';
-import type { CampaignRuntimeDescriptor } from '@core/plugins/types';
-import { getDb, schema } from '../db';
+import type { CampaignRuntimeDescriptor, RolePack } from '@core/plugins/types';
+import { getDb, getRawDb, schema } from '../db';
 import {
   CORE_VERSION,
   RUNTIME_SCHEMA_VERSION,
   findInstalledRolePack,
   findLatestRolePack,
+  getCampaignRuntime,
+  listExternalPlugins,
   listInstalledPlugins,
 } from '../plugins/runtime';
 import { getCampaignRow, listCampaigns, rowToNode, updateCampaign } from '../campaign/repository';
@@ -39,6 +42,94 @@ function addDays(s: DateOnly, n: number): DateOnly {
   const d = parseDate(s);
   d.setDate(d.getDate() + n);
   return formatLocal(d);
+}
+
+/** 本机装着哪些岗位包：迁移前旧战役的兜底包从这份清单里按声明形状选。 */
+function installedRolePacks(): RolePack[] {
+  return listExternalPlugins()
+    .map((entry) => entry.package.rolePack)
+    .filter((pack): pack is RolePack => pack !== undefined);
+}
+
+/** 任务所属战役当前装着的岗位包；包不在本机时返回 null，任务回落宿主的考点视图。 */
+function rolePackForCampaign(campaignId: string): RolePack | null {
+  const runtime = getCampaignRuntime(getRawDb(), campaignId);
+  if (!runtime) return null;
+  const { id, version } = runtime.descriptor.rolePack;
+  return findInstalledRolePack(id, version) ?? findLatestRolePack(id);
+}
+
+/** 同上，但入口是已落库的任务：战役 id 从它所在的那天反查。 */
+function taskPresentationForPlanDay(
+  planDayId: string,
+  kind: string,
+): { kindLabel: string | null; pageId: string | null } {
+  const db = getDb();
+  const day = db.select().from(schema.planDay).where(eq(schema.planDay.id, planDayId)).get();
+  return taskPresentation(day ? rolePackForCampaign(day.campaignId) : null, kind);
+}
+
+/**
+ * 从岗位包自己声明的数据集合里读材料行，解析成排程认识的材料。
+ *
+ * 宿主不认识材料的语义：按模板声明的 (materialKind, materialCollection) 逐条取数，
+ * 值一律当字符串交给共享的 materialsFromRows 解析。包不在本机时没有任何材料。
+ */
+function loadMaterials(rolePack: RolePack | null): PlannerMaterial[] {
+  if (!rolePack) return [];
+  const db = getDb();
+  const materials: PlannerMaterial[] = [];
+  for (const template of rolePack.taskTemplates) {
+    if (!template.materialKind || !template.materialCollection) continue;
+    const rows = db
+      .select({ value: schema.pluginData.valueJson })
+      .from(schema.pluginData)
+      .where(
+        and(
+          eq(schema.pluginData.pluginId, rolePack.manifest.id),
+          eq(schema.pluginData.collection, template.materialCollection),
+        ),
+      )
+      .all();
+    materials.push(...materialsFromRows(template.materialKind, rows.map((row) => row.value)));
+  }
+  return materials;
+}
+
+/**
+ * 把任务挂的 material_id 还原成展示名。
+ *
+ * 扫本包声明的全部数据集合：迁移只搬了 material_id、没搬 material_kind，所以不按
+ * kind 收窄，直接按 id 在整包里找那个 label。
+ */
+function materialLabels(rolePack: RolePack | null): Map<string, string> {
+  const labels = new Map<string, string>();
+  if (!rolePack) return labels;
+  const db = getDb();
+  for (const collection of rolePack.manifest.dataCollections ?? []) {
+    const rows = db
+      .select({ value: schema.pluginData.valueJson })
+      .from(schema.pluginData)
+      .where(
+        and(
+          eq(schema.pluginData.pluginId, rolePack.manifest.id),
+          eq(schema.pluginData.collection, collection.name),
+        ),
+      )
+      .all();
+    for (const material of materialsFromRows('', rows.map((row) => row.value))) {
+      labels.set(material.id, material.label);
+    }
+  }
+  return labels;
+}
+
+/** 任务卡上的材料标签：从该任务所在计划日反查战役的岗位包，再按 material_id 取 label。 */
+function materialLabelForPlanDay(planDayId: string, materialId: string | null): string | null {
+  if (!materialId) return null;
+  const day = getDb().select().from(schema.planDay).where(eq(schema.planDay.id, planDayId)).get();
+  if (!day) return null;
+  return materialLabels(rolePackForCampaign(day.campaignId)).get(materialId) ?? null;
 }
 
 function daysBetween(start: DateOnly, end: DateOnly): DateOnly[] {
@@ -92,10 +183,10 @@ function loadRuntimeDescriptor(campaignId: string): CampaignRuntimeDescriptor | 
     .orderBy(desc(schema.campaignRuntimeDescriptor.revision))
     .get();
   if (!row) {
-    // 插件化之前的旧战役：默认就是软件工程战役（本应用当时的唯一岗位族）。
-    // descriptor 从「当前安装的岗位包」构建——插件装上即原功能，没装则无插件任务
+    // 插件化之前的旧战役：descriptor 从「当前安装的岗位包」构建——让旧数据恢复原功能的
+    // 那个包装上即原功能，没装则无插件任务。是哪一个包由共享规则按包的声明形状判定
     if (!isPrePluginScopedCampaign(campaignId)) return null;
-    const pack = findLatestRolePack(PRE_PLUGIN_DEFAULT_ROLE_PACK_ID);
+    const pack = selectPrePluginRolePack(installedRolePacks());
     if (!pack) return null;
     return descriptorFromRolePack(campaignId, pack, {
       coreVersion: CORE_VERSION,
@@ -188,10 +279,12 @@ export function generatePlan(
   const learnedQueue: string[] = [];
 
   const runtime = loadRuntimeDescriptor(campaignId);
-  const repos: PlannerRepo[] = db
-    .select({ id: schema.repo.id, url: schema.repo.url, status: schema.repo.status })
-    .from(schema.repo)
-    .all();
+  // 排程按「现在装着什么」取岗位包：pin 版本不在本机时退回同 id 最新已装包
+  const rolePack = runtime
+    ? findInstalledRolePack(runtime.rolePack.id, runtime.rolePack.version) ??
+      findLatestRolePack(runtime.rolePack.id)
+    : null;
+  const materials = loadMaterials(rolePack);
 
   for (let di = 0; di < dates.length; di++) {
     const date = dates[di]!;
@@ -199,9 +292,11 @@ export function generatePlan(
     const budget = dailyBudget(daily);
     let used = 0;
     const dayTasks: Array<{
-      kind: TaskKind;
+      /** 宿主种类或岗位包声明的种类，落库时原样写入 */
+      kind: string;
       nodeId: string | null;
-      repoId: string | null;
+      materialKind: string | null;
+      materialId: string | null;
       estMinutes: number;
       orderIdx: number;
     }> = [];
@@ -216,7 +311,8 @@ export function generatePlan(
           dayTasks.push({
             kind: 'drill',
             nodeId: drillId,
-            repoId: null,
+            materialKind: null,
+            materialId: null,
             estMinutes: est,
             orderIdx: dayTasks.length,
           });
@@ -237,7 +333,8 @@ export function generatePlan(
       dayTasks.push({
         kind: 'learn',
         nodeId: node.id,
-        repoId: null,
+        materialKind: null,
+        materialId: null,
         estMinutes: est,
         orderIdx: dayTasks.length,
       });
@@ -256,7 +353,8 @@ export function generatePlan(
         dayTasks.push({
           kind: 'review',
           nodeId: node.id,
-          repoId: null,
+          materialKind: null,
+          materialId: null,
           estMinutes: est,
           orderIdx: dayTasks.length,
         });
@@ -271,19 +369,15 @@ export function generatePlan(
       dayCount: dates.length,
       budgetMinutes: budget,
       usedMinutes: used,
-      repos,
+      materials,
       installed: listInstalledPlugins(),
-      // pin 版本不在本机时退回同 id 最新已装包：排程反映「现在装着什么」
-      rolePack:
-        runtime === null
-          ? null
-          : findInstalledRolePack(runtime.rolePack.id, runtime.rolePack.version) ??
-            findLatestRolePack(runtime.rolePack.id),
+      rolePack,
     })) {
       dayTasks.push({
         kind: planned.kind,
         nodeId: planned.nodeId,
-        repoId: planned.repoId,
+        materialKind: planned.materialKind,
+        materialId: planned.materialId,
         estMinutes: planned.estMinutes,
         orderIdx: dayTasks.length,
       });
@@ -306,7 +400,8 @@ export function generatePlan(
           id: randomUUID(),
           planDayId,
           nodeId: t.nodeId,
-          repoId: t.repoId,
+          materialKind: t.materialKind,
+          materialId: t.materialId,
           kind: t.kind,
           estMinutes: t.estMinutes,
           actualMinutes: null,
@@ -334,7 +429,8 @@ export function generatePlan(
         id: randomUUID(),
         planDayId: planDay.id,
         nodeId: node.id,
-        repoId: null,
+        materialKind: null,
+        materialId: null,
         kind: 'fallbackScript',
         estMinutes: 10,
         actualMinutes: null,
@@ -455,10 +551,10 @@ export function getTodayPlan(campaignId?: string, date?: string): TodayPlan | nu
     .all()
     .sort((a, b) => a.orderIdx - b.orderIdx);
 
+  const rolePack = rolePackForCampaign(id);
+  const labels = materialLabels(rolePack);
   const nodeIds = taskRows.map((t) => t.nodeId).filter(Boolean) as string[];
-  const repoIds = taskRows.map((t) => t.repoId).filter(Boolean) as string[];
   const nodeMap = new Map<string, { name: string; coverageType: TaskView['nodeCoverage'] }>();
-  const repoMap = new Map<string, string>();
   if (nodeIds.length) {
     const nodeRows = db
       .select()
@@ -469,12 +565,6 @@ export function getTodayPlan(campaignId?: string, date?: string): TodayPlan | nu
       nodeMap.set(n.id, { name: n.name, coverageType: n.coverageType });
     }
   }
-  if (repoIds.length) {
-    const repoRows = db.select().from(schema.repo).where(inArray(schema.repo.id, repoIds)).all();
-    for (const r of repoRows) {
-      repoMap.set(r.id, r.url);
-    }
-  }
 
   const tasks: TaskView[] = taskRows.map((t) => {
     const node = t.nodeId ? nodeMap.get(t.nodeId) : null;
@@ -482,7 +572,8 @@ export function getTodayPlan(campaignId?: string, date?: string): TodayPlan | nu
       id: t.id,
       planDayId: t.planDayId,
       nodeId: t.nodeId,
-      repoId: t.repoId,
+      materialKind: t.materialKind,
+      materialId: t.materialId,
       kind: t.kind,
       estMinutes: t.estMinutes,
       actualMinutes: t.actualMinutes,
@@ -490,7 +581,8 @@ export function getTodayPlan(campaignId?: string, date?: string): TodayPlan | nu
       orderIdx: t.orderIdx,
       nodeName: node?.name ?? null,
       nodeCoverage: node?.coverageType ?? null,
-      repoUrl: t.repoId ? (repoMap.get(t.repoId) ?? null) : null,
+      materialLabel: t.materialId ? (labels.get(t.materialId) ?? null) : null,
+      ...taskPresentation(rolePack, t.kind),
     };
   });
 
@@ -569,7 +661,8 @@ export function deferToday(campaignId: string): number {
         id: randomUUID(),
         planDayId: tomorrowDay.id,
         nodeId: t.nodeId,
-        repoId: t.repoId,
+        materialKind: t.materialKind,
+        materialId: t.materialId,
         kind: t.kind,
         estMinutes: t.estMinutes,
         actualMinutes: null,
@@ -615,15 +708,13 @@ export function completeTask(taskId: string, actualMinutes?: number): TaskView {
   const node = row.nodeId
     ? db.select().from(schema.knowledgeNode).where(eq(schema.knowledgeNode.id, row.nodeId)).get()
     : null;
-  const repo = row.repoId
-    ? db.select().from(schema.repo).where(eq(schema.repo.id, row.repoId)).get()
-    : null;
 
   return {
     id: updated.id,
     planDayId: updated.planDayId,
     nodeId: updated.nodeId,
-    repoId: updated.repoId,
+    materialKind: updated.materialKind,
+    materialId: updated.materialId,
     kind: updated.kind,
     estMinutes: updated.estMinutes,
     actualMinutes: updated.actualMinutes,
@@ -631,7 +722,8 @@ export function completeTask(taskId: string, actualMinutes?: number): TaskView {
     orderIdx: updated.orderIdx,
     nodeName: node?.name ?? null,
     nodeCoverage: node?.coverageType ?? null,
-    repoUrl: repo?.url ?? null,
+    materialLabel: materialLabelForPlanDay(updated.planDayId, updated.materialId),
+    ...taskPresentationForPlanDay(updated.planDayId, updated.kind),
   };
 }
 
@@ -645,15 +737,15 @@ export function skipTask(taskId: string): TaskView {
   const node = row.nodeId
     ? db.select().from(schema.knowledgeNode).where(eq(schema.knowledgeNode.id, row.nodeId)).get()
     : null;
-  const repo = row.repoId
-    ? db.select().from(schema.repo).where(eq(schema.repo.id, row.repoId)).get()
-    : null;
 
   return {
     ...row,
+    materialKind: row.materialKind ?? null,
+    materialId: row.materialId ?? null,
     status: 'skipped',
     nodeName: node?.name ?? null,
     nodeCoverage: node?.coverageType ?? null,
-    repoUrl: repo?.url ?? null,
+    materialLabel: materialLabelForPlanDay(row.planDayId, row.materialId),
+    ...taskPresentationForPlanDay(row.planDayId, row.kind),
   };
 }

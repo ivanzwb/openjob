@@ -48,10 +48,8 @@ import {
   deleteAnnotation,
   listAnnotations,
   listAnnotationsForCampaign,
-  listCodeAnnotations,
   toggleBookmark,
 } from '../annotation';
-import { generateDesignCase, submitDesignAnswer, updateDesignCaseAnswers, generateRecommendedAnswer, elaborateDesignAnswer } from '../design';
 import { dbHealth, getRawDb } from '../db';
 import {
   declaredLlmRoles,
@@ -67,6 +65,13 @@ import {
   pluginStorageGet,
   pluginStorageSet,
 } from '../plugins/pluginRuntimeStorage';
+import {
+  pluginDataCount,
+  pluginDataDelete,
+  pluginDataGet,
+  pluginDataList,
+  pluginDataSet,
+} from '../plugins/pluginData';
 import {
   pluginRuntimeEnabled,
   setPluginRuntimeEnabled,
@@ -96,7 +101,6 @@ import {
 } from '../plugins/install';
 import { downloadPluginBundle, listAvailablePlugins } from '../plugins/catalog';
 import { countUnmappedPrePluginCampaigns } from '../db/backfill/pluginRuntime';
-import { getRolePlaySessionService } from '../plugins/rolePlaySession';
 import { generateExplanation, generateFallbackScript, getExplanation, updateExplanation, elaborateExplanationSelection, rewriteExplanationSelection } from '../explain';
 import { startJob } from '../jobs';
 import { cancelStream, startChat, testTier } from '../llm';
@@ -118,26 +122,14 @@ import {
 } from '../plan/edit';
 import { getPracticeService, listPracticeAttempts, listPracticeScores } from '../practice';
 import { generateQuizAnswer, generateQuizQuestion, getQuizDraft, submitQuizAnswer, updateQuizDraft } from '../quiz';
-import {
-  cloneAndIndex,
-  deleteRepo,
-  ensureCodeRef,
-  getGitStatus,
-  getRepo,
-  listRepos,
-  readRepoFile,
-  updateRepoToLatest,
-} from '../repo';
 import { clearCache, fetchUrl, search } from '../search';
 import {
   deleteSpeechSnippet,
   exportSpeechSnippets,
   listSpeechSnippets,
   listSpeechSnippetsForSource,
-  saveSpeechFromDesign,
   saveSpeechFromNode,
   saveSpeechFromQuizNode,
-  saveSpeechFromRepo,
   updateSpeechSnippet,
 } from '../speech';
 import {
@@ -264,6 +256,23 @@ export function registerIpcHandlers(): void {
   handle('pluginRuntime:storage.get', ({ pluginId, key }) => pluginStorageGet(pluginId, key));
   handle('pluginRuntime:storage.set', ({ pluginId, key, value }) => pluginStorageSet(pluginId, key, value));
   handle('pluginRuntime:storage.delete', ({ pluginId, key }) => pluginStorageDelete(pluginId, key));
+  // 包声明的数据集合（阶段 3 B2）：宿主不理解值，读写都按 plugin_id 收窄；
+  // 集合名必须由调用方 manifest 声明过（pluginData 内部统一判，未声明的拒）
+  handle('pluginRuntime:data.get', ({ pluginId, collection, key }) =>
+    pluginDataGet(pluginId, collection, key),
+  );
+  handle('pluginRuntime:data.put', ({ pluginId, collection, key, value }) =>
+    pluginDataSet(pluginId, collection, key, value),
+  );
+  handle('pluginRuntime:data.delete', ({ pluginId, collection, key }) =>
+    pluginDataDelete(pluginId, collection, key),
+  );
+  handle('pluginRuntime:data.list', ({ pluginId, collection, prefix, limit }) =>
+    pluginDataList(pluginId, collection, { prefix, limit }),
+  );
+  handle('pluginRuntime:data.count', ({ pluginId, collection }) =>
+    pluginDataCount(pluginId, collection),
+  );
   handle('pluginRuntime:list', () =>
     listExternalPlugins()
       .filter((item) => item.package.manifest.main !== undefined)
@@ -554,33 +563,8 @@ export function registerIpcHandlers(): void {
   handle('practice:listAttempts', (query) => listPracticeAttempts(query));
   handle('practice:listScores', ({ attemptId }) => listPracticeScores(attemptId));
 
-  handle('interaction:startRolePlay', (input) => getRolePlaySessionService().start(input));
-  handle('interaction:submitRolePlayTurn', (input) =>
-    getRolePlaySessionService().submitTurn(input),
-  );
-  handle('interaction:endRolePlay', (input) => getRolePlaySessionService().end(input));
-
-  handle('repo:gitStatus', () => getGitStatus());
-  handle('repo:list', () => listRepos());
-  handle('repo:get', ({ id }) => getRepo(id));
-  handle('repo:add', (input) => ({
-    jobId: startJob('克隆并索引仓库', (jobId) => cloneAndIndex(input.url, jobId)),
-  }));
-  handle('repo:update', ({ id }) => ({
-    jobId: startJob('更新仓库', (jobId) => updateRepoToLatest(id, jobId)),
-  }));
-  // 返回值带着删不掉的本地目录，界面要据此提示用户手删，不能丢
-  handle('repo:delete', ({ id }) => deleteRepo(id));
-  handle('repo:readFile', ({ repoId, filePath, startLine, endLine }) =>
-    readRepoFile(repoId, filePath, startLine, endLine),
-  );
-
-  handle('speech:save', (input) => saveSpeechFromRepo(input.repoId, input.contentMd, input.tier));
   handle('speech:saveFromNode', (input) =>
     saveSpeechFromNode(input.nodeId, input.contentMd, input.tier),
-  );
-  handle('speech:saveFromDesign', (input) =>
-    saveSpeechFromDesign(input.campaignId, '', input.contentMd),
   );
   handle('speech:saveFromQuiz', (input) => saveSpeechFromQuizNode(input.nodeId, input.contentMd));
   handle('speech:list', () => listSpeechSnippets());
@@ -593,53 +577,12 @@ export function registerIpcHandlers(): void {
   });
   handle('speech:export', (input) => exportSpeechSnippets(input));
 
-  handle('design:case', ({ campaignId, interviewType, interviewLanguage, force }) =>
-    generateDesignCase(campaignId, interviewType ?? 'mixed', interviewLanguage ?? 'zh', force ?? false),
-  );
-  handle('design:submit', (input) =>
-    submitDesignAnswer(
-      input.campaignId,
-      input.caseTitle,
-      input.scenarioMd,
-      input.userAnswer,
-      input.interviewType,
-      input.interviewLanguage,
-      input.requestedType ?? input.interviewType ?? 'mixed',
-    ),
-  );
-  handle('design:updateAnswers', (input) =>
-    updateDesignCaseAnswers(
-      input.campaignId,
-      input.interviewType,
-      input.interviewLanguage ?? 'zh',
-      {
-        userAnswerMd: input.userAnswerMd,
-        recommendedAnswerMd: input.recommendedAnswerMd,
-      },
-    ),
-  );
-  handle('design:generateAnswer', (input) =>
-    generateRecommendedAnswer(
-      input.campaignId,
-      input.caseTitle,
-      input.scenarioMd,
-      input.interviewType,
-      input.interviewLanguage ?? 'zh',
-      input.constraints,
-    ),
-  );
-  handle('design:elaborate', (input) =>
-    elaborateDesignAnswer(input.selectedText, input.contextMd, input.campaignId),
-  );
-
   handle('annotation:list', ({ targetType, targetId }) =>
     listAnnotations(targetType, targetId),
   );
   handle('annotation:listForCampaign', ({ campaignId }) =>
     listAnnotationsForCampaign(campaignId),
   );
-  handle('annotation:listForRepo', ({ repoId }) => listCodeAnnotations(repoId));
-  handle('codeRef:ensure', (input) => ({ id: ensureCodeRef(input) }));
   handle('annotation:create', (input) => createAnnotation(input));
   handle('annotation:delete', ({ id }) => {
     deleteAnnotation(id);

@@ -16,6 +16,13 @@ function services(): PluginRuntimeServices {
       set: async () => undefined,
       delete: async () => undefined,
     },
+    data: {
+      get: async () => null,
+      put: async () => undefined,
+      delete: async () => undefined,
+      list: async () => [],
+      count: async () => 0,
+    },
   };
 }
 
@@ -126,6 +133,8 @@ describe('pluginRuntimeNamespaces', () => {
     const base = pluginRuntimeNamespaces([]);
     expect(base).toContain('views');
     expect(base).toContain('storage');
+    // data 与 storage 同级：人人可用，读写哪些集合由包自己的声明决定
+    expect(base).toContain('data');
     // bridge 与基础命名空间同级：声明桥方法没有权限门槛
     expect(base).toContain('bridge');
     expect(base).not.toContain('artifact');
@@ -143,12 +152,13 @@ describe('pluginRuntimeNamespaces', () => {
     expect(pluginRuntimeNamespaces(['artifact:read'])).toContain('artifact');
   });
 
-  it('ctx 透传 campaign/llm/evidence/artifact 服务与 bridge 命名空间', async () => {
+  it('ctx 透传 campaign/data/llm/evidence/artifact 服务与 bridge 命名空间', async () => {
     const hub = createEventHub();
     let seen = false;
     const plugin: PluginRuntimeModule = {
       activate(ctx) {
         seen =
+          typeof ctx.data?.count === 'function' &&
           typeof ctx.llm?.complete === 'function' &&
           typeof ctx.evidence?.listConfirmed === 'function' &&
           typeof ctx.artifact?.read === 'function' &&
@@ -162,6 +172,13 @@ describe('pluginRuntimeNamespaces', () => {
       services: {
         campaign: { getDescriptor: async () => null },
         storage: { get: async () => null, set: async () => undefined, delete: async () => undefined },
+        data: {
+          get: async () => null,
+          put: async () => undefined,
+          delete: async () => undefined,
+          list: async () => [],
+          count: async () => 0,
+        },
         llm: { complete: async () => ({}) },
         evidence: { listConfirmed: async () => [] },
         artifact: {

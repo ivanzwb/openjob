@@ -109,7 +109,8 @@ export interface AddTaskInput {
   date: DateOnly;
   kind: TaskKind;
   nodeId?: string | null;
-  repoId?: string | null;
+  materialKind?: string | null;
+  materialId?: string | null;
   estMinutes?: number;
 }
 
@@ -128,7 +129,8 @@ export function addTask(input: AddTaskInput): string {
       id,
       planDayId,
       nodeId: input.nodeId ?? null,
-      repoId: input.repoId ?? null,
+      materialKind: input.materialKind ?? null,
+      materialId: input.materialId ?? null,
       kind: input.kind,
       estMinutes: input.estMinutes ?? 20,
       actualMinutes: null,

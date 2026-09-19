@@ -25,9 +25,11 @@ describe('deviceLocal 列', () => {
     }
   });
 
-  it('克隆路径仍然是本机的', () => {
-    expect(isDeviceLocalColumn('repo', 'local_path')).toBe(true);
-    expect(isDeviceLocalColumn('repo', 'status')).toBe(false);
+  it('退役的旧平台表不再参与同步', () => {
+    // 三张旧表从数据面退役：内容改由岗位包声明的数据集合承载，同步清单里不再列它们
+    for (const table of ['repo', 'code_ref', 'repo_file']) {
+      expect(() => syncTableSpec(table), table).toThrow('不在同步清单里');
+    }
   });
 });
 

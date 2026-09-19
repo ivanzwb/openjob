@@ -62,6 +62,18 @@ export interface PluginManifest {
    * 不必执行插件的 register()。
    */
   interactionSchemas?: Record<string, number>;
+  /**
+   * 包自己声明的数据集合：宿主建通用承载表，内容对宿主不透明。
+   *
+   * 宿主不认识集合里的值，只按 (pluginId, collection, key) 归档与取用；包声明的名字
+   * 就是它的读写授权范围——没声明的集合，调用一律拒。
+   */
+  dataCollections?: ReadonlyArray<{
+    /** 集合名，包内唯一；只用于归档与取用，宿主不理解内容 */
+    name: string;
+    /** 值 JSON 的 schema 版本，包自己维护 */
+    schemaVersion: number;
+  }>;
   dependencies?: PluginDependency[];
 }
 
@@ -146,6 +158,22 @@ export interface TaskTemplate {
   defaultMinutes: number;
   supportedFormats?: string[];
   capabilityId?: string;
+  /**
+   * 任务依赖的材料类型（如 `code-repository`）。宿主不认识材料的语义，只按它
+   * 判断「这个任务需要一份材料」并挑一份可用材料挂到任务上；材料从哪来由排程的
+   * 调用方决定。声明了 capabilityId 却没声明 materialKind 的任务模板当前不排程。
+   */
+  materialKind?: string;
+  /**
+   * 本模板依赖的材料放在本包的哪个数据集合里。
+   *
+   * 与 materialKind 成对声明（见 contracts 校验）：排程按这个集合名从包自己声明的
+   * 数据集合里读材料行。宿主不认识材料语义，只按 (kind, collection) 取数——
+   * 材料从哪来归包所有，collection 必须出现在本包 manifest.dataCollections。
+   */
+  materialCollection?: string;
+  /** 任务页由哪个包页面承担；缺省回落宿主的考点视图。 */
+  view?: { pageId: string };
 }
 
 export type ResumeModuleKind = 'list' | 'structured' | 'text';

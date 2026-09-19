@@ -26,11 +26,9 @@ import type {
   NodeStatus,
   PlanDayStatus,
   ReportSourceType,
-  RepoStatus,
   SessionKind,
   SourceProvider,
   SpeechSourceType,
-  TaskKind,
   TaskStatus,
   ToolName,
 } from './enums';
@@ -300,8 +298,14 @@ export interface Task {
   id: Id;
   planDayId: Id;
   nodeId: Id | null;
-  repoId: Id | null;
-  kind: TaskKind;
+  /**
+   * 任务挂的材料类型（岗位包声明，宿主当不透明标签）与材料标识。
+   * 材料内容对宿主不透明，宿主只按 (materialKind, materialId) 挂任务、还原展示名。
+   */
+  materialKind: string | null;
+  materialId: Id | null;
+  /** 任务种类：宿主种类是闭集，岗位包声明的种类只当不透明标签。 */
+  kind: string;
   estMinutes: number;
   actualMinutes: number | null;
   status: TaskStatus;
@@ -320,34 +324,6 @@ export interface QuizAttempt {
   /** 把用户的回答改写成更好的口语表述 */
   improvedScriptMd: string | null;
   createdAt: Timestamp;
-}
-
-// ---------------------------------------------------------------------------
-// 源码
-// ---------------------------------------------------------------------------
-
-export interface Repo {
-  id: Id;
-  url: string;
-  localPath: string;
-  defaultBranch: string | null;
-  commitSha: string | null;
-  languages: string[];
-  /** tree-sitter 生成的符号骨架，作为 Agent 的导航地图 */
-  repoMapMd: string | null;
-  summaryMd: string | null;
-  indexedAt: Timestamp | null;
-  status: RepoStatus;
-}
-
-export interface CodeRef {
-  id: Id;
-  repoId: Id;
-  filePath: string;
-  startLine: number;
-  endLine: number;
-  commitSha: string | null;
-  snippet: string | null;
 }
 
 // ---------------------------------------------------------------------------

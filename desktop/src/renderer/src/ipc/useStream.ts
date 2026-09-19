@@ -114,7 +114,7 @@ function ensureSubscription(): void {
  * 主进程立即返回 streamId，内容通过 stream:* 事件推送；同一个 key 跨挂载共用一路流。
  */
 export function useStream(
-  /** 这一路流的稳定标识，如 `repoQa:<repoId>`、`chat:node:<nodeId>` */
+  /** 这一路流的稳定标识，如 `chat:node:<nodeId>` */
   key: string,
   initialSessionId?: string | null,
   onDone?: (payload: StreamDone) => void,

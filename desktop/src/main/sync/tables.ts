@@ -54,10 +54,8 @@ const SYNCED_TABLES: Array<{ table: Table; deviceLocal?: string[] }> = [
   { table: schema.planDay },
   { table: schema.task },
   { table: schema.quizAttempt },
-  // 克隆产物是本机的：路径不能同步。status/indexed_at/summary 等元数据需同步到手机。
-  { table: schema.repo, deviceLocal: ['local_path'] },
-  { table: schema.codeRef },
-  { table: schema.repoFile },
+  // 旧平台的那三张本地索引表已从数据面退役：内容改由岗位包声明的数据集合承载
+  // （见 plugin_data）。它们仍留在 schema 里不删——那是这次改动的回退路径。
   { table: schema.annotation },
   { table: schema.speechSnippet },
   { table: schema.session },
@@ -76,6 +74,8 @@ const SYNCED_TABLES: Array<{ table: Table; deviceLocal?: string[] }> = [
   { table: schema.story },
   { table: schema.storyEvidence },
   { table: schema.storyDelivery },
+  // 插件声明的数据集合：内容对宿主不透明，宿主只负责归档与同步
+  { table: schema.pluginData },
 ];
 
 function buildSpec(table: Table, deviceLocal: string[]): SyncTableSpec {

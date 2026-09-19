@@ -82,9 +82,29 @@ afterEach(() => {
   setExternalPlugins([]);
 });
 
-function rolePackFiles(id = 'demo.role', version = '2.0.0'): PluginPackageFiles {
-  const source = structuredClone(DISTRIBUTED_ROLE_PACKS[0]!) as RolePack;
-  const { manifest, ...rest } = source;
+/** 包声明的形状决定它能不能让旧战役恢复原功能：带材料（materialKind）的任务模板才是。 */
+function declaresMaterialTask(pack: RolePack): boolean {
+  return pack.taskTemplates.some((template) => template.materialKind !== undefined);
+}
+
+/**
+ * 恢复型岗位包：声明了带材料任务模板，装上即让旧战役恢复原功能（软件工程包就是这个形状，
+ * `se.read-code` 挂一份代码材料）。基础包不再点名它，判据是包声明的形状。
+ */
+const RESTORING_ROLE_PACK = DISTRIBUTED_ROLE_PACKS.find((pack) => declaresMaterialTask(pack))!;
+
+/**
+ * 「别的角色包」的形状：不声明带材料任务模板，装上不会恢复旧战役（产品 / 销售包就是这样，
+ * 任务页由包自己渲染，不带材料任务）。
+ */
+const OTHER_ROLE_PACK = DISTRIBUTED_ROLE_PACKS.find((pack) => !declaresMaterialTask(pack))!;
+
+function rolePackFiles(
+  id = 'demo.role',
+  version = '2.0.0',
+  source: RolePack = OTHER_ROLE_PACK,
+): PluginPackageFiles {
+  const { manifest, ...rest } = structuredClone(source);
   return {
     [PACKAGE_MANIFEST_FILE]: JSON.stringify({ ...manifest, id, version, dependencies: [] }),
     [PACKAGE_PACK_FILE]: JSON.stringify(rest),
@@ -236,7 +256,7 @@ describe('installPluginBundle', () => {
   });
 
   it('默认岗位包（软件工程）装上即恢复原功能，不触发数据丢失把关', () => {
-    const files = rolePackFiles('software-engineering', '2.0.0');
+    const files = rolePackFiles('software-engineering', '2.0.0', RESTORING_ROLE_PACK);
 
     expect(
       installPluginBundle(bundle(files), { countPendingPrePluginCampaigns: () => 2 }),

@@ -12,7 +12,6 @@ export function getAppPaths(): AppPaths {
   return {
     userData,
     dbFile: join(userData, 'openjob.db'),
-    reposDir: join(userData, 'repos'),
     cacheDir: join(userData, 'cache'),
     backupsDir: join(userData, 'backups'),
     pluginsDir: join(userData, 'plugins'),
@@ -23,7 +22,6 @@ export function ensureDirs(): AppPaths {
   const paths = getAppPaths();
   for (const dir of [
     paths.userData,
-    paths.reposDir,
     paths.cacheDir,
     paths.backupsDir,
     paths.pluginsDir,

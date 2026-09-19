@@ -16,8 +16,13 @@ import type { RolePack } from '@core/plugins/types';
 import {
   TABULAR_DATASET_ARTIFACT_TYPE,
   TABULAR_DATASET_SCHEMA_VERSION,
-} from '@core/case/dataset';
-import { PRODUCT_MANAGER_OPTIONAL_CAPABILITY_IDS, PRODUCT_MANAGER_ROLE_PACK_ID, PRODUCT_MANAGER_ROLE_PACK_VERSION } from './ids';
+} from './desktop/ui/case-data';
+import {
+  PRODUCT_MANAGER_FORMAT_IDS,
+  PRODUCT_MANAGER_OPTIONAL_CAPABILITY_IDS,
+  PRODUCT_MANAGER_ROLE_PACK_ID,
+  PRODUCT_MANAGER_ROLE_PACK_VERSION,
+} from './ids';
 import { productManagerMatchers } from './matchers';
 import { competencyTemplates } from './competencies';
 import { interviewFormats, interviewStages } from './formats';
@@ -46,11 +51,20 @@ export const productManagerRolePack: RolePack = defineRolePack({
     displayName: '产品经理',
     description: '产品经理岗位的能力诊断、案例训练和模拟面试声明',
     compatibility: { core: '^1.0.0', schema: 23 },
-    // 内嵌 analytics-case：权限 = 其声明的并集（contracts 校验）
-    permissions: ['artifact:read'],
+    // 内嵌 analytics-case：权限 = 其声明的并集（contracts 校验）——解析器要 artifact:read，
+    // 案例页的 LLM 流程要 llm:complete，两项都写在那条声明里
+    permissions: ['artifact:read', 'llm:complete'],
     // 内嵌声明贡献的解析器版本：manifest 是宿主判定「认不认得这份数据」的唯一事实源，
     // 声明归包所有，版本也就得由包自己写清楚
     artifactSchemas: { [TABULAR_DATASET_ARTIFACT_TYPE]: TABULAR_DATASET_SCHEMA_VERSION },
+    // 「案例训练」页属于本包：桌面与移动各一份实现，包内平铺在 desktop/ 与 mobile/ 下。
+    // 页面跑在 Webview 沙箱里，只编排通用原语，宿主不再认识「产品案例」这个功能。
+    main: 'desktop/main.js',
+    mobile: 'mobile/main.js',
+    api: '^1.0',
+    // 本包自己的数据集合：案例（题目 / 作答 / 评分）存在这里，宿主按名字归档与取用，
+    // 内容对它不透明；手机端只读同一份数据
+    dataCollections: [{ name: 'cases', schemaVersion: 1 }],
     // portfolio-review 尚无宿主实现，保留为可选依赖；analytics-case 已内嵌
     dependencies: [
       {
@@ -64,6 +78,14 @@ export const productManagerRolePack: RolePack = defineRolePack({
   competencyTemplates,
   interviewStages,
   interviewFormats,
+  // 旧题型取值（concept / coding / scenario）→ 本包格式 id：练习路径按宿主还认得的旧题型
+  // 取值挑题型，翻译成这个包自己的三种面试形式。三个题型各指向一种形式，产品岗的练习
+  // 因此都能落到一个宿主认得的形式上，历史投影与排程也读同一份声明。
+  examFormMappings: {
+    concept: PRODUCT_MANAGER_FORMAT_IDS.behavioral,
+    coding: PRODUCT_MANAGER_FORMAT_IDS.presentation,
+    scenario: PRODUCT_MANAGER_FORMAT_IDS.productCase,
+  },
   rubrics: [productCaseRubric, behavioralRubric, presentationRubric],
   taskTemplates,
   // 插入点 A：产品岗位暂无能力页签，声明为空数组
