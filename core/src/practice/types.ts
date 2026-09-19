@@ -16,7 +16,6 @@
  */
 
 import type {
-  ExamForm,
   InterviewProtocol,
   FollowUpStrategy,
   NodeStatus,
@@ -111,8 +110,8 @@ export interface PracticeSessionInput {
   campaignId: string;
   /** 岗位包声明的题型 ID；与 examForm 二选一 */
   formatId?: string;
-  /** 兼容入口：旧 ExamForm 按岗位包映射成 formatId */
-  examForm?: ExamForm;
+  /** 兼容入口：岗位包声明的题型 id，按包声明映射成 formatId */
+  examForm?: string;
   nodeId?: string | null;
   previousAttemptId?: string | null;
   /** 用户本次明确要求，优先级最低 */
@@ -185,7 +184,7 @@ export interface PracticeAttempt {
   /**
    * 归一化后的 1-5 总分；null 表示这条记录从来没有被评分过。
    *
-   * 必须可空是因为 design_case 只存了题目和作答：旧链路把分数返回给界面就丢了，
+   * 必须可空是因为旧模拟面试题表只存了题目和作答：旧链路把分数返回给界面就丢了，
    * 库里没有。给这类行填 0 会让它在历史里显示成「评了 0 分」，而按平均分算趋势时
    * 又会把整条曲线压下去——两种都是凭空造出来的结论。
    */

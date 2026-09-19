@@ -1,6 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import type { Campaign, KnowledgeNode, Resume } from '@core/entities';
-import type { CoverageType, ExamForm, MasterySource, NodeKind, NodeStatus } from '@core/enums';
+import type { CoverageType, MasterySource, NodeKind, NodeStatus } from '@core/enums';
 import { buildExplainResumeContext } from '@core/prompts/candidateContext';
 import type { ResumeRelevanceQuery } from '@core/resume/relevance';
 import { loadCampaignResumeForPrompt } from './resumeProfileLocal';
@@ -27,9 +27,14 @@ type NodeRow = {
 };
 
 function rowToNode(row: NodeRow): KnowledgeNode {
-  let examForms: ExamForm[] = [];
+  // 题型取值是岗位包声明的 id：历史行里可能是插件化之前的旧取值，读的时候原样保留，
+  // 未知取值交给下游按不透明字符串处理，不在读取时过滤。
+  let examForms: string[] = [];
   try {
-    examForms = JSON.parse(row.exam_forms) as ExamForm[];
+    const parsed = JSON.parse(row.exam_forms) as unknown;
+    if (Array.isArray(parsed)) {
+      examForms = parsed.filter((item): item is string => typeof item === 'string');
+    }
   } catch {
     examForms = [];
   }

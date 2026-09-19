@@ -308,15 +308,10 @@ const FROZEN_OFFENDERS: Readonly<Record<string, readonly (readonly [string, numb
     // 注释一处、`RENAME COLUMN repo_id TO material_id` 一处。旧表本身仍在（回退路径）。
     ['mobile/src/db/migrations/bundle.ts', 17],
   ],
-  codeRefNoun: [
-    ['desktop/src/main/db/schema.ts', 1],
-    ['desktop/src/main/speech/index.ts', 1],
-  ],
-  designCaseNoun: [
-    ['core/src/design/prompts.ts', 1],
-    ['desktop/src/main/db/schema.ts', 1],
-    ['desktop/src/main/sync/tables.ts', 1],
-  ],
+  // 旧源码引用表的定义仍留在 schema 里（回退路径），源码里不再出现该域名词。
+  codeRefNoun: [['desktop/src/main/db/schema.ts', 1]],
+  // 旧模拟面试题表的 JS 侧标识改成中立名（SQL 表名保持不变），源码里不再出现案例域名词。
+  designCaseNoun: [],
   // 案例表格契约与解析已随产品经理岗位包分发（plugins/productManager/desktop/ui/case-data.ts）
   tabularDataset: [],
   // 客户对话模拟已随岗位包分发（plugins/salesCustomerSuccess/desktop/ui/role-play.html）：
@@ -327,9 +322,9 @@ const FROZEN_OFFENDERS: Readonly<Record<string, readonly (readonly [string, numb
     ['core/src/plugins/__fixtures__/phase0Campaign.ts', 3],
   ],
   capabilityIdLiteral: [],
-  rolePackIdLiteral: [
-    ['mobile/src/data/planLocal.ts', 1],
-  ],
+  // 手机端排程的旧战役兜底包改由 selectPrePluginRolePack 按包的声明形状选出，
+  // 源码里不再出现岗位包 id 字面量，名单因此清空；保留这条规则守住「不许再抄回来」。
+  rolePackIdLiteral: [],
   packItemIdLiteral: [['core/src/competency/__fixtures__/productManagementRolePack.ts', 14]],
   // 岗位兜底常量已删除（§6 判据一：基础包不再点名任何岗位族）。「迁移前的旧战役属于哪个包」
   // 改由 selectPrePluginRolePack / isPrePluginRolePack 按包声明的形状回答，源码里不再出现该常量，
@@ -351,38 +346,27 @@ const FROZEN_OFFENDERS: Readonly<Record<string, readonly (readonly [string, numb
     ['desktop/src/main/db/schema.ts', 3],
     ['mobile/src/db/migrations/bundle.ts', 5],
   ],
+  // 旧模拟面试题表只剩 schema 里的表名与迁移 bundle（baseline 建表 + 两次 ALTER）：
+  // 宿主不再按表名读写权威数据，历史投影的表名从 schema 反射。
   pmTableName: [
-    ['core/src/plugins/examForms.ts', 1],
-    ['core/src/plugins/types.ts', 1],
-    ['core/src/practice/types.ts', 1],
     ['desktop/src/main/db/schema.ts', 1],
-    ['desktop/src/main/practice/history.ts', 4],
-    ['desktop/src/main/sync/labels.ts', 1],
     ['mobile/src/db/migrations/bundle.ts', 4],
-    ['mobile/src/db/schemaEnsure.ts', 2],
   ],
-  techStackColumn: [
-    ['desktop/src/main/db/schema.ts', 1],
-    ['desktop/src/main/evidence/documents.ts', 3],
-    ['mobile/src/data/diagnosisLocal.ts', 2],
-    ['mobile/src/data/queries.ts', 2],
-    ['mobile/src/db/migrations/bundle.ts', 1],
-  ],
-  examFormsConstant: [
-    ['core/src/enums.ts', 2],
-    ['desktop/src/main/practice/history.ts', 2],
-    ['desktop/src/renderer/src/components/PracticeRunner.tsx', 2],
-  ],
+  // company_intel 的岗位专属列名已换成岗位中立的一列；旧名只剩手机端迁移 bundle 里
+  // 的两处（baseline 建表一处、0028 改名一处）。桌面端迁移是 .sql，不在扫描范围内。
+  techStackColumn: [['mobile/src/db/migrations/bundle.ts', 2]],
+  // 题型取值已改由岗位包 examForms 声明，基础包里不再有题型枚举常量；这条规则保留
+  // 是为了守住「常量不许再被抄回来」，名单因此清空。
+  examFormsConstant: [],
   repoStatusesConstant: [],
+  // 岗位取值字面量只剩历史形状（夹具、只读投影与两端解析 sourceType 的地方）与 schema/
+  // 迁移里的旧列名。题型相关的取值（design/prompts.ts、两处 diagnosis/tree.ts、
+  // plugins/examForms.ts、enums.ts 的 EXAM_FORMS）已随题型声明迁移清掉。
   roleEnumValue: [
-    ['core/src/design/prompts.ts', 1],
-    ['core/src/diagnosis/tree.ts', 1],
-    ['core/src/enums.ts', 3],
+    ['core/src/enums.ts', 2],
     ['core/src/planner/__fixtures__/prePluginPlan.ts', 1],
     ['core/src/plugins/__fixtures__/phase0Campaign.ts', 2],
-    ['core/src/plugins/examForms.ts', 1],
-    ['desktop/src/main/diagnosis/tree.ts', 1],
-    ['desktop/src/main/practice/history.ts', 4],
+    ['desktop/src/main/practice/history.ts', 3],
     ['desktop/src/main/speech/index.ts', 3],
     ['mobile/src/data/mutations.ts', 2],
     ['mobile/src/data/queries.ts', 3],

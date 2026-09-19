@@ -268,8 +268,6 @@ describe('工程岗位组合后语义不变', () => {
 
   it.each(cases)('$slot/$formatId 的原文逐字保留', ({ slot, formatId, params }) => {
     const fragment = resolveRolePackFragment(softwareEngineeringRolePack, slot, formatId)!;
-    const ref = fragment.ref!;
-    const expected = resolvePrompt(ref, params);
     const composed = compose({
       slot,
       formatId,
@@ -277,9 +275,18 @@ describe('工程岗位组合后语义不变', () => {
       ...(slot === 'scoring' ? { evidence: CONFIRMED_EVIDENCE } : {}),
     });
 
-    expect(composed.systemPrompt).toContain(expected.text);
-    expect(composed.provenance.promptId).toBe(expected.promptId);
-    expect(composed.provenance.promptVersionId).toBe(expected.versionId);
+    if (fragment.ref) {
+      const expected = resolvePrompt(fragment.ref, params);
+      expect(composed.systemPrompt).toContain(expected.text);
+      expect(composed.provenance.promptId).toBe(expected.promptId);
+      expect(composed.provenance.promptVersionId).toBe(expected.versionId);
+    } else {
+      // 包自带片段（出题 / 评分 / 话术都随包分发）：原文逐字进组合，provenance 记包内文件路径
+      expect(composed.systemPrompt).toContain(fragment.text!);
+      expect(composed.provenance.promptId).toBe(
+        `${softwareEngineeringRolePack.manifest.id}:${fragment.file}`,
+      );
+    }
   });
 
   it('出题 prompt 的 JSON 输出契约没被组合改掉', () => {
@@ -352,7 +359,6 @@ describe('provenance 可复现所用插件版本', () => {
     const composed = compose({
       slot: 'scoring',
       formatId: SOFTWARE_ENGINEERING_FORMAT_IDS.systemDesign,
-      params: { type: 'design', language: 'zh' },
       evidence: CONFIRMED_EVIDENCE,
     });
 
@@ -363,7 +369,8 @@ describe('provenance 可复现所用插件版本', () => {
       capabilities: [{ id: 'source-repository', version: '1.0.0' }],
       promptSlot: 'scoring',
       formatId: SOFTWARE_ENGINEERING_FORMAT_IDS.systemDesign,
-      promptId: 'design.score',
+      // 评分片段已随包分发：promptId 记包内文件，不再是宿主注册表的 design.score
+      promptId: 'software-engineering:prompts/scoring/se.system-design.md',
       rubricId: 'se.system-design-rubric',
       evidenceIds: ['ev-gateway'],
       configSnapshotHash: 'snapshot-hash',

@@ -39,7 +39,7 @@ import {
   type PracticeTurnInput,
 } from '@core/practice';
 import { toPromptEvidenceList } from '@core/evidence/promptEvidence';
-import { examFormForFormatId, formatIdForExamForm } from '@core/plugins/examForms';
+import { formatIdForExamForm } from '@core/plugins/examForms';
 import { composePrompt, type ComposedPrompt, type PromptEvidence } from '@core/prompts/composer';
 import type { RolePack } from '@core/plugins/types';
 import { listConfirmedEvidence } from '../evidence/repository';
@@ -108,20 +108,6 @@ export function createPracticeService(deps: PracticeServiceDeps): PracticeServic
     return { ...runtime, formatId, format, rubric };
   }
 
-  /**
-   * build 型 prompt 的参数。
-   *
-   * design.case / design.score 仍按旧的题型与语言取值分支，所以这里给的是 formatId
-   * 对应的旧 ExamForm，而不是新的 protocol——传错分支不会报错，只会静默换成另一套
-   * 题目模板。
-   */
-  function promptParams(resolved: Resolved): Record<string, string | undefined> {
-    return {
-      type: examFormForFormatId(resolved.rolePack, resolved.formatId),
-      language: resolved.interviewLanguage,
-    };
-  }
-
   function loadSession(sessionId: string): PracticeSession {
     const session = getSession(raw, sessionId);
     if (!session) {
@@ -153,12 +139,11 @@ export function createPracticeService(deps: PracticeServiceDeps): PracticeServic
         followUpRound,
         userRequest,
       }),
-      params: promptParams(resolved),
     });
   }
 
   async function createSession(input: PracticeSessionInput): Promise<PracticeSession> {
-    // 先解岗位包再翻译题型：examForm → formatId 的映射归岗位包所有（examFormMappings），
+    // 先解岗位包再翻译题型：题型 id → formatId 的映射归岗位包所有（examForms），
     // 缺包时 resolveCampaignPracticeRuntime 直接报 role-pack-unavailable
     const runtime = resolveCampaignPracticeRuntime(raw, input.campaignId);
     const formatId =
@@ -311,7 +296,6 @@ export function createPracticeService(deps: PracticeServiceDeps): PracticeServic
       formatId: session.formatId,
       evidence: evidenceFor(raw, session.campaignId),
       userRequest: practiceScoreRequest(resolved.rubric),
-      params: promptParams(resolved),
     });
 
     const userBase = [

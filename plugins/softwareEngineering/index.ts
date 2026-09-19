@@ -1,18 +1,14 @@
 /**
  * 软件工程岗位包。
  *
- * 与历史数据共用同一组 id（见 ids.ts）；包内容换代走版本号。插入点 B 目前处于
- * 迁移期：工程流程的 Prompt 正文仍住在宿主 PROMPT_REGISTRY（它们是插件化之前
- * 写下的，角色侧重与阶段机器缠在一起），所以这里用显式 `ref` 条目引用它们，
- * 并由 contract test 保证「引用的 key 一定存在」。把正文从宿主注册表拆进本包的
- * prompts/ 目录是待办的内容工程，不是结构问题——拆出后这里换成 file 片段即可。
- *
- * 引用的完整清单（含未被插入点 B 覆盖的宿主流水线 prompt）见
- * SOFTWARE_ENGINEERING_PROMPT_REFS；被插入点 B 引用的只是其中一个子集。
+ * 与历史数据共用同一组 id（见 ids.ts）；包内容换代走版本号。本包自带 Prompts：
+ * 四种题型的出题 / 评分 / 话术片段都在本包 prompts/ 目录里（插入点 B），出题口吻
+ * 与岗位强绑定，不再引用宿主注册表。诊断与讲解仍引用宿主 PROMPT_REGISTRY 里的
+ * 通用骨架（diagnosis.jd / explain.generate），由 contract test 保证 key 存在。
  */
 import {
   SOFTWARE_ENGINEERING_FORMAT_IDS,
-  SOFTWARE_ENGINEERING_EXAM_FORM_MAPPINGS,
+  SOFTWARE_ENGINEERING_EXAM_FORMS,
 } from './examForms';
 import type { PromptFragment, RolePack } from '@core/plugins/types';
 import { defineRolePack, packRoot } from '../../scripts/pack-authoring';
@@ -34,8 +30,7 @@ export {
 } from './ids';
 export {
   SOFTWARE_ENGINEERING_FORMAT_IDS,
-  SOFTWARE_ENGINEERING_EXAM_FORM_MAPPINGS,
-  formatIdForExamForm,
+  SOFTWARE_ENGINEERING_EXAM_FORMS,
 } from './examForms';
 
 /**
@@ -65,30 +60,16 @@ export const SOFTWARE_ENGINEERING_PROMPT_REFS = {
     score: 'quiz.score',
     answer: 'quiz.answer',
   },
-  design: {
-    case: 'design.case',
-    score: 'design.score',
-    answer: 'design.answer',
-  },
 } as const;
 
-const { knowledge, coding, systemDesign, projectDeepDive } = SOFTWARE_ENGINEERING_FORMAT_IDS;
+const { knowledge } = SOFTWARE_ENGINEERING_FORMAT_IDS;
 
 const promptFragments: PromptFragment[] = [
   { slot: 'diagnosis', ref: SOFTWARE_ENGINEERING_PROMPT_REFS.diagnosis.jd },
   { slot: 'explanation', ref: SOFTWARE_ENGINEERING_PROMPT_REFS.explanation.generate },
   { slot: 'questionGeneration', formatId: knowledge, ref: SOFTWARE_ENGINEERING_PROMPT_REFS.quiz.question },
-  { slot: 'questionGeneration', formatId: coding, ref: SOFTWARE_ENGINEERING_PROMPT_REFS.design.case },
-  { slot: 'questionGeneration', formatId: systemDesign, ref: SOFTWARE_ENGINEERING_PROMPT_REFS.design.case },
-  { slot: 'questionGeneration', formatId: projectDeepDive, ref: SOFTWARE_ENGINEERING_PROMPT_REFS.design.case },
   { slot: 'scoring', formatId: knowledge, ref: SOFTWARE_ENGINEERING_PROMPT_REFS.quiz.score },
-  { slot: 'scoring', formatId: coding, ref: SOFTWARE_ENGINEERING_PROMPT_REFS.design.score },
-  { slot: 'scoring', formatId: systemDesign, ref: SOFTWARE_ENGINEERING_PROMPT_REFS.design.score },
-  { slot: 'scoring', formatId: projectDeepDive, ref: SOFTWARE_ENGINEERING_PROMPT_REFS.design.score },
   { slot: 'answerCoaching', formatId: knowledge, ref: SOFTWARE_ENGINEERING_PROMPT_REFS.quiz.answer },
-  { slot: 'answerCoaching', formatId: coding, ref: SOFTWARE_ENGINEERING_PROMPT_REFS.design.answer },
-  { slot: 'answerCoaching', formatId: systemDesign, ref: SOFTWARE_ENGINEERING_PROMPT_REFS.design.answer },
-  { slot: 'answerCoaching', formatId: projectDeepDive, ref: SOFTWARE_ENGINEERING_PROMPT_REFS.design.answer },
 ];
 
 export const softwareEngineeringRolePack: RolePack = defineRolePack({
@@ -121,7 +102,7 @@ export const softwareEngineeringRolePack: RolePack = defineRolePack({
   competencyTemplates,
   interviewStages,
   interviewFormats,
-  examFormMappings: SOFTWARE_ENGINEERING_EXAM_FORM_MAPPINGS,
+  examForms: SOFTWARE_ENGINEERING_EXAM_FORMS,
   rubrics: [
     technicalKnowledgeRubric,
     codingRubric,

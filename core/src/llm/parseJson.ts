@@ -6,7 +6,7 @@
  * 哪儿一眼能看见。返回数组的响应（JD 诊断的考点清单之类）绝不能开——那是静默
  * 少给几个考点，用户以为诊断完整跑完了。
  */
-export const SALVAGE_TRUNCATED_PROMPTS = new Set(['quiz.score', 'design.score']);
+export const SALVAGE_TRUNCATED_PROMPTS = new Set(['quiz.score']);
 
 export interface ParseJsonOptions {
   /** 见 SALVAGE_TRUNCATED_PROMPTS，默认关闭 */

@@ -1,4 +1,4 @@
-import type { CoverageType, EdgeRelation, ExamForm, MasterySource, NodeKind, NodeStatus } from '@core/enums';
+import type { CoverageType, EdgeRelation, MasterySource, NodeKind, NodeStatus } from '@core/enums';
 import { computePriority } from '@core/priority';
 import type { GeneratedNode } from './prompts';
 
@@ -35,7 +35,8 @@ export interface KnowledgeNodeInsert {
   examProb: number;
   difficulty: number;
   estMinutes: number;
-  examForms: ExamForm[];
+  /** 岗位包声明的题型 id；宿主只存不透明字符串，不认识任何一个取值 */
+  examForms: string[];
   mastery: number;
   masterySource: MasterySource;
   priorityScore: number;
@@ -117,13 +118,24 @@ function toNum(v: unknown, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
-function validExamForms(forms: unknown): ExamForm[] {
-  const allowed: ExamForm[] = ['concept', 'coding', 'design', 'scenario'];
-  if (!Array.isArray(forms)) return ['concept'];
-  const filtered = forms.filter(
-    (f): f is ExamForm => typeof f === 'string' && allowed.includes(f as ExamForm),
-  );
-  return filtered.length ? filtered : ['concept'];
+/**
+ * LLM 输出不可信：examForms 可能是字符串/缺失/混进非字符串项。
+ *
+ * 题型取值归岗位包所有，宿主不认识任何一个，所以这里只做形状净化（保留非空字符串、
+ * 去重），不再拿一份写死的取值清单过滤——那份清单本身就是「基础包在枚举岗位题型」。
+ */
+function validExamForms(forms: unknown): string[] {
+  if (!Array.isArray(forms)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const form of forms) {
+    if (typeof form !== 'string') continue;
+    const value = form.trim();
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    out.push(value);
+  }
+  return out;
 }
 
 export function normalizeName(name: string): string {

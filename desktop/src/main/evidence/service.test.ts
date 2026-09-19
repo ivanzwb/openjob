@@ -55,7 +55,7 @@ function seed(raw: Database): void {
     .run(CAMPAIGN_ID, JD_RAW, RESUME_ID);
   raw
     .prepare(
-      `INSERT INTO company_intel (id, campaign_id, tech_stack_md, hot_topics_md, updated_at)
+      `INSERT INTO company_intel (id, campaign_id, knowledge_tool_map_md, hot_topics_md, updated_at)
        VALUES ('ci-acme', ?, ?, '', 1)`,
     )
     .run(CAMPAIGN_ID, COMPANY_INTEL_MD);

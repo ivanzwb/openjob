@@ -1,4 +1,4 @@
-import type { CoverageType, EdgeRelation, ExamForm, NodeKind } from '@core/enums';
+import type { CoverageType, EdgeRelation, NodeKind } from '@core/enums';
 import type { JdParsed, ResumeParsed } from '@core/entities';
 
 /** LLM 返回的单个知识点（建树 / 细化共用） */
@@ -8,7 +8,8 @@ export interface GeneratedNode {
   examProb: number;
   difficulty: number;
   estMinutes: number;
-  examForms: ExamForm[];
+  /** 模型给出的考察题型 id；具体取值归岗位包声明，宿主按不透明字符串存 */
+  examForms: string[];
   coverageType: CoverageType;
   children?: GeneratedNode[];
 }
@@ -109,7 +110,7 @@ export const EXPAND_SYSTEM = `你是知识点细化助手。为给定主题生�
 export const INTEL_SYSTEM = `你是面试情报分析师。根据检索到的公司面经与公开信息，生成结构化情报卡。
 用 markdown 分段，简洁可执行。输出 JSON：
 {
-  "techStackMd": "技术栈与偏好",
+  "knowledgeToolMapMd": "本岗位的核心知识/工具地图",
   "interviewProcessMd": "面试流程与轮次",
   "hotTopicsMd": "近期高频考点",
   "talkingPointsMd": "反问环节可用素材"

@@ -69,7 +69,7 @@ function resolveSourceLabel(sourceType: SpeechSnippet['sourceType'], sourceId: s
  * - node：knowledgeNode.campaignId
  * - quiz：挂在作答或考点上，两种 id 都要能认出来，再经 node 取 campaignId
  * - story：story.campaignId
- * - codeRef：仓库话术不绑定备考，返回 null
+ * - 其它来源：不绑定备考，返回 null
  */
 function resolveCampaign(
   sourceType: SpeechSnippet['sourceType'],

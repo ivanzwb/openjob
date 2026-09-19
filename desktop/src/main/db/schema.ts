@@ -17,7 +17,6 @@ import type {
   EdgeRelation,
   EvidenceKind,
   EvidenceStatus,
-  ExamForm,
   ExplanationTier,
   MasterySource,
   MessageRole,
@@ -37,7 +36,6 @@ import type {
   PracticeTurnSpeaker,
 } from '@core/enums';
 import type { Citation, JdParsed, ResumeParsed } from '@core/entities';
-import type { MockInterviewKind, MockInterviewType } from '@core/design/prompts';
 import type { ResolvedCapabilityRef, ResolvedPluginRef } from '@core/plugins';
 
 /**
@@ -229,7 +227,7 @@ export const knowledgeNode = sqliteTable(
     examProb: real('exam_prob').notNull().default(0),
     difficulty: integer('difficulty').notNull().default(3),
     estMinutes: integer('est_minutes').notNull().default(30),
-    examForms: text('exam_forms', { mode: 'json' }).$type<ExamForm[]>().notNull().default([]),
+    examForms: text('exam_forms', { mode: 'json' }).$type<string[]>().notNull().default([]),
     mastery: real('mastery').notNull().default(0),
     masterySource: text('mastery_source').$type<MasterySource>().notNull().default('self'),
     priorityScore: real('priority_score').notNull().default(0),
@@ -326,7 +324,8 @@ export const companyIntel = sqliteTable('company_intel', {
   campaignId: text('campaign_id')
     .notNull()
     .references(() => campaign.id, { onDelete: 'cascade' }),
-  techStackMd: text('tech_stack_md').notNull().default(''),
+  // 岗位中立：情报卡所有岗位都用，列名不再点名软件工程的「技术栈」
+  knowledgeToolMapMd: text('knowledge_tool_map_md').notNull().default(''),
   interviewProcessMd: text('interview_process_md').notNull().default(''),
   hotTopicsMd: text('hot_topics_md').notNull().default(''),
   talkingPointsMd: text('talking_points_md').notNull().default(''),
@@ -334,15 +333,21 @@ export const companyIntel = sqliteTable('company_intel', {
   updatedAt: integer('updated_at').notNull(),
 });
 
-export const designCase = sqliteTable(
+/**
+ * 产品经理岗位包当年的模拟面试题表（回退路径）。
+ *
+ * 宿主不再理解「案例 / 模拟面试」的领域语义，只把它当一张历史表读取与同步；SQL
+ * 表名保持不变以读旧数据，JS 侧用中立名，源码里不再出现岗位域名词。
+ */
+export const caseRecord = sqliteTable(
   'design_case',
   {
     id: text('id').primaryKey(),
     campaignId: text('campaign_id')
       .notNull()
       .references(() => campaign.id, { onDelete: 'cascade' }),
-    requestedType: text('requested_type').$type<MockInterviewType>().notNull(),
-    interviewType: text('interview_type').$type<MockInterviewKind>().notNull(),
+    requestedType: text('requested_type').$type<string>().notNull(),
+    interviewType: text('interview_type').$type<string>().notNull(),
     relatedNodeName: text('related_node_name'),
     title: text('title').notNull(),
     scenarioMd: text('scenario_md').notNull(),

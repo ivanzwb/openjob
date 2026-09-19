@@ -78,14 +78,29 @@ export const productManagerRolePack: RolePack = defineRolePack({
   competencyTemplates,
   interviewStages,
   interviewFormats,
-  // 旧题型取值（concept / coding / scenario）→ 本包格式 id：练习路径按宿主还认得的旧题型
-  // 取值挑题型，翻译成这个包自己的三种面试形式。三个题型各指向一种形式，产品岗的练习
-  // 因此都能落到一个宿主认得的形式上，历史投影与排程也读同一份声明。
-  examFormMappings: {
-    concept: PRODUCT_MANAGER_FORMAT_IDS.behavioral,
-    coding: PRODUCT_MANAGER_FORMAT_IDS.presentation,
-    scenario: PRODUCT_MANAGER_FORMAT_IDS.productCase,
-  },
+  // 本包声明的题型：id 沿用插件化之前的旧取值（concept / coding / scenario），
+  // 这样历史行里的取值也能按同一份声明映射回本包的三种面试形式，与桌面端的历史投影、
+  // 排程读同一份声明。具体取值归本包所有，基础包不再枚举它们。
+  examForms: [
+    {
+      id: 'concept',
+      label: '行为面试',
+      formatId: PRODUCT_MANAGER_FORMAT_IDS.behavioral,
+      diagnosisHint: '行为面试：个人贡献、协作与复盘',
+    },
+    {
+      id: 'coding',
+      label: '产品演示',
+      formatId: PRODUCT_MANAGER_FORMAT_IDS.presentation,
+      diagnosisHint: '产品演示：把方案讲成可被采纳的提案',
+    },
+    {
+      id: 'scenario',
+      label: '产品案例',
+      formatId: PRODUCT_MANAGER_FORMAT_IDS.productCase,
+      diagnosisHint: '产品案例：机会判断、指标与方案取舍',
+    },
+  ],
   rubrics: [productCaseRubric, behavioralRubric, presentationRubric],
   taskTemplates,
   // 插入点 A：产品岗位暂无能力页签，声明为空数组

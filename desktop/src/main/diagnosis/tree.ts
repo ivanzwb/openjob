@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { CoverageType, ExamForm } from '@core/enums';
+import type { CoverageType } from '@core/enums';
 import { findSameLevelDuplicate, normalizeName } from '@core/diagnosis/tree';
 import { computePriority } from './priority';
 import type { GeneratedNode } from '@core/diagnosis/prompts';
@@ -90,12 +90,17 @@ function toNum(v: unknown, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
-/** LLM 输出不可信：examForms 可能是字符串/缺失，归一化为合法数组 */
-function validExamForms(forms: unknown): ExamForm[] {
-  const allowed: ExamForm[] = ['concept', 'coding', 'design', 'scenario'];
-  if (!Array.isArray(forms)) return ['concept'];
-  const filtered = forms.filter(
-    (f): f is ExamForm => typeof f === 'string' && allowed.includes(f as ExamForm),
-  );
-  return filtered.length ? filtered : ['concept'];
+/** LLM 输出不可信：examForms 可能是字符串/缺失，归一化为去重后的非空字符串数组 */
+function validExamForms(forms: unknown): string[] {
+  if (!Array.isArray(forms)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const form of forms) {
+    if (typeof form !== 'string') continue;
+    const value = form.trim();
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    out.push(value);
+  }
+  return out;
 }

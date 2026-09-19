@@ -18,7 +18,6 @@ import type {
   EdgeRelation,
   EvidenceKind,
   EvidenceStatus,
-  ExamForm,
   ExplanationTier,
   MasterySource,
   MessageRole,
@@ -165,7 +164,8 @@ export interface KnowledgeNode {
   examProb: number;
   difficulty: number;
   estMinutes: number;
-  examForms: ExamForm[];
+  /** 可能的考察题型；取值是岗位包声明的题型 id，宿主当不透明字符串 */
+  examForms: string[];
   /** 0-5，优先级排序的关键输入 */
   mastery: number;
   masterySource: MasterySource;
@@ -242,7 +242,8 @@ export interface Citation {
 export interface CompanyIntel {
   id: Id;
   campaignId: Id;
-  techStackMd: string;
+  /** 本岗位的核心知识与工具地图（岗位中立；旧列名已随迁移改到这个名字） */
+  knowledgeToolMapMd: string;
   /** 面试流程直接影响日程编排（几轮、各轮形式） */
   interviewProcessMd: string;
   hotTopicsMd: string;

@@ -1,6 +1,5 @@
 import type {
   CompetencyCategory,
-  ExamForm,
   FollowUpStrategy,
   InterviewProtocol,
   PluginType,
@@ -128,6 +127,29 @@ export interface InterviewFormatDefinition {
   followUpPolicy: FollowUpPolicy;
   rubricId: string;
   capabilityId?: string;
+}
+
+/**
+ * 岗位包声明的题型（exam form）。
+ *
+ * 旧题型取值（concept / coding / design / scenario）原本写死在基础包里，诊断 prompt 也
+ * 按那份清单要求模型输出；现在改成岗位包自己声明：`id` 会写进 knowledge_node.exam_forms，
+ * 练习、历史与界面都按它取值——宿主只当不透明字符串，不认识任何一个取值。`label` 用于
+ * 展示（练习页题型下拉、历史行标注）；`formatId` 指明该题型在练习链路里落到本包哪个
+ * InterviewFormatDefinition；`diagnosisHint` 是诊断时给模型的一句话说明。
+ *
+ * 历史行存的是旧取值，包按同一份声明把它们映射回自己的面试形式即可（缺包/缺声明时
+ * 宿主按空串兜底，读历史不受影响）。
+ */
+export interface ExamFormDefinition {
+  /** 题型 id，包内唯一；宿主按它做不透明存储与传递 */
+  id: string;
+  /** 展示名 */
+  label: string;
+  /** 本题型在练习链路里落到本包的哪个 InterviewFormatDefinition.id */
+  formatId: string;
+  /** 诊断 prompt 里枚举这个题型时的说明 */
+  diagnosisHint?: string;
 }
 
 export type RubricScore = 1 | 2 | 3 | 4 | 5;
@@ -289,14 +311,11 @@ export interface RolePack {
   interviewStages: InterviewStageTemplate[];
   interviewFormats: InterviewFormatDefinition[];
   /**
-   * ExamForm（旧题型取值）→ interviewFormat id 的映射，声明本包承认哪些旧题型。
-   *
-   * 插件化之前写入的 knowledge_node.exam_forms / design_case.interview_type 存的是
-   * 旧题型取值；宿主读旧数据时按这份声明翻译成当前包的 interviewFormat id——包装了就
-   * 按声明恢复旧数据投影（装上软件工程包即恢复原功能），没装/没声明时宿主回退空串与
-   * 默认题型。id 必须指向 interviewFormats 里存在的格式（plugin contract test 校验）。
+   * 本包声明的题型：id 写进 knowledge_node.exam_forms、练习与界面按它取值，宿主只当
+   * 不透明字符串。历史行里存的是插件化之前的旧取值，包按这份声明把它们映射回自己的
+   * 面试形式（缺包/缺声明时宿主回退空串，读历史照常工作）。
    */
-  examFormMappings?: Readonly<Partial<Record<ExamForm, string>>>;
+  examForms?: ExamFormDefinition[];
   rubrics: RubricDefinition[];
   taskTemplates: TaskTemplate[];
   promptFragments: PromptFragment[];

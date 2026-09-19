@@ -6,7 +6,7 @@ import { useTheme } from '../theme';
 
 /** 与桌面端 CompanyIntelCard 同一组分节，顺序也一致，两端看到的东西对得上 */
 const SECTIONS: { title: string; pick: (intel: CompanyIntel) => string }[] = [
-  { title: '技术栈', pick: (i) => i.techStackMd },
+  { title: '核心知识 / 工具', pick: (i) => i.knowledgeToolMapMd },
   { title: '面试流程', pick: (i) => i.interviewProcessMd },
   { title: '高频考点', pick: (i) => i.hotTopicsMd },
   { title: '反问素材', pick: (i) => i.talkingPointsMd },

@@ -17,7 +17,6 @@ import {
   PHASE0_REPOS,
   PHASE0_TASKS,
 } from '@core/plugins/__fixtures__/phase0Campaign';
-import { EXAM_FORMS } from '@core/enums';
 import {
   applyMigrations,
   captureContents,
@@ -140,15 +139,22 @@ describe('Phase 0 旧库兼容性', () => {
     });
 
     // 只比较旧列：新增列不算旧数据被改动，要盯的是旧列的值有没有被悄悄重写。
-    // 0029 把 task.repo_id 原地改名为 material_id（取值不变），所以按新列名回读、
+    // 0029 把 task.repo_id 原地改名为 material_id（取值不变），0030 把
+    // company_intel.tech_stack_md 原地改名为 knowledge_tool_map_md，所以按新列名回读、
     // 换回旧列名后再逐列比对；新增的 material_kind 列与 plugin_data 承载表都不进比较。
     const upgradedShapes: TableShapes = {
       ...prePluginShapes,
       task: prePluginShapes.task.map((column) => (column === 'repo_id' ? 'material_id' : column)),
+      company_intel: prePluginShapes.company_intel.map((column) =>
+        column === 'tech_stack_md' ? 'knowledge_tool_map_md' : column,
+      ),
     };
     const after = captureContents(raw, upgradedShapes);
     after.task = (after.task as Array<Record<string, unknown>>).map(
       ({ material_id, ...rest }) => ({ repo_id: material_id, ...rest }),
+    );
+    after.company_intel = (after.company_intel as Array<Record<string, unknown>>).map(
+      ({ knowledge_tool_map_md, ...rest }) => ({ tech_stack_md: knowledge_tool_map_md, ...rest }),
     );
     expect(after).toEqual(before);
   });
@@ -208,7 +214,10 @@ describe('Phase 0 旧库兼容性', () => {
           .all(PHASE0_CAMPAIGN.id) as Array<{ exam_forms: string }>
       ).flatMap((row) => JSON.parse(row.exam_forms) as string[]),
     );
-    expect([...examForms].sort()).toEqual([...EXAM_FORMS].sort());
+    // 题型取值归岗位包声明，夹具按历史形状写字符串：旧库升级后应当逐个原样保留，
+    // 所以拿夹具自己声明的取值集合来比对，不再引用基础包里的题型清单。
+    const declaredExamForms = new Set(PHASE0_NODES.flatMap((node) => node.examForms));
+    expect([...examForms].sort()).toEqual([...declaredExamForms].sort());
 
     // 已排好的 readCode：材料标识由 repo_id 原地改名成 material_id，材料本体随
     // 0029 迁移搬进岗位包声明的 plugin_data.repositories 集合（status/url 原样保留），

@@ -10,6 +10,7 @@ import {
   descriptorFromRolePack,
   materialsFromRows,
   pluginTaskClientView,
+  selectPrePluginRolePack,
   taskPresentation,
   type PlannedTaskClientView,
   type PlannerMaterial,
@@ -101,9 +102,8 @@ function loadRuntimeDescriptor(
   );
   if (!row) {
     if (!isPrePluginScopedCampaign(db, campaignId)) return null;
-    // 插件化之前的旧战役默认是软件工程战役；descriptor 从缓存岗位包构建
-    const pack =
-      listCachedRolePacks(db).find((item) => item.manifest.id === 'software-engineering') ?? null;
+    // 插件化之前的旧战役走「本机缓存里按包声明形状选出的那一个」——基础包不点名任何岗位族
+    const pack = selectPrePluginRolePack(listCachedRolePacks(db));
     return pack
       ? descriptorFromRolePack(campaignId, pack, {
           coreVersion: '1.0.0',

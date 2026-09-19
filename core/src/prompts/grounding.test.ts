@@ -7,20 +7,18 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { JdParsed } from '../entities';
-import {
-  ANSWER_SYSTEM_BY_TYPE,
-  SCENARIO_CASE_SYSTEM,
-  SELF_INTRO_ANSWER_SYSTEM,
-  answerSystemForType,
-  caseSystemForType,
-  scoreSystemForType,
-} from '../design/prompts';
 import { buildCandidateContext, jdSummaryForPrompt } from './candidateContext';
 import { buildNodeFollowUpSystemPrompt } from './followUp';
 import { QUESTION_GROUNDING_RULE, RESUME_GROUNDING_RULE, SCORE_GROUNDING_RULE } from './grounding';
 import { QUIZ_ANSWER_SYSTEM, QUIZ_QUESTION_SYSTEM, QUIZ_SCORE_SYSTEM } from './quiz';
+import { SELF_INTRO_ANSWER_SYSTEM } from './selfIntro';
 import { resolvePrompt } from './registry';
 import { buildStructuredPrompt } from './structure';
+import type { PromptSlot } from '../plugins/types';
+import {
+  SOFTWARE_ENGINEERING_FORMAT_IDS,
+  softwareEngineeringRolePack,
+} from '@plugins/softwareEngineering';
 
 describe('buildStructuredPrompt', () => {
   it('按固定顺序输出小节，约束紧挨输出格式', () => {
@@ -200,39 +198,54 @@ describe('考我三件套带上事实来源约束', () => {
 });
 
 describe('模拟面试', () => {
+  // 出题 / 评分 / 话术片段已随工程岗位包分发：断言改成读包内片段，而不是宿主里的
+  // 共享 prompt 文件（它已删除）。规则本身一条没少——谁把某条规则从片段里删掉，
+  // 这里照样要红。
+  const { coding, systemDesign, projectDeepDive } = SOFTWARE_ENGINEERING_FORMAT_IDS;
+  const fragment = (slot: PromptSlot, formatId: string): string => {
+    const found = softwareEngineeringRolePack.promptFragments.find(
+      (item) => item.slot === slot && item.formatId === formatId,
+    );
+    if (!found?.text) throw new Error(`岗位包缺少 ${slot} / ${formatId} 片段`);
+    return found.text;
+  };
+
   it('场景题不再允许拿 JD 职责当候选人的项目', () => {
-    expect(SCENARIO_CASE_SYSTEM).not.toContain('围绕简历项目或 JD 职责');
-    expect(SCENARIO_CASE_SYSTEM).toContain('不能当成候选人做过的项目来出题');
+    const scenario = fragment('questionGeneration', projectDeepDive);
+    expect(scenario).not.toContain('围绕简历项目或 JD 职责');
+    expect(scenario).toContain('不能当成候选人做过的项目来出题');
     // 简历没料时要退成假设题，而不是虚构一段经历
-    expect(SCENARIO_CASE_SYSTEM).toContain('假设性场景题');
+    expect(scenario).toContain('假设性场景题');
   });
 
   it('所有出题题型都带出题版事实来源规则', () => {
-    for (const type of ['concept', 'coding', 'design', 'scenario', 'selfIntro', 'mixed'] as const) {
-      expect(caseSystemForType(type)).toContain(QUESTION_GROUNDING_RULE);
+    for (const formatId of [coding, systemDesign, projectDeepDive]) {
+      expect(fragment('questionGeneration', formatId)).toContain(QUESTION_GROUNDING_RULE);
     }
   });
 
-  it('非自我介绍的参考答案也有经历隔离，不只自我介绍有', () => {
-    for (const type of ['concept', 'coding', 'design', 'scenario'] as const) {
-      expect(ANSWER_SYSTEM_BY_TYPE[type]).toContain('这种口吻出现的内容，只能来自简历');
+  it('参考答案也有经历隔离，不只概念题有', () => {
+    for (const formatId of [coding, systemDesign, projectDeepDive]) {
+      expect(fragment('answerCoaching', formatId)).toContain('这种口吻出现的内容，只能来自简历');
     }
   });
 
   it('技术内容仍可用通用知识作答——不能把概念题也锁死在简历里', () => {
     // 一刀切禁止简历外内容的话，「什么是 MVCC」就没法答了
-    expect(ANSWER_SYSTEM_BY_TYPE.concept).toContain('技术内容本身可以用通用知识作答');
+    expect(fragment('answerCoaching', coding)).toContain('技术内容本身可以用通用知识作答');
   });
 
   it('自我介绍原有的硬隔离没被削弱', () => {
+    // 自我介绍不属任何岗位包，规则留在基础包（core/src/prompts/selfIntro.ts）
     expect(SELF_INTRO_ANSWER_SYSTEM).toContain('不能当成候选人做过的事');
     expect(SELF_INTRO_ANSWER_SYSTEM).toContain('自我介绍唯一事实来源');
-    expect(answerSystemForType('selfIntro')).toContain('自我介绍是复述候选人自己的履历');
+    expect(SELF_INTRO_ANSWER_SYSTEM).toContain('自我介绍是复述候选人自己的履历');
   });
 
   it('评分带改进稿取材规则', () => {
-    expect(scoreSystemForType('scenario')).toContain(SCORE_GROUNDING_RULE);
-    expect(scoreSystemForType('selfIntro')).toContain(SCORE_GROUNDING_RULE);
+    for (const formatId of [coding, systemDesign, projectDeepDive]) {
+      expect(fragment('scoring', formatId)).toContain(SCORE_GROUNDING_RULE);
+    }
   });
 });
 

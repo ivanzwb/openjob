@@ -1,9 +1,8 @@
 import type { TaskTemplate } from '@core/plugins/types';
-import { EXAM_FORMS } from '@core/enums';
-import { SOFTWARE_ENGINEERING_FORMAT_IDS, formatIdForExamForm } from './examForms';
+import { SOFTWARE_ENGINEERING_EXAM_FORMS, SOFTWARE_ENGINEERING_FORMAT_IDS } from './examForms';
 import { SOURCE_REPOSITORY_CAPABILITY_ID } from './ids';
 
-const allFormatIds = EXAM_FORMS.map(formatIdForExamForm);
+const allFormatIds = SOFTWARE_ENGINEERING_EXAM_FORMS.map((form) => form.formatId);
 
 /**
  * 任务种类由本包声明：宿主只认识自己生成的 learn / drill / review / fallbackScript，

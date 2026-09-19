@@ -18,6 +18,7 @@
 import type { RolePack } from '@core/plugins/types';
 import { defineRolePack, packRoot } from '../../scripts/pack-authoring';
 import {
+  SALES_CUSTOMER_SUCCESS_FORMAT_IDS,
   SALES_CUSTOMER_SUCCESS_ROLE_PACK_ID,
   SALES_CUSTOMER_SUCCESS_ROLE_PACK_VERSION,
 } from './ids';
@@ -65,6 +66,22 @@ export const salesCustomerSuccessRolePack: RolePack = defineRolePack({
   competencyTemplates,
   interviewStages,
   interviewFormats,
+  // 本包声明的题型：id 归本包所有，落到本包的两种面试形式上。历史数据里没有本包
+  // 的旧题型取值，所以直接用自己的形态名（行为面 / 客户对话）。
+  examForms: [
+    {
+      id: 'behavioral',
+      label: '销售行为面',
+      formatId: SALES_CUSTOMER_SUCCESS_FORMAT_IDS.behavioral,
+      diagnosisHint: '行为面：成交流程、个人贡献与复盘',
+    },
+    {
+      id: 'customer-role-play',
+      label: '客户对话模拟',
+      formatId: SALES_CUSTOMER_SUCCESS_FORMAT_IDS.customerRolePlay,
+      diagnosisHint: '客户对话：倾听、价值表达与异议处理',
+    },
+  ],
   rubrics: [rolePlayRubric, behavioralRubric],
   taskTemplates,
   // 插入点 A：销售岗位暂无能力页签，声明为空数组

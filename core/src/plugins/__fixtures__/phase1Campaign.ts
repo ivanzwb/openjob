@@ -11,7 +11,7 @@
  * 各自和自己比。
  */
 
-import type { CoverageType, ExamForm, NodeKind } from '../../enums';
+import type { CoverageType, NodeKind } from '../../enums';
 
 export const PHASE1_CAMPAIGN = {
   id: 'phase1-campaign',
@@ -44,7 +44,8 @@ export interface Phase1Node {
   name: string;
   kind: NodeKind;
   coverageType: CoverageType;
-  examForms: ExamForm[];
+  /** 题型取值由岗位包声明，夹具按历史形状写字符串 */
+  examForms: string[];
   difficulty: number;
   estMinutes: number;
   priorityScore: number;

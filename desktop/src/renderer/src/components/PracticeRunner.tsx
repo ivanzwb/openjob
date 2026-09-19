@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { EXAM_FORMS, type ExamForm } from '@core/enums';
-import { EXAM_FORM_LABELS, type CampaignRuntimeView } from '@core/ipc';
+import { type CampaignRuntimeView } from '@core/ipc';
+import type { ExamFormDefinition } from '@core/plugins/types';
 import type { PracticeDimensionScore, PracticeEvaluation, PracticeSession } from '@core/practice';
 import {
   derivePracticeView,
@@ -76,15 +76,17 @@ function DimensionScoreCard({
 /**
  * 通用练习入口。
  *
- * 题型只给核心枚举里的旧 ExamForm，由岗位包自己映射成它声明的题型 ID。界面因此不需要
- * 知道任何一个岗位包定义了哪些题型——把 `se.system-design` 之类的 ID 抄进来能跑通，
- * 但换一个岗位包就是静默失效：createSession 报 unknown-format，而错在界面里的一个字符串。
+ * 题型下拉直接来自岗位包声明（RolePack.examForms）的 id + label，界面不认识任何一个
+ * 取值——把 `se.system-design` 之类的 ID 抄进来能跑通，但换一个岗位包就是静默失效：
+ * createSession 报 unknown-format，而错在界面里的一个字符串。包没装/没声明题型时下拉
+ * 为空，出题按钮随之禁用。
  *
  * 会话 ID 落 localStorage：出题、追问、评分都是分钟级的模型调用，中途切页面回来时
  * 让用户重新出题等于把刚才那几分钟连同作答一起丢掉。
  */
 export function PracticeRunner({ campaignId }: { campaignId: string }): React.JSX.Element {
-  const [examForm, setExamForm] = useState<ExamForm>('concept');
+  const [examForms, setExamForms] = useState<ExamFormDefinition[]>([]);
+  const [examFormChoice, setExamFormChoice] = useState('');
   const [session, setSession] = useState<PracticeSession | null>(null);
   const [answer, setAnswer] = useState('');
   const [evaluation, setEvaluation] = useState<PracticeEvaluation | null>(null);
@@ -94,6 +96,12 @@ export function PracticeRunner({ campaignId }: { campaignId: string }): React.JS
     campaignId: string;
     view: CampaignRuntimeView | null;
   } | null>(null);
+
+  // 选中的题型必须落在包的声明里：包还没加载、或选择已不在声明里时，退回第一个声明的
+  // 题型（包没声明题型时为空串，出题按钮随之禁用）。派生而不是用 effect 写回 state。
+  const examForm = examForms.some((form) => form.id === examFormChoice)
+    ? examFormChoice
+    : (examForms[0]?.id ?? '');
 
   const storageKey = `openjob:practice:${campaignId}:${examForm}`;
   const [scope, setScope] = useState(storageKey);
@@ -116,9 +124,24 @@ export function PracticeRunner({ campaignId }: { campaignId: string }): React.JS
   // 出题、追问、评分都要按 descriptor 里的岗位包展开；没有它这条链路根本起不来，
   // 与其让用户点下去再吃一个 role-pack-unavailable，不如先说清楚该去哪儿确认岗位
   useEffect(() => {
+    let cancelled = false;
     void invoke('campaign:getRuntimeDescriptor', { campaignId })
-      .then((view) => setRuntimeState({ campaignId, view }))
-      .catch(() => setRuntimeState({ campaignId, view: null }));
+      .then(async (view) => {
+        if (cancelled) return;
+        setRuntimeState({ campaignId, view });
+        const ref = view?.descriptor.rolePack;
+        if (!ref) return;
+        // 题型声明随岗位包分发：按 descriptor pin 的精确版本取一份，界面只当不透明声明用
+        const pack = await invoke('plugin:getRolePack', { id: ref.id, version: ref.version });
+        if (cancelled || !pack) return;
+        setExamForms(pack.examForms ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setRuntimeState({ campaignId, view: null });
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [campaignId]);
 
   const loadedRuntime = runtimeState?.campaignId === campaignId ? runtimeState : null;
@@ -164,6 +187,7 @@ export function PracticeRunner({ campaignId }: { campaignId: string }): React.JS
   const view = derivePracticeView(session);
 
   const start = (): void => {
+    if (!examForm) return;
     void runTask(createKey, () =>
       invoke('practice:createSession', { campaignId, examForm }),
     ).catch(() => undefined);
@@ -198,19 +222,20 @@ export function PracticeRunner({ campaignId }: { campaignId: string }): React.JS
           <span className="text-xs text-[var(--color-muted)]">题型</span>
           <select
             value={examForm}
-            onChange={(e) => setExamForm(e.target.value as ExamForm)}
+            onChange={(e) => setExamFormChoice(e.target.value)}
+            disabled={examForms.length === 0}
             className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm"
           >
-            {EXAM_FORMS.map((form) => (
-              <option key={form} value={form}>
-                {EXAM_FORM_LABELS[form]}
+            {examForms.map((form) => (
+              <option key={form.id} value={form.id}>
+                {form.label}
               </option>
             ))}
           </select>
         </label>
         <button
           type="button"
-          disabled={!campaignId || busy || !runtime}
+          disabled={!campaignId || !examForm || busy || !runtime}
           onClick={start}
           className="rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm text-white disabled:opacity-40"
         >

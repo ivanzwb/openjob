@@ -123,6 +123,6 @@ describe('开启抢救后补全截断输出', () => {
 describe('抢救名单', () => {
   it('只包含单对象长文本的评分类 prompt', () => {
     // 往这个名单里加返回数组的 prompt 前，先想清楚少给数据用户能不能发现
-    expect([...SALVAGE_TRUNCATED_PROMPTS].sort()).toEqual(['design.score', 'quiz.score']);
+    expect([...SALVAGE_TRUNCATED_PROMPTS].sort()).toEqual(['quiz.score']);
   });
 });

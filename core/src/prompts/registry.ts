@@ -21,14 +21,6 @@ import {
   crossAnalyzeSystem,
 } from '../diagnosis/prompts';
 import {
-  answerSystemForType,
-  caseSystemForType,
-  scoreSystemForType,
-  type MockInterviewKind,
-  type MockInterviewLanguage,
-  type MockInterviewType,
-} from '../design/prompts';
-import {
   RESUME_OPTIMIZE_SYSTEM,
   RESUME_POLISH_SYSTEM,
   RESUME_STRUCTURE_SYSTEM,
@@ -205,46 +197,6 @@ export const PROMPT_REGISTRY: Record<string, PromptEntry> = {
     id: 'quiz.answer',
     versions: [
       { id: 'quiz.answer@v1', text: QUIZ_ANSWER_SYSTEM, note: '结构化骨架 + 简历为事实源' },
-    ],
-  },
-
-  // ── 模拟面试（文本来自 shared/design/prompts，按题型运行时选择）──
-  'design.case': {
-    id: 'design.case',
-    versions: [
-      {
-        id: 'design.case@v1',
-        build: (p) => caseSystemForType(p.type as MockInterviewType),
-        note: '初始版本',
-      },
-    ],
-  },
-  'design.score': {
-    id: 'design.score',
-    versions: [
-      {
-        id: 'design.score@v1',
-        build: (p) =>
-          scoreSystemForType(
-            p.type as MockInterviewKind,
-            (p.language as MockInterviewLanguage | undefined) ?? 'zh',
-          ),
-        note: '初始版本',
-      },
-    ],
-  },
-  'design.answer': {
-    id: 'design.answer',
-    versions: [
-      {
-        id: 'design.answer@v1',
-        build: (p) =>
-          answerSystemForType(
-            p.type as MockInterviewKind,
-            (p.language as MockInterviewLanguage | undefined) ?? 'zh',
-          ),
-        note: '初始版本',
-      },
     ],
   },
 

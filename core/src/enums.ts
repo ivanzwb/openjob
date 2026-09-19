@@ -55,9 +55,6 @@ export type EdgeRelation = (typeof EDGE_RELATIONS)[number];
 export const EXPLANATION_TIERS = ['oneliner', 'spoken', 'deep'] as const;
 export type ExplanationTier = (typeof EXPLANATION_TIERS)[number];
 
-export const EXAM_FORMS = ['concept', 'coding', 'design', 'scenario'] as const;
-export type ExamForm = (typeof EXAM_FORMS)[number];
-
 /** 插件分类。Role/Industry Pack 只提供声明式配置，Capability 才能申请执行权限。 */
 export const PLUGIN_TYPES = ['role-pack', 'industry-pack', 'capability', 'plugin'] as const;
 export type PluginType = (typeof PLUGIN_TYPES)[number];
@@ -141,9 +138,10 @@ export type AnnotationKind = (typeof ANNOTATION_KINDS)[number];
 /**
  * 一条话术从哪条链路来。
  *
- * `story` 是 STAR/CAR 经历的口述版本，sourceId 是 story.id。新增取值必须同时更新
- * 两端解析 sourceType 的地方（桌面 src/main/speech，手机 mobile/src/data/queries），
- * 否则话术库里会出现一条标题是「话术」、又归不到任何一场备考下的孤儿条目。
+ * `story` 是 STAR/CAR 经历的口述版本，sourceId 是 story.id。取值由写入链路决定，
+ * 读取时对未知/历史取值走中性兜底（见两端解析 sourceType 的地方：桌面
+ * src/main/speech、手机 mobile/src/data/queries），所以新增取值只要在写入侧声明，
+ * 不必回头改这两处解析。
  */
 export const SPEECH_SOURCE_TYPES = ['node', 'quiz', 'design', 'story'] as const;
 export type SpeechSourceType = (typeof SPEECH_SOURCE_TYPES)[number];
@@ -201,7 +199,9 @@ export type PracticeTurnKind = (typeof PRACTICE_TURN_KINDS)[number];
 
 /**
  * PracticeAttempt 的来源。
- * quiz / design 是历史记录的只读投影，不写回原表，也不产生新的 practice_attempt 行。
+ *
+ * `quiz` / `design` 是历史记录的只读投影（旧「考我」作答与旧模拟面试题表），
+ * 都不写回原表，也不产生新的 practice_attempt 行。
  */
 export const PRACTICE_ATTEMPT_SOURCES = ['practice', 'quiz', 'design'] as const;
 export type PracticeAttemptSource = (typeof PRACTICE_ATTEMPT_SOURCES)[number];

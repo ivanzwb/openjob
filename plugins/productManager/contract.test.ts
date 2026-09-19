@@ -155,16 +155,14 @@ describe('productManagerRolePack contract', () => {
   });
 
   it('练习格式映射到本包自己的面试形式，数据集合随包声明', () => {
-    // 宿主按旧题型取值（ExamForm）挑练习格式：每个映射值都必须落回本包声明的形式上，
+    // 题目声明归本包所有：每个声明的 formatId 都必须落回本包注册的形式上，
     // 否则产品岗的练习在宿主侧解析不出题型。
     const declaredFormats = new Set<string>(formatIds);
-    for (const [examForm, formatId] of Object.entries(
-      productManagerRolePack.examFormMappings ?? {},
-    )) {
-      expect(declaredFormats.has(formatId as string), `${examForm} → ${formatId}`).toBe(true);
+    for (const form of productManagerRolePack.examForms ?? []) {
+      expect(declaredFormats.has(form.formatId), `${form.id} → ${form.formatId}`).toBe(true);
     }
-    // 宿主还认得的三种练习题型都各指向本包的一种形式
-    expect(new Set(Object.keys(productManagerRolePack.examFormMappings ?? {}))).toEqual(
+    // 历史行里存的旧题型取值都能在本包声明里找到对应形式
+    expect(new Set((productManagerRolePack.examForms ?? []).map((form) => form.id))).toEqual(
       new Set(['concept', 'coding', 'scenario']),
     );
 

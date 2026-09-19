@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import { eq, inArray } from 'drizzle-orm';
-import type { ExamForm } from '@core/enums';
 import type { KnowledgeNode } from '@core/entities';
 import type { CreateNodeInput, UpdateNodeInput } from '@core/ipc';
 import { EXPAND_DEPTH_LIMIT_MESSAGE, canExpandNode } from '@core/diagnosis/tree';
@@ -90,7 +89,8 @@ export function createNode(input: CreateNodeInput): KnowledgeNode {
     examProb: 0.3,
     difficulty: 3,
     estMinutes: 30,
-    examForms: ['concept'] as ExamForm[],
+    // 用户手建的考点不预设题型：题型取值归岗位包所有，宿主不替它挑一个
+    examForms: [] as string[],
     mastery: 0,
     masterySource: 'self' as const,
     priorityScore: 0,

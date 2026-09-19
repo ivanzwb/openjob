@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   CANDIDATE_EVIDENCE_KINDS,
   COVERAGE_TYPES,
-  EXAM_FORMS,
   TASK_KINDS,
 } from '../enums';
 import {
@@ -156,7 +155,7 @@ describe('plugin contracts', () => {
   });
 
   it('旧业务枚举保持不变，候选人证据使用独立分类', () => {
-    expect(EXAM_FORMS).toEqual(['concept', 'coding', 'design', 'scenario']);
+    // 题型取值不再由基础包枚举（改由岗位包 examForms 声明），所以这里不再断言它。
     expect(TASK_KINDS).toEqual(['learn', 'drill', 'review', 'fallbackScript']);
     expect(COVERAGE_TYPES).toEqual(['deepDive', 'gap', 'landmine', 'extra']);
     expect(CANDIDATE_EVIDENCE_KINDS).toEqual([

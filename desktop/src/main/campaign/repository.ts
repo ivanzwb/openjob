@@ -209,7 +209,7 @@ export function getCampaignDetail(id: string): CampaignDetail {
       ? {
           id: intel.id,
           campaignId: intel.campaignId,
-          techStackMd: intel.techStackMd,
+          knowledgeToolMapMd: intel.knowledgeToolMapMd,
           interviewProcessMd: intel.interviewProcessMd,
           hotTopicsMd: intel.hotTopicsMd,
           talkingPointsMd: intel.talkingPointsMd,

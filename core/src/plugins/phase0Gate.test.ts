@@ -8,7 +8,6 @@
  * 后既不排任务也不给权限、两端消费的是同一次解析结果。
  */
 import { describe, expect, it } from 'vitest';
-import { EXAM_FORMS } from '../enums';
 import {
   REQUIRES_DESKTOP_REASON,
   collectPlannerContributions,
@@ -18,7 +17,7 @@ import {
 import { composePrompt } from '../prompts/composer';
 import {
   SOURCE_REPOSITORY_CAPABILITY_ID,
-  formatIdForExamForm,
+  SOFTWARE_ENGINEERING_EXAM_FORMS,
   softwareEngineeringRolePack,
 } from '@plugins/softwareEngineering';
 import { buildClientCapabilityView, capabilityMode } from './clientView';
@@ -92,10 +91,10 @@ describe('Phase 0 兼容性闸门', () => {
         version: softwareEngineeringRolePack.manifest.version,
       },
     };
-    const formatIds = EXAM_FORMS.map(formatIdForExamForm);
-    expect(new Set(formatIds).size).toBe(EXAM_FORMS.length);
+    const formatIds = SOFTWARE_ENGINEERING_EXAM_FORMS.map((form) => form.formatId);
+    expect(new Set(formatIds).size).toBe(SOFTWARE_ENGINEERING_EXAM_FORMS.length);
 
-    for (const [index, examForm] of EXAM_FORMS.entries()) {
+    for (const [index, examForm] of SOFTWARE_ENGINEERING_EXAM_FORMS.entries()) {
       const formatId = formatIds[index];
       const composed = composePrompt({
         runtime,
@@ -105,11 +104,11 @@ describe('Phase 0 兼容性闸门', () => {
         jobContext: PHASE0_CAMPAIGN.jdRaw,
       });
 
-      expect(composed.provenance.formatId, examForm).toBe(formatId);
+      expect(composed.provenance.formatId, examForm.id).toBe(formatId);
       expect(composed.provenance.rolePack).toEqual(runtime.rolePack);
       expect(composed.provenance.configSnapshotHash).toBe(runtime.configSnapshotHash);
       // 题型是岗位包声明的，评分标准必须跟着来，否则四种题型只是名字不同
-      expect(composed.provenance.rubricId, examForm).toBeDefined();
+      expect(composed.provenance.rubricId, examForm.id).toBeDefined();
       expect(composed.sections[0]?.layer).toBe('corePolicy');
     }
   });

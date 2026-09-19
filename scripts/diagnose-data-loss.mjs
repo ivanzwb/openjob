@@ -159,7 +159,7 @@ const contentChecks = [
   { table: 'message', label: '会话消息', columns: ['content_md'] },
   { table: 'design_case', label: '模拟面试题目', columns: ['scenario_md'] },
   { table: 'design_case', label: '模拟面试作答', columns: ['user_answer_md', 'recommended_answer_md'] },
-  { table: 'company_intel', label: '公司情报', columns: ['tech_stack_md', 'interview_process_md'] },
+  { table: 'company_intel', label: '公司情报', columns: ['knowledge_tool_map_md', 'interview_process_md'] },
 ];
 
 for (const check of contentChecks) {

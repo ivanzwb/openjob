@@ -287,7 +287,7 @@ export async function diagnoseFetchIntel(campaignId: string, jobId: string): Pro
 
     report(jobId, label, '正在整理情报卡…', 0.6);
     const intel = await completeJson<{
-      techStackMd: string;
+      knowledgeToolMapMd: string;
       interviewProcessMd: string;
       hotTopicsMd: string;
       talkingPointsMd: string;

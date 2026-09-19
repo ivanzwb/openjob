@@ -14,7 +14,7 @@ export function CompanyIntelCard({
   const bodyRef = useRef<HTMLDivElement>(null);
 
   const sections = [
-    { title: '技术栈', content: intel.techStackMd },
+    { title: '核心知识 / 工具', content: intel.knowledgeToolMapMd },
     { title: '面试流程', content: intel.interviewProcessMd },
     { title: '高频考点', content: intel.hotTopicsMd },
     { title: '反问素材', content: intel.talkingPointsMd },

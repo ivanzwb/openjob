@@ -119,13 +119,13 @@ export function loadJobContextDocuments(
 
   const intel = raw
     .prepare(
-      `SELECT id, tech_stack_md, hot_topics_md FROM company_intel WHERE campaign_id = ?`,
+      `SELECT id, knowledge_tool_map_md, hot_topics_md FROM company_intel WHERE campaign_id = ?`,
     )
     .get(campaignId) as
-    | { id: string; tech_stack_md: string; hot_topics_md: string }
+    | { id: string; knowledge_tool_map_md: string; hot_topics_md: string }
     | undefined;
   if (intel) {
-    const text = [intel.tech_stack_md, intel.hot_topics_md].filter(Boolean).join('\n');
+    const text = [intel.knowledge_tool_map_md, intel.hot_topics_md].filter(Boolean).join('\n');
     if (text.trim()) documents.push({ kind: 'company', id: intel.id, text });
   }
 

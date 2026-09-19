@@ -25,7 +25,6 @@ import type {
   AnnotationKind,
   SessionKind,
   EdgeRelation,
-  ExamForm,
   TaskKind,
 } from './enums';
 import type {
@@ -887,24 +886,6 @@ export interface SpeechExportResult {
   path: string | null;
   count: number;
 }
-
-// ---------------------------------------------------------------------------
-// 题型取值的展示名
-// ---------------------------------------------------------------------------
-
-/**
- * 题型取值（ExamForm）的展示名。
- *
- * 放共享层是因为它已经跑偏过一次：同一道题在桌面端与手机端的列表里叫两个名字。
- * 题型本身归岗位包声明（interviewFormats），这里只放旧题型取值的展示名，
- * 供练习页与只读历史列表共用。
- */
-export const EXAM_FORM_LABELS: Record<ExamForm, string> = {
-  concept: '概念 / 八股',
-  coding: '编码 / 算法',
-  design: '系统设计',
-  scenario: '项目 / 场景',
-};
 
 // ---------------------------------------------------------------------------
 // 标注

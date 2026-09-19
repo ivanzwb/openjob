@@ -5,7 +5,7 @@
  * 断言只是各自和自己比。数据刻意做成插件化之前的形状——没有 role_profile、
  * 没有 binding、没有 descriptor，全靠回填补齐。
  */
-import type { CoverageType, ExamForm, NodeKind, PlanDayStatus, TaskStatus } from '../../enums';
+import type { CoverageType, NodeKind, PlanDayStatus, TaskStatus } from '../../enums';
 
 export const PHASE0_CAMPAIGN = {
   id: 'phase0-campaign',
@@ -30,7 +30,8 @@ export interface Phase0Node {
   name: string;
   kind: NodeKind;
   coverageType: CoverageType;
-  examForms: ExamForm[];
+  /** 题型取值由岗位包声明，夹具按历史形状写字符串 */
+  examForms: string[];
   difficulty: number;
   estMinutes: number;
   priorityScore: number;

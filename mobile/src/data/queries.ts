@@ -455,7 +455,7 @@ export function getCampaignDetail(db: SQLiteDatabase, id: string): CampaignDetai
   const intel = db.getFirstSync<{
     id: string;
     campaign_id: string;
-    tech_stack_md: string;
+    knowledge_tool_map_md: string;
     interview_process_md: string;
     hot_topics_md: string;
     talking_points_md: string;
@@ -491,7 +491,7 @@ export function getCampaignDetail(db: SQLiteDatabase, id: string): CampaignDetai
       ? {
           id: intel.id,
           campaignId: intel.campaign_id,
-          techStackMd: intel.tech_stack_md,
+          knowledgeToolMapMd: intel.knowledge_tool_map_md,
           interviewProcessMd: intel.interview_process_md,
           hotTopicsMd: intel.hot_topics_md,
           talkingPointsMd: intel.talking_points_md,

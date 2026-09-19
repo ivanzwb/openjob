@@ -18,7 +18,7 @@ import { createPracticeService, type PracticeService } from './service';
 export { writeMasterySignal } from './mastery';
 export { createPracticeService, type PracticeService } from './service';
 export { listPracticeHistory, getPracticeAttemptScores } from './history';
-export { examFormForFormatId } from '@core/plugins/examForms';
+export { formatIdForExamForm, labelForExamForm } from '@core/plugins/examForms';
 export {
   resolveCampaignPracticeRuntime,
   findRolePack,

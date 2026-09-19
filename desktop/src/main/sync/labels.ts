@@ -9,7 +9,6 @@ const TABLE_LABELS: Record<string, string> = {
   explanation: '讲解',
   source: '来源',
   company_intel: '公司情报',
-  design_case: '模拟面试题',
   interview_report: '面经',
   interview_question: '真题',
   plan_day: '计划日',

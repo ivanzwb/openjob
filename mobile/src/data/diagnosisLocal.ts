@@ -175,7 +175,7 @@ export async function diagnoseFetchIntel(db: SQLiteDatabase, campaignId: string)
     .join('\n\n---\n\n');
 
   const intel = await completeJson<{
-    techStackMd: string;
+    knowledgeToolMapMd: string;
     interviewProcessMd: string;
     hotTopicsMd: string;
     talkingPointsMd: string;
@@ -195,8 +195,8 @@ export async function diagnoseFetchIntel(db: SQLiteDatabase, campaignId: string)
   writingAs(db, identity.deviceId, () => {
     if (existing) {
       db.runSync(
-        `UPDATE company_intel SET tech_stack_md = ?, interview_process_md = ?, hot_topics_md = ?, talking_points_md = ?, updated_at = ? WHERE id = ?`,
-        intel.techStackMd,
+        `UPDATE company_intel SET knowledge_tool_map_md = ?, interview_process_md = ?, hot_topics_md = ?, talking_points_md = ?, updated_at = ? WHERE id = ?`,
+        intel.knowledgeToolMapMd,
         intel.interviewProcessMd,
         intel.hotTopicsMd,
         intel.talkingPointsMd,
@@ -205,11 +205,11 @@ export async function diagnoseFetchIntel(db: SQLiteDatabase, campaignId: string)
       );
     } else {
       db.runSync(
-        `INSERT INTO company_intel (id, campaign_id, tech_stack_md, interview_process_md, hot_topics_md, talking_points_md, source_ids, updated_at)
+        `INSERT INTO company_intel (id, campaign_id, knowledge_tool_map_md, interview_process_md, hot_topics_md, talking_points_md, source_ids, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, '[]', ?)`,
         Crypto.randomUUID(),
         campaignId,
-        intel.techStackMd,
+        intel.knowledgeToolMapMd,
         intel.interviewProcessMd,
         intel.hotTopicsMd,
         intel.talkingPointsMd,

@@ -211,6 +211,13 @@
       "when": 1787640000000,
       "tag": "0029_task_material",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "6",
+      "when": 1787650000000,
+      "tag": "0030_role_neutral_intel",
+      "breakpoints": true
     }
   ]
 }
