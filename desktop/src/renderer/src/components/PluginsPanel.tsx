@@ -426,8 +426,10 @@ export function PluginsPanel({
                   const info = pluginRuntimes.find((item) => `${item.id}@${item.version}` === confirmingId);
                   setBusy(true);
                   try {
-                    await enablePluginRuntime(confirmingId);
-                    setMessage(`已启用 ${info?.displayName ?? confirmingId}`);
+                    // 启用按**裸 id**走：id@version 是安装清单里的定位键，主进程那边校验的是插件 id
+                    if (!info) throw new Error(`安装清单里没有 ${confirmingId}`);
+                    await enablePluginRuntime(info.id);
+                    setMessage(`已启用 ${info.displayName}`);
                   } finally {
                     setBusy(false);
                     setConfirmingId(null);
