@@ -45,13 +45,6 @@ export function UpdatePanel({
     <section className="space-y-4">
       <div>
         <h3 className="text-sm font-medium text-[var(--color-muted)]">自动更新</h3>
-        <p className="mt-1 text-xs text-[var(--color-muted)]">
-          默认检查官方 GitHub Release，发现新版会自动下载，装不装由你点。自己构建自己分发的，
-          填上你托管的目录（里面要有 electron-builder 产出的 latest.yml 和安装包）即可改到那边。
-          填 GitHub 仓库地址（可带 gh-proxy 之类的镜像前缀）也行，会自动指向该仓库最新一版的资产目录。
-          不想让它自己联网就取消下面的启动检查，此后只有点「立即检查」才会发请求。
-          升级优先停在同大版本线（比如 0.6.x）内的最新一版，只有线上没有同线的更新版本时才会跨线到新的主版本。
-        </p>
       </div>
 
       <div className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">

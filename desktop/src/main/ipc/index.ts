@@ -72,10 +72,6 @@ import {
   pluginDataList,
   pluginDataSet,
 } from '../plugins/pluginData';
-import {
-  pluginRuntimeEnabled,
-  setPluginRuntimeEnabled,
-} from '../plugins/pluginRuntimeState';
 import { permissionGateway } from '../plugins/permissionGateway';
 // 远端拉取（§11.2）：比其它原语多一道 network:fetch 授权，实现在插件工作区模块里
 import {
@@ -292,9 +288,8 @@ export function registerIpcHandlers(): void {
         permissions: item.package.manifest.permissions,
         main: item.package.manifest.main!,
         api: item.package.manifest.api!,
-        // 岗位包的代码入口随岗位启用（选岗即确认）；独立 plugin 类型才需要逐个确认
-        enabled:
-          item.package.manifest.type === 'role-pack' || pluginRuntimeEnabled(item.package.manifest.id),
+        // 装上即启用、每次启动也自动启用：安装动作本身就是用户对这份权限清单的确认
+        enabled: true,
         // 标记目标路由（插入点 F）：渲染层据此把包自己起的 kind 跳去承接它的本包页面。
         // 声明是可选字段，缺省时原样不出现在结果里，前端按「没有跳转」处理。
         ...(item.package.manifest.annotationTargets !== undefined
@@ -302,7 +297,6 @@ export function registerIpcHandlers(): void {
           : {}),
       })),
   );
-  handle('pluginRuntime:setEnabled', ({ id, enabled }) => setPluginRuntimeEnabled(id, enabled));
   handle('pluginRuntime:llm.complete', ({ pluginId, version, system, user, role }) => {
     // 门面准入：只服务已安装且声明了 llm:complete 的代码插件
     const entry = listExternalPlugins().find(

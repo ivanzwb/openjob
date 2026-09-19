@@ -395,15 +395,3 @@ export function onPluginEvent(
 }
 
 export { hub as pluginRuntimeEventHub };
-
-/** 启用：主进程落确认记录后，立即重新激活让页签即时出现 */
-export async function enablePluginRuntime(id: string): Promise<void> {
-  await invoke('pluginRuntime:setEnabled', { id, enabled: true });
-  await activateInstalledPluginRuntimes();
-}
-
-/** 停用：撤贡献断桥，页签即时消失；确认记录保留（再次启用不再重复确认） */
-export async function disablePluginRuntime(id: string): Promise<void> {
-  await invoke('pluginRuntime:setEnabled', { id, enabled: false });
-  await activateInstalledPluginRuntimes();
-}

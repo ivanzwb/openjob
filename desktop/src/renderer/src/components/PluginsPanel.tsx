@@ -8,11 +8,7 @@ import type {
 } from '@core/ipc';
 import type { PluginType } from '@core/enums';
 import { compareExactSemVer } from '@core/plugins/registry';
-import {
-  activateInstalledPluginRuntimes,
-  disablePluginRuntime,
-  enablePluginRuntime,
-} from '../pluginRuntimes/runtime';
+import { activateInstalledPluginRuntimes } from '../pluginRuntimes/runtime';
 import { invoke } from '../ipc';
 
 type PluginRuntimeInfo = Awaited<ReturnType<typeof invoke<'pluginRuntime:list'>>>[number];
@@ -98,16 +94,6 @@ function permissionSummary(permissions: string[]): string {
 }
 
 /**
- * 这个包要不要给「启用/停用」开关。
- *
- * 岗位包的代码入口随岗位启用：装好即用、重启也还在用，无需用户再确认（选岗/装包就是确认）。
- * 独立的代码插件才需要逐个确认——那是「用户看过权限清单并点确认」这道准入。
- */
-function offersEnableToggle(pluginId: string, runtimes: readonly { id: string; type: string }[]): boolean {
-  return runtimes.find((item) => item.id === pluginId)?.type !== 'role-pack';
-}
-
-/**
  * 插件面板。
  *
  * `onPluginsChanged` 让宿主页面知道「本机装了哪些包」变了——角色映射那份清单跟着岗位包走，
@@ -123,7 +109,6 @@ export function PluginsPanel({
   const [pendingKey, setPendingKey] = useState<string | null>(null);
 
   const [pluginRuntimes, setPluginRuntimes] = useState<PluginRuntimeInfo[]>([]);
-  const [confirmingId, setConfirmingId] = useState<string | null>(null);
 
   const [catalog, setCatalog] = useState<PluginCatalogView | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -393,76 +378,14 @@ export function PluginsPanel({
                 >
                   卸载
                 </button>
-                {plugin.main !== null && offersEnableToggle(plugin.id, pluginRuntimes) && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMessage(null);
-                      setConfirmingId(confirmingId === key ? null : key);
-                    }}
-                    disabled={busy}
-                    className="text-[var(--color-muted)] hover:text-[var(--color-fg)] disabled:opacity-40"
-                  >
-                    {pluginRuntimes.find((item) => item.id === plugin.id)?.enabled ? '停用' : '启用…'}
-                  </button>
-                )}
               </li>
             );
           })}
         </ul>
 
-        {confirmingId !== null && (
-          <div className="space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-xs">
-            <p className="text-[var(--color-fg)]">
-              启用「{pluginRuntimes.find((item) => `${item.id}@${item.version}` === confirmingId)?.displayName}」
-              需要确认以下权限：
-            </p>
-            <ul className="list-disc space-y-0.5 pl-5 text-[var(--color-muted)]">
-              {(pluginRuntimes.find((item) => `${item.id}@${item.version}` === confirmingId)?.permissions ?? []).map(
-                (permission) => (
-                  <li key={permission}>
-                    <code>{permission}</code>
-                    {PERMISSION_LABEL[permission] ? ` —— ${PERMISSION_LABEL[permission]}` : ''}
-                  </li>
-                ),
-              )}
-            </ul>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                disabled={busy}
-                className="rounded bg-amber-500/20 px-2 py-1 hover:bg-amber-500/30 disabled:opacity-40"
-                onClick={async () => {
-                  const info = pluginRuntimes.find((item) => `${item.id}@${item.version}` === confirmingId);
-                  setBusy(true);
-                  try {
-                    // 启用按**裸 id**走：id@version 是安装清单里的定位键，主进程那边校验的是插件 id。
-                    // 清单里查不到时（例如刚装好、这次快照还没刷新）就从键上取回 id，不把用户挡在门外
-                    await enablePluginRuntime(info?.id ?? confirmingId.split('@')[0]!);
-                    setMessage(`已启用 ${info?.displayName ?? confirmingId}`);
-                  } finally {
-                    setBusy(false);
-                    setConfirmingId(null);
-                    void refresh();
-                  }
-                }}
-              >
-                确认启用
-              </button>
-              <button
-                type="button"
-                className="rounded px-2 py-1 text-[var(--color-muted)] hover:text-[var(--color-fg)]"
-                onClick={() => setConfirmingId(null)}
-              >
-                取消
-              </button>
-            </div>
-          </div>
-        )}
-
         {pluginRuntimes.some((item) => item.enabled) && (
           <div className="space-y-1.5 border-t border-[var(--color-border)] pt-3">
-            <p className="text-[var(--color-muted)]">已启用的代码插件：</p>
+            <p className="text-[var(--color-muted)]">代码插件：</p>
             {pluginRuntimes
               .filter((item) => item.enabled)
               .map((item) => (
@@ -471,23 +394,6 @@ export function PluginsPanel({
                   <span className="text-[var(--color-muted)]">
                     {permissionSummary(item.permissions)}
                   </span>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    className="ml-auto text-[var(--color-muted)] hover:text-red-400 disabled:opacity-40"
-                    onClick={async () => {
-                      setBusy(true);
-                      try {
-                        await disablePluginRuntime(item.id);
-                        setMessage(`已停用 ${item.displayName}`);
-                      } finally {
-                        setBusy(false);
-                        void refresh();
-                      }
-                    }}
-                  >
-                    停用
-                  </button>
                 </div>
               ))}
           </div>

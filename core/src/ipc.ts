@@ -1274,8 +1274,6 @@ export interface IpcInvokeMap {
       annotationTargets?: AnnotationTargetDeclaration[];
     }>;
   };
-  /** 启用/停用：启用要求用户已在界面上确认权限清单 */
-  'pluginRuntime:setEnabled': { req: { id: string; enabled: boolean }; res: void };
 
   'campaign:list': { req: void; res: CampaignSummary[] };
   'campaign:getOverview': { req: void; res: CampaignOverview };
@@ -1576,7 +1574,6 @@ export const IPC_INVOKE_CHANNELS = [
   'pluginRuntime:library.listAnnotations',
   'pluginRuntime:library.deleteAnnotation',
   'pluginRuntime:list',
-  'pluginRuntime:setEnabled',
   'campaign:list',
   'campaign:getOverview',
   'campaign:compare',
