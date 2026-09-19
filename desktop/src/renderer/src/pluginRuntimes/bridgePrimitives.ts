@@ -187,6 +187,48 @@ export function desktopBridgePrimitives(
         return invoke('pluginRuntime:library.listSnippets', { pluginId, sourceKind, limit });
       },
     },
+    // 标记原语（同一份 library:write 授权）：包把自己的标记写进宿主的**跨功能标记汇总**。
+    // targetKind（自由字符串）与 targetLabel 都由包给，宿主不认识；kind / selectedText /
+    // note / color 逐项对应到通道字段。
+    'library.annotate': {
+      permission: 'library:write',
+      invoke: (params) => {
+        const { targetKind, targetId, targetLabel, kind, selectedText, note, color } = params as {
+          targetKind: string;
+          targetId: string;
+          targetLabel?: string;
+          kind: string;
+          selectedText?: string;
+          note?: string;
+          color?: string;
+        };
+        return invoke('pluginRuntime:library.annotate', {
+          pluginId,
+          targetKind,
+          targetId,
+          kind,
+          ...(targetLabel !== undefined ? { targetLabel } : {}),
+          ...(selectedText !== undefined ? { selectedText } : {}),
+          ...(note !== undefined ? { note } : {}),
+          ...(color !== undefined ? { color } : {}),
+        });
+      },
+    },
+    'library.listAnnotations': {
+      permission: 'library:write',
+      invoke: (params) => {
+        const { targetKind, limit } = params as { targetKind?: string; limit?: number };
+        return invoke('pluginRuntime:library.listAnnotations', { pluginId, targetKind, limit });
+      },
+    },
+    'library.deleteAnnotation': {
+      permission: 'library:write',
+      invoke: (params) =>
+        invoke('pluginRuntime:library.deleteAnnotation', {
+          pluginId,
+          id: (params as { id: string }).id,
+        }),
+    },
     // 受控 LLM 补全（§11.2 通用原语）：System / User 文本由包自己带，宿主只负责端点、
     // 审计与 JSON 解析。提示词正文是包自己的内容，宿主不认识任何岗位簇的题型。
     'llm.complete': {

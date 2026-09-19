@@ -37,6 +37,12 @@ const BRIDGE_METHODS = [
   // 存过的那几条——来源类型与标签由本包给，宿主不认识（见 ui/repositories.html）
   'library.saveSnippet',
   'library.listSnippets',
+  // 标记面：本包的代码位置标记写进**宿主的跨功能标记汇总**（不再只留在本包自己的数据集合），
+  // 于是它也会出现在宿主的标记面板里；目标类型（code-mark）与标签（file:line）由本包给，
+  // 宿主不认识，认不出的取值按本包给的标签渲染
+  'library.annotate',
+  'library.listAnnotations',
+  'library.deleteAnnotation',
 ] as const;
 
 export function activate(ctx: PluginRuntimeContext): () => void {

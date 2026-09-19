@@ -74,9 +74,9 @@ function artifactService(pluginId: string): PluginArtifactService {
 }
 
 /**
- * 话术库原语的门面（§11.2 通用原语）：包把一段文字按自己起的来源类型存进用户的话术库，
- * 再按同一来源类型取回自己存过的那几条。每次调用都是一条 IPC，主进程的网关逐次校验
- * `library:write`（声明即上限）。
+ * 话术库与标记原语的门面（§11.2 通用原语）：包把一段文字按自己起的来源类型存进用户的话术库，
+ * 再按同一来源类型取回自己存过的那几条；标记同理，写进宿主的跨功能标记汇总。每次调用都是
+ * 一条 IPC，主进程的网关逐次校验 `library:write`（声明即上限）。
  */
 function libraryService(pluginId: string): PluginLibraryService {
   return {
@@ -84,6 +84,22 @@ function libraryService(pluginId: string): PluginLibraryService {
       invoke('pluginRuntime:library.saveSnippet', { pluginId, ...request }),
     listSnippets: (query) =>
       invoke('pluginRuntime:library.listSnippets', { pluginId, ...(query ?? {}) }),
+    // 通道的字段名与门面略有差异（note / color）：这里逐项对应，别把 noteMd / highlightColor
+    // 原样透传成通道上不认识的字段
+    annotate: (request) =>
+      invoke('pluginRuntime:library.annotate', {
+        pluginId,
+        targetKind: request.targetKind,
+        targetId: request.targetId,
+        kind: request.kind,
+        ...(request.targetLabel !== undefined ? { targetLabel: request.targetLabel } : {}),
+        ...(request.selectedText !== undefined ? { selectedText: request.selectedText } : {}),
+        ...(request.noteMd !== undefined ? { note: request.noteMd } : {}),
+        ...(request.highlightColor !== undefined ? { color: request.highlightColor } : {}),
+      }),
+    listAnnotations: (query) =>
+      invoke('pluginRuntime:library.listAnnotations', { pluginId, ...(query ?? {}) }),
+    deleteAnnotation: (id) => invoke('pluginRuntime:library.deleteAnnotation', { pluginId, id }),
   };
 }
 

@@ -90,7 +90,13 @@ import {
   workspaceWrite,
 } from '../plugins/pluginWorkspace';
 import { artifactRead } from '../plugins/pluginArtifact';
-import { pluginLibraryList, pluginLibrarySave } from '../plugins/pluginLibrary';
+import {
+  pluginLibraryAnnotate,
+  pluginLibraryDeleteAnnotation,
+  pluginLibraryList,
+  pluginLibraryListAnnotations,
+  pluginLibrarySave,
+} from '../plugins/pluginLibrary';
 import { completePluginJson } from '../llm/json';
 import { emit } from '../ipc/bridge';
 import { pluginInventoryView } from '../plugins/bootstrap';
@@ -360,6 +366,28 @@ export function registerIpcHandlers(): void {
   handle('pluginRuntime:library.listSnippets', ({ pluginId, sourceKind, limit }) =>
     pluginLibraryList(pluginId, { sourceKind, limit }),
   );
+  // 标记原语（同为 library:write）：把包自己的标记写进宿主的**跨功能标记汇总**，
+  // 于是包内的一条批注也会出现在宿主的标记面板里，而不是只留在包的数据集合里。
+  // targetKind / targetLabel 都由包给，宿主不认识，认不出的取值按标签渲染。
+  handle(
+    'pluginRuntime:library.annotate',
+    ({ pluginId, targetKind, targetId, targetLabel, kind, selectedText, note, color }) =>
+      pluginLibraryAnnotate(pluginId, {
+        targetKind,
+        targetId,
+        targetLabel,
+        kind,
+        selectedText,
+        noteMd: note,
+        highlightColor: color,
+      }),
+  );
+  handle('pluginRuntime:library.listAnnotations', ({ pluginId, targetKind, limit }) =>
+    pluginLibraryListAnnotations(pluginId, { targetKind, limit }),
+  );
+  handle('pluginRuntime:library.deleteAnnotation', ({ pluginId, id }) => {
+    pluginLibraryDeleteAnnotation(pluginId, id);
+  });
   handle('plugin:install', async ({ trustUnknownSigner, overwrite, confirmDataLoss }) => {
     // 弹框放在主进程：渲染层不传路径，也就没有「渲染层指定任意文件让主进程去读」这条路
     const { canceled, filePaths } = await dialog.showOpenDialog({

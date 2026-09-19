@@ -5,19 +5,51 @@ import { highlightTextStyle } from '../lib/highlightStyle';
 import { invoke } from '../ipc';
 import { DEFAULT_HIGHLIGHT_COLOR } from './AnnotationTools';
 
-const TARGET_LABEL: Record<AnnotationTarget, string> = {
+/**
+ * 宿主的**跨功能标记汇总**（§「我的标记」）。
+ *
+ * 这里是宿主认识的标记目标（知识点 / 讲解 / 真题 / 情报）与**包自己起的标记目标**共用的
+ * 一张面板：宿主认识的取值照旧按自己的名字与颜色渲染、按目标跳回去；认不出的取值
+ * （插件的自由字符串）就按包存下来的标签渲染，没有标签则退回原始取值，只作为一条**信息行**
+ * 列出它的标签、笔记与选中文本，不提供跳到别处的导航——宿主不知道那个目标在哪。
+ */
+const TARGET_LABEL: Record<string, string> = {
   node: '知识点',
   explanation: '讲解',
   question: '真题',
   intel: '情报',
 };
 
-const TARGET_TONE: Record<AnnotationTarget, string> = {
+const TARGET_TONE: Record<string, string> = {
   node: 'text-sky-300 border-sky-500/30 bg-sky-950/30',
   explanation: 'text-violet-300 border-violet-500/30 bg-violet-950/30',
   question: 'text-amber-300 border-amber-500/30 bg-amber-950/30',
   intel: 'text-rose-300 border-rose-500/30 bg-rose-950/30',
 };
+
+/** 宿主不认识的标记目标：中性配色，只作为信息行，没有可跳的目标 */
+const UNKNOWN_TONE = 'text-slate-300 border-slate-500/30 bg-slate-800/30';
+
+/** 宿主认识这个标记目标吗？只有认识的取值才有导航（跳回目标） */
+function isHostTarget(type: string): boolean {
+  return Object.prototype.hasOwnProperty.call(TARGET_LABEL, type);
+}
+
+function targetTone(type: string): string {
+  return TARGET_TONE[type] ?? UNKNOWN_TONE;
+}
+
+/** 目标类型在色签里显示什么：宿主认识的用它的名字，认不出的用包存下来的标签 */
+function targetChip(annotation: AnnotationView): string {
+  return isHostTarget(annotation.targetType) ? TARGET_LABEL[annotation.targetType] : annotation.targetLabel;
+}
+
+function kindSuffix(kind: string): string {
+  if (kind === 'highlight') return ' · 高亮';
+  if (kind === 'elaboration') return ' · 细化';
+  if (kind === 'note') return ' · 笔记';
+  return '';
+}
 
 const FILTERS: Array<{ id: AnnotationTarget | 'all'; label: string }> = [
   { id: 'all', label: '全部' },
@@ -26,6 +58,39 @@ const FILTERS: Array<{ id: AnnotationTarget | 'all'; label: string }> = [
   { id: 'question', label: '真题' },
   { id: 'intel', label: '情报' },
 ];
+
+/**
+ * 一条标记的正文：宿主认识的取值沿用「高亮看选中文本、其余看笔记」的老规矩；
+ * 宿主不认识的取值把**选中文本与笔记都列出来**（信息行没有跳转，正文就是它的全部内容）。
+ */
+function AnnotationBody({ annotation }: { annotation: AnnotationView }): React.JSX.Element {
+  if (!isHostTarget(annotation.targetType)) {
+    return (
+      <>
+        {annotation.selectedText ? (
+          <span
+            className="rounded px-0.5"
+            style={highlightTextStyle(annotation.highlightColor ?? DEFAULT_HIGHLIGHT_COLOR)}
+          >
+            「{annotation.selectedText}」
+          </span>
+        ) : null}
+        {annotation.selectedText && annotation.noteMd ? <br /> : null}
+        {annotation.noteMd ?? null}
+      </>
+    );
+  }
+  return annotation.kind === 'highlight' ? (
+    <span
+      className="rounded px-0.5"
+      style={highlightTextStyle(annotation.highlightColor ?? DEFAULT_HIGHLIGHT_COLOR)}
+    >
+      「{annotation.selectedText}」
+    </span>
+  ) : (
+    <>{annotation.noteMd}</>
+  );
+}
 
 export function AnnotationDigest({
   annotations,
@@ -107,11 +172,9 @@ export function AnnotationDigest({
               className="flex flex-col gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] p-3"
             >
               <div className="flex items-start justify-between gap-2">
-                <span
-                  className={`rounded border px-2 py-0.5 text-[10px] ${TARGET_TONE[a.targetType]}`}
-                >
-                  {TARGET_LABEL[a.targetType]}
-                  {a.kind === 'highlight' ? ' · 高亮' : a.kind === 'elaboration' ? ' · 细化' : ' · 笔记'}
+                <span className={`rounded border px-2 py-0.5 text-[10px] ${targetTone(a.targetType)}`}>
+                  {targetChip(a)}
+                  {isHostTarget(a.targetType) ? kindSuffix(a.kind) : ''}
                 </span>
                 <button
                   type="button"
@@ -129,20 +192,11 @@ export function AnnotationDigest({
                 >
                   {a.targetLabel}
                 </button>
-              ) : (
+              ) : isHostTarget(a.targetType) ? (
                 <p className="text-xs font-medium text-[var(--color-fg)]">{a.targetLabel}</p>
-              )}
+              ) : null}
               <p className="line-clamp-4 text-sm leading-relaxed text-[var(--color-muted)]">
-                {a.kind === 'highlight' ? (
-                  <span
-                    className="rounded px-0.5"
-                    style={highlightTextStyle(a.highlightColor ?? DEFAULT_HIGHLIGHT_COLOR)}
-                  >
-                    「{a.selectedText}」
-                  </span>
-                ) : (
-                  a.noteMd
-                )}
+                <AnnotationBody annotation={a} />
               </p>
             </li>
           ))}
@@ -154,34 +208,27 @@ export function AnnotationDigest({
               key={a.id}
               className="flex items-start gap-2 rounded bg-black/20 px-2 py-1.5 text-xs"
             >
-              <span className={`shrink-0 ${TARGET_TONE[a.targetType].split(' ')[0]}`}>
-                {TARGET_LABEL[a.targetType]}
+              <span className={`shrink-0 ${targetTone(a.targetType).split(' ')[0]}`}>
+                {targetChip(a)}
               </span>
               <div className="min-w-0 flex-1">
-                <div className="truncate text-[10px] text-[var(--color-muted)]">
-                  {onJumpToNode && a.targetType === 'node' ? (
-                    <button
-                      type="button"
-                      onClick={() => onJumpToNode(a.targetId)}
-                      className="hover:text-[var(--color-fg)] hover:underline"
-                    >
-                      {a.targetLabel}
-                    </button>
-                  ) : (
-                    a.targetLabel
-                  )}
-                </div>
+                {isHostTarget(a.targetType) ? (
+                  <div className="truncate text-[10px] text-[var(--color-muted)]">
+                    {onJumpToNode && a.targetType === 'node' ? (
+                      <button
+                        type="button"
+                        onClick={() => onJumpToNode(a.targetId)}
+                        className="hover:text-[var(--color-fg)] hover:underline"
+                      >
+                        {a.targetLabel}
+                      </button>
+                    ) : (
+                      a.targetLabel
+                    )}
+                  </div>
+                ) : null}
                 <div className="break-words">
-                  {a.kind === 'highlight' ? (
-                    <span
-                      className="rounded px-0.5 text-[var(--color-fg)]"
-                      style={{ backgroundColor: a.highlightColor ?? DEFAULT_HIGHLIGHT_COLOR }}
-                    >
-                      「{a.selectedText}」
-                    </span>
-                  ) : (
-                    a.noteMd
-                  )}
+                  <AnnotationBody annotation={a} />
                 </div>
               </div>
               <button

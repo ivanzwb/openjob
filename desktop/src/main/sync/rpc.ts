@@ -44,7 +44,11 @@ import {
   workspaceSymbols,
 } from '../plugins/pluginWorkspace';
 import { permissionGateway } from '../plugins/permissionGateway';
-import { pluginLibraryList, pluginLibrarySave } from '../plugins/pluginLibrary';
+import {
+  pluginLibraryList,
+  pluginLibraryListAnnotations,
+  pluginLibrarySave,
+} from '../plugins/pluginLibrary';
 import { createNode, deleteNode, updateNode } from '../campaign/nodes';
 import { createEdge, deleteEdge, listEdges } from '../campaign/edges';
 import { applyHistorySignals, getCampaignNudges } from '../insights';
@@ -234,6 +238,16 @@ const RPC_HANDLERS: Partial<Record<IpcInvokeChannel, RpcHandler>> = {
       limit?: number;
     };
     return pluginLibraryList(pluginId, { sourceKind, limit });
+  },
+  // 标记只放读侧过来：手机端页面上看到的包内标记就是桌面写进汇总面的那批，
+  // 写（annotate）与删（deleteAnnotation）依旧留在桌面，手机端在桥那一侧如实拒绝。
+  'pluginRuntime:library.listAnnotations': (p) => {
+    const { pluginId, targetKind, limit } = p as {
+      pluginId: string;
+      targetKind?: string;
+      limit?: number;
+    };
+    return pluginLibraryListAnnotations(pluginId, { targetKind, limit });
   },
   // 手机端不装插件包，岗位包只能从这台桌面要一份数据回去（见 rolePackTransfer.ts）
   'plugin:getRolePack': (p) => {

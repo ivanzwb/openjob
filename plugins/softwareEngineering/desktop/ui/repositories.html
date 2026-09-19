@@ -14,7 +14,7 @@
       input { width: 60%; font-size: 13px; }
       pre { white-space: pre-wrap; }
 
-      /* 代码浏览与查看：只用已有桥原语，无外部依赖、无外部高亮器 */
+      /* 代码浏览与查看：只用已有桥原语；着色器随包内联（ui/prism.vendored.js） */
       .bar { display: flex; gap: 8px; align-items: baseline; margin: 6px 0; font-size: 12px; flex-wrap: wrap; }
       #cwd, #file-label { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
       #entries { max-height: 200px; overflow: auto; }
@@ -30,11 +30,19 @@
         display: inline-block; width: 3.5em; text-align: right; padding-right: 0.8em;
         color: rgba(128, 128, 128, 0.75); user-select: none; -webkit-user-select: none;
       }
-      /* 内联关键词着色：按语言给一份固定关键词集，未知语言原样退回纯等宽 */
-      .tok-kw { color: #7c3aed; font-weight: 600; }
-      .tok-str { color: #0a7f3f; }
-      .tok-num { color: #b45309; }
-      .tok-com { color: #6b7280; font-style: italic; }
+      /* 语法着色：Prism 的 token 类（着色器随包内联，沙箱内无网络 / 无动态 import）。
+         没有对应语法的扩展名原样按纯等宽渲染。 */
+      .token.comment, .token.prolog, .token.doctype, .token.cdata { color: #6b7280; font-style: italic; }
+      .token.punctuation { color: #57606a; }
+      .token.property, .token.tag, .token.constant, .token.symbol, .token.boolean,
+      .token.number, .token.deleted { color: #b45309; }
+      .token.selector, .token.attr-name, .token.string, .token.char, .token.builtin,
+      .token.inserted, .token.regex { color: #0a7f3f; }
+      .token.operator, .token.entity, .token.url, .token.variable { color: #57606a; }
+      .token.atrule, .token.attr-value, .token.keyword { color: #7c3aed; font-weight: 600; }
+      .token.function, .token.class-name { color: #2563eb; }
+      .token.important, .token.bold { font-weight: 700; }
+      .token.italic { font-style: italic; }
       .file-link {
         color: #2563eb; cursor: pointer; text-decoration: underline;
         font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -52,10 +60,15 @@
       .qa .a { white-space: pre-wrap; font-size: 12px; margin: 0; }
       .qa .at { font-size: 11px; margin-top: 4px; }
       @media (prefers-color-scheme: dark) {
-        .tok-kw { color: #c792ea; }
-        .tok-str { color: #9ece6a; }
-        .tok-num { color: #e0af68; }
-        .tok-com { color: #8b949e; }
+        .token.comment, .token.prolog, .token.doctype, .token.cdata { color: #8b949e; }
+        .token.punctuation { color: #8b949e; }
+        .token.property, .token.tag, .token.constant, .token.symbol, .token.boolean,
+        .token.number, .token.deleted { color: #e0af68; }
+        .token.selector, .token.attr-name, .token.string, .token.char, .token.builtin,
+        .token.inserted, .token.regex { color: #9ece6a; }
+        .token.operator, .token.entity, .token.url, .token.variable { color: #8b949e; }
+        .token.atrule, .token.attr-value, .token.keyword { color: #c792ea; }
+        .token.function, .token.class-name { color: #7aa2f7; }
         .file-link { color: #7aa2f7; }
       }
     </style>
@@ -76,7 +89,7 @@
     <h2>代码</h2>
     <p class="muted" style="font-size: 12px">
       从选中的检出逐层浏览目录；点文件名打开带行号的正文，大文件按页读、不整份加载。
-      着色只按一份固定关键词表认常见语言，认不出就退回纯等宽。
+      着色用随包内联的 Prism 按语言分词（ui/prism.vendored.js），认不出的扩展名退回纯等宽。
     </p>
     <div class="bar">
       <button id="up">上级</button>
@@ -136,6 +149,11 @@
     <h3>历史问答（最新在前）</h3>
     <div id="history" class="muted">还没有问答记录。</div>
 
+    <!-- 语法着色器随包内联：沙箱里没有网络、不能动态 import，所以 Prism 核心连同用到的语言
+         打成一份扁平资产（ui/prism.vendored.js），由宿主把相对 <script src> 就地内联。
+         先置 manual，让 Prism 不去自动扫 DOM（页面自己按行高亮）。 -->
+    <script>window.Prism = { manual: true };</script>
+    <script src="prism.vendored.js"></script>
     <script>
       // 受控桥：只能调本包声明过的方法（见 desktop/main.ts），未声明的调用落到「未开放的桥方法」。
       // 工作区的路径约束与容量上限判定全在宿主主进程，页面这里只传相对路径。
@@ -291,78 +309,89 @@
         return (bytes / 1024 / 1024).toFixed(1) + ' MB';
       }
 
-      // ── 内联着色：一份固定关键词表 + 一份按扩展名的语言映射 ──────────────────
-      // 只认关键词 / 字符串 / 数字 / 行注释，认不出的语言原样退回纯等宽。刻意不做解析器。
+      // ── 语法着色：随包内联的 Prism（见页尾 <script src="prism.vendored.js">） ──────
+      // 沙箱里没有网络、也不能动态 import，所以着色器连同用到的语言打成一份扁平资产一并内联。
+      // 按扩展名找对应语法；找不到对应语法的语言原样退回纯等宽。
       function escapeHtml(text) {
         return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       }
 
-      const KEYWORDS = {
-        js: 'async await break case catch class const continue debugger default delete do else export extends finally for from function get if import in instanceof let new of return set static super switch this throw try typeof var void while yield'.split(' '),
-        py: 'and as assert async await break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield True False None self'.split(' '),
-        go: 'break case chan const continue default defer else fallthrough for func go goto if import interface map package range return select struct switch type var true false nil'.split(' '),
-        rs: 'as async await break const continue crate dyn else enum extern false fn for if impl in let loop match mod move mut pub ref return self static struct super trait true type unsafe use where while'.split(' '),
-        java: 'abstract assert boolean break byte case catch char class const continue default do double else enum extends final finally float for if implements import instanceof int interface long native new package private protected public return short static super switch synchronized this throw throws transient try void volatile while true false null'.split(' '),
-        c: 'auto break case char const continue default do double else enum extern float for goto if inline int long register restrict return short signed sizeof static struct switch typedef union unsigned void volatile while'.split(' '),
-        cpp: 'auto break case catch char class const constexpr continue default delete do double else enum explicit export extern float for friend if inline int long namespace new operator private protected public return short signed sizeof static struct switch template this throw try typedef typename union unsigned using virtual void volatile while true false nullptr'.split(' '),
-        cs: 'abstract as base break case catch class const continue default do double else enum event explicit extern false finally fixed float for foreach if in int interface internal is lock long namespace new null object out override private protected public readonly ref return sealed short sizeof static string struct switch this throw true try typeof uint ulong using var virtual void while'.split(' '),
-        rb: 'alias and begin break case class def defined do else elsif end ensure false for if in module next nil not or redo rescue retry return self super then true undef unless until when while yield'.split(' '),
-        php: 'abstract and array as break callable case catch class clone const continue declare default do echo else elseif enddeclare endfor endforeach endif endswitch endwhile extends final finally fn for foreach function global goto if implements instanceof interface isset list namespace new or print private protected public require require_once return static switch throw trait try unset use var while xor yield true false null'.split(' '),
-        sh: 'case do done elif else esac fi for function if in select then time until while'.split(' '),
-        sql: 'select from where insert into values update set delete create table alter drop join left right inner outer on group by order having limit offset distinct as and or not null is like in between union all exists primary key foreign references default'.split(' '),
-        kotlin: 'as break class continue do else false for fun if in interface is null object package return super this throw true try typealias val var when while by catch constructor delegate dynamic field finally get import init param property receiver set setparam where actual abstract annotation companion const crossinline data enum expect external final infix inline inner internal lateinit noinline open operator out override private protected public reified sealed suspend tailrec vararg'.split(' '),
-        swift: 'associatedtype class deinit enum extension fileprivate func import init inout internal let open operator private protocol public static struct subscript typealias var break case continue default defer do else fallthrough for guard if in repeat return switch where while as any catch false is nil rethrows super self throw throws true try'.split(' '),
-        scala: 'abstract case catch class def do else extends false final finally for forSome if implicit import lazy match new null object override package private protected return sealed super this throw trait try true type val var while with yield'.split(' '),
-      };
-
+      /** 扩展名 → Prism 语言 id（组件 id；Prism 自带的 html/xml/ts/sh… 等名指向同一份语法）。 */
       const EXT_LANG = {
-        js: 'js', mjs: 'js', cjs: 'js', jsx: 'js', ts: 'js', tsx: 'js', mts: 'js', cts: 'js', vue: 'js',
-        py: 'py', pyw: 'py',
-        go: 'go', rs: 'rs', java: 'java',
-        c: 'c', h: 'c',
-        cc: 'cpp', cpp: 'cpp', cxx: 'cpp', hpp: 'cpp', hh: 'cpp', cs: 'cs',
-        rb: 'rb', php: 'php', sh: 'sh', bash: 'sh', zsh: 'sh', sql: 'sql',
-        kt: 'kotlin', kts: 'kotlin', swift: 'swift', scala: 'scala',
+        ts: 'typescript', mts: 'typescript', cts: 'typescript', tsx: 'tsx',
+        js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'jsx', vue: 'markup',
+        py: 'python', pyw: 'python',
+        go: 'go', rs: 'rust',
+        java: 'java', kt: 'kotlin', kts: 'kotlin', scala: 'scala',
+        c: 'c', h: 'c', cc: 'cpp', cpp: 'cpp', cxx: 'cpp', hpp: 'cpp', hh: 'cpp',
+        cs: 'csharp', rb: 'ruby', php: 'php', swift: 'swift', lua: 'lua',
+        sh: 'bash', bash: 'bash', zsh: 'bash',
+        sql: 'sql', json: 'json', yml: 'yaml', yaml: 'yaml', toml: 'toml',
+        xml: 'markup', html: 'markup', htm: 'markup', svg: 'markup',
+        css: 'css', scss: 'css', less: 'css',
+        md: 'markdown', markdown: 'markdown',
+        diff: 'diff', patch: 'diff', ini: 'ini', cfg: 'ini', env: 'ini',
       };
 
-      // `#` 是注释的语言（用另一条 token 正则）；其余走 `//`
-      const HASH_COMMENT = { py: true, rb: true, sh: true };
+      /** 没有扩展名也认得出的几个熟文件名。 */
+      const NAME_LANG = { dockerfile: 'docker', makefile: 'makefile' };
 
-      const TOKENS_SLASH = /\/\/[^\n]*|\/\*.*?\*\/|'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|\b\d[\w.]*\b|[A-Za-z_$][\w$]*/g;
-      const TOKENS_HASH = /#[^\n]*|\/\*.*?\*\/|'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|\b\d[\w.]*\b|[A-Za-z_$][\w$]*/g;
-
-      const KEYWORD_SETS = {};
-      function keywordSet(lang) {
-        if (!KEYWORD_SETS[lang]) KEYWORD_SETS[lang] = new Set(KEYWORDS[lang] || []);
-        return KEYWORD_SETS[lang];
-      }
-
+      /** 由文件路径推断 Prism 语言 id；没有对应语法时返回 null（调用方退回纯等宽）。 */
       function langForKey(path) {
-        const dot = path.lastIndexOf('.');
-        if (dot === -1) return null;
-        return EXT_LANG[path.slice(dot + 1).toLowerCase()] || null;
+        const base = path.slice(path.lastIndexOf('/') + 1).toLowerCase();
+        const dot = base.lastIndexOf('.');
+        const id = dot > 0 ? EXT_LANG[base.slice(dot + 1)] : NAME_LANG[base];
+        const prism = window.Prism;
+        return id && prism && prism.languages[id] ? id : null;
       }
 
-      function colorize(line, lang) {
-        if (!lang || !KEYWORDS[lang]) return escapeHtml(line);
-        const keywords = keywordSet(lang);
-        const re = HASH_COMMENT[lang] ? TOKENS_HASH : TOKENS_SLASH;
-        re.lastIndex = 0;
-        let out = '';
-        let last = 0;
-        let match;
-        while ((match = re.exec(line)) !== null) {
-          out += escapeHtml(line.slice(last, match.index));
-          const token = match[0];
-          let cls = '';
-          if (token.startsWith('//') || token.startsWith('/*') || token.startsWith('#')) cls = 'tok-com';
-          else if (token[0] === "'" || token[0] === '"' || token[0] === '`') cls = 'tok-str';
-          else if (token.charCodeAt(0) >= 48 && token.charCodeAt(0) <= 57) cls = 'tok-num';
-          else if (keywords.has(token)) cls = 'tok-kw';
-          out += cls ? `<span class="${cls}">${escapeHtml(token)}</span>` : escapeHtml(token);
-          last = match.index + token.length;
+      /**
+       * 把整页正文按语言分词，再摊平成「每行一段段带类名的 HTML」。
+       *
+       * 整页一起分词而不是逐行：块注释、模板串这类 token 会跨行，逐行认会从中间切断。
+       * 跨行的 token 在换行处断开、每一段各自带同一类名，行号表与整页排版因此不受影响。
+       */
+      function highlightLines(lines, lang) {
+        const prism = window.Prism;
+        if (!lang || !prism || !prism.languages[lang]) return lines.map(escapeHtml);
+
+        const rows = [[]]; // rows[行序] = 该行的 { cls, text } 片段；换行即新起一行
+        const emit = (cls, text) => {
+          const parts = text.split('\n');
+          for (let i = 0; i < parts.length; i += 1) {
+            if (i > 0) rows.push([]);
+            if (parts[i] !== '') rows[rows.length - 1].push({ cls, text: parts[i] });
+          }
+        };
+        const walk = (content, cls) => {
+          if (typeof content === 'string') {
+            emit(cls, content);
+            return;
+          }
+          if (Array.isArray(content)) {
+            for (const item of content) walk(item, cls);
+            return;
+          }
+          // Prism Token：类名可能是数组，alias 一并带上（与 Prism.Token.stringify 同名规则）
+          let type = Array.isArray(content.type) ? content.type.join(' ') : content.type;
+          if (content.alias) {
+            type += ' ' + (Array.isArray(content.alias) ? content.alias.join(' ') : content.alias);
+          }
+          walk(content.content, cls ? cls + ' ' + type : type);
+        };
+
+        try {
+          walk(prism.tokenize(lines.join('\n'), prism.languages[lang]), '');
+        } catch {
+          return lines.map(escapeHtml);
         }
-        return out + escapeHtml(line.slice(last));
+        return lines.map((line, index) => {
+          const pieces = rows[index];
+          if (!pieces || pieces.length === 0) return escapeHtml(line);
+          return pieces
+            .map((piece) => '<span class="token ' + piece.cls + '">' + escapeHtml(piece.text) + '</span>')
+            .join('');
+        });
       }
 
       // ── 浏览：从选中检出的目录逐层列出 ────────────────────────────────────
@@ -463,6 +492,8 @@
       function renderLines(lines, start) {
         currentLines = lines;
         const lang = openPath ? langForKey(openPath) : null;
+        // 整页正文一次分词，逐行取回带类名的 HTML；没有对应语法时 highlightLines 原样转义
+        const highlighted = highlightLines(lines, lang);
         const rows = lines.map((line, index) => {
           const number = start + index;
           const marked =
@@ -472,7 +503,7 @@
           return (
             `<div class="row${marked ? ' hl' : ''}">` +
             `<span class="ln">${number}</span>` +
-            `<span class="txt">${colorize(line, lang)}</span>` +
+            `<span class="txt">${highlighted[index] === undefined ? escapeHtml(line) : highlighted[index]}</span>` +
             '</div>'
           );
         });

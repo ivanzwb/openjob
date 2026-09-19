@@ -650,13 +650,16 @@ export const repoFile = sqliteTable(
 // 标记与话术
 // ---------------------------------------------------------------------------
 
-/** 统一标记表：知识点、讲解片段、代码位置、真题、情报卡共用一张表 */
+/** 统一标记表：知识点、讲解片段、代码位置、真题、情报卡共用一张表（也是插件的标记汇总面） */
 export const annotation = sqliteTable(
   'annotation',
   {
     id: text('id').primaryKey(),
+    // 一列裸 text：宿主认识的取值之外，包自己起的 targetKind 也写在这里，读取侧按标签兜底
     targetType: text('target_type').$type<AnnotationTarget>().notNull(),
     targetId: text('target_id').notNull(),
+    // 包给的可读目标标签（宿主不认识的目标类型靠它渲染）；宿主自己的目标不写这一列
+    targetLabel: text('target_label'),
     kind: text('kind').$type<AnnotationKind>().notNull(),
     selectedText: text('selected_text'),
     noteMd: text('note_md'),

@@ -28,6 +28,10 @@ export default tseslint.config(
       '**/node_modules/**',
       'desktop/src/main/db/migrations/**',
       'mobile/**',
+      // 插件 Webview 沙箱里随包内联的第三方资产是逐字 vendor 的产物（如
+      // plugins/softwareEngineering/desktop/ui/prism.vendored.js）：不按本仓风格改，
+      // 也不参与 lint，与 dist / out 同类。
+      '**/ui/*.vendored.js',
     ],
   },
 

@@ -94,16 +94,16 @@ export const softwareEngineeringRolePack: RolePack = defineRolePack({
     // 本包自己的数据集合：宿主只按这些名字归档与取用，不理解里面的内容。
     // - repositories：检出登记表（排程按 (kind, collection) 取代码材料）；
     // - qa-history：按检出分片的问答历史（问题 / 回答 / 引用 / 时间），跨端同步共用；
-    // - repository-indexes：按检出存的索引产物（摘要 / 仓库地图 / 状态 / 建立时间）；
-    // - code-marks：代码位置标记（路径 + 行区间 + 备注），本包自己的工作台数据。
+    // - repository-indexes：按检出存的索引产物（摘要 / 仓库地图 / 状态 / 建立时间）。
     // code-refs 与 repository-files 是旧通道留下的登记名，保留以兼容既有声明形状。
+    // 代码位置标记不再放在本包自己的集合里：它改走宿主的标记原语（library.annotate），
+    // 写进宿主跨功能的标记汇总，因而也会出现在宿主的标记面板里——所以 code-marks 退掉。
     dataCollections: [
       { name: 'repositories', schemaVersion: 1 },
       { name: 'code-refs', schemaVersion: 1 },
       { name: 'repository-files', schemaVersion: 1 },
       { name: 'qa-history', schemaVersion: 1 },
       { name: 'repository-indexes', schemaVersion: 1 },
-      { name: 'code-marks', schemaVersion: 1 },
     ],
   },
   roleMatchers: softwareEngineeringMatchers,

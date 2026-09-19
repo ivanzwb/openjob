@@ -1,21 +1,41 @@
 import { randomUUID } from 'node:crypto';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { Annotation } from '@core/entities';
-import type { AnnotationKind, AnnotationTarget } from '@core/enums';
+import { ANNOTATION_TARGETS, type AnnotationKind, type AnnotationTarget } from '@core/enums';
 import type { AnnotationCreateInput, AnnotationView } from '@core/ipc';
+import type { LibraryAnnotation } from '@core/plugins/pluginRuntime/host';
 import { findMarkOnSelection } from '@core/annotationMarkList';
 import { getDb, schema } from '../db';
+
+/** 宿主认识的标记目标（§6）：只有这些取值才有「跳回去」的导航，其余按包给的标签只读展示。 */
+const HOST_TARGETS: ReadonlySet<string> = new Set(ANNOTATION_TARGETS);
 
 function rowToAnnotation(row: typeof schema.annotation.$inferSelect): Annotation {
   return {
     id: row.id,
     targetType: row.targetType,
     targetId: row.targetId,
+    targetLabel: row.targetLabel,
     kind: row.kind,
     selectedText: row.selectedText,
     noteMd: row.noteMd,
     highlightColor: row.highlightColor,
     selectionStart: row.selectionStart,
+    createdAt: row.createdAt,
+  };
+}
+
+/** 泛型视图：目标类型可能是宿主不认识的取值（包自己起的），一律照原样带出去。 */
+function rowToLibraryAnnotation(row: typeof schema.annotation.$inferSelect): LibraryAnnotation {
+  return {
+    id: row.id,
+    targetKind: row.targetType,
+    targetId: row.targetId,
+    targetLabel: row.targetLabel?.trim() || row.targetId,
+    kind: row.kind,
+    selectedText: row.selectedText,
+    noteMd: row.noteMd,
+    highlightColor: row.highlightColor,
     createdAt: row.createdAt,
   };
 }
@@ -97,18 +117,106 @@ export function listAnnotationsForCampaign(campaignId: string): AnnotationView[]
     .get();
   if (intel) labelByTarget.set(key('intel', intel.id), '公司情报卡');
 
-  if (labelByTarget.size === 0) return [];
-
+  // 汇总面是跨功能的：宿主认识的取值按目标本身算标签（目标已被删的不进汇总），
+  // 包自己起的取值一律进汇总，标签用包存的 target_label，没有就退回原始取值（targetId）。
+  // 认不出一个取值不等于把它丢掉——这正是「包内标记也能出现在标记面板」的那条通路。
   return db
     .select()
     .from(schema.annotation)
     .all()
-    .filter((a) => labelByTarget.has(key(a.targetType, a.targetId)))
+    .filter((a) =>
+      HOST_TARGETS.has(a.targetType)
+        ? labelByTarget.has(key(a.targetType, a.targetId))
+        : true,
+    )
     .map((a) => ({
       ...rowToAnnotation(a),
-      targetLabel: labelByTarget.get(key(a.targetType, a.targetId)) ?? '',
+      targetLabel:
+        labelByTarget.get(key(a.targetType, a.targetId)) ??
+        (a.targetLabel?.trim() || a.targetId),
     }))
     .sort((a, b) => b.createdAt - a.createdAt);
+}
+
+/**
+ * 包自己起的标记写进汇总面（`library.annotate`）：目标类型与标都由包给，宿主不认识，
+ * 原样落库。同一个 `(targetKind, targetId)` 再标一次是**更新**而不是又插一条，
+ * 于是「同一个区间重标」与宿主已知目标上的经验一致（见 findDuplicateOnSelection）。
+ */
+export function createExternalAnnotation(input: {
+  targetType: string;
+  targetId: string;
+  targetLabel?: string;
+  kind: string;
+  selectedText?: string;
+  noteMd?: string;
+  highlightColor?: string;
+  selectionStart?: number;
+}): LibraryAnnotation {
+  const db = getDb();
+  // 目标类型是包自己起的自由字符串；列上标的类型只是宿主认识的取值，这里按裸 text 比较
+  const targetType = input.targetType as AnnotationTarget;
+  const existing = db
+    .select()
+    .from(schema.annotation)
+    .where(
+      and(
+        eq(schema.annotation.targetType, targetType),
+        eq(schema.annotation.targetId, input.targetId),
+      ),
+    )
+    .get();
+
+  const now = Date.now();
+  const label = input.targetLabel?.trim() || null;
+
+  if (existing) {
+    db.update(schema.annotation)
+      .set({
+        targetLabel: label,
+        kind: input.kind as AnnotationKind,
+        selectedText: input.selectedText ?? null,
+        noteMd: input.noteMd ?? null,
+        highlightColor: input.highlightColor ?? null,
+        selectionStart: input.selectionStart ?? null,
+        createdAt: now,
+      })
+      .where(eq(schema.annotation.id, existing.id))
+      .run();
+    return rowToLibraryAnnotation({ ...existing, targetLabel: label, kind: input.kind as AnnotationKind, selectedText: input.selectedText ?? null, noteMd: input.noteMd ?? null, highlightColor: input.highlightColor ?? null, selectionStart: input.selectionStart ?? null, createdAt: now });
+  }
+
+  const row = {
+    id: randomUUID(),
+    targetType,
+    targetId: input.targetId,
+    targetLabel: label,
+    kind: input.kind as AnnotationKind,
+    selectedText: input.selectedText ?? null,
+    noteMd: input.noteMd ?? null,
+    highlightColor: input.highlightColor ?? null,
+    selectionStart: input.selectionStart ?? null,
+    createdAt: now,
+  };
+  db.insert(schema.annotation).values(row).run();
+  return rowToLibraryAnnotation(row);
+}
+
+/** 取回标记（`library.listAnnotations`）：按包自己起的 targetKind 收窄，不传则取全部。 */
+export function listExternalAnnotations(query?: {
+  targetType?: string;
+  limit?: number;
+}): LibraryAnnotation[] {
+  const rows = getDb().select().from(schema.annotation).all();
+  const scoped =
+    query?.targetType === undefined
+      ? rows
+      : rows.filter((row) => row.targetType === query.targetType);
+  const limit = Math.max(0, query?.limit ?? 500);
+  return scoped
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .slice(0, limit)
+    .map(rowToLibraryAnnotation);
 }
 
 /**
@@ -142,6 +250,8 @@ export function createAnnotation(input: AnnotationCreateInput): Annotation {
     id,
     targetType: input.targetType,
     targetId: input.targetId,
+    // 宿主自己的目标标签从目标本身算，不落这一列；只有包自起的目标类型才带标签进来
+    targetLabel: input.targetLabel ?? null,
     kind: input.kind,
     selectedText: input.selectedText ?? null,
     noteMd: input.noteMd ?? null,

@@ -61,6 +61,7 @@ import type { PluginType } from './enums';
 import type { CampaignRuntimeDescriptor, ClientPlatform, RolePack } from './plugins/types';
 import type { PluginPermission } from './plugins/permissions';
 import type {
+  LibraryAnnotation,
   LibrarySnippet,
   PluginArtifact,
   WorkspaceEntry,
@@ -900,6 +901,8 @@ export interface AnnotationCreateInput {
   noteMd?: string;
   highlightColor?: string;
   selectionStart?: number;
+  /** 目标的可读标签；宿主不认识的目标类型（包自己起的取值）靠它渲染 */
+  targetLabel?: string;
 }
 
 export interface AnnotationToggleInput {
@@ -907,8 +910,14 @@ export interface AnnotationToggleInput {
   targetId: string;
 }
 
-/** 标记 + 目标的可读名字，供「我的标记」这类跨类型汇总列表使用 */
-export interface AnnotationView extends Annotation {
+/**
+ * 标记 + 目标的可读名字，供「我的标记」这类跨类型汇总列表使用。
+ *
+ * `targetType` 一律放宽成字符串：宿主的标记汇总是**跨功能**的，包自己起的取值（自由字符串）
+ * 也在里面，宿主不认识就按存的 `targetLabel` 渲染、没有标签则退回原始取值。
+ */
+export interface AnnotationView extends Omit<Annotation, 'targetType'> {
+  targetType: string;
   targetLabel: string;
 }
 
@@ -1214,6 +1223,33 @@ export interface IpcInvokeMap {
   'pluginRuntime:library.listSnippets': {
     req: { pluginId: string; sourceKind?: string; limit?: number };
     res: LibrarySnippet[];
+  };
+  /**
+   * 代码插件的 **标记原语**：把包自己的标记写进宿主的**跨功能标记汇总**（annotation 表），
+   * 于是包内的一条批注也能出现在宿主的标记面板里，而不是只留在包自己的数据集合里。
+   * `targetKind`（自由字符串）与 `targetLabel` 都由包给，宿主不认识，原样存进裸 text 列；
+   * 与话术库共用 `library:write` 授权（声明即上限）。
+   */
+  'pluginRuntime:library.annotate': {
+    req: {
+      pluginId: string;
+      targetKind: string;
+      targetId: string;
+      targetLabel?: string;
+      kind: string;
+      selectedText?: string;
+      note?: string;
+      color?: string;
+    };
+    res: LibraryAnnotation;
+  };
+  'pluginRuntime:library.listAnnotations': {
+    req: { pluginId: string; targetKind?: string; limit?: number };
+    res: LibraryAnnotation[];
+  };
+  'pluginRuntime:library.deleteAnnotation': {
+    req: { pluginId: string; id: string };
+    res: void;
   };
   /** 代码插件清单（含启用状态）：设置页展示与激活门槛共用 */
   'pluginRuntime:list': {
@@ -1527,6 +1563,9 @@ export const IPC_INVOKE_CHANNELS = [
   'pluginRuntime:artifact.read',
   'pluginRuntime:library.saveSnippet',
   'pluginRuntime:library.listSnippets',
+  'pluginRuntime:library.annotate',
+  'pluginRuntime:library.listAnnotations',
+  'pluginRuntime:library.deleteAnnotation',
   'pluginRuntime:list',
   'pluginRuntime:setEnabled',
   'campaign:list',

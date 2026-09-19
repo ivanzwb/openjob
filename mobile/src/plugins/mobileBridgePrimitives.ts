@@ -1,13 +1,17 @@
 /**
  * 移动端放行的**通用桥原语表**（分发计划 §11.2 桥自注册 / §7 手机端降级）。
  *
- * 与桌面那张表同构，但**写侧刻意不在表里**：手机端不装载插件包、也没有宿主工作区实现，
- * 写 / 删 / 快照 / 远端拉取、artifact 读入，以及往话术库里写，声明了也如实拒绝
+ * 与桌面那张表同构，但**宿主工作区的写侧刻意不在表里**：手机端不装载插件包、也没有宿主
+ * 工作区实现，写 / 删 / 快照 / 远端拉取、artifact 读入、数据集合写入，声明了也如实拒绝
  * （`unavailable`），不假装能执行。
  *
  * 读侧可以代理到已配对的桌面端（`invokeRemote`）：工作区的读 / 遍历 / glob / grep / 符号
  * 与基础问答都由桌面按包声明的权限执行——桌面按 pluginId 解析出**本包工作区**，读到的
- * 就是桌面那份检出，范围与桌面自己的渲染层完全一致。话术库同理只放读侧。
+ * 就是桌面那份检出，范围与桌面自己的渲染层完全一致。
+ *
+ * 话术库是**唯一的写侧例外**：手机端也能存（片段落进同步的话术库，随同步回到桌面），
+ * 因为那条通道本来就是共享的用户面；标记面则只放读侧过来（annotate / deleteAnnotation
+ * 留在桌面，手机端在桥这一侧如实拒绝）。
  * 传输用一个注入的 `call`，这样这张表本身是纯数据、可单测。
  */
 import type { PluginBridgePrimitives } from '@core/plugins/pluginRuntime/bridge';
@@ -23,8 +27,9 @@ export const MOBILE_UNAVAILABLE_METHODS: readonly string[] = [
   // 手机端对包数据只读：读走配对桌面，写如实拒绝，不假装能落盘
   'data.put',
   'data.delete',
-  // 话术库同理：读侧（listSnippets）放行，写侧落进同步库的动作留给桌面
-  'library.saveSnippet',
+  // 标记面只放读侧（listAnnotations）：写（annotate）与删（deleteAnnotation）留在桌面
+  'library.annotate',
+  'library.deleteAnnotation',
 ];
 
 function text(value: unknown): string {
@@ -146,13 +151,43 @@ export function mobileBridgePrimitives(
         });
       },
     },
-    // 话术库读侧：取回包自己这一类来源存过的话术（写侧由桌面承担，如实拒绝）
+    // 话术库：手机端也能存——片段落进**同步的话术库**，随同步回到桌面，那是用户共享的面
+    // （来源类型 code-ref 与来源标签由包给，宿主不认识）。授权仍由配对桌面的 manifest 声明判。
+    'library.saveSnippet': {
+      permission: 'library:write',
+      invoke: (params) => {
+        const { text: body, sourceKind, sourceLabel, tier } = params as {
+          text?: unknown;
+          sourceKind?: unknown;
+          sourceLabel?: unknown;
+          tier?: unknown;
+        };
+        return call('pluginRuntime:library.saveSnippet', {
+          text: text(body),
+          sourceKind: text(sourceKind),
+          sourceLabel: text(sourceLabel),
+          ...(tier !== undefined ? { tier } : {}),
+        });
+      },
+    },
+    // 话术库读侧：取回包自己这一类来源存过的话术
     'library.listSnippets': {
       permission: 'library:write',
       invoke: (params) => {
         const { sourceKind, limit } = params as { sourceKind?: unknown; limit?: unknown };
         return call('pluginRuntime:library.listSnippets', {
           sourceKind: sourceKind === undefined ? undefined : text(sourceKind),
+          limit,
+        });
+      },
+    },
+    // 标记读侧：取回桌面写进标记汇总面的那批（写 / 删留在桌面，本端如实拒绝）
+    'library.listAnnotations': {
+      permission: 'library:write',
+      invoke: (params) => {
+        const { targetKind, limit } = params as { targetKind?: unknown; limit?: unknown };
+        return call('pluginRuntime:library.listAnnotations', {
+          targetKind: targetKind === undefined ? undefined : text(targetKind),
           limit,
         });
       },

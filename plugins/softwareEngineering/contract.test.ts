@@ -135,19 +135,28 @@ describe('softwareEngineeringRolePack contract', () => {
       // 用户的话术库：存 / 取都按本包自己的来源类型（code-ref），宿主不认识
       'library.saveSnippet',
       'library.listSnippets',
+      // 标记面：本包自己的目标类型（code-mark）写进宿主跨功能的标记汇总，并取回 / 删掉
+      'library.annotate',
+      'library.listAnnotations',
+      'library.deleteAnnotation',
     ]);
 
-    // 手机端只能读：数据集合、配对桌面的工作区读侧，以及基础问答
+    // 手机端几乎只能读：数据集合、配对桌面的工作区读侧、基础问答、话术库存（落进同步库）与
+    // 标记读侧；标记写 / 删不声明
     const mobile = activateEntry(mobileActivate);
     expect(mobile.bridgeMethods).toEqual([
       'data.list',
       'workspace.list',
       'workspace.read',
       'agent.ask',
+      'library.saveSnippet',
+      'library.listSnippets',
+      'library.listAnnotations',
     ]);
   });
 
   it('数据集合随包声明：登记表、问答历史与索引产物都在 manifest 里', () => {
+    // 代码位置标记不再放在本包自己的集合里（改走宿主的标记原语 library.annotate）
     expect(
       (softwareEngineeringRolePack.manifest.dataCollections ?? []).map((item) => item.name),
     ).toEqual([
@@ -156,7 +165,6 @@ describe('softwareEngineeringRolePack contract', () => {
       'repository-files',
       'qa-history',
       'repository-indexes',
-      'code-marks',
     ]);
   });
 });

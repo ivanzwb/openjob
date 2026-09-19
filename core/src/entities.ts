@@ -336,6 +336,11 @@ export interface Annotation {
   id: Id;
   targetType: AnnotationTarget;
   targetId: Id;
+  /**
+   * 目标的可读标签；包自己起的 targetType 宿主不认识，标签由包给、原样存进这一列。
+   * 宿主认识的目标（node / explanation / question / intel）不写这一列，标签从目标本身算。
+   */
+  targetLabel: string | null;
   kind: AnnotationKind;
   selectedText: string | null;
   noteMd: string | null;

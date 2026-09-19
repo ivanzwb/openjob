@@ -21,6 +21,8 @@ type AnnotationRow = {
   id: string;
   target_type: string;
   target_id: string;
+  // 目标的可读标签：包自己起的 target_type 宿主不认识，标签由包给（宿主自己的目标不写）
+  target_label: string | null;
   kind: string;
   selected_text: string | null;
   note_md: string | null;
@@ -52,6 +54,7 @@ function rowToAnnotation(row: AnnotationRow): Annotation {
     id: row.id,
     targetType: row.target_type as Annotation['targetType'],
     targetId: row.target_id,
+    targetLabel: row.target_label,
     kind: row.kind as Annotation['kind'],
     selectedText: row.selected_text,
     noteMd: row.note_md,
@@ -124,6 +127,8 @@ export async function createAnnotation(
     id,
     target_type: input.targetType,
     target_id: input.targetId,
+    // 宿主自己的目标不写标签：标签从目标本身算；这一列留给包自起的目标类型
+    target_label: null,
     kind: input.kind,
     selected_text: input.selectedText ?? null,
     note_md: input.noteMd ?? null,

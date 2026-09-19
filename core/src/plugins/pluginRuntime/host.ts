@@ -193,11 +193,35 @@ export interface LibrarySnippet {
 }
 
 /**
- * 话术库原语：把一段文字存进用户的话术库，并按包自己起的 sourceKind 取回。
+ * 一条写进宿主**跨功能标记汇总**的标记（`library` 命名空间）。
  *
- * 语义边界：宿主把 `sourceKind` 原样写进 `source_type`（一列裸 text，读取侧对认不出的取值
- * 走中性兜底），把 `sourceLabel` 存进既有的来源标签机制——宿主不解释这两个值，也不为某个
- * 岗位开专用字段。取回只回包自己这一类来源的片段。
+ * 与话术库同一条思路：`targetKind`（目标类型）由包自己起一个自由字符串，宿主不认识，
+ * 原样写进 `annotation.target_type`（一列裸 text）；`targetLabel` 是包自己算的可读标签，
+ * 存进 `target_label`。宿主认识的取值（node / explanation / question / intel）不受影响，
+ * 认不出的取值就按存下来的标签渲染，没有标签则退回原始取值。
+ */
+export interface LibraryAnnotation {
+  id: string;
+  /** 包自己起的目标类型（如 `code-mark`），宿主不认识 */
+  targetKind: string;
+  /** 目标 id：包自己保证在同一个 targetKind 下稳定（如 `路径:起-止`） */
+  targetId: string;
+  /** 人类可读的目标标签（如 `src/foo.ts:12-40`）；缺省时宿主退回 targetId */
+  targetLabel: string;
+  /** 标记类型：宿主认识的 highlight / note / elaboration / bookmark 照旧，包也可以给别的 */
+  kind: string;
+  selectedText: string | null;
+  noteMd: string | null;
+  highlightColor: string | null;
+  createdAt: number;
+}
+
+/**
+ * 话术库与标记原语（`library` 命名空间）：两件事共用一份授权（`library:write`）。
+ *
+ * 语义边界：宿主把包自起的取值原样写进裸 text 列，读取侧对认不出的取值走标签兜底；
+ * 宿主不解释这些值，也不为某个岗位开专用字段。「声明即授权」：只有 manifest 里声明过
+ * `library:write` 的包才能存/取，宿主不认识任何具体取值。
  */
 export interface PluginLibraryService {
   saveSnippet(request: {
@@ -209,6 +233,22 @@ export interface PluginLibraryService {
     tier?: ExplanationTier;
   }): Promise<LibrarySnippet>;
   listSnippets(query?: { sourceKind?: string; limit?: number }): Promise<LibrarySnippet[]>;
+  /**
+   * 写一条标记进宿主的**跨功能标记汇总**（annotation 表），让包自己的标记也能出现在
+   * 宿主的标记面板里。`targetKind` 与 `targetLabel` 都由包给，宿主不认识。
+   */
+  annotate(request: {
+    targetKind: string;
+    targetId: string;
+    targetLabel?: string;
+    kind: string;
+    selectedText?: string;
+    noteMd?: string;
+    highlightColor?: string;
+  }): Promise<LibraryAnnotation>;
+  /** 取回标记；传 `targetKind` 只取包自己这一类，不传取全部。按时间倒序。 */
+  listAnnotations(query?: { targetKind?: string; limit?: number }): Promise<LibraryAnnotation[]>;
+  deleteAnnotation(id: string): Promise<void>;
 }
 
 /** 用户显式提供的文件读入结果（§11.2 artifact 原语）：对包是只读数据。 */

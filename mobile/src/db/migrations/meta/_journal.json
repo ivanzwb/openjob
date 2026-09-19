@@ -204,6 +204,13 @@
       "when": 1787650000000,
       "tag": "0028_role_neutral_intel",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "6",
+      "when": 1787660000000,
+      "tag": "0029_annotation_target_label",
+      "breakpoints": true
     }
   ]
 }
