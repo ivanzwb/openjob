@@ -1,8 +1,8 @@
 /**
- * quiz/design 历史投影。
+ * 旧「考我」与旧案例表的只读历史投影。
  *
  * 守两件事：旧记录能以只读形态出现在统一的练习历史里，以及投影不会把缺的东西
- * 补成看起来像真评分的数字——旧记录没有逐维度分，design 连总分都没存过。
+ * 补成看起来像真评分的数字——旧记录没有逐维度分，旧案例表连总分都没存过。
  */
 
 import type { Database } from 'better-sqlite3';
@@ -82,10 +82,10 @@ describe('listPracticeHistory', () => {
   });
 
   /**
-   * design_case 只存了题目和作答：旧链路把分数返回给界面就丢了。填 0 会让这条记录
+   * 旧案例表只存了题目和作答：旧链路把分数返回给界面就丢了。填 0 会让这条记录
    * 在历史里显示成「评了 0 分」，按平均分算趋势时还会把整条曲线压下去。
    */
-  it('design 记录的总分是 null，而不是 0', () => {
+  it('旧案例表记录的总分是 null，而不是 0', () => {
     const raw = newPracticeDb();
     seedDesignCase(raw, 'dc-1', '先分片再加缓存', 600);
 
@@ -93,7 +93,7 @@ describe('listPracticeHistory', () => {
 
     expect(attempt).toMatchObject({
       id: 'dc-1',
-      source: 'design',
+      source: 'legacy',
       readOnly: true,
       totalScore: null,
       formatId: 'se.system-design',
@@ -121,7 +121,7 @@ describe('listPracticeHistory', () => {
 
     expect(history.map((item) => [item.id, item.source])).toEqual([
       ['qa-new', 'quiz'],
-      ['dc-mid', 'design'],
+      ['dc-mid', 'legacy'],
       ['qa-old', 'quiz'],
     ]);
   });
@@ -135,12 +135,12 @@ describe('listPracticeHistory', () => {
       listPracticeHistory(raw, { campaignId: CAMPAIGN_ID, sources: ['quiz'] }).map((i) => i.id),
     ).toEqual(['qa-1']);
     expect(
-      listPracticeHistory(raw, { campaignId: CAMPAIGN_ID, sources: ['design'] }).map((i) => i.id),
+      listPracticeHistory(raw, { campaignId: CAMPAIGN_ID, sources: ['legacy'] }).map((i) => i.id),
     ).toEqual(['dc-1']);
   });
 
-  /** design_case 不绑定考点，混进考点历史里会让用户以为这条记录属于这个考点 */
-  it('按考点筛选时不返回 design 记录', () => {
+  /** 旧案例表不绑定考点，混进考点历史里会让用户以为这条记录属于这个考点 */
+  it('按考点筛选时不返回旧案例表记录', () => {
     const raw = newPracticeDb();
     seedQuizAttempt(raw, 'qa-1', 3, 100);
     seedDesignCase(raw, 'dc-1', '答案', 200);

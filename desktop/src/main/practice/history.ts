@@ -43,7 +43,7 @@ interface QuizRow {
   created_at: number;
 }
 
-interface DesignRow {
+interface CaseRow {
   id: string;
   interview_type: string;
   title: string;
@@ -127,7 +127,7 @@ function projectQuizAttempts(
  * totalScore 恒为 null：旧链路把分数返回给界面就丢了，库里只有题目和作答。填 0
  * 会让这条记录在历史里显示成「评了 0 分」。
  */
-function projectDesignCases(
+function projectCaseRecords(
   raw: Database,
   campaignId: string,
 ): PracticeAttempt[] {
@@ -137,7 +137,7 @@ function projectDesignCases(
        FROM ${CASE_TABLE}
        WHERE campaign_id = ? AND user_answer_md IS NOT NULL AND trim(user_answer_md) <> ''`,
     )
-    .all(campaignId) as DesignRow[];
+    .all(campaignId) as CaseRow[];
 
   const pack = getCampaignPracticePack(raw, campaignId);
   return rows.map((row) => {
@@ -146,7 +146,8 @@ function projectDesignCases(
     const formatId = formatIdForExamForm(pack, row.interview_type);
     return {
       id: row.id,
-      source: 'design' as const,
+      // 归档表投影的来源标成中性的 legacy：宿主不认识这张表的领域语义，只按形状读它
+      source: 'legacy' as const,
       readOnly: true,
       campaignId,
       nodeId: null,
@@ -189,7 +190,7 @@ export function listPracticeHistory(
   raw: Database,
   query: PracticeAttemptQuery,
 ): PracticeAttempt[] {
-  const sources = new Set(query.sources ?? ['practice', 'quiz', 'design']);
+  const sources = new Set(query.sources ?? ['practice', 'quiz', 'legacy']);
   const scopedToNode = query.nodeId !== undefined && query.nodeId !== null;
   const merged: PracticeAttempt[] = [];
 
@@ -199,8 +200,8 @@ export function listPracticeHistory(
   if (sources.has('quiz')) {
     merged.push(...projectQuizAttempts(raw, query.campaignId, query.nodeId));
   }
-  if (sources.has('design') && !scopedToNode) {
-    merged.push(...projectDesignCases(raw, query.campaignId));
+  if (sources.has('legacy') && !scopedToNode) {
+    merged.push(...projectCaseRecords(raw, query.campaignId));
   }
 
   merged.sort((left, right) => right.createdAt - left.createdAt);

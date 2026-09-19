@@ -46,41 +46,33 @@ function resolveSourceLabel(sourceType: SpeechSnippet['sourceType'], sourceId: s
       .get();
     return node ? `考我 · ${node.name}` : '考我';
   }
-  if (sourceType === 'design') {
-    const campaign = db
-      .select()
-      .from(schema.campaign)
-      .where(eq(schema.campaign.id, sourceId))
-      .get();
-    return campaign ? `模拟面试 · ${campaign.company}` : '模拟面试';
-  }
   if (sourceType === 'story') {
     // 标题用 Story 自己的标题而不是时长档位：用户找的是「哪一段经历」，
     // 三档口述在详情里再分。
     const row = db.select().from(schema.story).where(eq(schema.story.id, sourceId)).get();
     return row ? `经历 · ${row.title}` : '经历';
   }
+  // 未知/历史来源（插件化之前由岗位簇链路写入的取值）一律中性兜底：话术本身照常
+  // 展示，不因为来源取值认不出而被丢掉或抛错。
   return '话术';
 }
 
 /**
  * 话术 → 备考（JD）的追溯：一条话术最终挂在哪次备考上。
- * - design：sourceId 直接就是 campaignId
  * - node：knowledgeNode.campaignId
  * - quiz：挂在作答或考点上，两种 id 都要能认出来，再经 node 取 campaignId
  * - story：story.campaignId
- * - 其它来源：不绑定备考，返回 null
+ * - 未知/历史来源：插件化之前那条链路把 campaignId 直接存进 source_id，这里不按
+ *   来源取值分支，改看 source_id 本身是不是一场备考；认不出就返回 null
  */
 function resolveCampaign(
   sourceType: SpeechSnippet['sourceType'],
   sourceId: string,
 ): { campaignId: string; label: string } | null {
   const db = getDb();
-  let campaignId: string | null = null;
+  let campaignId: string | null;
 
-  if (sourceType === 'design') {
-    campaignId = sourceId;
-  } else if (sourceType === 'node') {
+  if (sourceType === 'node') {
     const node = db
       .select()
       .from(schema.knowledgeNode)
@@ -103,6 +95,15 @@ function resolveCampaign(
   } else if (sourceType === 'story') {
     const row = db.select().from(schema.story).where(eq(schema.story.id, sourceId)).get();
     campaignId = row?.campaignId ?? null;
+  } else {
+    // 未知/历史来源按备考表的形状兜底：source_id 直接指一场备考时归到它名下，
+    // 指不到任何备考（如已下线的源码话术）就老实返回 null。
+    const campaign = db
+      .select()
+      .from(schema.campaign)
+      .where(eq(schema.campaign.id, sourceId))
+      .get();
+    campaignId = campaign?.id ?? null;
   }
 
   if (!campaignId) return null;
@@ -147,14 +148,6 @@ export function saveSpeechFromQuizNode(nodeId: string, contentMd: string): Speec
   const text = contentMd.trim();
   if (!text) throw new Error('话术内容为空');
   return saveSpeech('quiz', nodeId, text, 'spoken');
-}
-
-export function saveSpeechFromDesign(
-  campaignId: string,
-  _caseTitle: string,
-  contentMd: string,
-): SpeechSnippet {
-  return saveSpeech('design', campaignId, contentMd, 'spoken');
 }
 
 export function saveSpeechFromNode(

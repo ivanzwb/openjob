@@ -90,3 +90,28 @@ describe('story 来源的话术', () => {
     expect(snippet.campaignLabel).toBeNull();
   });
 });
+
+describe('历史/未知来源的话术', () => {
+  it('取值已不再声明时仍照常展示，并按形状认回它所属的备考', () => {
+    // 插件化之前那条链路写下的取值，基础包已不再声明；它的 source_id 直接就是
+    // campaignId。来源标不出包声明的名字，就中性兜底成「话术」，但记录不能丢。
+    insertSnippet('sp3', 'design', 'c1');
+
+    const [snippet] = listSpeechSnippets(db);
+
+    expect(snippet.sourceType).toBe('design');
+    expect(snippet.sourceLabel).toBe('话术');
+    expect(snippet.campaignId).toBe('c1');
+    expect(snippet.campaignLabel).toBe('ACME · 后端工程师');
+  });
+
+  it('指不到任何备考的历史来源不会硬挂到某场备考上', () => {
+    insertSnippet('sp4', 'codeRef', 'ref-gone');
+
+    const [snippet] = listSpeechSnippets(db);
+
+    expect(snippet.sourceLabel).toBe('话术');
+    expect(snippet.campaignId).toBeNull();
+    expect(snippet.campaignLabel).toBeNull();
+  });
+});

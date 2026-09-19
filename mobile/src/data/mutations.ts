@@ -304,39 +304,6 @@ export async function saveSpeechFromQuizNode(
   return { id, existing: false };
 }
 
-export async function saveSpeechFromDesign(
-  db: SQLiteDatabase,
-  campaignId: string,
-  contentMd: string,
-): Promise<{ id: string; existing: boolean }> {
-  const trimmed = contentMd.trim();
-  if (!trimmed) throw new Error('话术内容为空');
-
-  const existing = db.getFirstSync<{ id: string }>(
-    `SELECT id FROM speech_snippet
-     WHERE source_type = 'design' AND source_id = ? AND content_md = ?
-     LIMIT 1`,
-    campaignId,
-    trimmed,
-  );
-  if (existing) return { id: existing.id, existing: true };
-
-  const identity = await getDeviceIdentity(db);
-  const id = Crypto.randomUUID();
-  const now = Date.now();
-  writingAs(db, identity.deviceId, () => {
-    db.runSync(
-      `INSERT INTO speech_snippet (id, source_type, source_id, tier, content_md, is_user_edited, created_at)
-       VALUES (?, 'design', ?, 'spoken', ?, 0, ?)`,
-      id,
-      campaignId,
-      trimmed,
-      now,
-    );
-  });
-  return { id, existing: false };
-}
-
 /**
  * 新建备考。resumeId 缺省时绑最新母版（移动端新建不选目标岗位、也没有派生版
  * 可选，规则见 @core/resume/campaignBinding：无派生版 → 最新母版），保证

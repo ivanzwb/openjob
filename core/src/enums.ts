@@ -143,7 +143,7 @@ export type AnnotationKind = (typeof ANNOTATION_KINDS)[number];
  * src/main/speech、手机 mobile/src/data/queries），所以新增取值只要在写入侧声明，
  * 不必回头改这两处解析。
  */
-export const SPEECH_SOURCE_TYPES = ['node', 'quiz', 'design', 'story'] as const;
+export const SPEECH_SOURCE_TYPES = ['node', 'quiz', 'story'] as const;
 export type SpeechSourceType = (typeof SPEECH_SOURCE_TYPES)[number];
 
 export const SESSION_KINDS = ['quiz', 'freeChat', 'nodeFollowUp', 'planning'] as const;
@@ -200,10 +200,12 @@ export type PracticeTurnKind = (typeof PRACTICE_TURN_KINDS)[number];
 /**
  * PracticeAttempt 的来源。
  *
- * `quiz` / `design` 是历史记录的只读投影（旧「考我」作答与旧模拟面试题表），
- * 都不写回原表，也不产生新的 practice_attempt 行。
+ * `practice` 是本协议自己写出的行。`quiz` 与 `legacy` 是历史记录的只读投影：
+ * 旧「考我」作答，以及插件化之前那张案例表里已作答的题目。宿主不认识后者的领域
+ * 语义，只把它当一张归档表读，所以给一个中性的取值，不写回原表，也不产生新的
+ * practice_attempt 行。
  */
-export const PRACTICE_ATTEMPT_SOURCES = ['practice', 'quiz', 'design'] as const;
+export const PRACTICE_ATTEMPT_SOURCES = ['practice', 'quiz', 'legacy'] as const;
 export type PracticeAttemptSource = (typeof PRACTICE_ATTEMPT_SOURCES)[number];
 
 /** Agent 共享工具箱 */

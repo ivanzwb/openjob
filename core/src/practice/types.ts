@@ -1,7 +1,7 @@
 /**
  * 通用练习协议的共享契约。
  *
- * 插件化之前，「出题—追问—评分—复练」在 quiz 与 design 两条链路上各写了一遍：
+ * 插件化之前，「出题—追问—评分—复练」在知识问答与按案例作答两条链路上各写了一遍：
  * 出题的 JSON 结构不同、评分只有一个 1-5 的总分、掌握度各自回写。岗位包一多，
  * 每加一个题型就要再抄一条链路。这里把这四步收成一个协议，题型差异全部由
  * 岗位包的 InterviewFormatDefinition 与 RubricDefinition 决定。
@@ -11,8 +11,8 @@
  * 1. 每个维度分必须同时带上 Rubric 锚点原文与用户原回答中的逐字片段
  *    （PracticeDimensionScore.anchor / answer）。缺任何一边都不构成一个分数——
  *    「4 分」本身不可复核，能复核的是「按这条锚点、凭这句话给 4 分」。
- * 2. quiz / design 的历史记录只投影成只读 PracticeAttempt（readOnly=true），
- *    不回写旧表，也不补建新行。
+ * 2. 历史记录（旧「考我」作答与旧案例表里的作答）只投影成只读 PracticeAttempt
+ *    （readOnly=true），不回写旧表，也不补建新行。
  */
 
 import type {
@@ -163,7 +163,7 @@ export interface PracticeMasteryUpdate {
 /**
  * 统一的练习记录读模型。
  *
- * source=quiz/design 的行由适配层按旧表投影，readOnly 恒为 true——历史数据不重写，
+ * source 为 quiz / legacy 的行由适配层按旧表投影，readOnly 恒为 true——历史数据不重写，
  * 也不因为新协议出现而被补成假的维度分。旧记录只有一个总分，dimensionScores 就是
  * 空的，这比按总分反推四个维度诚实。
  */

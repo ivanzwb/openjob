@@ -359,17 +359,11 @@ const FROZEN_OFFENDERS: Readonly<Record<string, readonly (readonly [string, numb
   // 是为了守住「常量不许再被抄回来」，名单因此清空。
   examFormsConstant: [],
   repoStatusesConstant: [],
-  // 岗位取值字面量只剩历史形状（夹具、只读投影与两端解析 sourceType 的地方）与 schema/
-  // 迁移里的旧列名。题型相关的取值（design/prompts.ts、两处 diagnosis/tree.ts、
-  // plugins/examForms.ts、enums.ts 的 EXAM_FORMS）已随题型声明迁移清掉。
+  // 岗位取值字面量只剩历史夹具里的题型 / 任务取值：它们模拟插件化之前的行，不能改。
+  // 宿主侧的写入、读取与只读投影都已改走中性取值，或按表形状兜底，源码里不再出现这些取值。
   roleEnumValue: [
-    ['core/src/enums.ts', 2],
     ['core/src/planner/__fixtures__/prePluginPlan.ts', 1],
     ['core/src/plugins/__fixtures__/phase0Campaign.ts', 2],
-    ['desktop/src/main/practice/history.ts', 3],
-    ['desktop/src/main/speech/index.ts', 3],
-    ['mobile/src/data/mutations.ts', 2],
-    ['mobile/src/data/queries.ts', 3],
   ],
 
   // 判据三 · 渲染层桥方法表：**已清空**。桥方法只剩下「包声明 ∩ 本端通用原语表」这一条

@@ -59,54 +59,56 @@ export function listCampaigns(db: SQLiteDatabase): CampaignSummary[] {
   });
 }
 
+/** 备考分组的展示名，与桌面端同一套文案。 */
+function campaignLabel(
+  db: SQLiteDatabase,
+  campaignId: string,
+): { campaignId: string; label: string } | null {
+  const campaign = db.getFirstSync<{ company: string; role_title: string }>(
+    `SELECT company, role_title FROM campaign WHERE id = ?`,
+    campaignId,
+  );
+  return campaign
+    ? { campaignId, label: `${campaign.company} · ${campaign.role_title}` }
+    : null;
+}
+
 function resolveSnippetCampaign(
   db: SQLiteDatabase,
   sourceType: SpeechSnippetView['sourceType'],
   sourceId: string,
 ): { campaignId: string; label: string } | null {
-  // design：sourceId 直接就是 campaignId；story 经 story.campaign_id；
-  // 其余类型经 knowledge_node 取 campaign_id
-  if (sourceType === 'design' || sourceType === 'story') {
-    const campaignId =
-      sourceType === 'design'
-        ? sourceId
-        : (db.getFirstSync<{ campaign_id: string }>(
-            `SELECT campaign_id FROM story WHERE id = ?`,
+  let campaignId: string | null;
+  if (sourceType === 'story') {
+    campaignId =
+      db.getFirstSync<{ campaign_id: string }>(
+        `SELECT campaign_id FROM story WHERE id = ?`,
+        sourceId,
+      )?.campaign_id ?? null;
+  } else if (sourceType === 'node' || sourceType === 'quiz') {
+    // node：sourceId 就是考点；quiz：评分后自动存的那条挂在作答上，手动存的推荐
+    // 答案挂在考点上，两种 id 都要认出来，再经 knowledge_node 取 campaign_id
+    const attempt =
+      sourceType === 'quiz'
+        ? db.getFirstSync<{ node_id: string }>(
+            `SELECT node_id FROM quiz_attempt WHERE id = ?`,
             sourceId,
-          )?.campaign_id ?? null);
-    if (!campaignId) return null;
-    const campaign = db.getFirstSync<{ company: string; role_title: string }>(
-      `SELECT company, role_title FROM campaign WHERE id = ?`,
-      campaignId,
-    );
-    return campaign
-      ? { campaignId, label: `${campaign.company} · ${campaign.role_title}` }
-      : null;
+          )
+        : null;
+    const nodeId = attempt?.node_id ?? sourceId;
+    campaignId =
+      db.getFirstSync<{ campaign_id: string }>(
+        `SELECT campaign_id FROM knowledge_node WHERE id = ?`,
+        nodeId,
+      )?.campaign_id ?? null;
+  } else {
+    // 未知/历史来源：插件化之前的案例话术把 campaignId 直接存进 source_id。不按
+    // 来源取值分支，改看 source_id 本身是不是一场备考，认不出就归不到备考下。
+    campaignId =
+      db.getFirstSync<{ id: string }>(`SELECT id FROM campaign WHERE id = ?`, sourceId)?.id ??
+      null;
   }
-  let nodeId: string | null = null;
-  if (sourceType === 'node') {
-    nodeId = sourceId;
-  } else if (sourceType === 'quiz') {
-    // 评分后自动存的那条挂在作答上，手动存的推荐答案挂在考点上，两种 id 都要认出来
-    const attempt = db.getFirstSync<{ node_id: string }>(
-      `SELECT node_id FROM quiz_attempt WHERE id = ?`,
-      sourceId,
-    );
-    nodeId = attempt?.node_id ?? sourceId;
-  }
-  if (!nodeId) return null;
-  const node = db.getFirstSync<{ campaign_id: string }>(
-    `SELECT campaign_id FROM knowledge_node WHERE id = ?`,
-    nodeId,
-  );
-  if (!node?.campaign_id) return null;
-  const campaign = db.getFirstSync<{ company: string; role_title: string }>(
-    `SELECT company, role_title FROM campaign WHERE id = ?`,
-    node.campaign_id,
-  );
-  return campaign
-    ? { campaignId: node.campaign_id, label: `${campaign.company} · ${campaign.role_title}` }
-    : null;
+  return campaignId ? campaignLabel(db, campaignId) : null;
 }
 
 export function listSpeechSnippets(db: SQLiteDatabase): SpeechSnippetView[] {
@@ -186,13 +188,6 @@ function resolveSpeechSourceLabel(
     );
     return node ? `考我 · ${node.name}` : '考我';
   }
-  if (sourceType === 'design') {
-    const campaign = db.getFirstSync<{ company: string }>(
-      `SELECT company FROM campaign WHERE id = ?`,
-      sourceId,
-    );
-    return campaign ? `模拟面试 · ${campaign.company}` : '模拟面试';
-  }
   if (sourceType === 'story') {
     // 与桌面端同一套文案：同一条话术在两块屏幕上必须显示同样的来源
     const story = db.getFirstSync<{ title: string }>(
@@ -201,6 +196,8 @@ function resolveSpeechSourceLabel(
     );
     return story ? `经历 · ${story.title}` : '经历';
   }
+  // 未知/历史来源（插件化之前由岗位簇链路写入的取值）一律中性兜底：话术本身照常
+  // 展示，不因为来源取值认不出而被丢掉或抛错。
   return '话术';
 }
 
