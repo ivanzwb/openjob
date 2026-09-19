@@ -93,6 +93,13 @@ function permissionSummary(permissions: string[]): string {
   return permissions.map((permission) => PERMISSION_LABEL[permission] ?? permission).join('；');
 }
 
+/** 清单里的版本比本机装的高就是升级，否则是回退——按钮照实说。 */
+function updateLabel(entry: PluginCatalogEntry, installedVersion: string): string {
+  return compareExactSemVer(entry.version, installedVersion) > 0
+    ? `更新到 ${entry.version}`
+    : `安装 ${entry.version}`;
+}
+
 /**
  * 插件面板。
  *
@@ -322,6 +329,20 @@ export function PluginsPanel({
       (left.id < right.id ? -1 : left.id > right.id ? 1 : 0),
   );
 
+  /** 已装的行按 id@version 取自己那条运行时（权限摘要从代码插件那段挪到这里） */
+  const runtimeByKey = new Map<string, PluginRuntimeInfo>();
+  for (const item of pluginRuntimes) {
+    if (item.enabled) runtimeByKey.set(`${item.id}@${item.version}`, item);
+  }
+
+  /**
+   * 清单里没装的才是独立的一行。
+   *
+   * 同一个 id 已经装在盘上时，清单条目就不再单独成行——它的「更新到 / 回退」并进上面
+   * 已装的那一行，否则用户会看到同一个插件出现两次。
+   */
+  const availableEntries = entries.filter((entry) => !externalVersions.has(entry.id));
+
   return (
     <section className="space-y-4">
       <div>
@@ -339,96 +360,6 @@ export function PluginsPanel({
             从文件安装…
           </button>
           <span className="text-[var(--color-muted)]">已装 {packages.length} 个</span>
-        </div>
-
-        <ul className="space-y-1.5 border-t border-[var(--color-border)] pt-3">
-          {packages.length === 0 && (
-            <li className="text-[var(--color-muted)]">
-              还没装任何插件。岗位包是必需的——从下面的「可安装插件」里挑一个装上，面试才有内容可考。
-            </li>
-          )}
-          {packages.map((plugin) => {
-            const key = `${plugin.id}@${plugin.version}`;
-            return (
-              <li key={key} className="flex items-center gap-2">
-                <span className="text-[var(--color-fg)]">{plugin.displayName}</span>
-                <Badge tone="bg-[var(--color-bg)] text-[var(--color-muted)]">
-                  {TYPE_LABEL[plugin.type]}
-                </Badge>
-                <span className="text-[var(--color-muted)]">{plugin.version}</span>
-                <Badge
-                  tone={
-                    plugin.trust === 'first-party'
-                      ? 'bg-emerald-500/10 text-emerald-400'
-                      : 'bg-amber-500/10 text-amber-400'
-                  }
-                >
-                  {TRUST_LABEL[plugin.trust]}
-                </Badge>
-                <button
-                  type="button"
-                  onClick={() => void uninstall(plugin.id, plugin.version)}
-                  disabled={busy}
-                  className="ml-auto text-[var(--color-muted)] hover:text-red-400 disabled:opacity-40"
-                >
-                  卸载
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-
-        {pluginRuntimes.some((item) => item.enabled) && (
-          <div className="space-y-1.5 border-t border-[var(--color-border)] pt-3">
-            <p className="text-[var(--color-muted)]">代码插件：</p>
-            {pluginRuntimes
-              .filter((item) => item.enabled)
-              .map((item) => (
-                <div key={item.id} className="flex items-center gap-2 text-xs">
-                  <span className="text-[var(--color-fg)]">{item.displayName}</span>
-                  <span className="text-[var(--color-muted)]">
-                    {permissionSummary(item.permissions)}
-                  </span>
-                </div>
-              ))}
-          </div>
-        )}
-
-        {rejected.length > 0 && (
-          <div className="space-y-1.5 border-t border-[var(--color-border)] pt-3">
-            <p className="text-amber-400">以下插件装在本机但没有生效：</p>
-            {rejected.map((item) => (
-              <div key={item.dir} className="space-y-0.5">
-                <div className="flex gap-2">
-                  <span className="break-all text-[var(--color-fg)]">{item.dir}</span>
-                  <span className="shrink-0 text-[var(--color-muted)]">
-                    {REJECTION_LABEL[item.reason] ?? item.reason}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => void removeRejected(item.dir)}
-                    disabled={busy}
-                    className="ml-auto shrink-0 text-[var(--color-muted)] hover:text-red-400 disabled:opacity-40"
-                  >
-                    删除
-                  </button>
-                </div>
-                <p className="break-all text-[10px] text-[var(--color-muted)]">{item.detail}</p>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {message && (
-          <p className="whitespace-pre-line border-t border-[var(--color-border)] pt-3 text-[11px] text-[var(--color-muted)]">
-            {message}
-          </p>
-        )}
-      </div>
-
-      <div className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-xs">
-        <div className="flex items-center gap-3">
-          <span className="text-[var(--color-fg)]">可安装插件</span>
           <span className="truncate text-[10px] text-[var(--color-muted)]" title={catalog?.source}>
             来自更新源：{catalog?.source ?? '读取中…'}
           </span>
@@ -471,69 +402,145 @@ export function PluginsPanel({
           </p>
         )}
 
-        {entries.length > 0 && (
-          <ul className="space-y-2 border-t border-[var(--color-border)] pt-3">
-            {entries.map((entry) => {
-              const key = `${entry.id}@${entry.version}`;
-              const versions = externalVersions.get(entry.id) ?? [];
-              const installedVersion = versions.includes(entry.version) ? entry.version : undefined;
-              const other = versions.find((version) => version !== entry.version);
-              // 已经装了别的插件就不能再装这一个（宿主也只认一个）。同一个 id 的其他版本
-              // 不在此列：那是更新或回退，且旧版本留着才跑得动 pin 在旧版本上的战役
-              const blocked = !installedVersion && other === undefined && hasExternal;
-              const newer =
-                other !== undefined && compareExactSemVer(entry.version, other) > 0;
-              const label = installedVersion
-                ? '已安装'
-                : newer
-                  ? `更新到 ${entry.version}`
-                  : `安装 ${entry.version}`;
-              return (
-                <li key={key} className="flex items-start gap-3">
-                  <div className="min-w-0 flex-1 space-y-0.5">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-[var(--color-fg)]">{entry.displayName}</span>
-                      {entry.type !== null && (
-                        <Badge tone="bg-[var(--color-bg)] text-[var(--color-muted)]">
-                          {TYPE_LABEL[entry.type]}
-                        </Badge>
-                      )}
-                      {installedVersion === undefined && other !== undefined && (
-                        <Badge tone="bg-emerald-500/10 text-emerald-400">{`已装 ${other}`}</Badge>
-                      )}
-                      {entry.releaseTag !== null && (
-                        <span className="text-[10px] text-[var(--color-muted)]">
-                          来自 {entry.releaseTag}
-                        </span>
-                      )}
-                    </div>
-                    {entry.described ? (
-                      <>
-                        {entry.description !== '' && (
-                          <p className="text-[var(--color-muted)]">{entry.description}</p>
-                        )}
-                        {entry.permissions.length > 0 && (
-                          <p className="text-[var(--color-muted)]">
-                            需要权限：{permissionSummary(entry.permissions)}
-                          </p>
-                        )}
-                      </>
-                    ) : (
-                      <p className="text-[var(--color-muted)]">没读到这个包的说明，装完才看得到。</p>
-                    )}
+        <ul className="space-y-2 border-t border-[var(--color-border)] pt-3">
+          {packages.length === 0 && (
+            <li className="text-[var(--color-muted)]">
+              还没装任何插件。岗位包是必需的——从下面的列表里挑一个装上，面试才有内容可考。
+            </li>
+          )}
+          {packages.map((plugin) => {
+            const key = `${plugin.id}@${plugin.version}`;
+            const runtime = runtimeByKey.get(key);
+            // 清单里还有这个 id 的别的版本没装：那是这一行的升级或回退入口
+            const installed = externalVersions.get(plugin.id) ?? [];
+            const offer = entries.find(
+              (entry) => entry.id === plugin.id && !installed.includes(entry.version),
+            );
+            return (
+              <li key={key} className="flex items-start gap-3">
+                <div className="min-w-0 flex-1 space-y-0.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[var(--color-fg)]">{plugin.displayName}</span>
+                    <Badge tone="bg-[var(--color-bg)] text-[var(--color-muted)]">
+                      {TYPE_LABEL[plugin.type]}
+                    </Badge>
+                    <span className="text-[var(--color-muted)]">{plugin.version}</span>
+                    <Badge
+                      tone={
+                        plugin.trust === 'first-party'
+                          ? 'bg-emerald-500/10 text-emerald-400'
+                          : 'bg-amber-500/10 text-amber-400'
+                      }
+                    >
+                      {TRUST_LABEL[plugin.trust]}
+                    </Badge>
                   </div>
+                  {runtime !== undefined && runtime.permissions.length > 0 && (
+                    <p className="text-[var(--color-muted)]">
+                      {permissionSummary(runtime.permissions)}
+                    </p>
+                  )}
+                </div>
+                {offer !== undefined && (
                   <button
                     type="button"
-                    disabled={busy || blocked || installedVersion !== undefined}
-                    onClick={() => void installFromCatalog(entry)}
+                    disabled={busy}
+                    onClick={() => void installFromCatalog(offer)}
                     className="shrink-0 rounded border border-[var(--color-border)] px-3 py-1.5 disabled:opacity-40 hover:text-[var(--color-fg)]"
                   >
-                    {pendingKey === key ? '安装中…' : blocked ? '先卸载已装的' : label}
+                    {pendingKey === `${offer.id}@${offer.version}`
+                      ? '安装中…'
+                      : updateLabel(offer, plugin.version)}
                   </button>
-                </li>
-              );
-            })}
-          </ul>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void uninstall(plugin.id, plugin.version)}
+                  disabled={busy}
+                  className="shrink-0 text-[var(--color-muted)] hover:text-red-400 disabled:opacity-40"
+                >
+                  卸载
+                </button>
+              </li>
+            );
+          })}
+          {availableEntries.map((entry) => {
+            const key = `${entry.id}@${entry.version}`;
+            // 已经装了别的插件就不能再装这一个（宿主也只认一个）
+            const blocked = hasExternal;
+            return (
+              <li key={key} className="flex items-start gap-3">
+                <div className="min-w-0 flex-1 space-y-0.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[var(--color-fg)]">{entry.displayName}</span>
+                    {entry.type !== null && (
+                      <Badge tone="bg-[var(--color-bg)] text-[var(--color-muted)]">
+                        {TYPE_LABEL[entry.type]}
+                      </Badge>
+                    )}
+                    {entry.releaseTag !== null && (
+                      <span className="text-[10px] text-[var(--color-muted)]">
+                        来自 {entry.releaseTag}
+                      </span>
+                    )}
+                  </div>
+                  {entry.described ? (
+                    <>
+                      {entry.description !== '' && (
+                        <p className="text-[var(--color-muted)]">{entry.description}</p>
+                      )}
+                      {entry.permissions.length > 0 && (
+                        <p className="text-[var(--color-muted)]">
+                          需要权限：{permissionSummary(entry.permissions)}
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-[var(--color-muted)]">没读到这个包的说明，装完才看得到。</p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  disabled={busy || blocked}
+                  onClick={() => void installFromCatalog(entry)}
+                  className="shrink-0 rounded border border-[var(--color-border)] px-3 py-1.5 disabled:opacity-40 hover:text-[var(--color-fg)]"
+                >
+                  {pendingKey === key ? '安装中…' : blocked ? '先卸载已装的' : `安装 ${entry.version}`}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+
+        {rejected.length > 0 && (
+          <div className="space-y-1.5 border-t border-[var(--color-border)] pt-3">
+            <p className="text-amber-400">以下插件装在本机但没有生效：</p>
+            {rejected.map((item) => (
+              <div key={item.dir} className="space-y-0.5">
+                <div className="flex gap-2">
+                  <span className="break-all text-[var(--color-fg)]">{item.dir}</span>
+                  <span className="shrink-0 text-[var(--color-muted)]">
+                    {REJECTION_LABEL[item.reason] ?? item.reason}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void removeRejected(item.dir)}
+                    disabled={busy}
+                    className="ml-auto shrink-0 text-[var(--color-muted)] hover:text-red-400 disabled:opacity-40"
+                  >
+                    删除
+                  </button>
+                </div>
+                <p className="break-all text-[10px] text-[var(--color-muted)]">{item.detail}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {message && (
+          <p className="whitespace-pre-line border-t border-[var(--color-border)] pt-3 text-[11px] text-[var(--color-muted)]">
+            {message}
+          </p>
         )}
       </div>
     </section>
