@@ -6,10 +6,17 @@
     <!--
       渲染进程不发起任何网络请求（全部走主进程），因此 connect-src 只需放行
       dev server 的 HMR websocket。style 的 unsafe-inline 是 Tailwind 注入所需。
+
+      script 的两条放宽服务于插件运行时，都只作用在打包沙箱这一层：
+      - unsafe-eval：包入口要在渲染层求值（`new Function`），这是「包代码只在沙箱里跑、
+        按声明过桥」这套准入的入口；包内容在安装期就经过静态扫描（禁 eval/require/网络）。
+      - unsafe-inline：包页面以 srcdoc 内联进 sandbox="allow-scripts" 的 iframe，页面自己的
+        脚本是内联脚本，继承本策略。
+      基座自己的脚本仍然只来自 'self'。
     -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' ws:;"
+      content="default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' ws:;"
     />
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" type="image/png" href="/logo.png" sizes="32x32" />
