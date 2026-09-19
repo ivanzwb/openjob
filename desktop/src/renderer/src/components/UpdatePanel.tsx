@@ -49,7 +49,7 @@ export function UpdatePanel({
 
       <div className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
         <label className="block space-y-1">
-          <span className="text-xs text-[var(--color-muted)]">更新源 URL（留空用官方 GitHub Release）</span>
+          <span className="text-xs text-[var(--color-muted)]">更新源 URL（应用更新与插件包共用；留空用官方 GitHub Release）</span>
           <input
             value={value.feedUrl}
             onChange={(e) => onChange({ feedUrl: e.target.value })}
