@@ -3,136 +3,332 @@
   <head>
     <meta charset="utf-8" />
     <style>
-      body { font-family: system-ui, sans-serif; padding: 16px; color: inherit; background: transparent; }
-      h2 { font-size: 14px; margin: 14px 0 6px; }
-      ul { margin: 0; padding-left: 0; list-style: none; }
-      li { margin: 4px 0; font-size: 13px; display: flex; gap: 8px; align-items: baseline; }
-      .name { font-weight: 600; cursor: pointer; }
-      .selected { font-weight: 700; text-decoration: underline; }
-      .muted { opacity: 0.65; }
-      button { font-size: 12px; }
-      input { width: 60%; font-size: 13px; }
-      pre { white-space: pre-wrap; }
+      /* 页面有自己的文档（沙箱 iframe），继承不到应用 CSS。宿主把当前主题的自定义属性
+         以 <style>:root{…}</style> 注入在下面这段样式之前（见 core pluginRuntime/assets），
+         这里一律走 var(--color-…, 兜底值)：有注入就与应用同色，没有就退回中性兜底。
+         同一段 :root 里不再重声明这些变量，免得把宿主注入的值覆盖掉。 */
+      [hidden] { display: none !important; }
+      * { box-sizing: border-box; }
+      /* 原生控件（滚动条、输入框）跟着注入的主题走：页脚脚本按 --oj-color-scheme 落 data-theme */
+      html { color-scheme: light; }
+      html[data-theme='dark'] { color-scheme: dark; }
 
-      /* 代码浏览与查看：只用已有桥原语；着色器随包内联（ui/shiki.vendored.js） */
-      .bar { display: flex; gap: 8px; align-items: baseline; margin: 6px 0; font-size: 12px; flex-wrap: wrap; }
-      #cwd, #file-label { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-      #entries { max-height: 200px; overflow: auto; }
+      body {
+        margin: 0;
+        padding: 0;
+        font: 13px/1.5 system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+        color: var(--color-fg, #16181d);
+        background: var(--color-bg, transparent);
+      }
+      h2 { font-size: 18px; font-weight: 600; margin: 0; }
+      h3 { font-size: 13px; font-weight: 600; margin: 0; }
+      p { margin: 0; }
+      ul { list-style: none; margin: 0; padding: 0; }
+      button { font: inherit; color: inherit; cursor: pointer; }
+      button:disabled { opacity: 0.4; cursor: default; }
+
+      input,
+      textarea {
+        font: inherit;
+        color: inherit;
+        padding: 6px 8px;
+        border: 1px solid var(--color-border, #dfe3ea);
+        border-radius: 6px;
+        background: var(--color-surface, #f6f7f9);
+        outline: none;
+      }
+      input:focus,
+      textarea:focus { border-color: var(--color-accent, #2f5cd8); }
+
+      .muted { color: var(--color-muted, #616a7d); font-size: 12px; }
+      .path { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+      /* ── 外壳：左登记表 + 右工作区，宽屏并排 ───────────────────────────── */
+      .shell { display: flex; flex-direction: column; gap: 16px; padding: 16px; min-height: 100%; }
+      @media (min-width: 900px) {
+        .shell { flex-direction: row; height: 100vh; padding: 20px 24px; }
+      }
+      .aside { flex: 0 0 auto; display: flex; flex-direction: column; gap: 12px; }
+      @media (min-width: 900px) { .aside { width: 288px; } }
+      .aside-head { display: flex; flex-direction: column; gap: 4px; }
+      .link-row { display: flex; gap: 8px; }
+      .link-row input { flex: 1; min-width: 0; }
+      .status { min-height: 15px; }
+
+      /* ── 按钮：实心强调 vs 描边 vs 文字 ────────────────────────────────── */
+      .btn,
+      .btn-accent,
+      .tab {
+        border-radius: 6px;
+        border: 1px solid var(--color-border, #dfe3ea);
+        background: var(--color-surface, #f6f7f9);
+        color: var(--color-fg, #16181d);
+        padding: 5px 10px;
+        font-size: 12px;
+      }
+      .btn-accent { border-color: transparent; background: var(--color-accent, #2f5cd8); color: #fff; }
+      .btn-link {
+        border: 0;
+        background: transparent;
+        color: var(--color-muted, #616a7d);
+        padding: 2px 0;
+        font-size: 12px;
+      }
+      .btn-link:hover { color: var(--color-fg, #16181d); }
+      .btn-link.danger:hover { color: var(--color-red-400, #dc2626); }
+
+      /* ── 登记表：卡片式条目 + 其下一条文字操作 ─────────────────────────── */
+      .repo-list { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow-y: auto; }
+      .repo { display: flex; flex-direction: column; gap: 4px; }
+      .repo-card {
+        width: 100%;
+        text-align: left;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding: 10px;
+        border: 1px solid var(--color-border, #dfe3ea);
+        border-radius: 8px;
+        background: var(--color-surface, #f6f7f9);
+      }
+      .repo-card.selected {
+        border-color: var(--color-accent, #2f5cd8);
+        background: color-mix(in oklab, var(--color-accent, #2f5cd8) 10%, var(--color-surface, #f6f7f9));
+      }
+      .repo-card .name { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+      .repo-meta { display: flex; flex-wrap: wrap; gap: 8px; }
+      .repo-actions { display: flex; gap: 12px; }
+      .ready { color: var(--color-emerald-400, #059669); }
+      .indexing { color: var(--color-amber-300, #b45309); }
+
+      /* ── 右侧工作区 ─────────────────────────────────────────────────────── */
+      .main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+      .empty { flex: 1; display: flex; align-items: center; justify-content: center; }
+      .workspace { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+      @media (min-width: 900px) { .workspace { flex: 1; } }
+
+      .tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+      .tab { padding: 6px 12px; font-size: 13px; color: var(--color-muted, #616a7d); }
+      .tab:hover { color: var(--color-fg, #16181d); }
+      .tab.active { border-color: transparent; background: var(--color-accent, #2f5cd8); color: #fff; }
+
+      .card {
+        border: 1px solid var(--color-border, #dfe3ea);
+        border-radius: 8px;
+        background: var(--color-surface, #f6f7f9);
+      }
+
+      .pane-summary { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+      .pane-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+      .index-field { display: flex; flex-direction: column; gap: 2px; }
+      .index-field h3 { margin-top: 8px; }
+      .index-field pre {
+        margin: 0;
+        font: inherit;
+        font-size: 12px;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+
+      /* ── 问答：左对话 + 右代码阅读 ─────────────────────────────────────── */
+      .pane-qa { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+      @media (min-width: 900px) { .pane-qa { flex-direction: row; flex: 1; } }
+      .qa-left { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+      .qa-right { display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; overflow-y: auto; }
+      @media (min-width: 900px) { .qa-right { flex: 0 0 min(32rem, 40%); min-width: 18rem; } }
+
+      .qa-log {
+        flex: 1;
+        min-height: 160px;
+        overflow-y: auto;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+      #history { display: flex; flex-direction: column; gap: 14px; }
+      .qa-bubble { display: flex; flex-direction: column; gap: 4px; }
+      .qa-bubble .role { font-size: 11px; color: var(--color-muted, #616a7d); }
+      .qa-bubble.user { align-self: flex-end; max-width: 92%; }
+      .qa-bubble.user .text {
+        padding: 8px 10px;
+        border-radius: 10px;
+        background: var(--color-accent, #2f5cd8);
+        color: #fff;
+        white-space: pre-wrap;
+      }
+      .qa-answer { margin: 0; font: inherit; white-space: pre-wrap; }
+      .qa-at { margin-top: 2px; }
+      .sources-title { margin-top: 4px; }
+      .source { font-size: 12px; }
+
+      .qa-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+      .qa-input-row { display: flex; gap: 8px; align-items: flex-end; }
+      .qa-input-row textarea { flex: 1; resize: none; padding: 8px 10px; }
+
+      /* ── 代码阅读：浏览条 + 目录 + 正文（带行号、着色、区间高亮） ──────── */
+      .code-card { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+      .code-bar,
+      .code-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; }
+      .code-bar { border-bottom: 1px solid var(--color-border, #dfe3ea); }
+      .code-head { border-top: 1px solid var(--color-border, #dfe3ea); border-bottom: 1px solid var(--color-border, #dfe3ea); }
+      .code-head .path {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: var(--color-emerald-400, #059669);
+      }
+      .pager { display: flex; gap: 8px; }
+      .entries { max-height: 180px; overflow: auto; padding: 4px 0; }
+      .entries li { display: flex; gap: 8px; align-items: baseline; padding: 2px 10px; font-size: 12px; }
+      .entries .name { cursor: pointer; }
+      .entries .name:hover { color: var(--color-accent, #2f5cd8); text-decoration: underline; }
+      .entries .size { margin-left: auto; color: var(--color-muted, #616a7d); }
+
       .code {
+        margin: 0;
+        padding: 8px 10px;
+        max-height: 320px;
+        overflow: auto;
+        white-space: pre;
         font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Courier New', monospace;
-        font-size: 12px; line-height: 1.5; white-space: pre; overflow: auto;
-        max-height: 360px; margin: 0; padding: 8px;
-        border: 1px solid rgba(128, 128, 128, 0.25); border-radius: 6px;
+        font-size: 12px;
+        line-height: 1.5;
       }
       .code .row { display: block; }
-      .code .row.hl { background: rgba(255, 193, 7, 0.18); }
+      .code .row.hl { background: color-mix(in oklab, var(--color-amber-300, #b45309) 22%, transparent); }
       .code .ln {
-        display: inline-block; width: 3.5em; text-align: right; padding-right: 0.8em;
-        color: rgba(128, 128, 128, 0.75); user-select: none; -webkit-user-select: none;
+        display: inline-block;
+        width: 3.5em;
+        text-align: right;
+        padding-right: 0.8em;
+        color: var(--color-muted, #616a7d);
+        user-select: none;
+        -webkit-user-select: none;
       }
       /* 语法着色：Shiki（随包内联的 shiki.vendored.js）。双主题输出——每个 token 上带
-         --shiki-light / --shiki-dark 两个变量，这里按系统主题取用；没有对应语法的扩展名
+         --shiki-light / --shiki-dark 两个变量；宿主注入 --oj-color-scheme 告诉页面该取哪套
+         （沙箱里 prefers-color-scheme 跟的是系统，不是应用主题）。没有对应语法的扩展名
          原样按纯等宽渲染（highlight 返回 null，页面自己转义）。 */
       .code .txt span { color: var(--shiki-light, inherit); }
+      html[data-theme='dark'] .code .txt span { color: var(--shiki-dark, inherit); }
+
+      .code-foot { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 10px; border-top: 1px solid var(--color-border, #dfe3ea); }
+      .code-foot input { flex: 1; min-width: 0; }
+
       .file-link {
-        color: #2563eb; cursor: pointer; text-decoration: underline;
+        color: var(--color-emerald-400, #059669);
+        cursor: pointer;
+        text-decoration: underline;
         font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       }
-      .source { font-size: 12px; margin: 2px 0; }
+      .file-link:hover { color: var(--color-accent, #2f5cd8); }
 
-      /* 索引产物（摘要 / 仓库地图）与历史问答：都只是本页自己排版的文本 */
-      .index-field h3 { font-size: 13px; margin: 10px 0 4px; }
-      .index-field pre { margin: 0; font-size: 12px; }
-      .qa {
-        border: 1px solid rgba(128, 128, 128, 0.25); border-radius: 6px;
-        padding: 8px; margin: 6px 0;
-      }
-      .qa .q { font-weight: 600; font-size: 13px; margin-bottom: 4px; }
-      .qa .a { white-space: pre-wrap; font-size: 12px; margin: 0; }
-      .qa .at { font-size: 11px; margin-top: 4px; }
-      @media (prefers-color-scheme: dark) {
-        .code .txt span { color: var(--shiki-dark, inherit); }
-        .file-link { color: #7aa2f7; }
-      }
+      /* ── 代码标记与话术库：只读列表 ────────────────────────────────────── */
+      .marks-card,
+      .snippets-card { padding: 10px; display: flex; flex-direction: column; gap: 6px; max-height: 200px; overflow-y: auto; }
+      .card-title { color: var(--color-muted, #616a7d); font-size: 12px; font-weight: 600; }
+      .marks li,
+      .snippets li { display: flex; gap: 8px; align-items: baseline; font-size: 12px; }
     </style>
   </head>
   <body>
-    <h2>仓库</h2>
-    <p>
-      <input id="url" placeholder="https://github.com/org/repo.git" />
-      <button id="link">链接仓库</button>
-      <span id="msg" class="muted"></span>
-    </p>
-    <p class="muted" style="font-size: 12px">
-      仓库拉进本包自己的工作区（只放行公开的 https 地址，深度 1、不带凭据）；重复链接同一地址即为更新。
-      登记表存在本包声明的 repositories 数据集合里，桌面端是唯一写入方。
-    </p>
-    <ul id="repos"></ul>
+    <div class="shell">
+      <aside class="aside">
+        <header class="aside-head">
+          <h2>源码仓库</h2>
+          <p class="muted">Clone 后自动建 repo map 与项目摘要，供代码 Agent 问答。</p>
+        </header>
 
-    <h2>代码</h2>
-    <p class="muted" style="font-size: 12px">
-      从选中的检出逐层浏览目录；点文件名打开带行号的正文，大文件按页读、不整份加载。
-      着色用随包内联的 Shiki（ui/shiki.vendored.js，双主题），认不出的扩展名退回纯等宽。
-    </p>
-    <div class="bar">
-      <button id="up">上级</button>
-      <span id="cwd" class="muted">选中仓库后可浏览</span>
-    </div>
-    <ul id="entries"></ul>
-    <div class="bar">
-      <span id="file-label" class="muted">未打开文件</span>
-      <span id="range" class="muted"></span>
-      <button id="prev" disabled>上一页</button>
-      <button id="next" disabled>下一页</button>
-    </div>
-    <pre id="code" class="code">选中仓库后，从上面的列表打开文件。</pre>
+        <div class="link-row">
+          <input id="url" placeholder="https://github.com/org/repo.git" />
+          <button id="link" class="btn-accent">链接仓库</button>
+        </div>
+        <p class="muted">
+          仓库拉进本包自己的工作区：只放行公开的 https 地址（深度 1、不带凭据）；重复链接同一地址即为更新。
+        </p>
+        <p id="msg" class="muted status"></p>
 
-    <h2>话术与标记</h2>
-    <p class="muted" style="font-size: 12px">
-      在代码正文里选中一段文字，或直接用当前这一页的行区间，点「存为话术」存进用户的话术库：
-      来源类型（code-ref）与来源标签（file:line）由本页给出，宿主不认识这两个值，只按你给的
-      这一来源取回；同来源同内容只留一条。也可以给当前行区间留一条位置标记——标记走宿主
-      的标记原语（library.annotate）写进宿主的「我的标记」汇总面，于是它也会出现在宿主的标记
-      面板里；目标类型（code-mark）与标签（file:line）由本页给，宿主不认识，只按本页声明的
-      annotationTargets 把这类行路由回本页——从汇总面板点那一条就跳回这里的文件/行区间。
-    </p>
-    <div class="bar">
-      <button id="save-snippet">存为话术</button>
-      <span id="snippet-status" class="muted"></span>
-    </div>
-    <ul id="snippets" class="muted">还没有存过话术。</ul>
-    <div class="bar">
-      <input id="mark-note" placeholder="标记说明（可选）" />
-      <button id="mark-range">标记本页行区间</button>
-    </div>
-    <ul id="marks" class="muted">还没有位置标记。</ul>
+        <ul id="repos" class="repo-list"></ul>
+      </aside>
 
-    <h2>概览</h2>
-    <p class="muted" style="font-size: 12px">
-      拉取或更新检出后，本包会把目录与符号整理成「摘要」与「仓库地图」，存在本包声明的
-      repository-indexes 集合里，并记录建立时间与状态。索引只是「辅助材料」，下面的问答不依赖它；
-      也可以随时点「重建索引」重新生成。
-    </p>
-    <div class="bar">
-      <button id="reindex">重建索引</button>
-      <span id="index-status" class="muted">选中仓库后可建索引</span>
+      <section class="main">
+        <div id="empty" class="empty muted">添加或选择一个仓库开始</div>
+
+        <div id="workspace" class="workspace" hidden>
+          <div class="tabs">
+            <button id="tab-summary" class="tab" type="button">项目摘要</button>
+            <button id="tab-qa" class="tab" type="button">问答</button>
+          </div>
+
+          <div id="pane-summary" class="card pane-summary">
+            <div class="pane-head">
+              <span id="index-status" class="muted">选中仓库后可建索引</span>
+              <button id="reindex" class="btn" type="button">重建索引</button>
+            </div>
+            <div id="index" class="muted">选中并拉取仓库后可建索引</div>
+          </div>
+
+          <div id="pane-qa" class="pane-qa" hidden>
+            <div class="qa-left">
+              <div class="card qa-log">
+                <div id="history"></div>
+                <div id="live" class="qa-bubble" hidden>
+                  <span class="role">助手</span>
+                  <pre id="answer" class="qa-answer"></pre>
+                  <div id="sources"></div>
+                </div>
+              </div>
+              <div class="qa-controls">
+                <button id="save-snippet" class="btn-link" type="button">存为话术</button>
+                <span id="snippet-status" class="muted"></span>
+              </div>
+              <div class="qa-input-row">
+                <textarea
+                  id="question"
+                  rows="2"
+                  placeholder="例如：主流程是怎么启动的？关键配置在哪？"
+                ></textarea>
+                <button id="ask" class="btn-accent" type="button">发送</button>
+              </div>
+            </div>
+
+            <div class="qa-right">
+              <div class="card code-card">
+                <div class="code-bar">
+                  <button id="up" class="btn" type="button" disabled>上级</button>
+                  <span id="cwd" class="path muted">选中仓库后可浏览</span>
+                </div>
+                <ul id="entries" class="entries"></ul>
+                <div class="code-head">
+                  <span id="file-label" class="path muted">未打开文件</span>
+                  <span id="range" class="muted"></span>
+                  <span class="pager">
+                    <button id="prev" class="btn" type="button" disabled>上一页</button>
+                    <button id="next" class="btn" type="button" disabled>下一页</button>
+                  </span>
+                </div>
+                <pre id="code" class="code">选中仓库后，从上面的列表打开文件。</pre>
+                <div class="code-foot">
+                  <input id="mark-note" placeholder="标记说明（可选）" />
+                  <button id="mark-range" class="btn" type="button">标记本页行区间</button>
+                </div>
+              </div>
+              <div id="marks-card" class="card marks-card" hidden>
+                <h3 class="card-title">代码标记（<span id="marks-count">0</span>）</h3>
+                <ul id="marks"></ul>
+              </div>
+              <div id="snippets-card" class="card snippets-card" hidden>
+                <h3 class="card-title">话术库</h3>
+                <ul id="snippets"></ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
-    <div id="index" class="muted">选中并拉取仓库后可建索引</div>
-
-    <h2>问源码</h2>
-    <p class="muted" style="font-size: 12px">
-      问答始终可用，不依赖上面的索引。每次问答的提问、回答与引用都会存进本包声明的
-      qa-history 集合（按检出分片），随同步保留，重新打开页面也能接着看。
-    </p>
-    <p>
-      <input id="question" placeholder="选中仓库后提问，如：登录流程在哪实现？" />
-      <button id="ask">提问</button>
-    </p>
-    <pre id="answer" class="muted" style="min-height: 40px"></pre>
-    <div id="sources"></div>
-
-    <h3>历史问答（最新在前）</h3>
-    <div id="history" class="muted">还没有问答记录。</div>
 
     <!-- 语法着色器随包内联：沙箱里没有网络、不能动态 import，所以 Shiki 连同 JS 正则引擎、
          用到的语言与两套主题打成一份自包含 IIFE（ui/shiki.vendored.js，全局 OpenJobShiki），
@@ -181,13 +377,15 @@
       // 一页读多少行：大文件翻页看，不整份塞进页面。宿主单次读有字节上限，超了如实报错。
       const PAGE_LINES = 300;
       const CODE_HINT = '选中仓库后，从上面的列表打开文件。';
+      const QA_HINT = '问启动流程、核心模块、关键数据结构… 回答会带 path:line 引用。';
 
       let repos = [];
       let selected = null;
+      let activeTab = 'summary';     // 右侧当前页签：项目摘要 / 问答
       let answerStreamId = null;
       let pendingQuestion = null;   // 正在流式回答的问题，收到最终正文后连同引用入库
       let pendingRepoDir = null;    // 提问时选中的检出目录，回答回来仍记到这个检出
-      let history = [];             // 当前选中检出的问答历史（内存，渲染时按时间倒序）
+      let history = [];             // 当前选中检出的问答历史（内存，渲染时按时间正序）
       let indexSnapshot = null;     // 当前选中检出已入库的索引行
       const indexBuilding = new Set(); // 正在建索引的检出目录，避免重复并发
 
@@ -204,6 +402,11 @@
       const SNIPPET_SOURCE_KIND = 'code-ref';
       const MARK_KIND = 'code-mark';
       let currentLines = [];     // 当前这一页的正文行（无选区时按它整段存话术 / 标记）
+
+      // Shiki 双主题输出：宿主注入 --oj-color-scheme 指明该取 light 还是 dark 那套
+      // （沙箱里 prefers-color-scheme 跟系统，不跟应用主题）。取不到就交给 CSS 兜底。
+      const injectedScheme = (getComputedStyle(document.documentElement).getPropertyValue('--oj-color-scheme') || '').trim();
+      if (injectedScheme === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
 
       const msg = (text) => { document.getElementById('msg').textContent = text; };
 
@@ -395,7 +598,7 @@
           );
 
           const meta = document.createElement('span');
-          meta.className = 'muted';
+          meta.className = 'size';
           meta.textContent = entry.type === 'dir' ? '' : formatSize(entry.size);
 
           li.append(name, meta);
@@ -523,19 +726,45 @@
         updateViewerChrome(page.lines, openPath);
       }
 
+      // ── 右侧页签：项目摘要 / 问答 ─────────────────────────────────────────
+      /** 切换页签时同步高亮与显隐，只切右侧面板，不动登记表。 */
+      function setTab(name) {
+        activeTab = name;
+        document.getElementById('tab-summary').classList.toggle('active', name === 'summary');
+        document.getElementById('tab-qa').classList.toggle('active', name === 'qa');
+        document.getElementById('pane-summary').hidden = name !== 'summary';
+        document.getElementById('pane-qa').hidden = name !== 'qa';
+      }
+
+      /** 选中态与工作区显隐：有选中仓库才展示右侧，否则留一句引导。 */
+      function renderSelection() {
+        const repo = currentRepo();
+        document.getElementById('empty').hidden = Boolean(repo);
+        document.getElementById('workspace').hidden = !repo;
+      }
+
       function render() {
         const node = document.getElementById('repos');
         node.innerHTML = '';
         for (const entry of repos) {
           const li = document.createElement('li');
+          li.className = 'repo';
+
+          // 卡片本身即「选中并看概览」：点它切到这个检出的摘要页签
+          const card = document.createElement('button');
+          card.type = 'button';
+          card.className = entry.id === selected ? 'repo-card selected' : 'repo-card';
+          card.onclick = () => run(async () => {
+            setTab('summary');
+            await selectRepo(entry.id);
+          });
 
           const name = document.createElement('span');
-          name.className = entry.id === selected ? 'name selected' : 'name';
+          name.className = 'name';
           name.textContent = entry.label;
-          name.onclick = () => run(() => selectRepo(entry.id));
 
           const meta = document.createElement('span');
-          meta.className = 'muted';
+          meta.className = 'repo-meta muted';
           if (entry.dir && entry.commit) {
             const when = entry.fetchedAt ? new Date(entry.fetchedAt).toLocaleString() : '';
             meta.textContent =
@@ -546,14 +775,15 @@
             meta.textContent = entry.ready ? '已登记，本机还没有检出' : '尚未就绪';
           }
 
-          // 概览现在展示本包入库的索引产物（摘要 / 仓库地图）：选中这个检出即可看到
-          const overview = document.createElement('button');
-          overview.textContent = '概览';
-          overview.disabled = !entry.dir;
-          overview.onclick = () => run(() => selectRepo(entry.id));
+          card.append(name, meta);
+
+          const actions = document.createElement('div');
+          actions.className = 'repo-actions';
 
           const update = document.createElement('button');
-          update.textContent = '更新';
+          update.type = 'button';
+          update.className = 'btn-link';
+          update.textContent = '更新到最新';
           update.onclick = () => run(async () => {
             msg('正在更新…');
             // 同一个目录再拉一次就是更新（宿主侧核对 origin 后才允许）
@@ -570,6 +800,8 @@
           });
 
           const remove = document.createElement('button');
+          remove.type = 'button';
+          remove.className = 'btn-link danger';
           remove.textContent = '删除';
           remove.onclick = () => run(async () => {
             if (entry.dir) await call('workspace.delete', { path: entry.dir });
@@ -581,9 +813,17 @@
             await refreshBrowse();
           });
 
-          li.append(name, meta, overview, update, remove);
+          actions.append(update, remove);
+          li.append(card, actions);
           node.appendChild(li);
         }
+        if (repos.length === 0) {
+          const li = document.createElement('li');
+          li.className = 'muted';
+          li.textContent = '暂无仓库。';
+          node.appendChild(li);
+        }
+        renderSelection();
       }
 
       async function run(action) {
@@ -881,41 +1121,58 @@
         });
       }
 
+      /** 一条问答按「你 / 助手」两段气泡画出来，与应用的对话样式一致。 */
+      function historyBubble(item) {
+        const pair = document.createElement('div');
+        pair.className = 'qa-bubble';
+
+        const question = document.createElement('div');
+        question.className = 'qa-bubble user';
+        const qrole = document.createElement('span');
+        qrole.className = 'role';
+        qrole.textContent = '你';
+        const qtext = document.createElement('div');
+        qtext.className = 'text';
+        qtext.textContent = item.question;
+        question.append(qrole, qtext);
+
+        const assistant = document.createElement('div');
+        assistant.className = 'qa-bubble';
+        const arole = document.createElement('span');
+        arole.className = 'role';
+        arole.textContent = '助手';
+        const abody = document.createElement('pre');
+        abody.className = 'qa-answer';
+        abody.textContent = item.answer || '（没有回答）';
+        assistant.append(arole, abody);
+        if (item.citations.length > 0) {
+          const sources = document.createElement('div');
+          renderCitations(sources, item.citations);
+          assistant.appendChild(sources);
+        }
+        if (item.at) {
+          const at = document.createElement('div');
+          at.className = 'muted qa-at';
+          at.textContent = new Date(item.at).toLocaleString();
+          assistant.appendChild(at);
+        }
+
+        pair.append(question, assistant);
+        return pair;
+      }
+
       function renderHistory() {
         const node = document.getElementById('history');
         node.innerHTML = '';
         if (history.length === 0) {
-          node.className = 'muted';
-          node.textContent = '还没有问答记录。';
+          const hint = document.createElement('p');
+          hint.className = 'muted';
+          hint.textContent = QA_HINT;
+          node.appendChild(hint);
           return;
         }
-        node.className = '';
-        for (const item of history) {
-          const wrap = document.createElement('div');
-          wrap.className = 'qa';
-
-          const question = document.createElement('div');
-          question.className = 'q';
-          question.textContent = item.question;
-
-          const answer = document.createElement('pre');
-          answer.className = 'a';
-          answer.textContent = item.answer || '（没有回答）';
-
-          wrap.append(question, answer);
-          if (item.citations.length > 0) {
-            const sources = document.createElement('div');
-            renderCitations(sources, item.citations);
-            wrap.appendChild(sources);
-          }
-
-          const at = document.createElement('div');
-          at.className = 'muted at';
-          at.textContent = item.at ? new Date(item.at).toLocaleString() : '';
-          wrap.appendChild(at);
-
-          node.appendChild(wrap);
-        }
+        // 内存里最新在前，画出来按时间正序：和历史对话一样从旧到新往下读
+        for (const item of [...history].reverse()) node.appendChild(historyBubble(item));
       }
 
       /** 从问题里挑几个标识符去本包工作区里搜，命中片段作为上下文——上下文由包自己拼，宿主不做 */
@@ -945,6 +1202,7 @@
       }
 
       async function openFromCitation(filePath, startLine, endLine) {
+        setTab('qa');
         let lastError = null;
         for (const candidate of citationCandidates(filePath)) {
           try {
@@ -962,7 +1220,7 @@
         if (!citations.length) return;
 
         const title = document.createElement('div');
-        title.className = 'muted';
+        title.className = 'muted sources-title';
         title.textContent = '来源：';
         node.appendChild(title);
 
@@ -1016,17 +1274,17 @@
       /** 按本页自己给的来源类型（code-ref）取回存过的话术：只列来源标签与开头几个字。 */
       async function loadSnippets() {
         const node = document.getElementById('snippets');
+        const card = document.getElementById('snippets-card');
         const list = await call('library.listSnippets', {
           sourceKind: SNIPPET_SOURCE_KIND,
           limit: 50,
         });
         node.innerHTML = '';
         if (!list || list.length === 0) {
-          node.className = 'muted';
-          node.textContent = '还没有存过话术。';
+          card.hidden = true;
           return;
         }
-        node.className = '';
+        card.hidden = false;
         for (const snippet of list) {
           const li = document.createElement('li');
           const label = document.createElement('span');
@@ -1048,15 +1306,15 @@
        */
       async function saveSnippet() {
         if (!openPath) throw new Error('先打开一个文件，或选中一段文字');
-        const selected = selectionText();
-        const text = selected || currentLines.join('\n').trim();
+        const selectedText = selectionText();
+        const text = selectedText || currentLines.join('\n').trim();
         if (!text) throw new Error('没有可存的内容');
         const range = currentRange();
         const suffix =
           range === null
             ? ''
             : `:${range.start}${range.end > range.start ? '-' + range.end : ''}`;
-        const label = openPath + (selected ? `:${pageOffset}` : suffix);
+        const label = openPath + (selectedText ? `:${pageOffset}` : suffix);
         await call('library.saveSnippet', {
           text,
           sourceKind: SNIPPET_SOURCE_KIND,
@@ -1093,14 +1351,15 @@
       /** 取回本页存过的标记（只按 targetKind=code-mark 收窄）：标签可点，跳回那段代码。 */
       async function loadMarks() {
         const node = document.getElementById('marks');
+        const card = document.getElementById('marks-card');
         const marks = await call('library.listAnnotations', { targetKind: MARK_KIND, limit: 200 });
         node.innerHTML = '';
         if (!marks || marks.length === 0) {
-          node.className = 'muted';
-          node.textContent = '还没有位置标记。';
+          card.hidden = true;
           return;
         }
-        node.className = '';
+        card.hidden = false;
+        document.getElementById('marks-count').textContent = String(marks.length);
         for (const mark of marks) {
           const target = parseMarkTargetId(mark.targetId);
           const li = document.createElement('li');
@@ -1110,6 +1369,7 @@
           link.title = '回到这段代码';
           link.onclick = () => run(() => {
             if (!target) throw new Error('这条标记没有可跳转的位置');
+            setTab('qa');
             return openFile(target.path, target.startLine, target.endLine);
           });
           li.appendChild(link);
@@ -1139,6 +1399,9 @@
         await loadMarks();
       }
 
+      document.getElementById('tab-summary').onclick = () => setTab('summary');
+      document.getElementById('tab-qa').onclick = () => setTab('qa');
+
       document.getElementById('up').onclick = () => run(async () => {
         const repo = currentRepo();
         if (!browseDir || !repo || !repo.dir || browseDir === repo.dir) return;
@@ -1160,6 +1423,7 @@
         await writeEntry(entry);
         msg(`已拉到 ${result.dir}（${result.fileCount} 文件）`);
         selected = entry.id;
+        setTab('summary');
         render();
         resetViewer();
         await showDir(result.dir);
@@ -1182,8 +1446,10 @@
         if (!selected) throw new Error('先选中一个仓库再提问');
         const entry = repos.find((item) => item.id === selected);
         if (!entry || !entry.dir) throw new Error('这个仓库本机还没有检出');
+        const live = document.getElementById('live');
         const answer = document.getElementById('answer');
         document.getElementById('sources').innerHTML = '';
+        live.hidden = false;
         answer.textContent = '正在检索本包工作区…';
         // 记下这次提问归属的检出与问题：回答流结束后按检出入库
         pendingQuestion = question;
@@ -1205,7 +1471,12 @@
         if (payload.event === 'annotation:open') {
           if (payload.kind !== MARK_KIND) return;
           const target = parseMarkTargetId(payload.targetId);
-          if (target) void run(() => openFile(target.path, target.startLine, target.endLine));
+          if (target) {
+            void run(() => {
+              setTab('qa');
+              return openFile(target.path, target.startLine, target.endLine);
+            });
+          }
           return;
         }
         if (payload.streamId !== answerStreamId) return;
@@ -1217,18 +1488,21 @@
           if (payload.contentMd) answer.textContent = payload.contentMd;
           const citations = payload.citations || [];
           renderSources(citations);
-          // 这次问答连同引用与时间入库；下次打开页面还在（历史按检出分片）
+          // 这次问答连同引用与时间入库；写完再收起重放气泡（历史里已经有这一条），
+          // 免得「重放气泡」和「历史气泡」同时出现又各画一份
           const question = pendingQuestion;
           const repoDir = pendingRepoDir;
+          const finalText = answer.textContent;
           pendingQuestion = null;
           pendingRepoDir = null;
           answerStreamId = null;
-          if (question && repoDir) {
-            void run(async () => {
-              await saveHistory(repoDir, question, answer.textContent, citations);
+          void run(async () => {
+            if (question && repoDir) {
+              await saveHistory(repoDir, question, finalText, citations);
               if (selected === repoDir) await loadHistory();
-            });
-          }
+            }
+            document.getElementById('live').hidden = true;
+          });
         } else if (payload.event === 'stream:error') {
           answer.textContent += `[错误] ${payload.message || ''}`;
           pendingQuestion = null;
@@ -1243,6 +1517,7 @@
       void run(async () => {
         await load();
         render();
+        setTab('summary');
         await refreshBrowse();
         await loadSnippets();
         await loadMarks();

@@ -58,9 +58,10 @@ describe('softwareEngineeringRolePack contract', () => {
   });
 
   it('keeps the stable runtime identity and role-pack permission boundary', () => {
+    // 版本随包内容走，不在这里写死字面量：内容换代就该升版本，否则已装的同 id 同版本
+    // 会被当成同一份包沿用旧内容
     expect(softwareEngineeringRolePack.manifest).toMatchObject({
       id: 'software-engineering',
-      version: '1.0.0',
       type: 'role-pack',
       compatibility: { core: '^1.0.0', schema: 23 },
       // 本包页面自己用到的通用原语（工作区 + 远端拉取 + 话术库）与基础问答。权限 = 内嵌

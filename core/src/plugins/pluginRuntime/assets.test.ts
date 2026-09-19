@@ -41,4 +41,53 @@ describe('resolveWebviewHtml', () => {
     const resolved = resolveWebviewHtml('ui/index.html', html, assets);
     expect(resolved).toBe(html);
   });
+
+  it('没有主题时不注入任何样式', () => {
+    const html = '<html><head></head><body>x</body></html>';
+    expect(resolveWebviewHtml('ui/index.html', html, assets)).toBe(html);
+  });
+
+  it('主题变量注入成 :root 规则', () => {
+    const html = '<html><head><style>body{color:red}</style></head><body>x</body></html>';
+    const resolved = resolveWebviewHtml('ui/index.html', html, assets, {
+      '--color-surface': '#f6f7f9',
+      '--color-accent': '#2f5cd8',
+    });
+    expect(resolved).toContain('<style data-openjob-theme>:root{--color-surface:#f6f7f9;--color-accent:#2f5cd8}</style>');
+  });
+
+  it('注入样式排在页面自己的样式之前，页面规则仍然覆盖它', () => {
+    const html = '<html><head><style>body{color:red}</style></head><body>x</body></html>';
+    const resolved = resolveWebviewHtml('ui/index.html', html, assets, { '--color-fg': '#000' });
+    expect(resolved.indexOf('data-openjob-theme')).toBeLessThan(resolved.indexOf('body{color:red}'));
+  });
+
+  it('没有 <head> 时仍插在页面样式之前', () => {
+    const html = '<html><body><style>body{color:red}</style></body></html>';
+    const resolved = resolveWebviewHtml('ui/index.html', html, assets, { '--color-fg': '#000' });
+    expect(resolved.indexOf('data-openjob-theme')).toBeLessThan(resolved.indexOf('body{color:red}'));
+  });
+
+  it('注入样式落在 <meta charset> 之后、页面样式之前', () => {
+    const html =
+      '<html><head><meta charset="utf-8" /><style>body{color:red}</style></head><body>x</body></html>';
+    const resolved = resolveWebviewHtml('ui/index.html', html, assets, { '--color-fg': '#000' });
+    expect(resolved.indexOf('charset')).toBeLessThan(resolved.indexOf('data-openjob-theme'));
+    expect(resolved.indexOf('data-openjob-theme')).toBeLessThan(resolved.indexOf('body{color:red}'));
+  });
+
+  it('值里带 } 或 ; 的变量被丢弃，不能逃出规则', () => {
+    const html = '<html><head></head><body>x</body></html>';
+    const resolved = resolveWebviewHtml('ui/index.html', html, assets, {
+      '--ok': '#000',
+      '--evil': '}body{display:none}',
+      '--also-bad': 'red;color:blue',
+      'not-a-var': 'x',
+      '--<x>': '1',
+    });
+    expect(resolved).toContain('--ok:#000');
+    expect(resolved).not.toContain('display:none');
+    expect(resolved).not.toContain('also-bad');
+    expect(resolved).not.toContain('not-a-var');
+  });
 });

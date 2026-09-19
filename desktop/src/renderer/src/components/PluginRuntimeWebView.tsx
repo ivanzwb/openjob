@@ -1,9 +1,11 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { resolveWebviewHtml } from '@core/plugins/pluginRuntime/assets';
 import {
   createPluginBridge,
   declaredPermissionBridgeGate,
 } from '@core/plugins/pluginRuntime/bridge';
+import { useUiTheme } from '../lib/uiTheme';
+import { readWebviewTheme } from '../lib/webviewTheme';
 import { onEvent } from '../ipc';
 import {
   getUiAssets,
@@ -44,8 +46,12 @@ export function PluginRuntimeWebView({
 }): React.JSX.Element | null {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const assets = getUiAssets(pluginId);
+  // 页面在沙箱里拿不到宿主文档，宿主把当前主题的自定义属性注入它的文档（generic，
+  // 不含任何岗位词汇）。主题切换时重算，页面随后以新一套颜色重新加载。
+  const uiTheme = useUiTheme();
+  const theme = useMemo(() => readWebviewTheme(uiTheme), [uiTheme]);
   const html = assets[webviewPath]
-    ? resolveWebviewHtml(webviewPath, assets[webviewPath], assets)
+    ? resolveWebviewHtml(webviewPath, assets[webviewPath], assets, theme)
     : undefined;
   // 桥方法 = 包声明 ∩ 本端通用原语表（§11.2 桥自注册）：声明了哪些就放行哪些，未声明
   // 的页面够不到。声明只决定「能不能到网关」，放行与否交给权限网关（端侧判一次，

@@ -4,9 +4,12 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
     <style>
+      /* 手机端宿主不注入应用主题，这里一律走中性兜底色（var 的兜底分支），
+         深浅两套下都读得清；桌面端页面那份才取注入的 --color-… 变量。 */
+      [hidden] { display: none !important; }
       * { box-sizing: border-box; }
       body {
-        font-family: system-ui, sans-serif;
+        font-family: system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif;
         padding: 14px;
         margin: 0;
         color: inherit;
@@ -17,43 +20,17 @@
       h2 { font-size: 16px; margin: 18px 0 8px; }
       h2:first-child { margin-top: 0; }
       ul { list-style: none; margin: 0; padding: 0; }
-      li {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-        padding: 12px;
-        margin-bottom: 10px;
-        border: 1px solid rgba(127, 127, 127, 0.35);
-        border-radius: 12px;
-      }
-      .name { font-size: 16px; font-weight: 600; }
-      .muted { opacity: 0.65; font-size: 13px; }
+      p { margin: 0 0 8px; }
       button {
-        font-size: 15px;
+        font: inherit;
         min-height: 46px;
         padding: 12px 16px;
-        border: 0;
+        border: 1px solid rgba(127, 127, 127, 0.35);
         border-radius: 10px;
-        background: rgba(127, 127, 127, 0.25);
+        background: rgba(127, 127, 127, 0.18);
         color: inherit;
       }
       button:disabled { opacity: 0.45; }
-      .hint { font-size: 13px; opacity: 0.75; line-height: 1.5; }
-      /* 文件浏览与带行号读取：只用通用工作区原语，无外部依赖 */
-      .row-actions { display: flex; flex-direction: row; gap: 8px; flex-wrap: wrap; }
-      .row-actions button { flex: 0 0 auto; }
-      .path {
-        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-        font-size: 13px; word-break: break-all;
-      }
-      .code {
-        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Courier New', monospace;
-        font-size: 12px; line-height: 1.5; white-space: pre; overflow: auto;
-        max-height: 45vh; margin: 0; padding: 8px;
-        border: 1px solid rgba(127, 127, 127, 0.35); border-radius: 10px;
-        background: rgba(127, 127, 127, 0.08);
-      }
-      .ln { color: rgba(127, 127, 127, 0.85); user-select: none; -webkit-user-select: none; }
       input {
         width: 100%;
         font-size: 15px;
@@ -64,48 +41,116 @@
         background: transparent;
         color: inherit;
       }
-      .answer { white-space: pre-wrap; font-size: 14px; line-height: 1.5; margin: 0; }
+      .muted { opacity: 0.65; font-size: 13px; }
+      .hint { font-size: 13px; opacity: 0.75; line-height: 1.5; }
+      .path { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; word-break: break-all; }
+      .row-actions { display: flex; flex-direction: row; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+      /* 登记条目：卡片 + 元信息，点一下选中并进入详情 */
+      #repos li { margin-bottom: 10px; }
+      .repo-card {
+        width: 100%;
+        min-height: 0;
+        text-align: left;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 12px;
+        border-radius: 12px;
+        background: transparent;
+      }
+      .repo-card.selected { border-color: rgba(79, 124, 255, 0.9); }
+      .repo-card .name { font-size: 16px; font-weight: 600; word-break: break-all; }
+
+      /* 页签：项目摘要 / 代码 / 问答 */
+      .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0; }
+      .tab {
+        min-height: 40px;
+        padding: 8px 14px;
+        font-size: 14px;
+        border-radius: 10px;
+        color: inherit;
+        opacity: 0.7;
+      }
+      .tab.active { background: rgba(79, 124, 255, 0.9); border-color: transparent; color: #fff; opacity: 1; }
+
+      .card {
+        border: 1px solid rgba(127, 127, 127, 0.35);
+        border-radius: 12px;
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .entries li { display: flex; align-items: baseline; gap: 8px; padding: 10px 12px; font-size: 14px; }
+      .entries .name { cursor: pointer; word-break: break-all; }
+      .entries .size { margin-left: auto; }
+      .code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Courier New', monospace;
+        font-size: 12px; line-height: 1.5; white-space: pre; overflow: auto;
+        max-height: 45vh; margin: 0; padding: 8px;
+        border: 1px solid rgba(127, 127, 127, 0.35); border-radius: 10px;
+        background: rgba(127, 127, 127, 0.08);
+      }
+      .answer { white-space: pre-wrap; font-size: 14px; line-height: 1.5; margin: 8px 0 0; }
+      .source { font-size: 12px; opacity: 0.75; margin: 2px 0; }
+      #history { display: flex; flex-direction: column; gap: 10px; }
     </style>
   </head>
   <body>
-    <h2>仓库</h2>
+    <h2>源码仓库</h2>
     <p id="offline" class="muted" hidden></p>
-    <ul id="repos"></ul>
-    <button id="refresh">刷新</button>
-    <p id="msg" class="muted"></p>
+    <div class="row-actions">
+      <button id="refresh">刷新</button>
+      <span id="msg" class="muted"></span>
+    </div>
     <p class="hint">
       手机端只读本包声明的数据集合：链接、更新与建索引都在桌面端做。下面的文件浏览与提问读的是
       「已配对桌面端的检出」——桌面按本包声明的 filesystem:workspace 解析出本包工作区，范围与桌面
       自己的页面完全一致。桌面不可达时这里如实说明，不会留一排点了必然失败的按钮。
     </p>
+    <ul id="repos"></ul>
 
-    <h2>代码（读配对桌面端的检出）</h2>
-    <div class="row-actions">
-      <button id="up" disabled>上级</button>
-      <span id="cwd" class="path muted">选中仓库后可浏览</span>
-    </div>
-    <ul id="entries"></ul>
-    <div class="row-actions">
-      <span id="file-label" class="path muted">未打开文件</span>
-      <span id="range" class="muted"></span>
-    </div>
-    <div class="row-actions">
-      <button id="prev" disabled>上一页</button>
-      <button id="next" disabled>下一页</button>
-    </div>
-    <pre id="code" class="code">选中仓库后，从上面的列表打开文件。</pre>
+    <div id="detail" hidden>
+      <div class="tabs">
+        <button id="tab-summary" class="tab active" type="button">项目摘要</button>
+        <button id="tab-files" class="tab" type="button">代码</button>
+        <button id="tab-qa" class="tab" type="button">问答</button>
+      </div>
 
-    <h2>问源码</h2>
-    <p class="hint">
-      问答由宿主的基础 Agent 编排，上下文由本页自己拼（问的是配对桌面端的这份检出）。回答经宿主
-      事件流逐段回来，与桌面端页面同一条路径。
-    </p>
-    <input id="question" placeholder="如：登录流程在哪实现？" />
-    <div class="row-actions" style="margin-top: 8px">
-      <button id="ask">提问</button>
+      <div id="pane-summary" class="card"></div>
+
+      <div id="pane-files" class="card" hidden>
+        <div class="row-actions">
+          <button id="up" disabled>上级</button>
+          <span id="cwd" class="path muted">选中仓库后可浏览</span>
+        </div>
+        <ul id="entries" class="entries"></ul>
+        <div class="row-actions">
+          <span id="file-label" class="path muted">未打开文件</span>
+          <span id="range" class="muted"></span>
+        </div>
+        <div class="row-actions">
+          <button id="prev" disabled>上一页</button>
+          <button id="next" disabled>下一页</button>
+        </div>
+        <pre id="code" class="code">选中仓库后，从上面的列表打开文件。</pre>
+      </div>
+
+      <div id="pane-qa" class="card" hidden>
+        <p class="hint">
+          问答由宿主的基础 Agent 编排，上下文由本页自己拼（问的是配对桌面端的这份检出）。回答经宿主
+          事件流逐段回来，与桌面端页面同一条路径。
+        </p>
+        <input id="question" placeholder="如：登录流程在哪实现？" />
+        <div class="row-actions">
+          <button id="ask">提问</button>
+        </div>
+        <pre id="answer" class="answer muted" style="min-height: 40px"></pre>
+        <div id="sources"></div>
+      </div>
     </div>
-    <pre id="answer" class="answer muted" style="min-height: 40px"></pre>
-    <div id="sources"></div>
 
     <script>
       // 受控桥：只放行本包声明过的方法（见 mobile/main.ts）。手机端只有读侧：数据集合读、
@@ -135,7 +180,9 @@
       const CODE_HINT = '选中仓库后，从上面的列表打开文件。';
 
       let repos = [];
+      let indexByKey = new Map(); // 检出目录 → 索引行（只读展示）
       let selected = null;
+      let activeTab = 'summary';
       let reachable = true;
       let browseDir = null;   // 当前浏览目录（工作区相对路径）
       let openPath = null;    // 当前打开的文件（工作区相对路径）
@@ -212,26 +259,24 @@
         };
       }
 
-      function appendIndex(li, index) {
-        if (!index || index.status === 'building' || index.status === 'failed') return;
-        const wrap = document.createElement('div');
-        wrap.className = 'muted';
-        const when = index.builtAt ? `（${new Date(index.builtAt).toLocaleString()} 建立）` : '';
-        if (index.status === 'empty') {
-          wrap.textContent = index.note || '没什么可索引的';
-          li.appendChild(wrap);
-          return;
-        }
-        const parts = [];
-        if (index.summary) parts.push(`摘要：${index.summary}`);
-        if (index.repoMap) parts.push(`仓库地图：\n${index.repoMap}`);
-        if (parts.length === 0) return;
-        wrap.textContent = `${parts.join('\n\n')}${when}`;
-        li.appendChild(wrap);
-      }
-
       function currentRepo() {
         return repos.find((item) => item.id === selected) || null;
+      }
+
+      /** 切页签：只切详情里的三块面板，登记表不动。 */
+      function setTab(name) {
+        activeTab = name;
+        const panes = { summary: 'pane-summary', files: 'pane-files', qa: 'pane-qa' };
+        const tabs = { summary: 'tab-summary', files: 'tab-files', qa: 'tab-qa' };
+        for (const key of Object.keys(panes)) {
+          document.getElementById(tabs[key]).classList.toggle('active', key === name);
+          document.getElementById(panes[key]).hidden = key !== name;
+        }
+      }
+
+      /** 选中态与详情显隐：有选中仓库才展示详情。 */
+      function renderSelection() {
+        document.getElementById('detail').hidden = !currentRepo();
       }
 
       async function refresh() {
@@ -239,13 +284,28 @@
         repos = rows.map((row) => parseEntry(row.value)).filter(Boolean);
         // 索引产物与登记表同一份同步数据：桌面建好，手机端只读展示
         const indexRows = await call('data.list', { collection: INDEX_COLLECTION, limit: 1000 });
-        const indexByKey = new Map(indexRows.map((row) => [row.key, parseIndex(row.value)]));
+        indexByKey = new Map(indexRows.map((row) => [row.key, parseIndex(row.value)]));
+        if (!repos.some((item) => item.id === selected)) selected = repos[0] ? repos[0].id : null;
+        setMsg(repos.length ? '' : '还没有仓库：请在桌面端链接一个');
+        renderRepos();
+        renderSelection();
+        renderSummary();
+        // 预先把浏览位置放到选中检出的根目录，切到「代码」页签就能直接看；
+        // 迁移过来的登记行还没有本机检出（commit 为空），不假装能浏览
+        const repo = currentRepo();
+        if (repo && repo.dir && repo.commit) await showDir(repo.dir);
+      }
+
+      function renderRepos() {
         const node = document.getElementById('repos');
         node.innerHTML = '';
-        setMsg(repos.length ? '' : '还没有仓库：请在桌面端链接一个');
-
         for (const entry of repos) {
           const li = document.createElement('li');
+
+          // 卡片即「选中并看摘要」：点一下选中这个检出，详情里按页签浏览
+          const card = document.createElement('button');
+          card.type = 'button';
+          card.className = entry.id === selected ? 'repo-card selected' : 'repo-card';
 
           const name = document.createElement('span');
           name.className = 'name';
@@ -260,43 +320,74 @@
             : // 桌面还没拉下来（或本机不共享检出目录）：只如实说登记过
               (entry.ready ? '已在桌面登记' : '尚未就绪');
 
-          const actions = document.createElement('div');
-          actions.className = 'row-actions';
-          const browse = document.createElement('button');
-          browse.textContent = '浏览代码';
-          browse.disabled = !entry.dir;
-          browse.onclick = () =>
-            run(async () => {
-              selected = entry.id;
-              renderRepos();
-              await showDir(entry.dir);
-            });
-          actions.appendChild(browse);
+          const actions = document.createElement('span');
+          actions.className = 'muted';
+          actions.textContent = currentRepo() === entry ? '已选中' : '点选查看';
 
-          const ask = document.createElement('button');
-          ask.textContent = '问这个仓库';
-          ask.onclick = () =>
-            run(async () => {
-              selected = entry.id;
-              renderRepos();
-              document.getElementById('question').focus();
-            });
-          actions.appendChild(ask);
+          card.append(name, meta, actions);
+          card.onclick = () => run(async () => {
+            selected = entry.id;
+            resetViewer();
+            renderRepos();
+            renderSelection();
+            renderSummary();
+            setTab('summary');
+            const repo = currentRepo();
+            if (repo && repo.dir && repo.commit) await showDir(repo.dir);
+          });
 
-          li.append(name, meta, actions);
-          // 索引键取检出目录，与登记行的 id 一致；没有同步过来就什么都不显示
-          appendIndex(li, indexByKey.get(entry.id));
+          li.appendChild(card);
           node.appendChild(li);
         }
       }
 
-      function renderRepos() {
-        // 只更新选中态样式，不重建列表（点了不必重排整屏）
-        const items = document.getElementById('repos').children;
-        for (let index = 0; index < items.length; index += 1) {
-          const name = items[index].querySelector('.name');
-          if (!name || !repos[index]) continue;
-          name.style.textDecoration = repos[index].id === selected ? 'underline' : 'none';
+      // ── 项目摘要：只读展示桌面同步过来的索引产物 ───────────────────────────
+      function renderSummary() {
+        const node = document.getElementById('pane-summary');
+        node.innerHTML = '';
+        const repo = currentRepo();
+        if (!repo) return;
+        const index = indexByKey.get(repo.id) || null;
+        if (!index || index.status === 'building' || index.status === 'failed') {
+          const hint = document.createElement('p');
+          hint.className = 'muted';
+          hint.textContent = repo.ready
+            ? '暂无项目摘要，请在桌面端点「重建索引」后同步。'
+            : '尚未同步到摘要与仓库地图。';
+          node.appendChild(hint);
+          return;
+        }
+        if (index.status === 'empty') {
+          const hint = document.createElement('p');
+          hint.className = 'muted';
+          hint.textContent = index.note || '没什么可索引的';
+          node.appendChild(hint);
+          return;
+        }
+        const when = index.builtAt ? `（${new Date(index.builtAt).toLocaleString()} 建立）` : '';
+        if (index.summary) {
+          const summary = document.createElement('pre');
+          summary.className = 'answer';
+          summary.style.margin = '0';
+          summary.textContent = index.summary;
+          node.appendChild(summary);
+        }
+        if (index.repoMap) {
+          const label = document.createElement('p');
+          label.className = 'muted';
+          label.textContent = '仓库地图';
+          const map = document.createElement('pre');
+          map.className = 'answer';
+          map.style.margin = '0';
+          map.textContent = index.repoMap;
+          node.appendChild(label);
+          node.appendChild(map);
+        }
+        if (when) {
+          const at = document.createElement('p');
+          at.className = 'muted';
+          at.textContent = `建立于 ${new Date(index.builtAt).toLocaleString()}`;
+          node.appendChild(at);
         }
       }
 
@@ -321,21 +412,16 @@
         });
         for (const entry of sorted) {
           const li = document.createElement('li');
-          li.style.flexDirection = 'row';
-          li.style.alignItems = 'baseline';
-          li.style.padding = '10px 12px';
           const base = entry.path.slice(entry.path.lastIndexOf('/') + 1);
 
           const name = document.createElement('span');
           name.className = 'name';
-          name.style.fontSize = '14px';
           name.textContent = entry.type === 'dir' ? base + '/' : base;
           name.onclick = () =>
             run(() => (entry.type === 'dir' ? showDir(entry.path) : openFile(entry.path)));
 
           const meta = document.createElement('span');
-          meta.className = 'muted';
-          meta.style.marginLeft = 'auto';
+          meta.className = 'muted size';
           meta.textContent = entry.type === 'dir' ? '' : formatSize(entry.size);
 
           li.append(name, meta);
@@ -378,6 +464,17 @@
         document.getElementById('next').disabled = !pageHasMore;
       }
 
+      function resetViewer() {
+        openPath = null;
+        pageOffset = 1;
+        pageHasMore = false;
+        document.getElementById('code').textContent = CODE_HINT;
+        document.getElementById('file-label').textContent = '未打开文件';
+        document.getElementById('range').textContent = '';
+        document.getElementById('prev').disabled = true;
+        document.getElementById('next').disabled = true;
+      }
+
       async function openFile(path) {
         const page = await readRange(path, 1);
         openPath = path;
@@ -407,8 +504,7 @@
         node.appendChild(title);
         for (const citation of citations) {
           const row = document.createElement('div');
-          row.className = 'muted';
-          row.style.fontSize = '12px';
+          row.className = 'source';
           row.textContent = ('- ' + (citation.filePath || citation.title || citation.url || '')).trim();
           node.appendChild(row);
         }
@@ -460,6 +556,10 @@
           setMsg(error && error.message ? error.message : String(error));
         }
       }
+
+      document.getElementById('tab-summary').onclick = () => setTab('summary');
+      document.getElementById('tab-files').onclick = () => setTab('files');
+      document.getElementById('tab-qa').onclick = () => setTab('qa');
 
       document.getElementById('refresh').onclick = () =>
         run(async () => {
