@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <style>
       /* 页面有自己的文档（沙箱 iframe），继承不到应用 CSS。宿主把当前主题的自定义属性
-         以 <style>:root{…}</style> 注入在下面这段样式之前（见 core pluginRuntime/assets），
+         以一段 :root{…} 样式注入在下面这段样式之前（见 core pluginRuntime/assets），
          这里一律走 var(--color-…, 兜底值)：有注入就与应用同色，没有就退回中性兜底。
          同一段 :root 里不再重声明这些变量，免得把宿主注入的值覆盖掉。 */
       [hidden] { display: none !important; }

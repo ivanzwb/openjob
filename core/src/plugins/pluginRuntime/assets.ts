@@ -66,6 +66,17 @@ export function isRelativeAssetRef(ref: string): boolean {
   return !/^(https?:|data:|\/\/)/i.test(ref);
 }
 
+/**
+ * 内联正文里的收尾序列要转义。
+ *
+ * 资产是原样内联进 `<script>`/`<style>` 的：正文里只要出现 `</script`，浏览器就在那里
+ * 结束脚本，剩下的源码会变成文档正文被当文本渲染出来——页面看起来像"把源码打印了一遍"。
+ * `<\/script` 在 JS 与 CSS 里都与原字面量等价（`\/` 就是 `/`），所以转义不改变语义。
+ */
+function escapeInlineBody(body: string, tag: 'script' | 'style'): string {
+  return body.replace(new RegExp(`</${tag}`, 'gi'), `<\\/${tag}`);
+}
+
 /** 相对 entryPath 所在目录解析 ref；越出 ui/ 顶层（..）视为不可解析 */
 function resolvePath(entryPath: string, ref: string): string | null {
   if (!isRelativeAssetRef(ref)) return null;
@@ -97,7 +108,7 @@ export function resolveWebviewHtml(
     if (!ref || !isRelativeAssetRef(ref)) return match;
     const path = resolvePath(entryPath, ref);
     if (path === null || assets[path] === undefined) return match;
-    return `<script${before}${after}>${assets[path]}</script>`;
+    return `<script${before}${after}>${escapeInlineBody(assets[path], 'script')}</script>`;
   });
 
   result = result.replace(LINK_RE, (match, before: string, _raw: string, q1?: string, q2?: string) => {
@@ -107,7 +118,7 @@ export function resolveWebviewHtml(
     if (!ref || !isRelativeAssetRef(ref)) return match;
     const path = resolvePath(entryPath, ref);
     if (path === null || assets[path] === undefined) return match;
-    return `<style>${assets[path]}</style>`;
+    return `<style>${escapeInlineBody(assets[path], 'style')}</style>`;
   });
 
   // 主题注入放在内联资产之后：资产替换只在原位改写 <script>/<link>，不改变页面文档顺序，
