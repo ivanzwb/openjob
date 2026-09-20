@@ -720,7 +720,7 @@ mobile/src/
     ├── llm/                       # 手机端直连 LLM（chat / json / agent）
     ├── sync/                      # 配对 / 心跳 / 变更集交换与落库
     ├── components/                # 通用 UI 组件
-    ├── screens/                   # 页面（Sync / Campaigns / Resumes / Scripts / Overview / PluginRuntimes / More）
+    ├── screens/                   # 页面（总览 / 备考 / 简历 / 面试 / 更多 / 话术 / 同步 + 包页面宿主）
     ├── plugins/                   # 插件代码入口的移动端宿主
     └── theme.ts                   # 双主题调色板 + 订阅式 store（useTheme）
 ```
