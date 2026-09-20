@@ -52,17 +52,20 @@ OpenJob 采用两层扩展模型：
 2. **岗位包（Role Pack）**  
    以声明式配置描述一个岗位如何面试：能力模型、面试形式、评分量规、Prompt 片段、任务模板和信息来源，并**内嵌该岗位需要的全部能力扩展**（工具、交互、文件解析及其实现），以及**全部插入点贡献**（导航入口、检索策略、简历模块）。
 
-插件类型收敛为岗位包一种：
+插件分三类，但只有岗位包是岗位定义的载体：
 
-- 能力扩展（如源码分析、角色扮演、数据案例）内嵌在岗位包中，随岗位包一起声明、校验、版本化和分发；
-- 行业差异（术语、指标、案例背景、来源偏好）是岗位包内的可选字段，选择行业是 Campaign 参数，不是加载另一个插件。
+- **岗位包（role-pack）**：一个岗位族的全部声明与实现。能力扩展（如源码分析、角色扮演、数据案例）内嵌在岗位包中，随包一起声明、校验、版本化和分发；
+- **能力（capability）**：不单独安装，只是岗位包内的一条 `CapabilityDeclaration`；
+- **代码插件（plugin）**：声明面为空的独立扩展，激活后经 `openjob.*` 注册页面与命令（§7.9）。
+
+行业差异（术语、指标、案例背景、来源偏好）是岗位包内的可选字段 `industryVariants`：它是包内的键，不是另一个要安装的包；包没声明就是没有，界面上也不出现这项选择。
 
 岗位包位于**岗位族（job family）层级**，介于具体 JD 和行业之间：
 
 ```text
 具体 JD："某公司 后端开发工程师（交易方向）"
-  → RoleMatcher 归一到岗位族：研发（software-engineering 岗位包）
-      + 行业差异参数：金融科技
+  → 用户在战役面板选定岗位包：研发（software-engineering）
+      + 行业差异变体：金融科技
       + 本次 JD 权重调整：交易系统 → 上调系统设计权重
 ```
 
@@ -168,7 +171,7 @@ flowchart TB
 ```text
 基础 Agent
   + 通用面试能力基线
-  + product-manager（内嵌 analytics-case、portfolio-review）
+  + product-manager（内嵌 analytics-case；portfolio-review 为可选依赖，尚未实现）
   + 行业差异：ecommerce
   + 公司 / JD 动态上下文
   + 用户全局设置与本次要求
@@ -229,13 +232,13 @@ flowchart TB
 
 ## 6. 插件分类
 
-新模型中只有一种插件：岗位包。能力扩展与行业差异都在岗位包内表达。
+岗位定义的载体只有岗位包一种：能力是包内的声明，行业差异是包内的可选字段。除此之外只剩声明面为空的代码插件（§7.9）。
 
 ### 6.1 岗位包 Role Pack
 
 岗位包描述“这个岗位族如何面试”：**数据部分**是纯声明式、不执行任意代码；包可以另带代码入口（§7.9），行为由它承担。
 
-**层级定位**：岗位包对应岗位族（job family），不是某一份具体 JD，也不是行业层级。归族标准是“考察方式是否相近”，不是组织头衔：一组题型、能力模型和评分维度基本相同的岗位聚类为一个岗位族。`software-engineering`、`product-manager`、`sales-customer-success` 都是岗位族；一份具体 JD（“后端开发工程师（交易方向）”）通过 RoleMatcher 归入某个岗位族，其特殊性由运行时的能力权重调整表达，不为它单独建包。管理类岗位（工程经理、销售总监）如果作为独立岗位包，依据同样是它们考察带人、推动、招聘等族能力，而不是 title 里含 "manager"。
+**层级定位**：岗位包对应岗位族（job family），不是某一份具体 JD，也不是行业层级。归族标准是“考察方式是否相近”，不是组织头衔：一组题型、能力模型和评分维度基本相同的岗位聚类为一个岗位族。`software-engineering`、`product-manager`、`sales-customer-success` 都是岗位族；一份具体 JD（“后端开发工程师（交易方向）”）由用户在战役的岗位面板里选定的岗位包承接，其特殊性由运行时的能力权重调整表达，不为它单独建包。包用 `roleMatchers` 声明自己适配哪些岗位标题（当前用于契约校验与包内 golden 测试）。管理类岗位（工程经理、销售总监）如果作为独立岗位包，依据同样是它们考察带人、推动、招聘等族能力，而不是 title 里含 "manager"。
 
 岗位包包括：
 
@@ -250,7 +253,7 @@ flowchart TB
 - 导航入口（插入点 A）；
 - 简历模块（插入点 D）；
 - 内嵌能力声明：工具、交互、文件解析（插入点 E）；
-- 可选的行业差异字段；
+- 可选的行业差异变体 `industryVariants`（包内字段，非插件）；
 - 兼容的基础 Agent 版本。
 
 示例岗位包：
@@ -274,7 +277,16 @@ flowchart TB
 - 信息来源覆盖；
 - 少量能力权重调整。
 
-行业变体不能删除主岗位包的核心能力，也不能修改基础安全规则。用户在创建 Campaign 时选择行业参数，不存在“加载行业包”这个动作。
+行业变体不能删除主岗位包的核心能力，也不能修改基础安全规则。用户在战役的岗位面板里选择行业变体（`RoleProfile.industryVariantId` 存的是包内的键），不存在“加载行业包”这个动作；包没声明变体时，面板上就没有这一项。
+
+```ts
+interface IndustryVariant {
+  /** 包内唯一 */
+  id: string;
+  displayName: string;
+  description: string;
+}
+```
 
 ### 6.3 内嵌能力 Capability
 
@@ -328,7 +340,8 @@ backlog 中的能力缺席时只降级为 disabled，不让岗位解析失败，
 interface PluginManifest {
   id: string;
   version: string;
-  type: 'role-pack';
+  /** 'role-pack' | 'capability' | 'plugin' */
+  type: PluginType;
   displayName: string;
   description: string;
   compatibility: {
@@ -337,12 +350,21 @@ interface PluginManifest {
   };
   /** 包内全部内嵌能力权限的并集 + 代码 API 所需权限（启用时展示给用户） */
   permissions: PluginPermission[];
-  /** 代码入口（相对包根）。缺省 = 纯声明式插件，不进入激活生命周期（见 7.9） */
+  /** 代码入口（相对包根）。与 mobile 至少声明其一才进入激活生命周期（见 7.9） */
   main?: string;
-  /** 所需 openjob.* API 版本范围，例如 '^1.0' */
+  /** 移动端代码入口（相对包根）；缺省 = 移动端无实现 */
+  mobile?: string;
+  /** 所需 openjob.* API 版本范围，例如 '^1.0'；与 main / mobile 成对声明 */
   api?: string;
+  runtime?: PluginRuntimeAvailability;
   artifactSchemas?: Record<string, number>;
-  /** v1.0 岗位包不声明依赖；保留给未来岗位包间复用 */
+  /** interaction type → schema version，与 artifactSchemas 同构 */
+  interactionSchemas?: Record<string, number>;
+  /** 包自己声明的数据集合，宿主建通用承载表，内容对宿主不透明 */
+  dataCollections?: Array<{ name: string; schemaVersion: number }>;
+  /** 包自己起的标记目标类型 → 承接它的本包页面（插入点 F） */
+  annotationTargets?: Array<{ kind: string; label: string; pageId: string }>;
+  /** 包间依赖；岗位包目前只用到可选依赖 */
   dependencies?: Array<{
     id: string;
     version: string;
@@ -353,7 +375,7 @@ interface PluginManifest {
 
 插件 ID 一旦发布不可修改。显示名称可以本地化，持久化和同步只使用 ID。
 
-`type` 收敛为 `'role-pack'`。运行位置声明从 Manifest 移到内嵌能力声明上（7.8）。能力引用一律用能力自己的 id；没有「套件」这一层，也没有需要归一的中间 id。
+`type` 只取 `'role-pack'`、`'capability'`、`'plugin'` 三种；行业差异不是一种插件类型，而是岗位包内的可选字段（6.2）。能力引用一律用能力自己的 id；没有「套件」这一层，也没有需要归一的中间 id。
 
 ### 7.2 Role Pack
 
@@ -382,10 +404,13 @@ interface RolePack {
   capabilities: CapabilityDeclaration[];
   // 行业差异（可选字段，非插件）
   industryVariants?: IndustryVariant[];
+  // 代码插件资产（manifest.main / mobile 声明时由 defineRolePack 从包目录内联）
+  codeAssets?: Record<string, string>;
+  sourcePolicy: SourcePolicy;
 }
 ```
 
-能力全部内嵌，v1.0 岗位包不声明 `manifest.dependencies`（字段保留给未来岗位包间复用）。Role Pack 自身不拥有权限；`manifest.permissions` 是其内嵌能力权限的并集。
+能力全部内嵌。岗位包可以声明 `manifest.dependencies`，目前只有 `product-manager` 用它挂了一个尚未实现的**可选**依赖 `portfolio-review`（缺席时降级为 disabled，不阻断解析）。Role Pack 自身不拥有权限；`manifest.permissions` 是其内嵌能力权限的并集。
 
 ### 7.3 能力定义
 
@@ -476,11 +501,16 @@ interface ResumeModuleDefinition {
   id: string;
   label: string;
   kind: 'list' | 'structured' | 'text';
-  /** 提供给简历解析 Prompt 的抽取指令，包内 markdown 文件路径，走插入点 B 的安全机制 */
-  extractionPromptFile: string;
-  /** 模块数据 schema 版本，复用 manifest.artifactSchemas 思路 */
+  /** 抽取指令（内联正文）。与 extractionPromptFile 互斥 */
+  instruction?: string;
+  /** 包内 markdown 文件路径（相对包根）。与 instruction 互斥；加载器把正文填进 text */
+  extractionPromptFile?: string;
+  text?: string;
+  /** 模块数据 schema 版本；未知版本只保留不展示 */
   schemaVersion: number;
   evidenceKinds: string[];
+  /** 从通用字段派生（'skills' / 'drillableTopics'）的模块不参与模型抽取 */
+  deriveFrom?: 'skills' | 'drillableTopics';
 }
 ```
 
@@ -518,8 +548,7 @@ export function activate(ctx: PluginRuntimeContext) {
   const disposable = ctx.views.registerPage({
     id: 'portfolio-board',
     title: '作品集看板',
-    webview: 'ui/index.html',      // 包内资源，跑在 Webview 沙箱里
-    slot: 'capability',            // 主导航能力页签槽位
+    webviewPath: 'ui/index.html',  // 包内资源（必须位于 ui/ 下），跑在 Webview 沙箱里
   });
   ctx.commands.register('portfolio.score', async (args) => { /* ... */ });
   ctx.events.on('campaign:attached', async ({ campaignId }) => { /* ... */ });
@@ -527,15 +556,15 @@ export function activate(ctx: PluginRuntimeContext) {
 }
 ```
 
-**生命周期**：安装（验签）→ 启用（用户确认权限清单）→ 宿主加载入口并调用 `activate(ctx)`；停用/卸载先调用 deactivate 再撤贡献。激活顺序 = 包声明顺序，同 id 幂等。
+**生命周期**：安装（验签、展示权限清单）→ 装载入口并调用 `activate(ctx)`（每次启动与安装清单变化时自动激活，没有单独的「启用」步骤）；卸载先调用 deactivate 再撤贡献。激活顺序 = 激活请求顺序，同 id 幂等。
 
 **`openjob.*` API 面（能力即权限）**：
 
 | 命名空间 | 能力 | 说明 |
 |---|---|---|
-| `ctx.views` | — | 注册 Webview 页面 / 页签动作；进入固定能力页签槽位 |
+| `ctx.views` | — | 注册 Webview 页面（`webviewPath` 必须位于包内 `ui/` 下）与页签动作；页面进入固定能力页签槽位 |
 | `ctx.commands` | — | 注册命令，供命令面板与页面内调用 |
-| `ctx.events` | — | 订阅 Campaign 事件（附加简历、能力启停、练习完成） |
+| `ctx.events` | — | 订阅白名单事件：`campaign:attached` / `campaign:capability-changed` / `practice:completed` / `annotation:open` |
 | `ctx.llm` | `llm:complete` | 受控 JSON 补全：与宿主同一网关、同审计 |
 | `ctx.agent` | `llm:complete` | **基础流式问答**：Agent 编排（工具/检索）+ 流式增量。领域问答（源码问答、案例问答）由插件用「本能力 + 自己的上下文」组合实现，宿主不为单个领域单开通道 |
 | `ctx.evidence` | `evidence:read-confirmed` | 只读已确认证据；新证据只能经 proposal 通道 |
@@ -544,6 +573,8 @@ export function activate(ctx: PluginRuntimeContext) {
 | `ctx.workspace` | `filesystem:workspace` | **通用原语**：本包工作区内的读 / 写 / 删 / 遍历 / glob / grep / 文本快照 / 批量符号提取（解析在宿主侧的常驻 tree-sitter 引擎里做）；`fetch(url, { dir? })` 从远端拉取公开的 https 仓库到本包目录（**另需 `network:fetch`**，只下载、不带凭据、不指向内网、深度 1、有体积上限）。路径规范化后越出本包目录即拒 |
 | `ctx.artifact` | `artifact:read` | **通用原语**：读用户显式选择的文件（表格 / 文档） |
 | `ctx.campaign` | — | 只读当前 descriptor 与岗位包声明 |
+| `ctx.library` | `library:write` | 把选中内容存进用户的话术库（来源类型由包自己起），以及读写宿主标记汇总里的标记 |
+| `ctx.bridge` | — | 包自己声明的桥方法：页面 ↔ 入口代码的受控调用面，宿主按声明放行 |
 
 **原语是与岗位无关的基础设施**：宿主不知道包拿工作区干什么、也不认识它处理的数据是什么意思；
 包侧的岗位簇实现（索引、工具循环、页面）就长在这些原语之上。原语本身不含岗位语义，所以它不
@@ -551,7 +582,7 @@ export function activate(ctx: PluginRuntimeContext) {
 
 **Webview 沙箱与桥**：插件页面跑在 Webview（桌面）或 WebView 运行时（移动端）里，拿不到 DOM 外的任何东西；与宿主的全部通信走同一条受控桥（结构化 postMessage + 白名单方法集）。桥方法由**包自己声明**（宿主按声明与前缀命名空间放行），所以基础包里没有「某个岗位的方法表」。桥协议两端同构——插件代码不 import 宿主模块，只依赖 `openjob.*` 消息面，因此同一份入口代码桌面与移动端都能激活。
 
-**宿主边界**：插件入口代码在**渲染进程**内直跑（Obsidian 式，没有硬沙箱），页面在 Webview 里；主进程只把入口源码当字符串交给渲染层，自己从不执行它。所以这条通道只对**通过签名校验、且用户看过权限清单后启用**的插件开放；静态隔离扫描（禁止 fs/子进程/环境变量/直连数据库的导入）在安装期执行。详见 §13。
+**宿主边界**：插件入口代码在**渲染进程**内直跑（Obsidian 式，没有硬沙箱），页面在 Webview 里；主进程只把入口源码当字符串交给渲染层，自己从不执行它。所以这条通道只对**通过签名校验**的插件开放；静态隔离扫描（禁止 fs/子进程/环境变量/直连数据库的导入）在安装期执行。详见 §13。
 
 ---
 
@@ -608,6 +639,8 @@ interface CampaignRuntimeDescriptor {
   campaignId: string;
   coreVersion: string;
   rolePack: ResolvedPluginRef;
+  /** 选定的行业差异变体 id：岗位包内的键，没有自己的版本；没选或包里没有时缺省 */
+  industryVariantId?: string;
   /** 每项对应主岗位包的一条内嵌能力声明 */
   capabilities: Array<{
     /** 能力自己的 id（source-repository / role-play / analytics-case） */
@@ -625,7 +658,7 @@ interface CampaignRuntimeDescriptor {
 
 Resolver 必须按固定顺序执行：
 
-1. 从内置或受信目录发现插件；
+1. 从本机安装清单发现插件（岗位包由用户装到 `userData/plugins`，没有内置插件）；
 2. 校验来源、Manifest、Core 与 schema 兼容范围；
 3. 选择 Campaign 固定的精确版本；
 4. 展开依赖并检测缺失、循环和版本冲突；
@@ -635,9 +668,9 @@ Resolver 必须按固定顺序执行：
 
 可选依赖不可用时记录 `disabledReason` 后继续；必需依赖不可用时保持上一个有效 descriptor，不允许部分激活。安装插件不等于为 Campaign 启用插件。
 
-Phase 0 的插件全部随应用发布，通过内置插件 ID 白名单和构建产物哈希校验来源，不要求独立签名。签名只适用于后续可导入插件。兼容范围和依赖范围使用 SemVer；新 Campaign 从已安装且满足范围的版本中选择最高版本，激活后在 binding 中固定为精确版本。
+插件一律来自用户安装的签名包（`userData/plugins`），装载时验签、不做内置白名单。兼容范围和依赖范围使用 SemVer；新 Campaign 从已安装且满足范围的版本中选择最高版本，激活后在 binding 中固定为精确版本。
 
-Resolver 生成的是客户端无关 descriptor，不因当前在桌面或手机运行而改变绑定。客户端再根据内嵌能力声明的 `runtime` 字段和本地版本计算本机视图与降级状态。
+Resolver 生成的是客户端无关 descriptor，不因当前在桌面或手机运行而改变绑定。客户端再根据本机安装清单与降级规则计算本机视图与降级状态（内嵌能力派生的条目由宿主统一给出双端可用性，见 7.8）。
 
 ### 8.6 失败与降级
 
@@ -659,13 +692,14 @@ Resolver 生成的是客户端无关 descriptor，不因当前在桌面或手机
 Core Policy
   + Agent Stage Policy
   + Role Pack Fragment（来自岗位包 prompts/ 片段文件）
-  + 行业差异片段（来自岗位包 industryVariants）
   + Interview Format Protocol
   + Rubric
   + Candidate Evidence
   + Job / Company Context
   + User Request
 ```
+
+行业差异变体（`RoleProfile.industryVariantId`）只作为 provenance 记进生成记录，当前不单独占一层 Prompt：包要用它影响出题与评分，就在自己的片段与量规里表达。
 
 插入点 B 的粒度是**阶段**（诊断、讲解、出题、评分、辅导、复盘），不是某次模型调用的完整 Prompt。Core 流水线在一个阶段内的多次子调用（如诊断阶段的 JD 解析、简历解析、交叉分析）是宿主内部实现；岗位包片段被注入该阶段的全部调用，作为角色侧重点，而不是替换流程编排。因此岗位包作者只需要理解 6 个 slot，不需要知道每个阶段内部有多少个宿主 promptId。
 
@@ -1028,15 +1062,13 @@ priority =
 插件不能任意创建一级导航。主导航由基础 Agent 拥有并保持稳定信息架构：
 
 - 总览；
-- 简历与证据；
-- 备考 Campaign；
-- 模拟面试；
+- 简历；
+- 备考；
 - **能力页签槽位**；
-- 话术与故事；
-- 资料；
+- 话术；
 - 设置。
 
-在“模拟面试”和“话术”之间保留一个能力页签槽位：岗位包 `navigation[]` 声明的入口渲染在这里，未声明或未激活时不渲染。工程岗位的“源码”页签是这个槽位的第一个住客。
+能力页签槽位插在「备考」和「话术」之间：岗位包声明式入口（`navigation[]`）与代码插件注册的页面都渲染在这里，未声明或未激活时不渲染。工程岗位的“源码”页签是这个槽位的第一个住客，它由该包自己的代码入口注册（`ctx.views.registerPage`，见 7.9）。
 
 ### 12.2 NavigationEntry 协议
 
@@ -1137,7 +1169,8 @@ type PluginPermission =
   | 'network:fetch'
   | 'llm:complete'
   | 'filesystem:workspace'
-  | 'microphone:read';
+  | 'microphone:read'
+  | 'library:write';
 ```
 
 默认拒绝所有权限。权限逐条挂在内嵌能力声明上，`manifest.permissions` 只是用于安装期静态校验与隔离扫描的并集；岗位包领域模型（插入点 F）永远不拥有权限。
@@ -1162,9 +1195,9 @@ interface PluginServices {
 
 ### 13.3 外部插件策略（分级开放）
 
-1. 首期仅支持仓库内置岗位包（能力内嵌）；
-2. 第二阶段允许导入声明式岗位包（连同其内嵌能力声明）；
-3. 第三阶段起开放**代码插件**（7.9）：带签名与来源可信校验、启用时展示权限清单、可随时停用撤销；
+1. 岗位包由用户安装到 `userData/plugins`（随 release 以签名包分发），基础包不带任何插件；能力随岗位包内嵌，不单独安装；
+2. 签名与来源可信分级适用于所有包，装载时验签；
+3. 代码插件（7.9）同样走这套准入：安装时展示权限清单，装上即激活，卸载即撤贡献，没有单独的「停用」状态；
 4. 渲染层沙箱里的 UI 代码与入口代码适用同一套准入，但威胁模型不同（见 13.4）。
 
 ### 13.4 代码插件的隔离边界
@@ -1172,7 +1205,7 @@ interface PluginServices {
 插件入口代码在渲染进程内直跑（Obsidian 式），没有硬沙箱——主进程从不执行包代码，只把入口源码
 当字符串交给渲染层。边界由四层共同守卫，每层都可独立失效而不放大另一层：
 
-1. **准入**：Ed25519 签名 + 来源可信分级 + 启用时向用户展示权限清单（manifest.permissions），启用/停用即时生效并写入审计；
+1. **准入**：Ed25519 签名 + 来源可信分级；安装时向用户展示权限清单（manifest.permissions），装上即激活、卸载即撤贡献，事件写入审计；
 2. **静态隔离扫描**：安装期扫描入口与依赖，禁止 `node:fs` / `child_process` / 环境变量 / 直连 better-sqlite3 / 渲染层 IPC 等导入——网关拦得住请求，拦不住自己 import 驱动的插件，所以这一层直接不放过这类插件。**要碰文件与用户文件，只能走原语**（`ctx.workspace` / `ctx.artifact`），原语在宿主侧做路径、范围与容量校验；
 3. **API 面收敛**：插件能做的一切都经 `openjob.*` 门面——LLM 走统一网关（Prompt 组合 + 证据校验 + 审计）、证据只读已确认项、存储物理隔离、文件与用户文件经原语并由宿主校验；API 按声明权限逐项开放，未声明的命名空间直接不可见；
 4. **Webview 沙箱**：插件页面跑在 Webview/WebView 里，与宿主的通信只有受控桥；页面拿不到主库、密钥和其他插件的数据。
@@ -1214,7 +1247,7 @@ interface CampaignPluginBinding {
 
 第一阶段采用增量迁移，不直接重命名或删除旧表：
 
-1. 内置 `software-engineering` 岗位包；
+1. 随 release 分发的 `software-engineering` 岗位包（用户安装，基础包不带）；
 2. 为所有旧 Campaign 绑定该岗位包；
 3. 将旧 `ExamForm` 映射为岗位包题型；
 4. 保留 `KnowledgeNode`、`DesignCase` 和 `readCode`；
@@ -1266,8 +1299,8 @@ Backfill 必须可重复执行并记录 checkpoint。低于最小兼容版本的
 
 插入点贡献：
 
-- 导航入口（A）：`source-repository` 能力页签（源码）；
-- 简历模块（D）：`tech-stack`、`drillable-tech-topics`；
+- 导航入口（A）：本包不声明（`navigation: []`）；「源码」页签由本包的代码入口用 `ctx.views.registerPage` 注册；
+- 简历模块（D）：`se.tech-stack`、`se.drillable-tech-topics`；
 - 检索策略（C）：偏好官方文档与高质量工程社区，压低内容农场可信度；
 - 内嵌能力（E）：`source-repository`。
 
@@ -1284,9 +1317,9 @@ Backfill 必须可重复执行并记录 checkpoint。低于最小兼容版本的
 
 插入点贡献：
 
-- 简历模块（D）：`business-metrics`、`product-outcomes`；
+- 简历模块（D）：`pm.business-metrics`、`pm.product-outcomes`；
 - 检索策略（C）：偏好行业报告与产品社区；
-- 内嵌能力（E）：`analytics-case`；`portfolio-review` 为 backlog。
+- 内嵌能力（E）：`analytics-case`；`portfolio-review` 是尚未实现的可选依赖。
 
 ### 15.4 sales-customer-success
 
@@ -1301,7 +1334,7 @@ Backfill 必须可重复执行并记录 checkpoint。低于最小兼容版本的
 
 插入点贡献：
 
-- 简历模块（D）：`quota-performance`、`customer-segments`；
+- 简历模块（D）：`sales.quota-performance`、`sales.customer-segments`；
 - 内嵌能力（E）：`role-play`。
 
 首发选择这三个岗位包，是为了验证知识问答、案例分析和角色扮演三类不同交互，而不是因为它们可以代表全部职业。
@@ -1311,15 +1344,15 @@ Backfill 必须可重复执行并记录 checkpoint。低于最小兼容版本的
 以 `product-manager` 为例，作者必须完成：
 
 1. 创建 Manifest，声明稳定 ID、版本和 Core/schema 兼容范围；
-2. 添加 RoleMatcher，使用岗位标题和 JD 职责信号，不以公司名称判断；
+2. 添加 RoleMatcher，声明本包适配的岗位标题与 JD 职责信号（不以公司名称判断；当前用于契约校验与包内 golden 测试）；
 3. 定义稳定能力 ID，例如 `pm.problem-framing`、`pm.metrics`、`pm.prioritization`；
 4. 定义 `case`、`behavioral`、`presentation` 等 InterviewFormat；
 5. 为每个 format 绑定包含 1–5 分行为锚点的 Rubric；
 6. 在 `prompts/` 下按 slot（可按 format 细分）提供片段文件（插入点 B，见 9.2 与 15.6）；
 7. 按需声明导航入口、简历模块和检索策略（插入点 A / C / D），不使用就显式留空；
-8. 将 `analytics-case`、`portfolio-review` 等声明为内嵌能力（插入点 E），本包不需要的不声明；
+8. 把本包自带的能力声明为内嵌能力（插入点 E），本包不需要的不声明；额外需要的独立能力插件只能声明为依赖（可选依赖缺席时降级为 disabled）；
 9. 添加 JD、简历、期望能力图谱和禁止技术污染的 Golden fixture；
-10. 注册到 shared registry；
+10. 把包加进 `scripts/distributed-role-packs.ts`（打包与测试的唯一清单，应用自己不引用它）；
 11. 通过 Contract、Golden 和跨端解析测试后才允许出现在 Campaign 选择器中。
 
 新增此岗位包不应修改 Planner、Practice Engine、数据库访问层或 Core Prompt Policy。
@@ -1339,11 +1372,14 @@ plugins/<pack>/
   rubrics/                # 一份量规一个文件 + anchors 辅助
   tasks.ts
   search-policy.ts        # 插入点 C
-  navigation.ts           # 插入点 A
   resume-modules.ts       # 插入点 D
   capabilities.ts         # 插入点 E
+  desktop/                # 代码入口的桌面实现（main.ts + ui/），manifest.main 指向编译产物
+  mobile/                 # 代码入口的移动实现（main.ts + ui/），manifest.mobile 指向编译产物
   prompts/                # 插入点 B：frontmatter + markdown 正文（9.2）
 ```
+
+`navigation.ts` 不是必需文件：没有声明式导航入口的包（三个官方包都是）就不建它，`examForms` 也可以直接写在 `index.ts` 里。
 
 数据声明用 TypeScript 模块而不是 JSON：能力、题型 ID 需要与 core 枚举保持编译期同一来源（如工程包的 formatId 推导），字面量复制进 JSON 会悄悄断开这条耦合。
 
@@ -1354,7 +1390,7 @@ plugins/<pack>/
 - 打包：目录声明 → `.ojb` 单文件信封（gzip 压缩，内容清单 + 整体 hash），fixtures 与测试不入信封；`pnpm verify:plugins` 校验签名；验签发生在桌面安装时（12.5）；
 - contract / golden 测试与包同目录，随 CI 执行。
 
-包内 prompts/ 现状：三个官方包的片段正文都在各自包的 `prompts/` 目录里（frontmatter 声明 slot 与 formatId，正文为 markdown），`defineRolePack` 加载时把正文内联进 `promptFragments`，随信封自包含；宿主 Prompt Registry 只保留 Core 自有的流水线 prompt（9.2）。
+包内 prompts/ 现状：`product-manager` 与 `sales-customer-success` 的片段正文都在各自包的 `prompts/` 目录里（frontmatter 声明 slot 与 formatId，正文为 markdown），`defineRolePack` 加载时把正文内联进 `promptFragments`，随信封自包含；`software-engineering` 仍声明宿主 Prompt Registry 的 `ref`（迁移期通道，见 9.2）。宿主 Prompt Registry 只保留 Core 自有的流水线 prompt。
 
 ---
 
@@ -1368,7 +1404,7 @@ plugins/<pack>/
 
 - 桌面端和手机端分别维护岗位名称；
 - 两端分别写 Prompt；
-- 为某一端复制或改写岗位包的任何内容（声明、片段、Rubric、降级文案）；
+- 为某一端复制或改写岗位包的声明内容（声明、片段、Rubric、降级文案）——代码入口允许两端各自实现（§7.9）；
 - 手机端自行推断插件能力；
 - 通过 UI 文案判断插件类型。
 
@@ -1488,7 +1524,7 @@ SDK 与环境变量的入口——网关只能拦经过它的请求，拦不住�
 - 移动端 WebView 运行时（同构桥）+ 端上验签；
 - 第一个官方代码插件（如作品集看板）作为验收样本。
 
-验收：第三方签名插件可在桌面与移动端激活，页面进能力页签槽位，越权 API 不可见，停用即撤贡献。
+验收：第三方签名插件可在桌面与移动端激活，页面进能力页签槽位，越权 API 不可见，卸载即撤贡献。
 
 ### Phase 5：生态化
 
@@ -1585,9 +1621,9 @@ SDK 与环境变量的入口——网关只能拦经过它的请求，拦不住�
 
 缓解：
 
-- 首期只做仓库内置插件；
-- 岗位包先用静态 TypeScript/JSON；
-- 等至少三个岗位包稳定后再开放外部扩展。
+- 岗位包由用户安装、装载时验签，基础包不带任何插件；
+- 岗位包用静态 TypeScript/JSON 声明；
+- 代码插件与岗位包共用同一套准入，等岗位包稳定后再扩大生态。
 
 ### 20.3 数据模型迁移破坏双端
 
@@ -1643,7 +1679,7 @@ SDK 与环境变量的入口——网关只能拦经过它的请求，拦不住�
 
 - OpenJob 保留 Campaign 驱动、计划驱动和掌握度反馈的核心产品形态；
 - 通用化采用“基础 Agent + 岗位包”两层模型，能力扩展内嵌于岗位包（声明与实现都归包），行业差异是岗位包内字段；
-- 岗位包定位在岗位族层级，介于具体 JD 与行业之间：JD 通过 RoleMatcher 归族、特殊性由权重调整表达，行业差异由包内字段表达；
+- 岗位包定位在岗位族层级，介于具体 JD 与行业之间：由用户在战役面板选定岗位包，JD 的特殊性由权重调整表达，行业差异由包内可选字段 `industryVariants` 表达（不是独立插件）；
 - 岗位包的数据是纯声明式，通过六个插入点扩展系统：导航入口、角色 Prompts、检索策略、简历模块、内嵌能力、领域模型；行为与 UI 走代码通道，只能经 `openjob.*` 的通用原语触碰宿主资源；
 - Prompt 内容归岗位包所有，以 prompts/ 片段文件承载；Core Prompt Registry 只保留宿主流水线内部 prompt；插入点 B 的粒度是阶段而非单次调用；
 - 岗位包分编写形态（目录）与分发形态（`.ojb` 单文件压缩信封）；手机端不安装、不验签，只消费桌面验证过的包数据，并重算 `configSnapshotHash` 校验完整性；

@@ -82,7 +82,7 @@ JD 与简历交叉之后，每个知识点被打上覆盖类型标记，它们�
 
 | 类型 | 判定条件 | 准备目标 | 优先级 |
 |---|---|---|---|
-| `deep_dive` 必深挖 | 简历写了 + JD 要求 | 扛得住三轮追问，能讲原理和取舍 | 最高 |
+| `deepDive` 必深挖 | 简历写了 + JD 要求 | 扛得住三轮追问，能讲原理和取舍 | 最高 |
 | `gap` 短板 | JD 要求 + 简历没有 | 答出框架不露怯，可坦承不熟但展示学习路径 | 中高 |
 | `landmine` 雷区 | 简历写了 + JD 没要求 | 能自圆其说，不被顺嘴一问问崩 | 中 |
 | `extra` 加分项 | 都没有但相关 | 有余力再看 | 低 |
@@ -131,9 +131,9 @@ JD 与简历交叉之后，每个知识点被打上覆盖类型标记，它们�
 
 - `learn` 新学 2–3 个知识点
 - `drill` 口述练习（对昨天学的做「考我」）
-- `read_code` 源码阅读任务
+- 岗位包自己声明的任务类型（如软件工程包的 `se.read-code` 源码阅读）
 - `review` 复习
-- `fallback_script` 生成兜底话术
+- `fallbackScript` 生成兜底话术
 
 每天有明确的「完成」动作，形成节奏感。
 
@@ -213,7 +213,7 @@ MVP 用**带层级和进度条的清单**即可满足九成需求，React Flow �
 
 然后在 `prerequisite` 拓扑序约束下排进日程。
 
-**考点清单的展示顺序和排程共用同一个口径**：`shared/campaign/studyOrder.ts` 的 `sortNodesByStudyOrder()`（难度升序 → 同难度优先级降序 → id → prerequisite 拓扑重排），两端都走它。手机端曾经只是 `ORDER BY priority_score DESC`，同一个战役在两端看到的清单顺序对不上。
+**考点清单的展示顺序和排程共用同一个口径**：`core/src/campaign/studyOrder.ts` 的 `sortNodesByStudyOrder()`（难度升序 → 同难度优先级降序 → id → prerequisite 拓扑重排），两端都走它。手机端曾经只是 `ORDER BY priority_score DESC`，同一个战役在两端看到的清单顺序对不上。
 
 排序末尾那一档 `id` 不是可选的装饰：难度与优先级并列很常见（同一批生成的兄弟考点往往覆盖类型、考察概率、时长都一样，算出来的分数完全相同），少了它，结果就退化成「数据库返回的行序」——而那个行序两端各按自己的插入/落库顺序来，本来就不同，`VACUUM` 一次（留快照、回退都会）还会再变一次。用 id 收尾才让「顺序」成为数据的属性而不是存储的副产品。
 
@@ -418,7 +418,7 @@ UI 上用角标明确区分三种信息来源，可信度递增：
 
 | 来源 | `source_type` | 可信度权重 |
 |---|---|---|
-| 自己面试后复盘 | `self_debrief` | 最高 |
+| 自己面试后复盘 | `selfDebrief` | 最高 |
 | 手动粘贴（从牛客/公众号复制） | `pasted` | 中 |
 | 网络搜索抓取 | `web` | 最低 |
 
@@ -517,8 +517,10 @@ todo 未学 → learning 已看 → shaky 半懂存疑 → mastered 已掌握
 <userData>/
 ├── config.json          # LLM / 搜索 provider 配置、界面主题
 ├── openjob.db           # SQLite
-├── repos/               # clone 下来的开源项目
-└── cache/               # 搜索缓存、repo map、项目摘要
+├── backups/             # 同步前的数据库快照（保留策略见 5.7）
+├── plugins/             # 用户安装的插件包（<id>@<version>/）
+├── plugin-workspace/    # 插件自己的工作区（仓库检出等都落在这里）
+└── cache/               # 搜索缓存等项目无关的临时产物
 ```
 
 API Key 存储用 Electron `safeStorage`（走系统密钥链）加密后落盘，不明文存 `config.json`。
@@ -576,12 +578,14 @@ type BaseLlmRole = 'outline' | 'explain' | 'quiz' | 'resumeOptimize';
 type LlmRole = BaseLlmRole | (string & {});
 
 interface LlmConfig {
-  providers: Record<string, {
+  providers: Array<{
+    id: string;             // 档位与角色映射引用的键
+    label: string;
     baseUrl: string;        // OpenAI 兼容端点
     apiKeyRef: string;      // 指向 safeStorage 中的密钥条目，不明文存储
   }>;
   tiers: Record<LlmTier, {
-    provider: string;
+    providerId: string;
     model: string;
     temperature?: number;
   }>;
@@ -593,7 +597,7 @@ interface LlmConfig {
   // embedding 不参与档位选择：模型一换向量空间就变，已有图谱/真题向量全部失效。
   // 它是固定资产，作为 provider 级固定配置存在，设置页只允许查看不允许随意切换。
   embedding: {
-    provider: string;
+    providerId: string;
     model: string;
   };
 }
@@ -618,24 +622,27 @@ interface LlmConfig {
 ```ts
 interface SearchConfig {
   providers: {
-    bocha:  { endpoint: string; apiKeyRef: string };   // https://api.bochaai.com/v1/web-search
-    tavily: { apiKeyRef: string };
+    bocha:  { endpoint: string; apiKeyRef: string; enabled: boolean };
+    tavily: { apiKeyRef: string; enabled: boolean; country: string };  // country 留空 = 不限
   };
 
-  // 自动路由，按顺序匹配，命中即用
+  // 自动路由，按顺序匹配，命中即用；都没命中时落到 defaultProvider
   routing: Array<{
     match: { lang?: 'zh' | 'en'; domainHint?: string[] };
     provider: 'bocha' | 'tavily';
   }>;
+  defaultProvider: 'bocha' | 'tavily';
 
   // 域名可信度分级，0 = 黑名单直接过滤
-  domainCredibility: Record<string, 0 | 1 | 2 | 3 | 4 | 5>;
+  domainCredibility: Record<string, number>;
 
   cacheTtlDays: {
     companyIntel: number;      // 建议 7
     interviewReports: number;  // 建议 3
     techDocs: number;          // 建议 30
   };
+  /** 技术文档超过这个天数标记为过时，默认 540；0 = 关闭 */
+  techDocStaleDays: number;
 }
 ```
 
@@ -669,102 +676,52 @@ interface SearchConfig {
 
 ### 5.6 目录结构（建议）
 
-**单包 + electron-vite**，用 path alias 做类型共享。
-
-> 初版设计写的是 pnpm workspace 三包（`main` / `renderer` / `shared`）。改为单包的理由：electron-vite 是 Electron + Vite 的标准工具，默认就把 main、preload、renderer 三个构建目标统一编排；拆成 workspace 后这套编排要自己接，还要处理 shared 包的构建与 watch，对单人项目是纯粹的复杂度。类型共享靠 `@core/*` alias 一样能拿到，「渲染进程不碰 Node API」靠 preload 白名单 + eslint 规则强制，比包边界更可靠。
+**pnpm workspace 多包**：`core/` 放两端共享的类型与纯逻辑，`desktop/` 是 Electron 桌面端，`mobile/` 是 Expo 手机端，`plugins/` 放随 release 单独分发的岗位包。桌面端内部仍用 electron-vite 编排 main / preload / renderer 三个构建目标。
 
 ```
-openJob/
-├── README.md                       # 项目介绍、构建与同步说明
-├── LICENSE                         # Apache License 2.0
-├── docs/
-│   └── DESIGN.md
-├── package.json
-├── electron.vite.config.ts         # main / preload / renderer 三目标构建
-├── electron-builder.yml            # 打包与 installer 配置
-├── drizzle.config.ts
-├── resources/
-│   └── tree-sitter/                # 各语言 .wasm 语法文件
-└── src/
-    ├── shared/                     # 双端共享类型（单一语言的最大红利）
-    │   ├── enums.ts                # coverageType / taskKind / tier ...
-    │   ├── entities.ts             # KnowledgeNode / Task / Campaign ...
-    │   ├── config.ts               # AppConfig / provider 配置 / 默认值
-    │   ├── ipc.ts                  # IPC 通道映射与请求响应类型
-    │   └── index.ts                # barrel
-    │
-    ├── preload/
-    │   └── index.ts                # 白名单桥接，仅暴露类型化 invoke / on
-    │
-    ├── main/                       # Electron 主进程 = 全部后端逻辑
-    │   ├── index.ts                # app 生命周期、窗口、单实例锁
-    │   ├── theme.ts                # 窗口底色，与渲染层 --color-bg 保持一致
-    │   ├── ipc/                    # IPC handler 注册（替代 HTTP 路由）
-    │   ├── config/                 # config.json 读写、safeStorage 密钥
-    │   ├── db/
-    │   │   ├── schema.ts           # Drizzle 表定义
-    │   │   └── migrations/
-    │   ├── sync/                   # 桌面 ↔ 手机增量同步（详见 5.7）
-    │   │   ├── server.ts           # 局域网 HTTP 同步服务（配对/心跳/交换）
-    │   │   ├── pairing.ts          # 配对会话与二维码负载
-    │   │   ├── identity.ts         # 设备身份（首次启动生成）
-    │   │   ├── triggers.ts         # 变更捕获触发器（本机写才记账）
-    │   │   ├── collect.ts          # oplog → 变更集快照
-    │   │   ├── apply.ts            # 变更集落库（以对端身份写，不产生回声）
-    │   │   └── orchestrator.ts     # 同步编排与水位线推进
-    │   ├── llm/                    # provider 抽象、角色路由、流式
-    │   ├── search/                 # bocha / tavily / 路由 / 缓存 / 可信度
-    │   ├── tools/                  # Agent 共享工具箱
-    │   ├── agents/
-    │   │   ├── diagnose.ts         # JD×简历分析、图谱生成
-    │   │   ├── planner.ts          # 优先级排序、日程编排
-    │   │   ├── tutor.ts            # 讲解生成（三档）
-    │   │   ├── quizzer.ts          # 出题评分
-    │   │   └── codeAgent.ts        # 源码检索
-    │   ├── ingest/
-    │   │   ├── jd.ts
-    │   │   ├── resume.ts
-    │   │   ├── interviewReport.ts  # 三入口统一管道
-    │   │   └── repo.ts             # clone / repoMap / summary
-    │   └── jobs/                   # 长任务队列与进度上报
-    │
-    └── renderer/                   # React UI，不直接碰 fs / network
-        └── src/
-            ├── pages/
-            │   ├── Today.tsx       # 主入口
-            │   ├── Campaign.tsx
-            │   ├── KnowledgeList.tsx
-            │   ├── Repo.tsx
-            │   ├── Debrief.tsx
-            │   ├── Scripts.tsx     # 话术库
-            │   └── Settings.tsx    # provider / API Key 配置
-            ├── components/
-            │   ├── StreamChat.tsx  # 复用：追问 / 源码问答
-            │   ├── SourceBadge.tsx # 来源可信度角标
-            │   └── ToolTrace.tsx   # 推理过程面板
-            ├── lib/
-            │   └── uiTheme.ts      # 当前主题，供少数不由 CSS 决定的配色取用
-            └── ipc/                # 类型安全的 IPC 客户端封装
+openjob/
+├── README.md
+├── LICENSE
+├── pnpm-workspace.yaml             # core / desktop / plugins/*
+├── vitest.config.ts                # 一次跑遍 core / desktop / plugins
+├── core/src/                       # 两端共享：类型、实体、IPC 契约、插件模型、纯逻辑
+│   ├── enums.ts  entities.ts  ipc.ts  config.ts
+│   ├── plugins/                    # 插件协议、resolver、权限契约、包格式
+│   └── hostUi/                     # 界面用的纯逻辑（岗位面板草稿、导航、练习状态…）
+├── desktop/src/
+│   ├── main/                       # Electron 主进程 = 全部后端逻辑
+│   │   ├── index.ts                # app 生命周期、窗口、单实例锁
+│   │   ├── ipc/                    # IPC handler 注册（替代 HTTP 路由）
+│   │   ├── config/                 # config.json 读写、safeStorage 密钥
+│   │   ├── db/                     # Drizzle schema 与 migrations
+│   │   ├── sync/                   # 桌面 ↔ 手机增量同步
+│   │   ├── plugins/                # 安装、扫描、注册表、resolver 接线、权限网关
+│   │   ├── llm/  search/  plan/  practice/  story/  evidence/
+│   ├── preload/                    # 白名单桥接，仅暴露类型化 invoke / on
+│   └── renderer/src/               # React UI，不直接碰 fs / network
+│       ├── pages/                  # 总览 / 简历 / 备考 / 话术 / 设置
+│       ├── components/
+│       ├── pluginRuntimes/         # 插件代码入口的沙箱宿主与桥
+│       └── ipc/                    # 类型安全的 IPC 客户端封装
+├── mobile/src/                     # Expo + React Native + expo-sqlite
+├── plugins/                        # 岗位包（随 release 单独分发，不进基础包）
+└── scripts/                        # 打包、迁移与校验脚本
 ```
 
-手机端（`mobile/`，Expo + React Native + expo-sqlite）与桌面端共享 `core/src/` 类型，作为局域网同步的另一个对端。配对并全量同步后，手机可**离线独立运行** LLM 链路（诊断、讲解、考我、模拟面试、读源码与仓库 Agent），不依赖桌面 RPC 代理；克隆与 tree-sitter 索引仍在桌面端完成，索引后的 `repo_file` 快照同步到手机。
+手机端（`mobile/`）作为局域网同步的另一个对端，与桌面端共享 `core/src/` 类型。配对并全量同步后，手机可**离线独立运行** LLM 链路（诊断、讲解、考我、模拟面试；装了带 `mobile` 入口的岗位包还会激活该端的页面代码），不依赖桌面 RPC 代理；克隆、tree-sitter 索引这类只在桌面存在的原语由桌面完成，手机侧按「读得到、不假装能执行」降级。
 
 ```
-mobile/
-└── src/
+mobile/src/
     ├── db/
     │   ├── migrations/            # 与桌面同构迁移（bundle 脚本打包）
     │   ├── migrate.ts             # 迁移执行器（逐条事务 + 日志/schema 自省）
     │   └── index.ts               # 打开数据库、迁移、装触发器、同步编排
     ├── data/                      # 本地 CRUD 与 LLM 业务逻辑
     ├── llm/                       # 手机端直连 LLM（chat / json / agent）
-    ├── sync/
-    │   ├── client.ts              # 配对/心跳/变更集交换的 HTTP 客户端（带签名）
-    │   ├── repoFileStorage.ts     # repo_file 同步前存储空间检查
-    │   ├── triggers.ts            # 变更捕获触发器，语义与桌面端完全一致
-    │   └── apply.ts               # 变更集落库
+    ├── sync/                      # 配对 / 心跳 / 变更集交换与落库
     ├── components/                # 通用 UI 组件
-    ├── screens/                   # 页面（Sync / Campaigns / Repos / …）
+    ├── screens/                   # 页面（Sync / Campaigns / Resumes / Scripts / Overview / PluginRuntimes / More）
+    ├── plugins/                   # 插件代码入口的移动端宿主
     └── theme.ts                   # 双主题调色板 + 订阅式 store（useTheme）
 ```
 
@@ -807,14 +764,13 @@ mobile/
 
 失败的那一轮绝不推进任何水位线——手机端只在整轮落库成功后才写 `sync_peer`。
 
-**合并（后写覆盖，不问用户）**：两端都用自己的身份构造变更集快照（行快照 + tombstone），跑同一份 `shared/syncMerge` 做列级合并：
+**合并（后写覆盖，不问用户）**：两端都用自己的身份构造变更集快照（行快照 + tombstone），跑同一份 `core/src/syncMerge.ts` 做列级合并：
 
 - 同一行不同列改动 → 自动按列合并，两边的改动都留下
 - 同一列改成不同值 / 删除与修改冲突 → **时间新的那份赢**，输的那份写进 `sync_overwrite` 留痕，不挂起、不弹窗
 - 时间完全相同 → 比设备 ID 的字典序定胜负。这个兜底不是为了「公平」，而是**收敛的前提**：两端角色相反地各跑一遍合并，只有裁决规则不依赖「谁是本地」，才可能得出同一个结果
 - 时间戳先按配对握手测出的时钟偏移归一到本地时钟再比，两台机器系统时间差几秒不会误判
-- 手机专属列（如 `repo.local_path`）在合并时被剔除，不接受对端值
-- `repo_file`（源码快照）同步优先级最低；手机端在落库前检查可用存储，不足则跳过并在同步页提示
+- 设备专属列（如 `knowledge_node.quiz_answer_draft_md`，作答草稿只属于正在作答的那台机器）在合并时被剔除，不接受对端值
 
 `syncMerge.test.ts` 里有一组收敛测试：模拟同一对变更集在两个方向上各合并一次，断言两端落到完全一致的状态。
 
@@ -848,11 +804,11 @@ mobile/
 1. **`meta/_journal.json` 的 `when` 必须严格递增。** Drizzle 不按序号补齐迁移，它取日志里 `created_at` 的最大值当水位，只跑 `when` 更大的那些。所以一条 `when` 比前面小的迁移，会在所有「已经升过头」的库上被**永久跳过**——不报错、不重试，那张表就是永远建不出来，而全新安装一切正常，本地根本复现不了。`0013_prompt_run` 真的这么丢过一次（手填的时间戳里混进一个 drizzle-kit 真实生成的，恰好偏小）。已经发出去的库只能靠一条 `CREATE TABLE IF NOT EXISTS` 的补建迁移捞回来，改原来那条的 `when` 对它们没用。`desktop/src/main/db/migrations.test.ts` 守这条。
 2. **一条迁移一个事务。** 桌面端由 Drizzle 保证（整批 `BEGIN`/`COMMIT`），手机端要显式 `withTransactionSync()`——SQLite 的 DDL 本来就是事务性的，不包只是漏了。这对「建新表-搬数据-删旧表-改名」那种重建尤其要命：不包事务时在删表和改名之间断掉，留下的是一个没有目标表、数据全在 `__new_*` 里的库，而手机端的容错重放会先把建表当成「已存在」跳过、再撞上 `no such table`，这个错不在白名单里，于是每次启动都挂在同一行，应用彻底打不开。
 
-**保留策略三条规则叠加，都不是「全局留最近 N 份」**。判定逻辑 `selectStaleBackups()` 放在 `shared/sync.ts` 两端共用（删文件各自用自己的 API），另有 50MB 空间下限。
+**保留策略三条规则叠加，都不是「全局留最近 N 份」**。判定逻辑 `selectStaleBackups()` 放在 `core/src/backupRetention.ts` 两端共用（删文件各自用自己的 API），另有 50MB 空间下限。
 
 1. **按 reason 分组**。同步前快照产生得最勤，全局排序会让它在几次同步内就把「升级前」那一份挤掉，而「升级不该丢数据」全靠那一份兜底。
 2. **同步前快照分两层：最近 N 份 + 按天各一份**。只按份数留的话，可恢复的时间跨度由同步频率决定：一天同步几十次，"最近 10 份"全落在最近十几分钟里，昨天以前一份不剩。而数据不对通常是隔天才被发现的，那时候能退回去比精确到分钟重要得多。配额桌面端 `最近 6 份 + 14 天 / 其他各 3`，手机端 `最近 3 份 + 5 天 / 其他各 2`。
-3. **总字节数封顶**，超了从旧到新淘汰（桌面端 4GB，手机端 1GB）。份数上限管不住磁盘：一份快照等于一整个库，而库里带着 `repo_file` 源码快照，单份能到几百 MB，乘上二十几份就是几个 GB。上限是尽力而为的——**每一类最新的那一份不参与淘汰**，因为它们各自是一条退路的终点，库本身大到几份就超标时，保底的退路优先于上限。
+3. **总字节数封顶**，超了从旧到新淘汰（桌面端 4GB，手机端 1GB）。份数上限管不住磁盘：一份快照等于一整个库，带插件数据的库单份就能到几百 MB，乘上二十几份就是几个 GB。上限是尽力而为的——**每一类最新的那一份不参与淘汰**，因为它们各自是一条退路的终点，库本身大到几份就超标时，保底的退路优先于上限。
 
 **清理挂在两处**：新建快照之后，以及每次 `getDb()` / `openDb()`。只挂前者不够——按天保留和总量上限都是随时间过期的，而同步节流之后可能好几天不新建快照，过期文件会一直躺着。
 
@@ -876,7 +832,7 @@ mobile/
 
 ### 6.1 全部数据表与同步范围
 
-一共 32 张表。「同步」一列以 `desktop/src/main/sync/tables.ts` 里的 `SYNCED_TABLES` 为准——那是代码里的唯一事实来源，触发器和变更集的列名都从 Drizzle schema 反射得到，不在别处重复写一遍（重复写就一定会有一天忘了改，那个字段会静默地永远同步不过去）。
+一共 45 张表。「同步」一列以 `desktop/src/main/sync/tables.ts` 里的 `SYNCED_TABLES` 为准——那是代码里的唯一事实来源，触发器和变更集的列名都从 Drizzle schema 反射得到，不在别处重复写一遍（重复写就一定会有一天忘了改，那个字段会静默地永远同步不过去）。
 
 **Campaign 与输入**
 
@@ -921,11 +877,7 @@ mobile/
 
 **源码**
 
-| 表 | 存什么 | 同步 |
-| --- | --- | --- |
-| `repo` | 仓库元数据：状态、索引时间、repo map、摘要 | 是，`local_path` 除外 |
-| `code_ref` | 代码引用位置与片段 | 是 |
-| `repo_file` | 索引时快照的文本文件，供手机端读源码 | 是 |
+`repo` / `code_ref` / `repo_file` 这三张旧本地索引表已从数据面退役，不再参与同步。源码页的数据改为走软件工程包自己声明的数据集合（`repositories` / `qa-history` / `repository-indexes` 等），落在通用承载表 `plugin_data` 上随同步走；仓库检出（`local_path` 那一类）始终只在本机。
 
 **标记与话术**
 
@@ -965,7 +917,7 @@ mobile/
 - `sync_*` 是同步机制自身的状态，同步它们会递归；何况水位线表达的就是「我和对端各自推进到哪儿」，两端的值本来就必须不同。
 - `search_cache` 是纯缓存，两端各自重建即可，传过去只是浪费带宽。
 - `prompt_run` 是实验数据，只在产生它的那台设备上有意义，同步过去只会让对端多一份用不上的记录。
-- `repo.local_path` 是唯一的**列级**例外：克隆产物在哪个目录是本机的事，传过去会让手机拿到一个不存在的路径。同一张表的 `status`、`indexed_at`、`summary_md` 等元数据仍然要同步，手机端才知道这个仓库索引好了。
+- `knowledge_node.quiz_answer_draft_md` 是唯一的**列级**例外：作答草稿只属于正在作答的那台机器，传过去会让对端看到一份半截的、还被人改着的草稿。同一张表的其它列照常同步。
 
 **「同步」具体意味着什么**：整行参与后写覆盖合并（细节见 5.7），删除也会传播。而快照文件不在数据库里，两端各自保存、各自回退，不参与同步。
 
@@ -992,7 +944,7 @@ resume(
 knowledge_node(
   id, campaign_id, parent_id,
   name, kind,                         -- domain | topic | point
-  coverage_type,                      -- deep_dive | gap | landmine | extra
+  coverage_type,                      -- deepDive | gap | landmine | extra
   exam_prob,                          -- 0-1，考察概率
   difficulty,                         -- 1-5
   est_minutes,                        -- 预估学习时长
@@ -1036,7 +988,7 @@ search_cache(
 
 company_intel(
   id, campaign_id,
-  tech_stack_md, interview_process_md,
+  knowledge_tool_map_md, interview_process_md,
   hot_topics_md, talking_points_md,
   sources_json, updated_at
 )
@@ -1047,7 +999,7 @@ company_intel(
 ```sql
 interview_report(                     -- 一段原始面经（三来源统一）
   id, campaign_id, company, role_title,
-  source_type,                        -- web | pasted | self_debrief
+  source_type,                        -- web | pasted | selfDebrief
   source_id,                          -- -> source，网络来源时非空
   raw_text, reported_at,
   credibility_weight, created_at
@@ -1070,8 +1022,9 @@ plan_day(
 )
 
 task(
-  id, plan_day_id, node_id, repo_id,
-  kind,                               -- learn | drill | read_code | review | fallback_script
+  id, plan_day_id, node_id,
+  material_kind, material_id,         -- 任务挂的材料（岗位包声明，宿主当不透明标签）
+  kind,                               -- learn | drill | review | fallbackScript，或包声明的 taskKind
   est_minutes, actual_minutes,
   status, order_idx
 )
@@ -1104,15 +1057,15 @@ code_ref(
 ```sql
 annotation(                           -- 统一标记表
   id,
-  target_type,                        -- node | explanation | code_ref | question | intel
+  target_type,                        -- node | explanation | question | intel，或包自己起的类型
   target_id,
-  kind,                               -- highlight | note | bookmark
+  kind,                               -- highlight | note | elaboration | bookmark
   selected_text, note_md, created_at
 )
 
 speech_snippet(                       -- 话术库，所有链路终点
   id,
-  source_type,                        -- node | code_ref | quiz
+  source_type,                        -- node | quiz | story
   source_id, tier, content_md,
   is_user_edited, created_at
 )
@@ -1123,7 +1076,7 @@ speech_snippet(                       -- 话术库，所有链路终点
 ```sql
 session(
   id, campaign_id,
-  kind,                               -- quiz | repo_qa | free_chat | planning
+  kind,                               -- quiz | freeChat | nodeFollowUp | planning
   title, created_at
 )
 
@@ -1304,14 +1257,14 @@ plugin-react 5.x。TypeScript 7（原生 Go 移植版）与 typescript-eslint �
 - 代码 Agent：`list_dir` / `read_file` / `grep` / `web_search` / `fetch_url`
 - 强制 `file:line` 引用 + 前端代码面板跳转
 - 流程梳理 → mermaid 图 + 每步锚点
-- 作为 `read_code` 任务类型接入日程
+- 作为软件工程包声明的 `se.read-code` 任务类型接入日程（材料是包内的 `repositories` 集合）
 - 可讲素材沉淀进话术库
 
 **验收**：给一个仓库 URL，能问出准确的、带行号引用的答案和流程图。
 
 ### 阶段 4 — 闭环与沉淀
 
-- 面后复盘录入（复用摄入管道，`source_type=self_debrief`）
+- 面后复盘录入（复用摄入管道，`source_type=selfDebrief`）
 - 真题匹配 → 频率修正 → 盲区标记
 - 跨 Campaign 先验累积
 - 话术库汇总 + 导出（Markdown / Anki / PDF）

@@ -20,9 +20,9 @@
 
 ### 2.1 必须交付
 
-- 基础 Agent 与岗位包、能力插件的运行边界；
+- 基础 Agent 与岗位包、内嵌能力的运行边界；
 - `software-engineering`、`product-manager`、`sales-customer-success` 三个岗位包；
-- `source-repository`、`role-play`、`analytics-case` 三个能力插件；
+- 内嵌能力 `source-repository`、`role-play`、`analytics-case`（各随所属岗位包分发）；
 - CandidateEvidence、Competency、PracticeAttempt、Story 通用模型；
 - 桌面端和手机端共享运行描述、岗位选择与降级行为；
 - 手机端面后复盘；
@@ -34,8 +34,7 @@
 - `portfolio-review`；
 - `presentation-review`；
 - 外部可执行插件；
-- 插件市场、签名分发与第三方 UI；
-- 独立 Industry Pack 生态。
+- 插件市场、签名分发与第三方 UI。
 
 这些内容不阻塞 v1.0 发布。
 
@@ -125,7 +124,7 @@ core/src/plugins/
 T01 独占以下接口的命名与字段：
 
 ```ts
-type PluginType = 'role-pack' | 'industry-pack' | 'capability';
+type PluginType = 'role-pack' | 'capability' | 'plugin';
 type RuntimeAvailability = 'full' | 'view-only' | 'unsupported';
 type InterviewProtocol =
   | 'knowledge'
@@ -287,7 +286,7 @@ interface HostRenderedInteraction {
 
 **目标**
 
-建立内置插件注册表和确定性 Runtime Resolver。
+建立插件注册表（条目来自本机安装清单）和确定性 Runtime Resolver。
 
 **Owned files**
 
@@ -305,7 +304,8 @@ resolve(input: {
   coreVersion: string;
   schemaVersion: number;
   rolePackId: string;
-  industryPackId?: string;
+  /** 岗位包内声明的行业差异变体键（非插件引用） */
+  industryVariantId?: string;
   capabilityIds: string[];
   pinnedVersions?: Record<string, string>;
 }): ResolveRuntimeResult;
@@ -380,11 +380,11 @@ RoleProfile
 
 **目标**
 
-把当前工程岗位行为登记为内置岗位包，但不重写现有实现。
+把当前工程岗位行为登记为独立分发的岗位包，但不重写现有实现。
 
 **Owned files**
 
-- `core/src/plugins/builtin/softwareEngineering/`
+- `plugins/softwareEngineering/`
 
 **Depends on**：T01  
 **Blocks**：T09
@@ -412,14 +412,13 @@ export const softwareEngineeringRolePack: RolePack;
 
 **目标**
 
-将源码能力登记为插件，并使所有源码工具调用经过权限网关。
+将源码能力登记为岗位包内嵌的能力声明，并使所有源码工具调用经过权限网关。
 
 **Owned files**
 
-- `core/src/plugins/builtin/sourceRepository/`
+- `plugins/softwareEngineering/capabilities.ts`
 - `desktop/src/main/llm/toolPolicy.ts`
 - `desktop/src/main/llm/tools.ts`
-- `desktop/src/main/repo/tools.ts`
 - `desktop/src/main/plugins/permissionGateway.ts`
 
 **Depends on**：T01  
@@ -703,7 +702,7 @@ interface StoryService {
 
 **Owned files**
 
-- `core/src/plugins/builtin/productManager/`
+- `plugins/productManager/`
 
 **Depends on**：T11、T12  
 **Blocks**：T17、T20
@@ -729,7 +728,7 @@ interface StoryService {
 
 **目标**
 
-桌面端提供岗位确认、能力插件状态、证据和通用练习入口。
+桌面端提供岗位包选择、证据和通用练习入口。
 
 **Owned files**
 
@@ -743,8 +742,8 @@ interface StoryService {
 
 **验收**
 
-- 用户可确认岗位、级别和能力插件；
-- Repos 导航仅在 capability 可用时显示；
+- 用户选定岗位包、级别与行业变体（能力随岗位包自动启用，无需逐项勾选）；
+- 「源码」页签由岗位包自己的代码入口注册，能力未启用时不出现（宿主不认识任何岗位页面）；
 - Evidence proposal 可确认/拒绝；
 - UI 只消费 descriptor，不自行判断岗位字符串。
 
@@ -807,7 +806,7 @@ interface StoryService {
 
 **Owned files**
 
-- `core/src/plugins/builtin/salesCustomerSuccess/`
+- `plugins/salesCustomerSuccess/`
 
 **Depends on**：T17  
 **Blocks**：T20
@@ -829,14 +828,16 @@ interface StoryService {
 
 **目标**
 
-实现宿主渲染的可扩展交互协议及首个 role-play 能力插件。
+实现宿主渲染的可扩展交互协议及首个 role-play 能力。
+
+> 后续演进：宿主渲染交互（hostView / interactionRuntime / rolePlaySession）已随 role-play 搬进
+> 包自己的 Webview 页面一并下线；`HostRenderedInteraction` 的数据协议仍保留在
+> `core/src/plugins/interactions/`，由能力声明引用。
 
 **Owned files**
 
 - `core/src/plugins/interactions/`
-- `desktop/src/main/plugins/interactionRuntime.ts`
-- 桌面/手机 Host renderer
-- `core/src/plugins/builtin/rolePlay/`
+- `plugins/salesCustomerSuccess/`（能力声明 + 包内 `desktop/ui/role-play.html`）
 
 **Depends on**：T17  
 **Blocks**：T20
@@ -848,8 +849,8 @@ interface HostRenderedInteraction {
   type: string;
   schemaVersion: number;
   availability: Record<'desktop' | 'mobile', RuntimeAvailability>;
-  inputSchema: JsonSchema;
-  resultSchema: JsonSchema;
+  inputSchema: InteractionSchema;
+  resultSchema: InteractionResultSchema;
 }
 ```
 
@@ -868,7 +869,7 @@ interface HostRenderedInteraction {
 
 **Owned files**
 
-- `core/src/plugins/builtin/analyticsCase/`
+- `plugins/productManager/capabilities.ts`
 - 集成测试与发布文档
 - v1.0 migration/sync fixture
 
@@ -943,7 +944,7 @@ interface HostRenderedInteraction {
 ### v1.0 Done
 
 - T18—T20 全部完成；
-- 三个岗位包、三个能力插件通过验收；
+- 三个岗位包及其内嵌能力通过验收；
 - 迁移、回滚、权限和同步验证通过；
 - 无 P0/P1 已知缺陷；
 - Feature #2 的所有阻塞任务关闭。
@@ -974,7 +975,7 @@ interface HostRenderedInteraction {
 1. **权限网关硬编码只放行工程岗**。`DefaultDenyPermissionGateway` 里有一句
    `rolePackId !== 'software-engineering'` 就拒，意味着产品岗和销售岗装上的能力
    插件在真正取数据时必然失败。同一处还把权限契约手写成只有 `source-repository`
-   一项，新能力即使在 Manifest 里声明了权限也会被判成「未声明」。现在契约按内置
+   一项，新能力即使在 Manifest 里声明了权限也会被判成「未声明」。现在契约按本机已安装
    清单推导，且 `CampaignCapabilityScope` 结构上不再携带 `rolePackId`。
 2. **手机端 journal 缺 `0020`**。`0020_campaign_resume_backfill.sql` 在磁盘上、
    也在 `bundle.ts` 里（所以运行时正常），但 `meta/_journal.json` 只有 24 条。

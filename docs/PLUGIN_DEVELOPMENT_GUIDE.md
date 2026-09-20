@@ -35,9 +35,9 @@
 一览就是一张地图：
 
 - `ctx.storage`（包私有 KV，两端共用一份）、`ctx.campaign`（只读本 Campaign 的运行配置）、
-  `ctx.views` / `ctx.commands` / `ctx.events`（注册页面 / 命令、订阅宿主事件）——无权限门槛；
+  `ctx.views` / `ctx.commands` / `ctx.events` / `ctx.bridge`（注册页面 / 命令、订阅宿主事件、声明桥方法）——无权限门槛；
 - `ctx.data`（本包声明的数据集合，跨端同步）、`ctx.workspace`（含 `workspace.symbols` /
-  `workspace.fetch`）、`ctx.artifact`、`ctx.llm` / `ctx.agent`、`ctx.evidence`——按需声明，
+  `workspace.fetch`）、`ctx.artifact`、`ctx.llm` / `ctx.agent`、`ctx.evidence`、`ctx.library`——按需声明，
   未声明的命名空间在包里是 `undefined`。
 
 每个命名空间的逐个方法、参数与上限见 §4 的 `ctx.*` 一览；题型、材料与任务视图的声明见 §3.F，
@@ -55,7 +55,7 @@
 | 回答的问题 | 这类岗位怎么被面试 | 在通用原语之上实现一块基础包不该有的功能 / UI |
 | 内容 | 声明数据（能力 / 题型 / 量规 / 任务模板 / Prompt 片段 / 检索策略 / 简历模块 / 数据集合），可选 `desktop/` + `mobile/` 两份代码实现 | `desktop/main.ts` 与 `mobile/main.ts` 各端入口 + `ui/` Webview 资源 |
 | 典型例子 | `plugins/softwareEngineering`（同时是代码插件） | `examples/portfolio-board` |
-| 安装后 | 用户选岗即用 | 需用户确认权限清单后启用 |
+| 安装后 | 用户选岗即用 | 装上即激活（安装时展示权限清单，无单独的「启用」步骤） |
 | 移动端 | 声明数据随同步可用；代码入口在 WebView 运行时里激活移动端那份 | WebView 运行时激活移动端那份代码 |
 
 一个岗位包可以同时是代码插件：manifest 声明 `main` / `mobile` 后，包内 `desktop/` 与 `mobile/` 两份实现（各自的 `main.ts` 编译为 `main.js`）与 `ui/` 资产随包分发（如 software-engineering 的「源码」页）。
@@ -68,9 +68,9 @@
 
 | 包 | 提供什么 | 包内页面 |
 |----|---------|---------|
-| `software-engineering` | 技术知识问答、编码与算法、系统设计、项目技术深挖；技术准确性与设计权衡量规；`tech-stack` 与 `drillable-tech-topics` 简历模块；官方文档优先的检索策略。内嵌能力 `source-repository`：仓库拉取、符号提取、代码检索与问答，`codeAgent` 角色由本包声明；数据集合 `repositories` / `code-refs` / `repository-files` | 桌面与手机各一份实现：「源码」页（`desktop/ui/repositories.html` + `mobile/ui/repositories.html`） |
-| `product-manager` | 产品 Sense、用户问题定义、指标与数据分析、优先级、产品案例、路线图、跨团队推动；产品决策与复盘量规；`business-metrics` 与 `product-outcomes` 简历模块；行业报告优先的检索策略。内嵌能力 `analytics-case`：表格数据集解析与数据案例评分侧重；数据集合 `cases` | 桌面与手机各一份实现：「案例训练」页（`desktop/ui/practice.html` + `mobile/ui/practice.html`） |
-| `sales-customer-success` | 客户发现、价值表达、异议处理、方案陈述、谈判、Pipeline 推进；应变、倾听与推进量规；内嵌能力 `role-play`：客户对话模拟（人设、开场白、异议库），需要 `llm:complete` 与 `microphone:read`；数据集合 `role-play-sessions` | 桌面与手机各一份实现：「客户对话模拟」页（`desktop/ui/role-play.html` + `mobile/ui/role-play.html`） |
+| `software-engineering` | 技术知识问答、编码与算法、系统设计、项目技术深挖；技术准确性与设计权衡量规；`se.tech-stack` 与 `se.drillable-tech-topics` 简历模块；官方文档优先的检索策略。内嵌能力 `source-repository`：仓库拉取、符号提取、代码检索与问答，`codeAgent` 角色由本包声明；数据集合 `repositories` / `code-refs` / `repository-files` / `qa-history` / `repository-indexes` | 桌面与手机各一份实现：「源码」页（`desktop/ui/repositories.html` + `mobile/ui/repositories.html`） |
+| `product-manager` | 产品 Sense、用户问题定义、指标与数据分析、优先级、产品案例、路线图、跨团队推动；产品决策与复盘量规；`pm.business-metrics` 与 `pm.product-outcomes` 简历模块；行业报告优先的检索策略。内嵌能力 `analytics-case`：表格数据集解析与数据案例评分侧重；数据集合 `cases`；可选依赖 `portfolio-review`（尚未实现，缺席时降级为 disabled） | 桌面与手机各一份实现：「案例训练」页（`desktop/ui/practice.html` + `mobile/ui/practice.html`） |
+| `sales-customer-success` | 客户发现、价值表达、异议处理、方案陈述、谈判、Pipeline 推进；应变、倾听与推进量规；内嵌能力 `role-play`：客户对话对练，需要 `llm:complete` 与 `microphone:read`（人设与开场白等素材在本包页面里，宿主不再持有）；数据集合 `role-play-sessions` | 桌面与手机各一份实现：「客户对话模拟」页（`desktop/ui/role-play.html` + `mobile/ui/role-play.html`） |
 
 三个包住在 `plugins/` 下（`@plugins` 别名，只有打包脚本与测试会 import），随 release 以 `.ojb`
 分发；装、卸、升级与目录来源见 §6。
@@ -117,17 +117,20 @@ plugins/<your-pack>/
 
 | 包 | `desktop/` | `mobile/` | 桌面做得到 | 手机做得到 |
 |----|-----------|-----------|-----------|-----------|
-| `software-engineering` | `main.ts` + `ui/repositories.html` | 同结构 | 拉取 / 更新仓库、概览、问源码 | 只读 `repositories` 集合（仓库列表） |
+| `software-engineering` | `main.ts` + `ui/repositories.html` | 同结构 | 拉取 / 更新仓库、概览、建索引、问源码、存话术、打代码标记 | 读 `repositories` 与同步来的索引、只读浏览配对桌面的检出、问源码（代理到桌面）、存话术、只读列出桌面写入的标记 |
 | `product-manager` | `main.ts` + `ui/practice.html` | 同结构 | 选表格、出题、评分、推荐答案 | 只读 `cases` 集合（历史案例） |
 | `sales-customer-success` | `main.ts` + `ui/role-play.html` | 同结构 | 客户对话对练、意图标注 | 只读 `role-play-sessions` 集合（对练记录） |
 
-两端的 `main.ts`（以软件工程包为例）只做三件事：注册本包的页面、逐条声明桥方法、订阅需要的事件：
+两端的 `main.ts`（以软件工程包为例）只做两件事：注册本包的页面、逐条声明桥方法（声明只决定「能不能到网关」，放行仍由权限网关逐次判）：
 
 ```ts
 // desktop/main.ts —— 桌面端的全部请求面都在这一串声明里
 const BRIDGE_METHODS = [
-  'workspace.fetch', 'workspace.delete', 'workspace.glob', 'workspace.grep', 'workspace.symbols',
+  'workspace.fetch', 'workspace.delete', 'workspace.glob', 'workspace.list', 'workspace.read',
+  'workspace.grep', 'workspace.symbols', 'llm.complete',
   'data.list', 'data.get', 'data.put', 'data.delete', 'agent.ask',
+  'library.saveSnippet', 'library.listSnippets',
+  'library.annotate', 'library.listAnnotations', 'library.deleteAnnotation',
 ] as const;
 
 export function activate(ctx: PluginRuntimeContext): () => void {
@@ -138,10 +141,15 @@ export function activate(ctx: PluginRuntimeContext): () => void {
 ```
 
 ```ts
-// mobile/main.ts —— 同一个页面 id，只声明只读的数据原语
+// mobile/main.ts —— 同一个页面 id，只声明本端真的做得到的原语
+const BRIDGE_METHODS = [
+  'data.list', 'workspace.list', 'workspace.read', 'agent.ask',
+  'library.saveSnippet', 'library.listSnippets', 'library.listAnnotations',
+] as const;
+
 export function activate(ctx: PluginRuntimeContext): () => void {
   ctx.views.registerPage({ id: 'source-repository', title: '源码', webviewPath: 'ui/repositories.html' });
-  const declared = ['data.list'].map((method) => ctx.bridge.declare(method));
+  const declared = BRIDGE_METHODS.map((method) => ctx.bridge.declare(method));
   return () => declared.forEach((handle) => handle.dispose());
 }
 ```
@@ -355,7 +363,7 @@ export const yourExamForms: ExamFormDefinition[] = [
 }
 ```
 
-独立代码插件 `type` 用 `"plugin"`；权限清单会在用户启用时逐条展示。
+独立代码插件 `type` 用 `"plugin"`；权限清单会在安装时逐条展示。
 
 ### 入口（TypeScript）
 
@@ -380,7 +388,7 @@ export function activate(ctx: PluginRuntimeContext): () => void {
 
 - 入口文件写 `main.ts`（推荐）或 `main.js`，分别放在 `desktop/` 与 `mobile/` 下；**信封里的产物是 `desktop/main.js` 与 `mobile/main.js`**——签名、隔离扫描、两端执行的都是各自那份编译产物，「签的 = 扫的 = 跑的」；
 - `import type` 在编译时擦除，宿主模块不会进入插件产物；普通的 `import`/`require` 会在运行时被 require shim 拒绝；
-- `ui/` 下的脚本目前保持纯 JavaScript（随 HTML 内联执行，无编译步骤）。
+- `ui/` 下的 `.ts` 在打包期由 esbuild 编译为 CJS（与入口同一条规则：签的 = 扫的 = 跑的），页面直接加载编译产物。
 
 ### ctx API 一览
 
@@ -388,7 +396,7 @@ export function activate(ctx: PluginRuntimeContext): () => void {
 |---|---|---|
 | `ctx.views` | — | `registerPage({ id, title, webviewPath })`，页面进主导航能力页签槽位 |
 | `ctx.commands` | — | `register(id, handler)`，完整 id 为 `<pluginId>:<id>` |
-| `ctx.events` | — | 订阅白名单事件：`campaign:attached` / `campaign:capability-changed` / `practice:completed` |
+| `ctx.events` | — | 订阅白名单事件：`campaign:attached` / `campaign:capability-changed` / `practice:completed` / `annotation:open` |
 | `ctx.campaign` | — | `getDescriptor(campaignId)` 只读运行配置 |
 | `ctx.storage` | — | 插件私有 KV：`get / set / delete`（键数与值长有限制） |
 | `ctx.data` | — | 本包声明的数据集合：`get / put / delete / list / count`，值一律字符串，内容对宿主不透明；一次调用只允许本包 `manifest.dataCollections` 里声明过的集合，手机端对配对桌面只读（见下节） |
@@ -397,6 +405,8 @@ export function activate(ctx: PluginRuntimeContext): () => void {
 | `ctx.llm` | `llm:complete` | `complete({ system, user, role? })` 受控 JSON 补全，同宿主网关与审计 |
 | `ctx.agent` | `llm:complete` | `ask({ question, allowTools?, campaignId? })` 开启流式问答；增量经 `stream:delta` / `stream:done` / `stream:error` 事件到达（按 `streamId` 过滤）。**领域上下文由包自己组合**（本能力 + 自己的数据），宿主不为某个领域单开参数或通道 |
 | `ctx.evidence` | `evidence:read-confirmed` | `listConfirmed(campaignId)` 只读已确认证据 |
+| `ctx.library` | `library:write` | 用户的话术库与宿主标记汇总：`saveSnippet` / `listSnippets`（来源类型由包自己起）、`annotate` / `listAnnotations` / `deleteAnnotation` |
+| `ctx.bridge` | — | `declare(method)`：把本包的桥方法登记给宿主，页面才够得到（声明 ≠ 有权限） |
 
 未声明的权限对应命名空间**不存在**（不是报错，是 `ctx.llm === undefined`）。
 
@@ -447,8 +457,8 @@ const count = await ctx.data.count('cases');
 
 ### 启用与停用
 
-- 独立代码插件装上后**默认停用**；用户在设置页确认权限清单后才激活，可随时停用（页签即时消失，确认记录保留）；
-- 岗位包自带的代码入口（manifest 有 `main` 的 role-pack）随岗位启用，无需单独确认——选岗即视为授权。
+- 所有包装上即激活：安装时展示权限清单，装载后宿主立即调用入口的 `activate(ctx)`，每次启动与安装清单变化时自动重新激活；
+- 没有单独的「启用 / 停用」状态与按钮——要停用就卸载（卸载先调 deactivate 再撤贡献，页签即时消失）。
 
 ### 隔离红线（安装期扫描，命中即拒）
 
@@ -504,8 +514,8 @@ pnpm verify:plugins                     # 打包并验签（CI 同款）
 
 - 代码插件运行时 `require` 除 `openjob` 外的任何模块；TS 里非 `import type` 的宿主模块导入同样会被 require shim 拒绝；
 - 在片段里用一级标题、重置角色、绕过证据策略；
-- 为某一端复制或改写包内容（一包定义、两端消费）；
-- manifest 权限超出内嵌贡献的并集（少声明会漏授权，多声明直接拒装）。
+- 为某一端复制或改写岗位包的**声明内容**（一包定义、两端消费）；代码入口允许两端各自一份实现（§2）；
+- 岗位包的 manifest 权限超出内嵌贡献的并集（少声明会漏授权，多声明直接拒装）。
 
 ---
 

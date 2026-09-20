@@ -158,7 +158,7 @@ npm start
 | `pnpm dev` | 桌面开发模式 |
 | `pnpm build` | 桌面生产构建 |
 | `pnpm dist` | 打安装包（`desktop/dist/OpenJob-Setup-*.exe` 等） |
-| `pnpm ci` | 类型检查 + lint + smoke + build |
+| `pnpm ci` | 类型检查 + lint + 测试 + smoke + build |
 | `pnpm db:generate` | 生成 Drizzle 迁移 |
 
 ## 安装包与发布
