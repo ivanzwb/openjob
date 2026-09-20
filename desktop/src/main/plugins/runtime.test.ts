@@ -326,6 +326,72 @@ describe('setCampaignRoleProfile', () => {
     ]);
   });
 
+  /**
+   * 面板按 descriptor 回显能力勾选（draftFromRuntime 取 enabledCapabilityIds），保存时会把
+   * 这些 id 原样交回 capabilityIds。能力随岗位包分发、不是可单独安装的包，这份回显不能当成
+   * 「要装 source-repository」——否则用户只是改个级别就会撞上 plugin-not-found。
+   */
+  it('按 descriptor 回填的能力选择不会把内嵌能力当成未安装的插件', () => {
+    const first = setCampaignRoleProfile(raw, {
+      campaignId: 'c1',
+      roleFamily: 'software',
+      rolePackId: ROLE_PACK_ID,
+    });
+    const echoed = first.descriptor.capabilities
+      .filter((capability) => capability.enabled)
+      .map((capability) => capability.id);
+
+    const second = setCampaignRoleProfile(raw, {
+      campaignId: 'c1',
+      roleFamily: 'software',
+      rolePackId: ROLE_PACK_ID,
+      level: 'senior',
+      capabilityIds: echoed,
+    });
+
+    expect(second.revision).toBe(2);
+    expect(second.roleProfile).toMatchObject({ level: 'senior' });
+    expect(second.descriptor.capabilities).toEqual([
+      { id: REPO_ID, version: ROLE_PACK_VERSION, enabled: true },
+    ]);
+  });
+
+  /**
+   * 行业差异是岗位包内的可选字段，不是另一个要装的包：选项随包进安装清单，选中的键写进
+   * 画像与 descriptor；包里没有这个键就降级成「没选」，不报错。
+   */
+  it('行业差异变体随岗位包声明生效，未声明的降级为不选', () => {
+    const pack: RolePack = {
+      ...externalRolePack('demo.industry', '1.0.0'),
+      industryVariants: [
+        { id: 'fintech', displayName: '金融科技', description: '合规与交易链路' },
+      ],
+    };
+    setExternalPlugins([externalEntry(pack)]);
+
+    // 变体随包进本机清单：界面按选中岗位包取选项
+    expect(listInstalledPlugins().find((item) => item.id === 'demo.industry')?.industryVariants)
+      .toEqual(pack.industryVariants);
+
+    const chosen = setCampaignRoleProfile(raw, {
+      campaignId: 'c1',
+      roleFamily: 'demo.industry',
+      rolePackId: 'demo.industry',
+      industryVariantId: 'fintech',
+    });
+    expect(chosen.descriptor.industryVariantId).toBe('fintech');
+    expect(chosen.roleProfile?.industryVariantId).toBe('fintech');
+
+    const unknown = setCampaignRoleProfile(raw, {
+      campaignId: 'c1',
+      roleFamily: 'demo.industry',
+      rolePackId: 'demo.industry',
+      industryVariantId: 'retail',
+    });
+    expect(unknown.descriptor.industryVariantId).toBeUndefined();
+    expect(unknown.roleProfile?.industryVariantId).toBeNull();
+  });
+
   it('再次设置生成新 revision，旧 binding 只停用不删除', () => {
     setCampaignRoleProfile(raw, {
       campaignId: 'c1',
@@ -403,7 +469,7 @@ describe('读路径补解析：有画像、没 descriptor', () => {
     raw
       .prepare(
         `INSERT INTO role_profile (
-           id, role_family, role_pack_id, level, industry_pack_id, location,
+           id, role_family, role_pack_id, level, industry_variant_id, location,
            interview_language, confidence, user_confirmed
          ) VALUES ('rp-pending', 'software', ?, NULL, NULL, NULL, 'zh', 0.8, ?)`,
       )

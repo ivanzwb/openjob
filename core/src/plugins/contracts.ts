@@ -149,16 +149,7 @@ export function validatePluginManifest(manifest: PluginManifest): PluginContract
     }
     permissionSet.add(permission);
   });
-  // role-pack 的权限规则在 validateRolePack 里按内嵌能力并集校验；行业包仍然无权限
-  if (manifest.type === 'industry-pack' && (manifest.permissions?.length ?? 0) > 0) {
-    issue(
-      issues,
-      'manifest.permissions',
-      'invalid-permission',
-      'Industry Pack 不得申请执行权限',
-    );
-  }
-
+  // role-pack 的权限规则在 validateRolePack 里按内嵌能力并集校验
   if (manifest.type === 'capability' && !manifest.runtime) {
     issue(issues, 'manifest.runtime', 'invalid-value', 'Capability 必须声明双端运行能力');
   }
@@ -571,6 +562,31 @@ function validateCapabilities(
   }
 }
 
+/**
+ * 行业差异变体：包内声明、按 id 引用（见 RolePack.industryVariants）。
+ *
+ * 只校验形状——id 稳定且包内唯一、展示名与描述非空。宿主不认识任何具体变体 id，
+ * 「这个行业差异怎么影响出题与评分」归包自己负责。
+ */
+function validateIndustryVariants(pack: RolePack, issues: PluginContractIssue[]): void {
+  const variants = pack.industryVariants;
+  if (variants === undefined) return;
+  if (!Array.isArray(variants) || variants.length === 0) {
+    issue(issues, 'industryVariants', 'invalid-value', 'industryVariants 必须是非空数组');
+    return;
+  }
+  validateUniqueIds(variants, 'industryVariants', issues);
+  variants.forEach((variant, index) => {
+    const path = `industryVariants[${index}]`;
+    if (!isNonEmpty(variant?.displayName)) {
+      issue(issues, `${path}.displayName`, 'invalid-value', '行业变体展示名不能为空');
+    }
+    if (!isNonEmpty(variant?.description)) {
+      issue(issues, `${path}.description`, 'invalid-value', '行业变体描述不能为空');
+    }
+  });
+}
+
 function validateAnchors(
   anchors: RubricAnchors,
   path: string,
@@ -815,6 +831,7 @@ export function validateRolePack(pack: RolePack): PluginContractIssue[] {
   validateResumeModules(pack.resumeModules, issues);
   validateNavigation(pack.navigation, issues);
   validateCapabilities(pack, issues);
+  validateIndustryVariants(pack, issues);
   const codeAssets = pack.codeAssets ?? {};
   if (pack.manifest.main !== undefined && !isNonEmpty(codeAssets['desktop/main.js'])) {
     issue(

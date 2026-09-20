@@ -88,13 +88,13 @@ function loadRuntimeDescriptor(
   const row = db.getFirstSync<{
     core_version: string;
     role_pack: string;
-    industry_pack: string | null;
+    industry_variant_id: string | null;
     capabilities: string;
     competency_baseline_version: string;
     config_snapshot_hash: string;
     resolved_at: number;
   }>(
-    `SELECT core_version, role_pack, industry_pack, capabilities, competency_baseline_version,
+    `SELECT core_version, role_pack, industry_variant_id, capabilities, competency_baseline_version,
             config_snapshot_hash, resolved_at
      FROM campaign_runtime_descriptor WHERE campaign_id = ? ORDER BY revision DESC LIMIT 1`,
     campaignId,
@@ -106,7 +106,7 @@ function loadRuntimeDescriptor(
     return pack
       ? descriptorFromRolePack(campaignId, pack, {
           coreVersion: '1.0.0',
-          schemaVersion: 24,
+          schemaVersion: 25,
         })
       : null;
   }
@@ -115,9 +115,7 @@ function loadRuntimeDescriptor(
     campaignId,
     coreVersion: row.core_version,
     rolePack: JSON.parse(row.role_pack) as ResolvedPluginRef,
-    industryPack: row.industry_pack
-      ? (JSON.parse(row.industry_pack) as ResolvedPluginRef)
-      : undefined,
+    industryVariantId: row.industry_variant_id ?? undefined,
     capabilities: JSON.parse(row.capabilities) as CampaignRuntimeDescriptor['capabilities'],
     competencyBaselineVersion: row.competency_baseline_version,
     configSnapshotHash: row.config_snapshot_hash,

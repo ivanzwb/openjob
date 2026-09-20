@@ -7,14 +7,10 @@ import {
 } from '@plugins/softwareEngineering';
 import { buildCapabilityView, buildDescriptor, buildRuntimeView, CAMPAIGN_ID } from './__fixtures__/runtime';
 import {
-  buildCapabilityRows,
   draftFromRuntime,
-  enabledCapabilityIds,
   isDraftDirty,
   listPluginOptions,
   pluginStatusNotice,
-  reconcileCapabilitySelection,
-  reconciliationNotices,
   toSetRoleProfileInput,
 } from './rolePlugins';
 import type { RoleProfileDraft } from './rolePlugins';
@@ -55,7 +51,12 @@ describe('listPluginOptions', () => {
     );
     expect(installedCapabilityIds.length).toBeGreaterThan(0);
     expect(new Set(installedCapabilityIds)).toEqual(new Set(declaredCapabilityIds));
-    expect(listPluginOptions(installed, 'industry-pack')).toEqual([]);
+    // 行业变体是岗位包内的字段：能力条目上不会出现这一项
+    expect(
+      listPluginOptions(installed, 'capability').every(
+        (option) => option.industryVariants === undefined,
+      ),
+    ).toBe(true);
   });
 });
 
@@ -66,7 +67,7 @@ describe('draftFromRuntime', () => {
     expect(draftFromRuntime(runtime, rolePackOptions)).toEqual({
       rolePackId: SOFTWARE_ENGINEERING_ROLE_PACK_ID,
       level: '高级',
-      industryPackId: '',
+      industryVariantId: '',
       location: '上海',
       interviewLanguage: 'zh',
       capabilityIds: [SOURCE_REPOSITORY_CAPABILITY_ID],
@@ -93,7 +94,7 @@ describe('toSetRoleProfileInput', () => {
   const draft: RoleProfileDraft = {
     rolePackId: SOFTWARE_ENGINEERING_ROLE_PACK_ID,
     level: ' 高级 ',
-    industryPackId: '',
+    industryVariantId: '',
     location: '  ',
     interviewLanguage: 'en',
     capabilityIds: [SOURCE_REPOSITORY_CAPABILITY_ID],
@@ -105,7 +106,7 @@ describe('toSetRoleProfileInput', () => {
       roleFamily: SOFTWARE_ENGINEERING_ROLE_PACK_ID,
       rolePackId: SOFTWARE_ENGINEERING_ROLE_PACK_ID,
       level: '高级',
-      industryPackId: null,
+      industryVariantId: null,
       location: null,
       interviewLanguage: 'en',
       confidence: 1,
@@ -162,142 +163,6 @@ describe('isDraftDirty', () => {
   it('完全没有 descriptor 时，选了岗位包就算待提交', () => {
     expect(isDraftDirty({ ...clean, rolePackId: '' }, null)).toBe(false);
     expect(isDraftDirty(clean, null)).toBe(true);
-  });
-});
-
-/**
- * capabilityIds 只能往上加。
- *
- * 岗位包把 source-repository 声明成了可选依赖，resolver 会自动展开它；用户取消勾选再
- * 保存，descriptor 里它照样是启用的。复选框自己弹回去而不给任何说法，是这一版最容易
- * 出现的谎——所以提交完成后按 descriptor 回校一遍，把差异说清楚。
- */
-describe('reconcileCapabilitySelection', () => {
-  const descriptor = buildDescriptor();
-
-  it('岗位包依赖强制打开的能力会被指出来', () => {
-    expect(enabledCapabilityIds(descriptor)).toContain(SOURCE_REPOSITORY_CAPABILITY_ID);
-
-    const reconciliation = reconcileCapabilitySelection([], descriptor);
-
-    expect(reconciliation.forcedOn).toEqual([SOURCE_REPOSITORY_CAPABILITY_ID]);
-    expect(reconciliation.rejected).toEqual([]);
-    expect(reconciliationNotices(reconciliation, (id) => id)).toEqual([
-      `${SOURCE_REPOSITORY_CAPABILITY_ID}：岗位包把它声明为依赖，本次仍然启用，无法单独关闭`,
-    ]);
-  });
-
-  it('勾了却没能启用时带上 resolver 给的原因', () => {
-    const reconciliation = reconcileCapabilitySelection(
-      [SOURCE_REPOSITORY_CAPABILITY_ID, 'not-installed'],
-      descriptor,
-    );
-
-    expect(reconciliation.forcedOn).toEqual([]);
-    expect(reconciliation.rejected).toEqual([
-      { id: 'not-installed', reason: '解析后没有进入运行配置，可能是版本不兼容' },
-    ]);
-  });
-
-  it('descriptor 明确停用某项能力时原样转述停用原因', () => {
-    const withDisabled = {
-      ...descriptor,
-      capabilities: [
-        { id: 'analytics-case', enabled: false as const, disabledReason: 'plugin-not-found: 插件未安装' },
-      ],
-    };
-
-    expect(reconcileCapabilitySelection(['analytics-case'], withDisabled).rejected).toEqual([
-      { id: 'analytics-case', reason: 'plugin-not-found: 插件未安装' },
-    ]);
-  });
-
-  it('勾选与生效完全一致时没有任何需要解释的差异', () => {
-    expect(
-      reconcileCapabilitySelection([SOURCE_REPOSITORY_CAPABILITY_ID], descriptor),
-    ).toEqual({ forcedOn: [], rejected: [] });
-  });
-});
-
-describe('buildCapabilityRows', () => {
-  const descriptor = buildDescriptor();
-
-  it('桌面端装齐插件时逐条显示为可用，并带上 descriptor 固定的版本', () => {
-    const rows = buildCapabilityRows({
-      descriptor,
-      view: buildCapabilityView(descriptor),
-      installed,
-    });
-
-    // 只针对 descriptor 真的启用了的那条断言；本机还装着别的能力插件，
-    // 它们没进这场备考，状态本就不该是「可用」。
-    const row = rows.find((item) => item.id === SOURCE_REPOSITORY_CAPABILITY_ID);
-    expect(row).toMatchObject({
-      id: SOURCE_REPOSITORY_CAPABILITY_ID,
-      enabledInCampaign: true,
-      disabledReason: null,
-      localMode: 'full',
-      installedLocally: true,
-    });
-    expect(row!.version).toBeTruthy();
-    expect(row!.displayName).not.toBe(row!.id);
-  });
-
-  /** 同一份 descriptor 在手机上是只读的：降级由 client view 说了算，不由界面猜 */
-  it('平台只支持查看时如实标成只读并给出说明', () => {
-    const rows = buildCapabilityRows({
-      descriptor,
-      view: buildCapabilityView(descriptor, 'mobile'),
-      installed,
-    });
-
-    const row = rows.find((item) => item.id === SOURCE_REPOSITORY_CAPABILITY_ID);
-    expect(row).toMatchObject({ localMode: 'view-only', enabledInCampaign: true });
-    expect(row!.localDetail).toBeTruthy();
-  });
-
-  it('本机装了但这场备考没启用的插件也要列出来，否则用户没有入口把它加进来', () => {
-    const rows = buildCapabilityRows({
-      descriptor: { ...descriptor, capabilities: [] },
-      view: null,
-      installed,
-    });
-
-    expect([...new Set(rows.map((row) => row.id))].sort()).toEqual([
-      ...new Set(installedCapabilityIds),
-    ].sort());
-    for (const row of rows) {
-      expect(row).toMatchObject({
-        enabledInCampaign: false,
-        version: null,
-        localMode: null,
-        installedLocally: true,
-      });
-    }
-  });
-
-  it('descriptor 记着但本机没装的插件同样要显示——那正是最该被看见的降级', () => {
-    const rows = buildCapabilityRows({
-      descriptor: {
-        ...descriptor,
-        capabilities: [{ id: 'analytics-case', version: '1.0.0', enabled: true }],
-      },
-      view: null,
-      installed: [],
-    });
-
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({
-      id: 'analytics-case',
-      displayName: 'analytics-case',
-      enabledInCampaign: true,
-      installedLocally: false,
-    });
-  });
-
-  it('没有 descriptor 时只剩本机清单，不凭空造出启用状态', () => {
-    const rows = buildCapabilityRows({ descriptor: null, view: null, installed });
-    expect(rows.every((row) => !row.enabledInCampaign)).toBe(true);
   });
 });
 

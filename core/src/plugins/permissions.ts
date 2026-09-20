@@ -2,7 +2,8 @@
  * Capability 插件可申请的最小权限集合。
  *
  * 权限只表达“可以向 Core 网关发起请求”，不直接暴露数据库、模型 SDK、
- * API Key、文件系统或 IPC。Role/Industry Pack 的 permissions 必须为空。
+ * API Key、文件系统或 IPC。岗位包自己不拥有权限，它的 manifest.permissions 只是内嵌能力
+ * 权限的并集；行业差异不是插件，没有任何权限。
  */
 export const PLUGIN_PERMISSIONS = [
   'evidence:read-confirmed',

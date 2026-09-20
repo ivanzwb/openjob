@@ -193,7 +193,7 @@ function seed(
   if (capabilities) {
     raw.runSync(
       `INSERT INTO campaign_runtime_descriptor (
-         id, campaign_id, revision, core_version, role_pack, industry_pack,
+         id, campaign_id, revision, core_version, role_pack, industry_variant_id,
          capabilities, competency_baseline_version, config_snapshot_hash, resolved_at
        ) VALUES ('descriptor-1', ?, 1, '1.0.0', ?, NULL, ?, '1.0.0', 'hash', 1)`,
       CROSS_CLIENT_PLAN.campaignId,

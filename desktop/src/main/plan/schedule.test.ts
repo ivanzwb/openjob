@@ -189,7 +189,7 @@ function descriptorRow(
     revision: 1,
     coreVersion: '1.0.0',
     rolePack: { id: 'software-engineering', version: '1.0.0' },
-    industryPack: null,
+    industryVariantId: null,
     capabilities,
     competencyBaselineVersion: '1.0.0',
     configSnapshotHash: 'hash',

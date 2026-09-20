@@ -43,7 +43,8 @@ export interface ResolveRuntimeInput {
   coreVersion: string;
   schemaVersion: number;
   rolePackId: string;
-  industryPackId?: string;
+  /** 选定的行业差异变体 id：它是岗位包内的键，不是要解析的插件。 */
+  industryVariantId?: string;
   capabilityIds: string[];
   pinnedVersions?: Record<string, string>;
 }
@@ -388,7 +389,26 @@ function addRequirement(
   }
 }
 
-function rootRequirements(input: ResolveRuntimeInput): Requirement[] {
+/**
+ * 已装岗位包内嵌声明的能力 id。
+ *
+ * 能力随岗位包分发、选中岗位包即启用（见下方插入点 E），它不是一个能单独安装的包：注册表
+ * 里没有、也不该有以能力 id 登记的条目。所以 `capabilityIds` 里凡是已装岗位包声明过的 id，
+ * 都不是一条要去注册表里找的根需求——它启不启用由选中的岗位包决定。界面按 descriptor
+ * 回显能力勾选时正是把这些 id 原样交回来的（见 hostUi/rolePlugins 的 draftFromRuntime）。
+ */
+function embeddedCapabilityIds(registry: BuiltInPluginRegistry): Set<string> {
+  const ids = new Set<string>();
+  for (const entry of registry.listAllEntries()) {
+    for (const declaration of entry.rolePack?.capabilities ?? []) ids.add(declaration.id);
+  }
+  return ids;
+}
+
+function rootRequirements(
+  input: ResolveRuntimeInput,
+  embedded: ReadonlySet<string>,
+): Requirement[] {
   const requirements: Requirement[] = [
     {
       id: input.rolePackId,
@@ -397,22 +417,17 @@ function rootRequirements(input: ResolveRuntimeInput): Requirement[] {
       expectedType: 'role-pack',
     },
   ];
-  if (input.industryPackId) {
-    requirements.push({
-      id: input.industryPackId,
-      range: input.pinnedVersions?.[input.industryPackId] ?? '*',
-      source: 'industry-pack',
-      expectedType: 'industry-pack',
+  [...new Set(input.capabilityIds)]
+    .filter((id) => !embedded.has(id))
+    .sort()
+    .forEach((id) => {
+      requirements.push({
+        id,
+        range: input.pinnedVersions?.[id] ?? '*',
+        source: 'selected-capability',
+        expectedType: 'capability',
+      });
     });
-  }
-  [...new Set(input.capabilityIds)].sort().forEach((id) => {
-    requirements.push({
-      id,
-      range: input.pinnedVersions?.[id] ?? '*',
-      source: 'selected-capability',
-      expectedType: 'capability',
-    });
-  });
   return requirements;
 }
 
@@ -847,7 +862,7 @@ export class DeterministicRuntimeResolver implements RuntimeResolver {
     const inputError = this.validateInput(input);
     if (inputError) return { ok: false, error: inputError };
 
-    const roots = rootRequirements(input);
+    const roots = rootRequirements(input, embeddedCapabilityIds(this.registry));
     const required = solveRequired(this.registry, input, roots);
     if (!required.ok) return { ok: false, error: required.error };
 
@@ -966,7 +981,16 @@ export class DeterministicRuntimeResolver implements RuntimeResolver {
     }
 
     const role = selected.get(input.rolePackId)!;
-    const industry = input.industryPackId ? selected.get(input.industryPackId)! : undefined;
+
+    // 行业变体是岗位包内的键，不是要解析的插件：包声明过才写进 descriptor。包升级后旧画像
+    // 里的 id 认不出来时就当作没选——不报错，否则一次包升级会把所有写入路径停在旧值上。
+    const industryVariantId =
+      input.industryVariantId !== undefined &&
+      (role.rolePack?.industryVariants ?? []).some(
+        (variant) => variant.id === input.industryVariantId,
+      )
+        ? input.industryVariantId
+        : undefined;
 
     // 插入点 E：岗位包内嵌的能力声明直接成为 descriptor 里的能力引用——能力用**自己的**
     // id（source-repository / role-play / analytics-case），version 是所属岗位包的版本。
@@ -1014,14 +1038,11 @@ export class DeterministicRuntimeResolver implements RuntimeResolver {
       id: role.manifest.id,
       version: role.manifest.version,
     };
-    const industryPack: ResolvedPluginRef | undefined = industry
-      ? { id: industry.manifest.id, version: industry.manifest.version }
-      : undefined;
     const config = {
       coreVersion: input.coreVersion,
       schemaVersion: input.schemaVersion,
       rolePack,
-      industryPack,
+      industryVariantId,
       capabilities,
       competencyBaselineVersion: role.manifest.version,
     };
@@ -1030,7 +1051,7 @@ export class DeterministicRuntimeResolver implements RuntimeResolver {
       descriptor: {
         coreVersion: input.coreVersion,
         rolePack,
-        industryPack,
+        industryVariantId,
         capabilities,
         competencyBaselineVersion: role.manifest.version,
         configSnapshotHash: hashRuntimeConfig(config),
@@ -1045,7 +1066,7 @@ export class DeterministicRuntimeResolver implements RuntimeResolver {
     if (!Number.isInteger(input.schemaVersion) || input.schemaVersion < 0) {
       return { code: 'invalid-manifest', message: 'schemaVersion 必须是非负整数' };
     }
-    const ids = [input.rolePackId, input.industryPackId, ...input.capabilityIds].filter(
+    const ids = [input.rolePackId, ...input.capabilityIds].filter(
       (id): id is string => id !== undefined,
     );
     if (ids.some((id) => !isStablePluginId(id))) {

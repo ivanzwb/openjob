@@ -186,7 +186,7 @@ describe('plugin contracts', () => {
     );
   });
 
-  it('Role/Industry Pack 不能申请执行权限', () => {
+  it('岗位包不自己申请权限：manifest.permissions 只能是内嵌能力权限的并集', () => {
     const pack = validRolePack();
     pack.manifest.permissions = ['network:fetch'];
 

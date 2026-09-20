@@ -1,7 +1,5 @@
 import {
-  PluginContractError,
   assertValidCapabilityPlugin,
-  assertValidPluginManifest,
   assertValidRolePack,
 } from './contracts';
 import type { CapabilityPlugin, PluginManifest, RolePack } from './types';
@@ -104,20 +102,6 @@ export class BuiltInPluginRegistry implements RolePackRegistry {
   registerCapability(plugin: CapabilityPlugin): void {
     assertValidCapabilityPlugin(plugin);
     this.add({ manifest: plugin.manifest, capability: plugin });
-  }
-
-  registerIndustryPack(manifest: PluginManifest): void {
-    assertValidPluginManifest(manifest);
-    if (manifest.type !== 'industry-pack') {
-      throw new PluginContractError([
-        {
-          path: 'manifest.type',
-          code: 'invalid-value',
-          message: 'Industry Pack 的 manifest.type 必须是 industry-pack',
-        },
-      ]);
-    }
-    this.add({ manifest });
   }
 
   get(id: string, version?: string): RolePack | null {

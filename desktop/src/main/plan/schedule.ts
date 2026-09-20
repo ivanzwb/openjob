@@ -198,7 +198,7 @@ function loadRuntimeDescriptor(campaignId: string): CampaignRuntimeDescriptor | 
     campaignId,
     coreVersion: row.coreVersion,
     rolePack: row.rolePack,
-    industryPack: row.industryPack ?? undefined,
+    industryVariantId: row.industryVariantId ?? undefined,
     capabilities: row.capabilities,
     competencyBaselineVersion: row.competencyBaselineVersion,
     configSnapshotHash: row.configSnapshotHash,

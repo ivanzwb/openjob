@@ -73,7 +73,7 @@ function seedCampaign(raw: SQLiteDatabase, id: string, pack: RolePack, revision 
   );
   raw.runSync(
     `INSERT INTO campaign_runtime_descriptor (
-       id, campaign_id, revision, core_version, role_pack, industry_pack,
+       id, campaign_id, revision, core_version, role_pack, industry_variant_id,
        capabilities, competency_baseline_version, config_snapshot_hash, resolved_at
      ) VALUES (?, ?, ?, '1.0.0', ?, NULL, '[]', '1.0.0', 'hash', 1)`,
     `${id}-descriptor-${revision}`,
@@ -100,7 +100,7 @@ describe('pinnedRolePackRefs', () => {
     seedCampaign(raw, 'c1', OTHER_PACK, 1);
     raw.runSync(
       `INSERT INTO campaign_runtime_descriptor (
-         id, campaign_id, revision, core_version, role_pack, industry_pack,
+         id, campaign_id, revision, core_version, role_pack, industry_variant_id,
          capabilities, competency_baseline_version, config_snapshot_hash, resolved_at
        ) VALUES ('c1-descriptor-2', 'c1', 2, '1.0.0', ?, NULL, '[]', '1.0.0', 'hash', 2)`,
       JSON.stringify({ id: PACK.manifest.id, version: PACK.manifest.version }),

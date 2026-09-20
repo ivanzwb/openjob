@@ -55,8 +55,14 @@ export type EdgeRelation = (typeof EDGE_RELATIONS)[number];
 export const EXPLANATION_TIERS = ['oneliner', 'spoken', 'deep'] as const;
 export type ExplanationTier = (typeof EXPLANATION_TIERS)[number];
 
-/** 插件分类。Role/Industry Pack 只提供声明式配置，Capability 才能申请执行权限。 */
-export const PLUGIN_TYPES = ['role-pack', 'industry-pack', 'capability', 'plugin'] as const;
+/**
+ * 插件分类。
+ *
+ * 只装得进这三类包：取「这个岗位族怎么面试」的岗位包、随包内嵌的能力声明、带各端入口的
+ * 代码插件。行业差异不是一类包——它是岗位包内的可选字段（见 RolePack.industryVariants）。
+ * Role Pack 只提供声明式配置，Capability 才能申请执行权限。
+ */
+export const PLUGIN_TYPES = ['role-pack', 'capability', 'plugin'] as const;
 export type PluginType = (typeof PLUGIN_TYPES)[number];
 
 /** 客户端对某项插件能力的本地支持程度。 */

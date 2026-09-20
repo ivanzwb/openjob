@@ -33,7 +33,6 @@ const PERMISSION_LABEL: Record<string, string> = {
 
 const TYPE_LABEL: Record<PluginType, string> = {
   'role-pack': '岗位包',
-  'industry-pack': '行业包',
   capability: '能力',
   plugin: '代码插件',
 };

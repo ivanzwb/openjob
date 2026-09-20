@@ -112,7 +112,8 @@ export interface RoleProfile {
   roleFamily: string;
   rolePackId: string;
   level: string | null;
-  industryPackId: string | null;
+  /** 选定的行业差异变体，是岗位包内字段的键，不是插件引用 */
+  industryVariantId: string | null;
   location: string | null;
   interviewLanguage: string;
   confidence: number;

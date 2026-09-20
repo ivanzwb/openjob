@@ -107,7 +107,7 @@ export function backfillPrePluginCampaignRuntime(
     raw
       .prepare(
         `INSERT INTO role_profile (
-           id, role_family, role_pack_id, level, industry_pack_id, location,
+           id, role_family, role_pack_id, level, industry_variant_id, location,
            interview_language, confidence, user_confirmed
          ) VALUES (?, ?, ?, NULL, NULL, NULL, 'zh', 1, 0)`,
       )
@@ -150,7 +150,7 @@ export function backfillPrePluginCampaignRuntime(
     raw
       .prepare(
         `INSERT INTO campaign_runtime_descriptor (
-           id, campaign_id, revision, core_version, role_pack, industry_pack,
+           id, campaign_id, revision, core_version, role_pack, industry_variant_id,
            capabilities, competency_baseline_version, config_snapshot_hash, resolved_at
          ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
       )

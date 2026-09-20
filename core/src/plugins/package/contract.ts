@@ -428,15 +428,6 @@ function validatePackageInternal(files: PluginPackageFiles): PluginContractIssue
       issues.push(...validateRolePack({ ...pack, manifest }));
       break;
     }
-    case 'industry-pack': {
-      // Industry Pack 目前只有 manifest（见 BuiltInPluginRegistry.registerIndustryPack）
-      for (const name of [PACKAGE_PACK_FILE, PACKAGE_CONTRIBUTIONS_FILE]) {
-        if (files[name] !== undefined) {
-          issue(issues, name, 'invalid-value', `行业包只需要 manifest，不该带 ${name}`);
-        }
-      }
-      break;
-    }
     case 'capability': {
       if (files[PACKAGE_PACK_FILE] !== undefined) {
         issue(issues, PACKAGE_PACK_FILE, 'invalid-value', '能力插件不带岗位数据');

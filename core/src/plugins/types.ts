@@ -327,6 +327,19 @@ export interface SourcePolicy {
   };
 }
 
+/**
+ * 岗位包声明的行业差异变体。
+ *
+ * 它是岗位包内的键（`RoleProfile.industryVariantId` 存的就是这个 id），不是插件引用：
+ * 行业差异不会单独安装、单独版本化，也不参与依赖解析——包升级即随包换代。
+ */
+export interface IndustryVariant {
+  /** 包内唯一 */
+  id: string;
+  displayName: string;
+  description: string;
+}
+
 export interface RolePack {
   manifest: PluginManifest;
   roleMatchers: RoleMatcher[];
@@ -348,6 +361,14 @@ export interface RolePack {
   resumeModules: ResumeModuleDefinition[];
   // 插入点 E：内嵌能力声明
   capabilities: CapabilityDeclaration[];
+  /**
+   * 行业差异（可选字段，非插件）。
+   *
+   * 岗位族与行业是两个正交的轴：怎么面试一个族的人由族决定，这个族在不同行业里用什么
+   * 术语、看什么指标由行业决定。行业差异因此是主岗位包内的一段声明，不是另一个要单独安装
+   * 的包；包没声明就是没有，界面上也不出现这项选择。
+   */
+  industryVariants?: IndustryVariant[];
   /**
    * 代码插件资产（§7.9）：manifest.main / manifest.mobile 声明时由 defineRolePack 从包目录内联
    * （各端 main 与 ui/**），随 pack.json 走信封与移动端同步——与 promptFragments
@@ -380,7 +401,11 @@ export interface CampaignRuntimeDescriptor {
   campaignId: string;
   coreVersion: string;
   rolePack: ResolvedPluginRef;
-  industryPack?: ResolvedPluginRef;
+  /**
+   * 选定的行业差异变体 id；岗位包没声明变体、或选中的 id 在包里不存在时缺省。
+   * 它只是包内的一个键，没有自己的版本——包版本就是它的版本。
+   */
+  industryVariantId?: string;
   capabilities: ResolvedCapabilityRef[];
   competencyBaselineVersion: string;
   configSnapshotHash: string;

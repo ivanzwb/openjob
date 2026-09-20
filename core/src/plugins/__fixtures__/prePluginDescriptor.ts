@@ -43,7 +43,7 @@ export function prePluginRuntimeDescriptor(campaignId: string): CampaignRuntimeD
       coreVersion,
       schemaVersion,
       rolePack,
-      industryPack: undefined,
+      industryVariantId: undefined,
       capabilities,
       competencyBaselineVersion: rolePack.version,
     }),

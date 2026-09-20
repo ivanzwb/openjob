@@ -332,6 +332,48 @@ describe('DeterministicRuntimeResolver', () => {
     }
   });
 
+  /**
+   * 能力随岗位包分发、选中岗位包即启用，它不是一个能单独安装的包（注册表里没有以能力 id
+   * 登记的条目）。界面按 descriptor 回显能力勾选时会把这些 id 原样交回 capabilityIds，
+   * 这份回显不能当成「要装一个叫 demo.embedded 的插件」。
+   */
+  it('岗位包内嵌的能力 id 不作为根需求，随选中岗位包启用', () => {
+    const pack = rolePack();
+    pack.manifest.permissions = ['llm:complete'];
+    pack.capabilities = [{ id: 'demo.embedded', permissions: ['llm:complete'] }];
+    const result = resolverWith(pack).resolve({
+      ...BASE_INPUT,
+      capabilityIds: ['demo.embedded'],
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.descriptor.capabilities).toEqual([
+        { id: 'demo.embedded', version: '1.0.0', enabled: true },
+      ]);
+    }
+  });
+
+  /**
+   * 行业差异是岗位包内的字段，不是插件：选中的变体只是包里的一个键，不参与依赖解析。
+   * 包里没有这个键时降级成「没选」而不是报错——包升级后旧画像里的 id 不该把写入路径停住。
+   */
+  it('行业差异变体按岗位包声明解析，未声明的降级为不选', () => {
+    const pack = rolePack();
+    pack.industryVariants = [
+      { id: 'fintech', displayName: '金融科技', description: '合规与交易链路' },
+    ];
+    const resolver = resolverWith(pack);
+
+    const chosen = resolver.resolve({ ...BASE_INPUT, industryVariantId: 'fintech' });
+    const unknown = resolver.resolve({ ...BASE_INPUT, industryVariantId: 'retail' });
+
+    expect(chosen.ok).toBe(true);
+    expect(chosen.ok && chosen.descriptor.industryVariantId).toBe('fintech');
+    expect(unknown.ok).toBe(true);
+    expect(unknown.ok && unknown.descriptor.industryVariantId).toBeUndefined();
+  });
+
   it('检测必需依赖环并返回完整环路径', () => {
     const resolver = resolverWith(
       rolePack('1.0.0', [{ id: 'cap.a', version: '^1.0.0' }]),

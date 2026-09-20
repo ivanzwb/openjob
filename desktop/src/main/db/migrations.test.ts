@@ -257,6 +257,51 @@ describe('plugin runtime persistence migration', () => {
   });
 });
 
+describe('industry variant migration', () => {
+  function columnsOf(db: DatabaseSync, table: string): string[] {
+    return (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map(
+      (column) => column.name,
+    );
+  }
+
+  function migrated(): DatabaseSync {
+    const db = new DatabaseSync(':memory:');
+    journal().forEach((entry) => applySql(db, sqlOf(entry.tag)));
+    return db;
+  }
+
+  it('行业差异并进岗位包后，画像与 descriptor 各留一列变体键', () => {
+    const db = migrated();
+
+    expect(columnsOf(db, 'role_profile')).toContain('industry_variant_id');
+    expect(columnsOf(db, 'role_profile')).not.toContain('industry_pack_id');
+    expect(columnsOf(db, 'campaign_runtime_descriptor')).toContain('industry_variant_id');
+    expect(columnsOf(db, 'campaign_runtime_descriptor')).not.toContain('industry_pack');
+    db.close();
+  });
+
+  it('旧行里的行业包引用被清空，不留语义已失效的取值', () => {
+    const db = new DatabaseSync(':memory:');
+    // 迁移到行业变体那一步之前：那时这一列存的是行业包插件引用
+    const entries = journal();
+    const cutoff = entries.findIndex((entry) => entry.tag === '0032_industry_variant');
+    entries.slice(0, cutoff).forEach((entry) => applySql(db, sqlOf(entry.tag)));
+    db.prepare(
+      `INSERT INTO role_profile (
+         id, role_family, role_pack_id, level, industry_pack_id, location,
+         interview_language, confidence, user_confirmed
+       ) VALUES ('rp', 'software', 'software-engineering', NULL, 'ecommerce-pack', NULL, 'zh', 1, 1)`,
+    ).run();
+
+    applySql(db, sqlOf('0032_industry_variant'));
+
+    expect(db.prepare(`SELECT industry_variant_id FROM role_profile WHERE id = 'rp'`).get()).toEqual(
+      { industry_variant_id: null },
+    );
+    db.close();
+  });
+});
+
 describe('pre-plugin campaign scope migration', () => {
   const MOBILE_PRE_PLUGIN_SCOPE = join(
     REPO_ROOT,
@@ -289,6 +334,7 @@ describe('pre-plugin campaign scope migration', () => {
        ) VALUES (?, 'ACME', 'Engineer', 'JD', 'planning', 1, 1)`;
     db.prepare(insertCampaign).run('prePlugin');
     db.prepare(insertCampaign).run('profiled');
+    // 这里只迁移到 0027 之前，列名还是当时那一版（行业差异后来才并进岗位包）
     db.prepare(
       `INSERT INTO role_profile (
          id, role_family, role_pack_id, level, industry_pack_id, location,

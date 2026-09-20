@@ -410,7 +410,7 @@ export function descriptorFromRolePack(
       coreVersion: options.coreVersion,
       schemaVersion: options.schemaVersion,
       rolePack,
-      industryPack: undefined,
+      industryVariantId: undefined,
       capabilities,
       competencyBaselineVersion: pack.manifest.version,
     }),

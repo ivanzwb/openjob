@@ -103,11 +103,6 @@ describe('Core Policy 的位置与内容不可被插件覆盖', () => {
     const composed = compose({
       slot: 'scoring',
       formatId: SOFTWARE_ENGINEERING_FORMAT_IDS.knowledge,
-      industryFragment: {
-        pluginId: 'ecommerce',
-        pluginVersion: '1.0.0',
-        text: '## 行业补充\n交易链路的一致性要求高于吞吐。',
-      },
       evidence: CONFIRMED_EVIDENCE,
       jobContext: '公司：某公司\n岗位：后端工程师',
       userRequest: '这次重点练限流。',
@@ -381,17 +376,19 @@ describe('provenance 可复现所用插件版本', () => {
     expect(compose().provenance.capabilityIds).not.toContain('analytics-case');
   });
 
-  it('行业包参与组合时也要记下精确版本', () => {
+  /**
+   * 行业差异是岗位包内的键，不是插件：provenance 记的是选定的变体 id，没有版本可固定——
+   * 包升级即随包换代，岗位包版本已经在同一条记录里。
+   */
+  it('选定的行业差异变体记进 provenance', () => {
     const composed = compose({
-      runtime: { ...RUNTIME, industryPack: { id: 'ecommerce', version: '1.2.0' } },
-      industryFragment: {
-        pluginId: 'ecommerce',
-        pluginVersion: '1.2.0',
-        text: '## 行业补充\n交易链路的一致性要求高于吞吐。',
-      },
+      runtime: { ...RUNTIME, industryVariantId: 'ecommerce' },
     });
 
-    expect(composed.provenance.industryPack).toEqual({ id: 'ecommerce', version: '1.2.0' });
-    expect(composed.systemPrompt).toContain('交易链路的一致性要求高于吞吐');
+    expect(composed.provenance.industryVariantId).toBe('ecommerce');
+  });
+
+  it('没选行业变体时不写这一项', () => {
+    expect(compose().provenance.industryVariantId).toBeUndefined();
   });
 });

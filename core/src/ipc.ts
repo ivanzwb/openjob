@@ -982,7 +982,8 @@ export interface SetRoleProfileInput {
   roleFamily: string;
   rolePackId: string;
   level?: string | null;
-  industryPackId?: string | null;
+  /** 岗位包内声明的行业差异变体 id；岗位包没有变体时留空。 */
+  industryVariantId?: string | null;
   location?: string | null;
   /** 默认 zh。 */
   interviewLanguage?: string;

@@ -42,13 +42,13 @@ import type { PluginInventoryEntry } from './inventory';
 
 /** descriptor 写入用的核心版本与 schema 版本（当前值）。 */
 export const CORE_VERSION = '1.0.0';
-export const RUNTIME_SCHEMA_VERSION = 24;
+export const RUNTIME_SCHEMA_VERSION = 25;
 
 interface DescriptorRow {
   revision: number;
   core_version: string;
   role_pack: string;
-  industry_pack: string | null;
+  industry_variant_id: string | null;
   capabilities: string;
   competency_baseline_version: string;
   config_snapshot_hash: string;
@@ -60,7 +60,7 @@ interface RoleProfileRow {
   role_family: string;
   role_pack_id: string;
   level: string | null;
-  industry_pack_id: string | null;
+  industry_variant_id: string | null;
   location: string | null;
   interview_language: string;
   confidence: number;
@@ -97,8 +97,6 @@ function registerExternal(registry: BuiltInPluginRegistry, entry: PluginInventor
     case 'plugin':
       // 代码插件（§7.9）：声明面为空，激活由渲染层运行时负责，数据注册表无需登记
       return;
-    default:
-      registry.registerIndustryPack(manifest);
   }
 }
 
@@ -196,9 +194,15 @@ export function listInstalledPlugins(): InstalledPlugin[] {
   const capabilities = externalEntries.flatMap((entry) =>
     entry.package.rolePack ? capabilityEntriesFromRolePack(entry.package.rolePack) : [],
   );
+  const packs = externalEntries.map((entry) => {
+    const installed = toInstalledPlugin(entry.package.manifest);
+    // 行业变体是岗位包内的声明，随包一起进清单——界面按选中岗位包取选项
+    const variants = entry.package.rolePack?.industryVariants;
+    return variants && variants.length > 0 ? { ...installed, industryVariants: variants } : installed;
+  });
   return [
     ...listBuiltInPlugins(),
-    ...externalEntries.map((entry) => toInstalledPlugin(entry.package.manifest)),
+    ...packs,
     ...capabilities,
   ].sort(
     (left, right) =>
@@ -213,7 +217,7 @@ function rowToRoleProfile(row: RoleProfileRow): RoleProfile {
     roleFamily: row.role_family,
     rolePackId: row.role_pack_id,
     level: row.level,
-    industryPackId: row.industry_pack_id,
+    industryVariantId: row.industry_variant_id,
     location: row.location,
     interviewLanguage: row.interview_language,
     confidence: row.confidence,
@@ -235,7 +239,7 @@ function readRoleProfile(raw: Database, campaignId: string): RoleProfile | null 
 function readDescriptor(raw: Database, campaignId: string): CampaignRuntimeView | null {
   const row = raw
     .prepare(
-      `SELECT revision, core_version, role_pack, industry_pack, capabilities,
+      `SELECT revision, core_version, role_pack, industry_variant_id, capabilities,
               competency_baseline_version, config_snapshot_hash, resolved_at
        FROM campaign_runtime_descriptor
        WHERE campaign_id = ?
@@ -249,9 +253,7 @@ function readDescriptor(raw: Database, campaignId: string): CampaignRuntimeView 
     campaignId,
     coreVersion: row.core_version,
     rolePack: JSON.parse(row.role_pack) as ResolvedPluginRef,
-    industryPack: row.industry_pack
-      ? (JSON.parse(row.industry_pack) as ResolvedPluginRef)
-      : undefined,
+    industryVariantId: row.industry_variant_id ?? undefined,
     capabilities: JSON.parse(row.capabilities) as ResolvedCapabilityRef[],
     competencyBaselineVersion: row.competency_baseline_version,
     configSnapshotHash: row.config_snapshot_hash,
@@ -280,7 +282,7 @@ function resolvePendingRoleProfile(raw: Database, campaignId: string): CampaignR
       roleFamily: profile.roleFamily,
       rolePackId: profile.rolePackId,
       level: profile.level,
-      industryPackId: profile.industryPackId,
+      industryVariantId: profile.industryVariantId,
       location: profile.location,
       interviewLanguage: profile.interviewLanguage,
       confidence: profile.confidence,
@@ -325,7 +327,7 @@ export function setCampaignRoleProfile(
     coreVersion: CORE_VERSION,
     schemaVersion: RUNTIME_SCHEMA_VERSION,
     rolePackId: input.rolePackId,
-    industryPackId: input.industryPackId ?? undefined,
+    industryVariantId: input.industryVariantId ?? undefined,
     capabilityIds: input.capabilityIds ?? [],
   });
   if (!resolved.ok) {
@@ -341,7 +343,7 @@ export function setCampaignRoleProfile(
       raw
         .prepare(
           `UPDATE role_profile
-           SET role_family = ?, role_pack_id = ?, level = ?, industry_pack_id = ?,
+           SET role_family = ?, role_pack_id = ?, level = ?, industry_variant_id = ?,
                location = ?, interview_language = ?, confidence = ?, user_confirmed = ?
            WHERE id = ?`,
         )
@@ -349,7 +351,7 @@ export function setCampaignRoleProfile(
           input.roleFamily,
           input.rolePackId,
           input.level ?? null,
-          input.industryPackId ?? null,
+          snapshot.industryVariantId ?? null,
           input.location ?? null,
           input.interviewLanguage ?? 'zh',
           input.confidence ?? 1,
@@ -360,7 +362,7 @@ export function setCampaignRoleProfile(
       raw
         .prepare(
           `INSERT INTO role_profile (
-             id, role_family, role_pack_id, level, industry_pack_id, location,
+             id, role_family, role_pack_id, level, industry_variant_id, location,
              interview_language, confidence, user_confirmed
            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
@@ -369,7 +371,7 @@ export function setCampaignRoleProfile(
           input.roleFamily,
           input.rolePackId,
           input.level ?? null,
-          input.industryPackId ?? null,
+          snapshot.industryVariantId ?? null,
           input.location ?? null,
           input.interviewLanguage ?? 'zh',
           input.confidence ?? 1,
@@ -398,9 +400,9 @@ export function setCampaignRoleProfile(
          config_snapshot_hash, revision, active_execution, enabled_at
        ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`,
     );
+    // 行业变体不绑 binding：它只是岗位包内的一个键，没有自己的版本要固定
     const bound: ResolvedPluginRef[] = [
       snapshot.rolePack,
-      ...(snapshot.industryPack ? [snapshot.industryPack] : []),
       ...snapshot.capabilities.filter(
         (item): item is ResolvedPluginRef & { enabled: true } => item.enabled,
       ),
@@ -421,7 +423,7 @@ export function setCampaignRoleProfile(
     raw
       .prepare(
         `INSERT INTO campaign_runtime_descriptor (
-           id, campaign_id, revision, core_version, role_pack, industry_pack,
+           id, campaign_id, revision, core_version, role_pack, industry_variant_id,
            capabilities, competency_baseline_version, config_snapshot_hash, resolved_at
          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
@@ -431,7 +433,7 @@ export function setCampaignRoleProfile(
         revision,
         snapshot.coreVersion,
         JSON.stringify(snapshot.rolePack),
-        snapshot.industryPack ? JSON.stringify(snapshot.industryPack) : null,
+        snapshot.industryVariantId ?? null,
         JSON.stringify(snapshot.capabilities),
         snapshot.competencyBaselineVersion,
         snapshot.configSnapshotHash,

@@ -117,13 +117,14 @@ export const roleProfile = sqliteTable(
     roleFamily: text('role_family').notNull(),
     rolePackId: text('role_pack_id').notNull(),
     level: text('level'),
-    industryPackId: text('industry_pack_id'),
+    /** 岗位包内声明的行业差异变体键；岗位包没有变体时为 null */
+    industryVariantId: text('industry_variant_id'),
     location: text('location'),
     interviewLanguage: text('interview_language').notNull(),
     confidence: real('confidence').notNull(),
     userConfirmed: integer('user_confirmed', { mode: 'boolean' }).notNull().default(false),
   },
-  (t) => [index('idx_role_profile_pack').on(t.rolePackId, t.industryPackId)],
+  (t) => [index('idx_role_profile_pack').on(t.rolePackId, t.industryVariantId)],
 );
 
 export const campaign = sqliteTable('campaign', {
@@ -179,7 +180,8 @@ export const campaignRuntimeDescriptor = sqliteTable(
     revision: integer('revision').notNull(),
     coreVersion: text('core_version').notNull(),
     rolePack: text('role_pack', { mode: 'json' }).$type<ResolvedPluginRef>().notNull(),
-    industryPack: text('industry_pack', { mode: 'json' }).$type<ResolvedPluginRef>(),
+    /** 选定的行业差异变体 id；它是岗位包内的键，没有自己的版本 */
+    industryVariantId: text('industry_variant_id'),
     capabilities: text('capabilities', { mode: 'json' })
       .$type<ResolvedCapabilityRef[]>()
       .notNull(),

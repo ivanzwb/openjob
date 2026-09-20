@@ -22,7 +22,7 @@ import type { RoleProfile } from '../../entities';
 
 export const CAMPAIGN_ID = 'c-hostui';
 export const CORE_VERSION = '1.0.0';
-export const SCHEMA_VERSION = 24;
+export const SCHEMA_VERSION = 25;
 
 function resolver(): DeterministicRuntimeResolver {
   const registry = new BuiltInPluginRegistry();
@@ -56,7 +56,7 @@ export function buildRuntimeView(
           roleFamily: descriptor.rolePack.id,
           rolePackId: descriptor.rolePack.id,
           level: null,
-          industryPackId: null,
+          industryVariantId: null,
           location: null,
           interviewLanguage: 'zh',
           confidence: 1,

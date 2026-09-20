@@ -10,6 +10,7 @@ import type { PluginPermission } from './permissions';
 import type {
   CampaignRuntimeDescriptor,
   ClientPlatform,
+  IndustryVariant,
   PluginManifest,
   PluginRuntimeAvailability,
 } from './types';
@@ -35,7 +36,7 @@ export interface InstalledPlugin {
   type: PluginType;
   displayName: string;
   description: string;
-  /** Role/Industry Pack 允许不声明运行能力，此时按 full 处理。 */
+  /** 岗位包允许不声明运行能力，此时按 full 处理。 */
   runtime: PluginRuntimeAvailability | null;
   artifactSchemas: Record<string, number>;
   interactionSchemas: Record<string, number>;
@@ -43,6 +44,12 @@ export interface InstalledPlugin {
   /** 代码入口（v3）：存在时该插件会进入激活生命周期 */
   main: string | null;
   api: string | null;
+  /**
+   * 岗位包声明的行业差异变体；其他类型没有这一项。
+   *
+   * 变体是包内的键，不是独立插件，所以它跟包一起走这份清单——界面按选中岗位包取选项。
+   */
+  industryVariants?: IndustryVariant[];
 }
 
 export interface ArtifactSchemaRef {
@@ -78,7 +85,6 @@ export interface ClientCapabilityView {
   configSnapshotHash: string;
   resolvedAt: number;
   rolePack: ClientPluginStatus;
-  industryPack: ClientPluginStatus | null;
   capabilities: ClientPluginStatus[];
   enabledCapabilityIds: string[];
   readOnlyCapabilityIds: string[];
@@ -286,9 +292,6 @@ export function buildClientCapabilityView(
     platform,
     index,
   );
-  const industryPack = descriptor.industryPack
-    ? pluginStatus(descriptor.industryPack.id, descriptor.industryPack.version, platform, index)
-    : null;
 
   const capabilities = [...descriptor.capabilities]
     .sort((left, right) => compareStrings(left.id, right.id))
@@ -315,7 +318,6 @@ export function buildClientCapabilityView(
     configSnapshotHash: descriptor.configSnapshotHash,
     resolvedAt: descriptor.resolvedAt,
     rolePack,
-    industryPack,
     capabilities,
     enabledCapabilityIds: idsWithMode('full'),
     readOnlyCapabilityIds: idsWithMode('view-only'),
@@ -323,7 +325,6 @@ export function buildClientCapabilityView(
     artifacts,
     degraded:
       locallyDegraded(rolePack) ||
-      (industryPack !== null && locallyDegraded(industryPack)) ||
       capabilities.some(locallyDegraded) ||
       artifacts.some((artifact) => !artifact.parsable),
   };

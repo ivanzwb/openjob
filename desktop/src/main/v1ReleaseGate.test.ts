@@ -293,7 +293,7 @@ describe('旧 Campaign 继续可用', () => {
     raw
       .prepare(
         `INSERT INTO role_profile (
-           id, role_family, role_pack_id, level, industry_pack_id, location,
+           id, role_family, role_pack_id, level, industry_variant_id, location,
            interview_language, confidence, user_confirmed
          ) VALUES ('rp-profiled', 'software', ?, NULL, NULL, NULL, 'zh', 0.5, 0)`,
       )

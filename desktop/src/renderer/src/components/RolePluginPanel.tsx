@@ -4,17 +4,13 @@ import type { ClientCapabilityView, InstalledPlugin } from '@core/plugins/client
 import {
   INTERVIEW_LANGUAGE_OPTIONS,
   ROLE_LEVEL_OPTIONS,
-  buildCapabilityRows,
   draftFromRuntime,
   isDraftDirty,
   listPluginOptions,
   pluginStatusNotice,
-  reconcileCapabilitySelection,
-  reconciliationNotices,
   toSetRoleProfileInput,
   type RoleProfileDraft,
 } from '@core/hostUi';
-import { CapabilityStatusList } from './CapabilityStatusList';
 import { invoke, onEvent } from '../ipc';
 import { useDataRefresh } from '../ipc/dataVersion';
 import { runTask, useTask, useTaskResult } from '../ipc/taskStore';
@@ -41,7 +37,7 @@ function sameDraft(left: RoleProfileDraft, right: RoleProfileDraft): boolean {
   return (
     left.rolePackId === right.rolePackId &&
     left.level === right.level &&
-    left.industryPackId === right.industryPackId &&
+    left.industryVariantId === right.industryVariantId &&
     left.location === right.location &&
     left.interviewLanguage === right.interviewLanguage &&
     sameIds(left.capabilityIds, right.capabilityIds)
@@ -68,14 +64,8 @@ function runtimeKey(
   ].join('|');
 }
 
-interface SaveFeedback {
-  /** 这条回执描述的是哪一次解析结果；换了一版就不再显示 */
-  key: string;
-  notices: string[];
-}
-
 /**
- * 岗位与能力插件的选择界面。
+ * 岗位与行业包的选择界面。
  *
  * 这里是用户唯一能把「我要按什么岗位准备」写进系统的地方，也是 descriptor 唯一的人工
  * 入口。界面自己不认识任何一个岗位：选项来自本机安装清单，当前值来自 descriptor。
@@ -83,10 +73,9 @@ interface SaveFeedback {
  * 也就没有「尚未确认」这个中间态。整条链路上没有一处从 roleTitle 之类的岗位标题文本
  * 推断该显示什么：推断一旦出现，界面和 resolver 就会各持一套配置。
  *
- * 写入不只是保存偏好：setRoleProfile 会重跑依赖解析并激活新的 binding revision，所以
- * 回执要把 resolver 实际给出的结果和用户勾的东西之间的差异说出来，而不是让复选框自己
- * 悄悄弹回去。落库走 runTask 按 key 去重，同一轮解析没回来时不重入；期间用户若又改了，
- * 结果一回来就按最新草稿再写一次，保证最后一次选择一定生效。
+ * 落库走 runTask 按 key 去重，同一轮解析没回来时不重入；期间用户若又改了，结果一回来就按
+ * 最新草稿再写一次，保证最后一次选择一定生效。写入结果不回显成回执：面板显示的就是
+ * descriptor 本身，resolver 给出的那一份解析结果会直接反映在下拉框与 descriptor 上。
  */
 export function RolePluginPanel({ campaignId }: { campaignId: string }): React.JSX.Element {
   const [installed, setInstalled] = useState<InstalledPlugin[]>([]);
@@ -97,16 +86,13 @@ export function RolePluginPanel({ campaignId }: { campaignId: string }): React.J
   const [loadedFor, setLoadedFor] = useState('');
   const [draft, setDraft] = useState<RoleProfileDraft | null>(null);
   const [syncKey, setSyncKey] = useState('');
-  const [feedback, setFeedback] = useState<SaveFeedback | null>(null);
-  // 最近一次写出去的草稿；回执回来时用它判断用户在解析途中是否又改过。用 state 而
-  // 不是 ref，是因为重建表单的判断发生在渲染期，渲染期不许读 ref。
+  // 最近一次写出去的草稿；descriptor 换版回来时用它判断用户在解析途中是否又改过。用 state
+  // 而不是 ref，是因为重建表单的判断发生在渲染期，渲染期不许读 ref。
   const [sentDraft, setSentDraft] = useState<RoleProfileDraft | null>(null);
   // 用户是否动过这个面板：没动过就不落库，避免「仅打开面板」把默认岗位包写进去
   const [touched, setTouched] = useState(false);
   // 表单初值是按哪场备考建的，用来把「换战役」和「同一场解析结果更新」分开处理
   const [syncedCampaign, setSyncedCampaign] = useState('');
-  // 上一次写出去时用户勾了什么，要留到回执回来时才用得上
-  const requested = useRef<string[]>([]);
 
   const saveKey = `campaign:${campaignId}:setRoleProfile`;
   const saveTask = useTask(saveKey);
@@ -139,15 +125,6 @@ export function RolePluginPanel({ campaignId }: { campaignId: string }): React.J
   useDataRefresh(refresh);
 
   const rolePackOptions = listPluginOptions(installed, 'role-pack');
-  const industryPackOptions = listPluginOptions(installed, 'industry-pack');
-  const capabilityRows = buildCapabilityRows({
-    descriptor: runtime?.descriptor ?? null,
-    view: clientView,
-    installed,
-  });
-
-  const displayName = (id: string): string =>
-    installed.find((plugin) => plugin.id === id)?.displayName ?? id;
 
   const loaded = loadedFor === campaignId;
   const currentKey = runtimeKey(campaignId, runtime, installed.length);
@@ -171,13 +148,6 @@ export function RolePluginPanel({ campaignId }: { campaignId: string }): React.J
 
   useTaskResult<CampaignRuntimeView>(saveKey, (next) => {
     setRuntime(next);
-    setFeedback({
-      key: runtimeKey(campaignId, next, installed.length),
-      notices: reconciliationNotices(
-        reconcileCapabilitySelection(requested.current, next.descriptor),
-        displayName,
-      ),
-    });
     void invoke('campaign:getClientCapabilityView', { campaignId, platform: 'desktop' }).then(
       setClientView,
     );
@@ -194,7 +164,6 @@ export function RolePluginPanel({ campaignId }: { campaignId: string }): React.J
     if (!isDraftDirty(draft, runtime)) return;
     const timer = setTimeout(() => {
       setSentDraft(draft);
-      requested.current = [...draft.capabilityIds];
       void runTask(saveKey, () =>
         invoke('campaign:setRoleProfile', toSetRoleProfileInput(campaignId, draft)),
       ).catch(() => undefined);
@@ -220,7 +189,6 @@ export function RolePluginPanel({ campaignId }: { campaignId: string }): React.J
     () => () => {
       const next = pending.current;
       if (!next) return;
-      requested.current = [...next.capabilityIds];
       // 同一 key 已有写入在跑时 runTask 会复用，不会重复发
       void runTask(saveKey, () =>
         invoke('campaign:setRoleProfile', toSetRoleProfileInput(campaignId, next)),
@@ -236,27 +204,19 @@ export function RolePluginPanel({ campaignId }: { campaignId: string }): React.J
   const patch = (next: Partial<RoleProfileDraft>): void => {
     setTouched(true);
     setDraft((prev) => (prev ? { ...prev, ...next } : prev));
-    setFeedback(null);
   };
 
-  const toggleCapability = (id: string, checked: boolean): void => {
-    patch({
-      capabilityIds: checked
-        ? [...draft.capabilityIds, id].filter((item, index, all) => all.indexOf(item) === index)
-        : draft.capabilityIds.filter((item) => item !== id),
-    });
-  };
-
-  const dirty = isDraftDirty(draft, runtime);
   const rolePackNotice = pluginStatusNotice(clientView?.rolePack ?? null);
-  const industryPackNotice = pluginStatusNotice(clientView?.industryPack ?? null);
-  const showFeedback = feedback?.key === currentKey ? feedback : null;
+
+  // 行业差异是岗位包内的可选字段（非插件）：选项来自当前选中的岗位包，包没声明就没有这项
+  const industryVariantOptions =
+    rolePackOptions.find((option) => option.id === draft.rolePackId)?.industryVariants ?? [];
 
   return (
     <section className="space-y-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h3 className="text-sm font-medium">岗位与能力插件</h3>
+          <h3 className="text-sm font-medium">岗位与行业包</h3>
           <p className="mt-0.5 text-xs text-[var(--color-muted)]">
             出题、评分和考点都按这里选定的岗位包执行；改动会自动解析依赖并生效
           </p>
@@ -311,22 +271,23 @@ export function RolePluginPanel({ campaignId }: { campaignId: string }): React.J
           </select>
         </label>
 
-        <label className="space-y-1">
-          <span className="text-xs text-[var(--color-muted)]">行业包</span>
-          <select
-            value={draft.industryPackId}
-            onChange={(e) => patch({ industryPackId: e.target.value })}
-            className={SELECT_CLASS}
-          >
-            <option value="">不挂行业包</option>
-            {industryPackOptions.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.displayName} v{option.version}
-              </option>
-            ))}
-          </select>
-          {industryPackNotice && <p className="text-[10px] text-amber-300">{industryPackNotice}</p>}
-        </label>
+        {industryVariantOptions.length > 0 && (
+          <label className="space-y-1">
+            <span className="text-xs text-[var(--color-muted)]">行业</span>
+            <select
+              value={draft.industryVariantId}
+              onChange={(e) => patch({ industryVariantId: e.target.value })}
+              className={SELECT_CLASS}
+            >
+              <option value="">不指定</option>
+              {industryVariantOptions.map((variant) => (
+                <option key={variant.id} value={variant.id}>
+                  {variant.displayName}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
 
         <label className="space-y-1">
           <span className="text-xs text-[var(--color-muted)]">面试语言</span>
@@ -354,47 +315,7 @@ export function RolePluginPanel({ campaignId }: { campaignId: string }): React.J
         </label>
       </div>
 
-      <div className="space-y-2">
-        <h4 className="text-xs font-medium text-[var(--color-muted)]">能力插件</h4>
-        <CapabilityStatusList
-          rows={capabilityRows}
-          selectedIds={draft.capabilityIds}
-          onToggle={toggleCapability}
-        />
-      </div>
-
-      <p className="text-xs text-[var(--color-muted)]">
-        {saveTask.running
-          ? '解析中…'
-          : dirty
-            ? '改动待落库…'
-            : '当前选择已生效'}
-      </p>
-
       {saveTask.error && <p className="text-sm text-red-400">{saveTask.error}</p>}
-
-      {showFeedback && (
-        <div className="space-y-1 rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2">
-          <p className="text-xs text-emerald-400">
-            已应用当前选择，配置版本 v{runtime?.revision}
-            {showFeedback.notices.length > 0 ? '；以下几项与你的勾选不同：' : ''}
-          </p>
-          {showFeedback.notices.map((notice) => (
-            <p key={notice} className="text-[10px] text-amber-300">
-              {notice}
-            </p>
-          ))}
-        </div>
-      )}
-
-      {runtime && (
-        <p className="border-t border-[var(--color-border)] pt-3 text-[10px] text-[var(--color-muted)]">
-          配置版本 v{runtime.revision} · 内核 {runtime.descriptor.coreVersion} · 能力基线{' '}
-          {runtime.descriptor.competencyBaselineVersion} · 快照{' '}
-          {runtime.descriptor.configSnapshotHash.slice(0, 12)} · 解析于{' '}
-          {new Date(runtime.descriptor.resolvedAt).toLocaleString()}
-        </p>
-      )}
     </section>
   );
 }

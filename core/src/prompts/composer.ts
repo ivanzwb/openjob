@@ -49,7 +49,6 @@ export const PROMPT_LAYER_ORDER = [
   'corePolicy',
   'stagePolicy',
   'rolePackFragment',
-  'industryFragment',
   'formatProtocol',
   'rubric',
   'candidateEvidence',
@@ -141,20 +140,13 @@ export interface PromptEvidence {
   userConfirmed: boolean;
 }
 
-/** 行业包只能追加片段，位置固定在岗位包之后 */
-export interface PromptIndustryFragment {
-  pluginId: string;
-  pluginVersion: string;
-  text: string;
-}
-
 /**
  * 组合只依赖 descriptor 里与 provenance 相关的字段，不要求调用方先落库，
  * T02 的 ResolvedRuntimeSnapshot 也能直接传进来。
  */
 export type PromptRuntimeSnapshot = Pick<
   CampaignRuntimeDescriptor,
-  'coreVersion' | 'rolePack' | 'industryPack' | 'capabilities' | 'configSnapshotHash'
+  'coreVersion' | 'rolePack' | 'industryVariantId' | 'capabilities' | 'configSnapshotHash'
 >;
 
 export interface PromptCompositionInput {
@@ -164,7 +156,6 @@ export interface PromptCompositionInput {
   slot: PromptSlot;
   /** questionGeneration / scoring / answerCoaching 按题型分片，必填 */
   formatId?: string;
-  industryFragment?: PromptIndustryFragment;
   /** 已确认的候选人证据。未确认项会被丢弃，不参与组合 */
   evidence?: PromptEvidence[];
   /** 只能把门槛抬高：传 false 不会让 PERSONAL_FACT_SLOTS 放行 */
@@ -186,7 +177,8 @@ export interface PromptCompositionInput {
 export interface PromptProvenance {
   coreVersion: string;
   rolePack: ResolvedPluginRef;
-  industryPack?: ResolvedPluginRef;
+  /** 本次选定的行业差异变体 id；岗位包没声明或没选时为 undefined */
+  industryVariantId?: string;
   /** 本次运行时已启用的能力插件 ID，字典序 */
   capabilityIds: string[];
   /** 同一批能力的精确版本 */
@@ -405,13 +397,6 @@ export function composePrompt(input: PromptCompositionInput): ComposedPrompt {
     );
   }
 
-  if (input.industryFragment) {
-    assertPluginFragmentSafe(
-      input.industryFragment.text,
-      `行业包 ${input.industryFragment.pluginId}`,
-    );
-  }
-
   const confirmedEvidence = (input.evidence ?? []).filter((item) => item.userConfirmed);
   const needsPersonalFacts =
     PERSONAL_FACT_SLOTS.has(slot) || input.requiresPersonalFacts === true;
@@ -440,9 +425,6 @@ export function composePrompt(input: PromptCompositionInput): ComposedPrompt {
     sections.push({ layer: 'rolePackFragment', text: groundingRule });
   }
 
-  if (input.industryFragment) {
-    sections.push({ layer: 'industryFragment', text: input.industryFragment.text });
-  }
   if (format) {
     sections.push({ layer: 'formatProtocol', text: formatProtocolSection(format) });
   }
@@ -480,7 +462,7 @@ export function composePrompt(input: PromptCompositionInput): ComposedPrompt {
     provenance: {
       coreVersion: runtime.coreVersion,
       rolePack: { id: runtime.rolePack.id, version: runtime.rolePack.version },
-      ...(runtime.industryPack ? { industryPack: runtime.industryPack } : {}),
+      ...(runtime.industryVariantId ? { industryVariantId: runtime.industryVariantId } : {}),
       capabilityIds: capabilities.map((capability) => capability.id),
       capabilities,
       promptSlot: slot,

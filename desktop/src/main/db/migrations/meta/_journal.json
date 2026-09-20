@@ -225,6 +225,13 @@
       "when": 1787660000000,
       "tag": "0031_annotation_target_label",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1787670000000,
+      "tag": "0032_industry_variant",
+      "breakpoints": true
     }
   ]
 }
