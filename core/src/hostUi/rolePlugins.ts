@@ -1,5 +1,5 @@
 /**
- * 岗位确认表单的取数与回执核对。
+ * 岗位与能力选择的取数与回执核对。
  *
  * 界面上要回答三个问题：这场备考挂的是哪个岗位包、级别是什么、哪些能力插件在生效。
  * 三个答案全部来自 descriptor 与本机安装清单，没有一处从 `campaign.roleTitle` 之类的
@@ -79,8 +79,9 @@ export function enabledCapabilityIds(descriptor: CampaignRuntimeDescriptor): str
 /**
  * 表单初值。
  *
- * 没有 descriptor（旧库未回填、或者这场备考还没确认过岗位）时退回本机第一个岗位包，
- * 而不是留空：留空会让「确认」按钮永远不可用，用户也就没有任何办法把 descriptor 建起来。
+ * 没有 descriptor（旧库未回填、或者这场备考还没挑过岗位包）时退回本机第一个岗位包，
+ * 而不是留空：留空会让用户没有任何办法把 descriptor 建起来。这个默认值本身不触发
+ * 写入——只有用户真的改动了面板才算选择，见 RolePluginPanel 的「用户是否动过」把关。
  */
 export function draftFromRuntime(
   runtime: CampaignRuntimeView | null,
@@ -103,7 +104,8 @@ export function draftFromRuntime(
  *
  * roleFamily 直接取岗位包 ID，不额外让用户填一个自由文本：这个字段的作用是把一场备考
  * 归到某一类岗位上，而「哪一类」已经由选中的岗位包定义了，再要一份手写值只会出现
- * 两者对不上的情况。userConfirmed 恒为 true——这条路径上的每一次写入都是用户按下确认。
+ * 两者对不上的情况。userConfirmed 恒为 true——这条路径上的每一次写入都由用户自己挑的
+ * 选项触发，用户的选择本身就是确认，不必再要一次显式确认。
  */
 export function toSetRoleProfileInput(
   campaignId: string,
@@ -130,18 +132,28 @@ function sameIds(left: readonly string[], right: readonly string[]): boolean {
   return sortedLeft.every((id, index) => id === sortedRight[index]);
 }
 
-/** 未确认过的岗位也算「有待提交」，否则确认按钮会在自动识别的结果上一直是灰的 */
+/**
+ * 草稿与当前生效配置是否已经不一致。
+ *
+ * 只看值本身，不再看 userConfirmed：面板改成「选中即生效」之后，一次选择写完就落成
+ * 配置，确认与否不再是一条要用户补上的步骤。若还按 userConfirmed 判脏，读路径自动
+ * 解析出的那份未确认配置会让表单一直「有待提交」，防抖写入便会无休止地重跑。
+ *
+ * 没有 descriptor（旧库未回填、或这场备考还没挑过岗位包）时，选了岗位包就算有待写入：
+ * 否则用户没有任何办法把这份配置建起来。调用方要避免「仅打开面板就把默认岗位包写进去」，
+ * 那是调用方按「用户是否动过」把关，不是这里凭空判脏。
+ */
 export function isDraftDirty(draft: RoleProfileDraft, runtime: CampaignRuntimeView | null): boolean {
   if (!runtime) return draft.rolePackId !== '';
   const profile = runtime.roleProfile;
-  if (!profile?.userConfirmed) return true;
+  const descriptor = runtime.descriptor;
   return (
-    profile.rolePackId !== draft.rolePackId ||
-    (profile.level ?? '') !== draft.level ||
-    (profile.industryPackId ?? '') !== draft.industryPackId ||
-    (profile.location ?? '') !== draft.location ||
-    profile.interviewLanguage !== draft.interviewLanguage ||
-    !sameIds(enabledCapabilityIds(runtime.descriptor), draft.capabilityIds)
+    (profile?.rolePackId ?? descriptor.rolePack.id) !== draft.rolePackId ||
+    (profile?.level ?? '') !== draft.level ||
+    (profile?.industryPackId ?? '') !== draft.industryPackId ||
+    (profile?.location ?? '') !== draft.location ||
+    (profile?.interviewLanguage ?? 'zh') !== draft.interviewLanguage ||
+    !sameIds(enabledCapabilityIds(descriptor), draft.capabilityIds)
   );
 }
 

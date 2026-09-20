@@ -9,7 +9,7 @@ import type {
 import type { PluginType } from '@core/enums';
 import { compareExactSemVer } from '@core/plugins/registry';
 import { activateInstalledPluginRuntimes } from '../pluginRuntimes/runtime';
-import { invoke } from '../ipc';
+import { invoke, onEvent } from '../ipc';
 
 type PluginRuntimeInfo = Awaited<ReturnType<typeof invoke<'pluginRuntime:list'>>>[number];
 
@@ -128,6 +128,11 @@ export function PluginsPanel({
     await activateInstalledPluginRuntimes();
     onPluginsChanged?.();
   }, [onPluginsChanged]);
+
+  // 主进程广播清单变化时（含更新源安装、启动扫描装载、别处触发的增删）就地重拉并重激活，
+  // 与上面用户操作后的 refresh 互补：那条覆盖本面板自己发起的安装 / 卸载，这条覆盖其余来源。
+  // 主进程只负责发，渲染层只负责听，不会来回 ping-pong。
+  useEffect(() => onEvent('plugin:inventory-changed', () => void refresh()), [refresh]);
 
   /**
    * 清单每次都重新拉。

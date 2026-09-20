@@ -6,6 +6,8 @@
  */
 import type { PluginInventoryView } from '@core/ipc';
 import { getAppPaths } from '../paths';
+// 直接引 bridge 而非 ipc/index，避免与 handler 注册形成循环依赖（同 llm/index.ts）
+import { emit } from '../ipc/bridge';
 import { scanPluginInventory, type PluginInventory } from './inventory';
 import { loadTrustedPublicKeys } from './package/trustedKeys';
 import {
@@ -40,6 +42,10 @@ export function loadExternalPlugins(): PluginInventory {
   } catch (error) {
     console.warn('旧战役插件运行时回填失败：', error);
   }
+
+  // 盘上的包变了就广播一次：安装成功、卸载、删掉被拒目录都各自调用本函数，所以那三处
+  // 不必再各发一次，事件从这里统一出去。载荷只报装了几个包，不掺任何岗位词汇。
+  emit('plugin:inventory-changed', { count: inventory.entries.length });
 
   if (inventory.rejected.length > 0) {
     console.warn(

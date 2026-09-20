@@ -29,6 +29,9 @@ vi.mock('./package/trustedKeys', () => ({
 const paths = { userData: '', pluginsDir: '' };
 vi.mock('../paths', () => ({ getAppPaths: () => paths }));
 
+// bootstrap 装载后会广播 plugin:inventory-changed；bridge 会拉起 electron，测试环境没有它
+vi.mock('../ipc/bridge', () => ({ emit: () => undefined }));
+
 import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
 import { SOFTWARE_ENGINEERING_ROLE_PACK_VERSION } from '@plugins/softwareEngineering';
 import {

@@ -122,7 +122,7 @@ export function PracticeRunner({ campaignId }: { campaignId: string }): React.JS
   }, []);
 
   // 出题、追问、评分都要按 descriptor 里的岗位包展开；没有它这条链路根本起不来，
-  // 与其让用户点下去再吃一个 role-pack-unavailable，不如先说清楚该去哪儿确认岗位
+  // 与其让用户点下去再吃一个 role-pack-unavailable，不如先说清楚该去哪儿选岗位包
   useEffect(() => {
     let cancelled = false;
     void invoke('campaign:getRuntimeDescriptor', { campaignId })
@@ -245,8 +245,8 @@ export function PracticeRunner({ campaignId }: { campaignId: string }): React.JS
 
       {runtimeLoaded && !runtime ? (
         <p className="rounded border border-amber-900/50 bg-amber-950/20 px-3 py-2 text-xs text-amber-100">
-          这场备考还没有确认岗位，题型与评分维度无从展开。先去「备考 →
-          岗位与证据」确认岗位包，再回来练习。
+          这场备考还没有选择岗位包，题型与评分维度无从展开。先去「备考 →
+          岗位与证据」选好岗位包，再回来练习。
         </p>
       ) : (
         <p className="text-xs text-[var(--color-muted)]">

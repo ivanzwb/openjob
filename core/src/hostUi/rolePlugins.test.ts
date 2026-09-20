@@ -73,7 +73,7 @@ describe('draftFromRuntime', () => {
     });
   });
 
-  /** 留空会让确认按钮永远点不动，用户也就没有办法把 descriptor 建起来 */
+  /** 留空会让用户无从把 descriptor 建起来；这个默认值由界面按「用户是否动过」决定要不要写 */
   it('没有 descriptor 时退回本机第一个岗位包，而不是留空', () => {
     // 断言「第一个」而不是某个具体岗位包：新增内置岗位包不该让这条用例需要改写
     expect(draftFromRuntime(null, rolePackOptions)).toMatchObject({
@@ -99,7 +99,7 @@ describe('toSetRoleProfileInput', () => {
     capabilityIds: [SOURCE_REPOSITORY_CAPABILITY_ID],
   };
 
-  it('走这条路径的每一次写入都是用户按下确认，userConfirmed 恒为 true', () => {
+  it('走这条路径的每一次写入都由用户的选择触发，userConfirmed 恒为 true', () => {
     expect(toSetRoleProfileInput(CAMPAIGN_ID, draft)).toEqual({
       campaignId: CAMPAIGN_ID,
       roleFamily: SOFTWARE_ENGINEERING_ROLE_PACK_ID,
@@ -143,10 +143,20 @@ describe('isDraftDirty', () => {
     expect(isDraftDirty({ ...clean, capabilityIds: [...clean.capabilityIds] }, runtime)).toBe(false);
   });
 
-  /** 自动识别出来的岗位还没被确认过，确认按钮不能是灰的 */
-  it('岗位未经用户确认时始终算待提交', () => {
+  /**
+   * 选中即生效之后，确认与否不再是「有没有待提交」的判据：读路径自动解析出的那份
+   * 未确认配置，只要表单与它一致就不该再触发写入，否则防抖写入会无休止重跑。
+   */
+  it('岗位未经用户确认，只要表单与它一致就不算待提交', () => {
     const unconfirmed = buildRuntimeView({ profile: { userConfirmed: false } });
-    expect(isDraftDirty(draftFromRuntime(unconfirmed, rolePackOptions), unconfirmed)).toBe(true);
+    expect(isDraftDirty(draftFromRuntime(unconfirmed, rolePackOptions), unconfirmed)).toBe(false);
+  });
+
+  it('未确认的岗位画像改了值照样算待提交', () => {
+    const unconfirmed = buildRuntimeView({ profile: { userConfirmed: false } });
+    expect(
+      isDraftDirty({ ...draftFromRuntime(unconfirmed, rolePackOptions), level: '资深' }, unconfirmed),
+    ).toBe(true);
   });
 
   it('完全没有 descriptor 时，选了岗位包就算待提交', () => {

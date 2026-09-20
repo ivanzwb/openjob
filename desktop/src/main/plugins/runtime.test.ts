@@ -1,7 +1,9 @@
 /**
  * Campaign 运行时读写。
  *
- * 关键约束：依赖解析只在写入路径发生一次，读视图路径一行都不写。
+ * 关键约束：依赖解析只在写入路径发生一次；读视图路径对既没有岗位画像、也没有
+ * pre-plugin 凭据的旧战役一行都不写，只有「有画像、没 descriptor」时才补一次解析
+ * （见下方「读路径补解析」一组）。
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -381,6 +383,78 @@ describe('setCampaignRoleProfile', () => {
       }),
     ).toThrow(/Campaign 不存在/);
     expect(count(raw, 'role_profile')).toBe(0);
+  });
+});
+
+describe('读路径补解析：有画像、没 descriptor', () => {
+  let raw: Database;
+
+  beforeEach(() => {
+    raw = freshDb();
+    installRolePacks();
+  });
+
+  afterEach(() => {
+    setExternalPlugins([]);
+  });
+
+  /** 直接造出「画像已落库、运行时还没建起来」的状态：诊断/同步都可能先带来画像。 */
+  function seedPendingProfile(campaignId: string, userConfirmed: 0 | 1): void {
+    raw
+      .prepare(
+        `INSERT INTO role_profile (
+           id, role_family, role_pack_id, level, industry_pack_id, location,
+           interview_language, confidence, user_confirmed
+         ) VALUES ('rp-pending', 'software', ?, NULL, NULL, NULL, 'zh', 0.8, ?)`,
+      )
+      .run(ROLE_PACK_ID, userConfirmed);
+    raw.prepare(`UPDATE campaign SET role_profile_id = 'rp-pending' WHERE id = ?`).run(campaignId);
+  }
+
+  it('读 runtime 时自动解析出 descriptor 与 binding，画像立即生效', () => {
+    seedPendingProfile('c1', 0);
+
+    const view = getCampaignRuntime(raw, 'c1');
+
+    expect(view?.descriptor).toMatchObject({
+      campaignId: 'c1',
+      rolePack: { id: ROLE_PACK_ID, version: ROLE_PACK_VERSION },
+    });
+    expect(view?.roleProfile?.rolePackId).toBe(ROLE_PACK_ID);
+    // 自动解析不是用户的选择，不冒充「已确认」：画像原本未确认，解析完仍保持未确认
+    expect(view?.roleProfile?.userConfirmed).toBe(false);
+    expect(count(raw, 'campaign_runtime_descriptor')).toBe(1);
+    const active = bindings(raw)
+      .filter((row) => row.active_execution === 1)
+      .map((row) => row.plugin_id)
+      .sort();
+    expect(active).toEqual([REPO_ID, ROLE_PACK_ID].sort());
+
+    // 再读一次已经能命中 descriptor，不再生成第二个 revision
+    expect(getCampaignRuntime(raw, 'c1')?.revision).toBe(1);
+    expect(count(raw, 'campaign_runtime_descriptor')).toBe(1);
+  });
+
+  it('岗位包没装时读 runtime 不写库，也不抛错', () => {
+    seedPendingProfile('c1', 0);
+    setExternalPlugins([]);
+
+    expect(getCampaignRuntime(raw, 'c1')).toBeNull();
+    expect(count(raw, 'campaign_runtime_descriptor')).toBe(0);
+    expect(count(raw, 'campaign_plugin_binding')).toBe(0);
+  });
+
+  it('既没有画像也没有 descriptor 的旧战役，读路径一行都不写', () => {
+    const before = {
+      descriptor: count(raw, 'campaign_runtime_descriptor'),
+      binding: count(raw, 'campaign_plugin_binding'),
+      profile: count(raw, 'role_profile'),
+    };
+
+    expect(getCampaignRuntime(raw, 'c1')).toBeNull();
+    expect(count(raw, 'campaign_runtime_descriptor')).toBe(before.descriptor);
+    expect(count(raw, 'campaign_plugin_binding')).toBe(before.binding);
+    expect(count(raw, 'role_profile')).toBe(before.profile);
   });
 });
 

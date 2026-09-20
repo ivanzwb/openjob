@@ -4,6 +4,10 @@
  * 插件依赖解析只在这里发生一次，写库后由 descriptor 承担跨端事实源；
  * 桌面渲染层和手机端都只消费 descriptor，再各自计算本机降级视图。
  *
+ * 唯一的例外是「有岗位画像、却还没有 descriptor」的战役：读 getCampaignRuntime 时顺手
+ * 补一次解析，让画像立刻生效（见 resolvePendingRoleProfile）。既没有画像、也没有
+ * pre-plugin 凭据的旧战役读路径一行都不写，保持升级前的行为。
+ *
  * 本模块不引用 ../db：所有函数接收 raw Database，由 IPC/RPC 层注入，
  * 这样迁移后的真实库结构可以直接进单测。
  */
@@ -256,11 +260,46 @@ function readDescriptor(raw: Database, campaignId: string): CampaignRuntimeView 
   return { descriptor, revision: row.revision, roleProfile: readRoleProfile(raw, campaignId) };
 }
 
+/**
+ * 已有岗位画像、却还没有 descriptor 的战役：补一次解析并返回结果。
+ *
+ * 画像可能先于运行时落库（例如诊断先给出岗位画像、或旧库只把画像同步了过来），
+ * 这时不能让用户先打开岗位面板才生效——读 runtime 的这条路径顺手把解析补上。
+ * 画像的确认状态原样带过去：自动解析不是用户的选择，不冒充「已确认」。
+ *
+ * 解析失败（岗位包本机没装等）时返回 null，让调用方照旧走「没有运行配置」的分支；
+ * 这条路径只对**有画像**的战役动手，既没画像也没 pre-plugin 凭据的旧战役读路径
+ * 依旧一行都不写。
+ */
+function resolvePendingRoleProfile(raw: Database, campaignId: string): CampaignRuntimeView | null {
+  const profile = readRoleProfile(raw, campaignId);
+  if (!profile) return null;
+  try {
+    return setCampaignRoleProfile(raw, {
+      campaignId,
+      roleFamily: profile.roleFamily,
+      rolePackId: profile.rolePackId,
+      level: profile.level,
+      industryPackId: profile.industryPackId,
+      location: profile.location,
+      interviewLanguage: profile.interviewLanguage,
+      confidence: profile.confidence,
+      userConfirmed: profile.userConfirmed,
+    });
+  } catch {
+    // 岗位包卸了、版本对不上等：读路径不该抛，交回「没有 descriptor」的现状
+    return null;
+  }
+}
+
 export function getCampaignRuntime(
   raw: Database,
   campaignId: string,
 ): CampaignRuntimeView | null {
-  return readDescriptor(raw, campaignId);
+  const existing = readDescriptor(raw, campaignId);
+  if (existing) return existing;
+  // 有画像无 descriptor：读路径上补解析，画像立刻生效，不必等用户打开面板
+  return resolvePendingRoleProfile(raw, campaignId);
 }
 
 export interface SetRoleProfileOptions {

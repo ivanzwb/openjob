@@ -39,6 +39,9 @@ vi.mock('../db', () => ({
   },
 }));
 
+// bootstrap 在装载后会广播 plugin:inventory-changed；bridge 会拉起 electron，测试环境没有它
+vi.mock('../ipc/bridge', () => ({ emit: () => undefined }));
+
 import { PACKAGE_MANIFEST_FILE, PACKAGE_PACK_FILE } from '@core/plugins/package/contract';
 import { OFFICIAL_REPO, resolveFeedDir } from '@core/updateFeed';
 import type { RolePack } from '@core/plugins/types';

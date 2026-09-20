@@ -286,6 +286,36 @@ describe('旧 Campaign 继续可用', () => {
     );
   });
 
+  it('有岗位画像却没有 descriptor 的战役，读运行时会自动补解析', () => {
+    // 画像先于运行时落库是可能的（诊断先给出画像、或跨端同步只带来画像）；
+    // 这场备考不该要用户先打开岗位面板才用得上
+    newCampaign('c-profiled');
+    raw
+      .prepare(
+        `INSERT INTO role_profile (
+           id, role_family, role_pack_id, level, industry_pack_id, location,
+           interview_language, confidence, user_confirmed
+         ) VALUES ('rp-profiled', 'software', ?, NULL, NULL, NULL, 'zh', 0.5, 0)`,
+      )
+      .run(ROLE_PACK_CASES[0].rolePackId);
+    raw
+      .prepare(`UPDATE campaign SET role_profile_id = 'rp-profiled' WHERE id = 'c-profiled'`)
+      .run();
+
+    const runtime = getCampaignRuntime(raw, 'c-profiled');
+
+    expect(runtime?.descriptor.rolePack.id).toBe(ROLE_PACK_CASES[0].rolePackId);
+    const bound = raw
+      .prepare(
+        `SELECT plugin_id FROM campaign_plugin_binding
+         WHERE campaign_id = 'c-profiled' AND active_execution = 1 ORDER BY plugin_id`,
+      )
+      .all() as Array<{ plugin_id: string }>;
+    expect(bound.map((row) => row.plugin_id)).toEqual(
+      [ROLE_PACK_CASES[0].rolePackId, ...enabledIds(runtime!.descriptor)].sort(),
+    );
+  });
+
   it('绑定岗位包不动 Campaign 的既有列', () => {
     newCampaign('c-keep');
     const before = raw.prepare(`SELECT * FROM campaign WHERE id = 'c-keep'`).get() as Record<

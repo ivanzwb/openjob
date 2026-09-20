@@ -15,12 +15,38 @@ import {
   type RoleProfileDraft,
 } from '@core/hostUi';
 import { CapabilityStatusList } from './CapabilityStatusList';
-import { invoke } from '../ipc';
+import { invoke, onEvent } from '../ipc';
 import { useDataRefresh } from '../ipc/dataVersion';
 import { runTask, useTask, useTaskResult } from '../ipc/taskStore';
 
 const SELECT_CLASS =
   'w-full rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm';
+
+/**
+ * 自动落库的防抖窗口：连续改动只在停下来之后写一次。
+ *
+ * 每次选择都立刻反映在同一份草稿上，落库则合并成一次解析——下拉框连点几下不会各发
+ * 一次 setRoleProfile，也就不会出现 A 的解析结果盖掉 B 的选择。
+ */
+const AUTOSAVE_DELAY_MS = 400;
+
+/** 两份草稿是否等价；能力只看集合，不看顺序（勾选顺序不改变语义）。 */
+function sameDraft(left: RoleProfileDraft, right: RoleProfileDraft): boolean {
+  const sameIds = (a: readonly string[], b: readonly string[]): boolean => {
+    if (a.length !== b.length) return false;
+    const sortedA = [...a].sort();
+    const sortedB = [...b].sort();
+    return sortedA.every((id, index) => id === sortedB[index]);
+  };
+  return (
+    left.rolePackId === right.rolePackId &&
+    left.level === right.level &&
+    left.industryPackId === right.industryPackId &&
+    left.location === right.location &&
+    left.interviewLanguage === right.interviewLanguage &&
+    sameIds(left.capabilityIds, right.capabilityIds)
+  );
+}
 
 /**
  * 同一份解析结果的指纹。
@@ -49,16 +75,18 @@ interface SaveFeedback {
 }
 
 /**
- * 岗位与能力插件的确认界面。
+ * 岗位与能力插件的选择界面。
  *
  * 这里是用户唯一能把「我要按什么岗位准备」写进系统的地方，也是 descriptor 唯一的人工
- * 入口。界面自己不认识任何一个岗位：选项来自本机安装清单，当前值来自 descriptor，
- * 提交之后再按返回的 descriptor 把表单校正回来。整条链路上没有一处从 roleTitle 之类的
- * 岗位标题文本推断该显示什么——推断一旦出现，界面和 resolver 就会各持一套配置。
+ * 入口。界面自己不认识任何一个岗位：选项来自本机安装清单，当前值来自 descriptor。
+ * 每一次改动都自动落库——用户挑的那一刻就是生效的那一刻，没有单独的「确认」步骤，
+ * 也就没有「尚未确认」这个中间态。整条链路上没有一处从 roleTitle 之类的岗位标题文本
+ * 推断该显示什么：推断一旦出现，界面和 resolver 就会各持一套配置。
  *
- * 「确认」不只是保存偏好：setRoleProfile 会重跑依赖解析并激活新的 binding revision，
- * 所以回执要把 resolver 实际给出的结果和用户勾的东西之间的差异说出来，而不是让复选框
- * 自己悄悄弹回去。
+ * 写入不只是保存偏好：setRoleProfile 会重跑依赖解析并激活新的 binding revision，所以
+ * 回执要把 resolver 实际给出的结果和用户勾的东西之间的差异说出来，而不是让复选框自己
+ * 悄悄弹回去。落库走 runTask 按 key 去重，同一轮解析没回来时不重入；期间用户若又改了，
+ * 结果一回来就按最新草稿再写一次，保证最后一次选择一定生效。
  */
 export function RolePluginPanel({ campaignId }: { campaignId: string }): React.JSX.Element {
   const [installed, setInstalled] = useState<InstalledPlugin[]>([]);
@@ -70,7 +98,14 @@ export function RolePluginPanel({ campaignId }: { campaignId: string }): React.J
   const [draft, setDraft] = useState<RoleProfileDraft | null>(null);
   const [syncKey, setSyncKey] = useState('');
   const [feedback, setFeedback] = useState<SaveFeedback | null>(null);
-  // 提交时用户勾了什么，要留到回执回来时才用得上；期间表单已经被 descriptor 校正过了
+  // 最近一次写出去的草稿；回执回来时用它判断用户在解析途中是否又改过。用 state 而
+  // 不是 ref，是因为重建表单的判断发生在渲染期，渲染期不许读 ref。
+  const [sentDraft, setSentDraft] = useState<RoleProfileDraft | null>(null);
+  // 用户是否动过这个面板：没动过就不落库，避免「仅打开面板」把默认岗位包写进去
+  const [touched, setTouched] = useState(false);
+  // 表单初值是按哪场备考建的，用来把「换战役」和「同一场解析结果更新」分开处理
+  const [syncedCampaign, setSyncedCampaign] = useState('');
+  // 上一次写出去时用户勾了什么，要留到回执回来时才用得上
   const requested = useRef<string[]>([]);
 
   const saveKey = `campaign:${campaignId}:setRoleProfile`;
@@ -97,6 +132,10 @@ export function RolePluginPanel({ campaignId }: { campaignId: string }): React.J
     refresh();
   }, [refresh]);
 
+  // 装 / 卸插件后本机安装清单会变：主进程广播一次，这里就地重拉 installed 与本战役的
+  // 解析视图，而不是等用户离开这一页再回来才看到新的岗位包。复用 refresh 不另写取数。
+  useEffect(() => onEvent('plugin:inventory-changed', () => refresh()), [refresh]);
+
   useDataRefresh(refresh);
 
   const rolePackOptions = listPluginOptions(installed, 'role-pack');
@@ -111,11 +150,23 @@ export function RolePluginPanel({ campaignId }: { campaignId: string }): React.J
     installed.find((plugin) => plugin.id === id)?.displayName ?? id;
 
   const loaded = loadedFor === campaignId;
-  // descriptor 换了一版就按新版重建表单：这是唯一事实源，界面上的旧值没有保留价值
   const currentKey = runtimeKey(campaignId, runtime, installed.length);
-  if (loaded && syncKey !== currentKey) {
+
+  // 载入、descriptor 换版或换战役时按事实源重建表单：descriptor 是唯一事实源，界面上的
+  // 旧值没有保留价值。但用户在解析途中又改过（草稿与最近写出去的那份不同）就先留着，
+  // 等这轮回执结束后按最新草稿再写一次，别让保存结果盖掉还没写出去的改动。
+  if (loaded && syncedCampaign !== campaignId) {
+    // 换战役：上一场遗留的草稿与判定依据一并作废
+    setSyncedCampaign(campaignId);
+    setSentDraft(null);
+    setTouched(false);
     setSyncKey(currentKey);
     setDraft(draftFromRuntime(runtime, rolePackOptions));
+  } else if (loaded && syncKey !== currentKey) {
+    setSyncKey(currentKey);
+    if (!sentDraft || draft === null || sameDraft(draft, sentDraft)) {
+      setDraft(draftFromRuntime(runtime, rolePackOptions));
+    }
   }
 
   useTaskResult<CampaignRuntimeView>(saveKey, (next) => {
@@ -132,11 +183,58 @@ export function RolePluginPanel({ campaignId }: { campaignId: string }): React.J
     );
   });
 
+  // 选择即生效：把草稿防抖后写出去。runTask 按 key 去重，一轮没回来时不重入；等 running
+  // 翻回 false 再按最新草稿补一次，于是连续改动最终一定落到库上，且不会两轮解析互相覆盖。
+  // 用户没动过、又没有可比对的配置时不动手：否则仅打开面板就会把默认岗位包写进去。
+  useEffect(() => {
+    if (!loaded || !draft) return;
+    if (!touched && !runtime) return;
+    if (!draft.rolePackId) return;
+    if (saveTask.running) return;
+    if (!isDraftDirty(draft, runtime)) return;
+    const timer = setTimeout(() => {
+      setSentDraft(draft);
+      requested.current = [...draft.capabilityIds];
+      void runTask(saveKey, () =>
+        invoke('campaign:setRoleProfile', toSetRoleProfileInput(campaignId, draft)),
+      ).catch(() => undefined);
+    }, AUTOSAVE_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [draft, runtime, touched, loaded, saveTask.running, saveKey, campaignId]);
+
+  // 还没落库的最新草稿：切走这一页（组件卸载）或换战役时把它补上，
+  // 否则用户在防抖窗口内离开就会丢掉刚做的选择。
+  const pending = useRef<RoleProfileDraft | null>(null);
+  useEffect(() => {
+    pending.current =
+      loaded &&
+      draft !== null &&
+      draft.rolePackId.length > 0 &&
+      (touched || runtime !== null) &&
+      isDraftDirty(draft, runtime)
+        ? draft
+        : null;
+  });
+
+  useEffect(
+    () => () => {
+      const next = pending.current;
+      if (!next) return;
+      requested.current = [...next.capabilityIds];
+      // 同一 key 已有写入在跑时 runTask 会复用，不会重复发
+      void runTask(saveKey, () =>
+        invoke('campaign:setRoleProfile', toSetRoleProfileInput(campaignId, next)),
+      ).catch(() => undefined);
+    },
+    [saveKey, campaignId],
+  );
+
   if (!loaded || !draft) {
     return <p className="text-sm text-[var(--color-muted)]">加载中…</p>;
   }
 
   const patch = (next: Partial<RoleProfileDraft>): void => {
+    setTouched(true);
     setDraft((prev) => (prev ? { ...prev, ...next } : prev));
     setFeedback(null);
   };
@@ -149,15 +247,6 @@ export function RolePluginPanel({ campaignId }: { campaignId: string }): React.J
     });
   };
 
-  const confirm = (): void => {
-    if (!draft.rolePackId) return;
-    requested.current = [...draft.capabilityIds];
-    void runTask(saveKey, () =>
-      invoke('campaign:setRoleProfile', toSetRoleProfileInput(campaignId, draft)),
-    ).catch(() => undefined);
-  };
-
-  const profile = runtime?.roleProfile ?? null;
   const dirty = isDraftDirty(draft, runtime);
   const rolePackNotice = pluginStatusNotice(clientView?.rolePack ?? null);
   const industryPackNotice = pluginStatusNotice(clientView?.industryPack ?? null);
@@ -169,39 +258,19 @@ export function RolePluginPanel({ campaignId }: { campaignId: string }): React.J
         <div>
           <h3 className="text-sm font-medium">岗位与能力插件</h3>
           <p className="mt-0.5 text-xs text-[var(--color-muted)]">
-            出题、评分和考点都按这里确认的岗位包执行；改完要点「确认」才会生效
+            出题、评分和考点都按这里选定的岗位包执行；改动会自动解析依赖并生效
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          {profile?.userConfirmed ? (
-            <span className="rounded bg-emerald-900/40 px-2 py-0.5 text-[10px] text-emerald-300">
-              已确认
-            </span>
-          ) : runtime ? (
-            <span className="rounded bg-amber-900/40 px-2 py-0.5 text-[10px] text-amber-200">
-              自动识别，待确认
-            </span>
-          ) : (
-            <span className="rounded bg-red-950/40 px-2 py-0.5 text-[10px] text-red-300">
-              尚未确认岗位
-            </span>
-          )}
-          {profile && !profile.userConfirmed && (
-            <span className="text-[10px] text-[var(--color-muted)]">
-              置信度 {Math.round(profile.confidence * 100)}%
-            </span>
-          )}
-          {clientView?.degraded && (
-            <span className="rounded bg-amber-900/40 px-2 py-0.5 text-[10px] text-amber-200">
-              本机能力低于配置
-            </span>
-          )}
-        </div>
+        {clientView?.degraded && (
+          <span className="rounded bg-amber-900/40 px-2 py-0.5 text-[10px] text-amber-200">
+            本机能力低于配置
+          </span>
+        )}
       </div>
 
       {!runtime && (
         <p className="rounded border border-amber-900/50 bg-amber-950/20 px-3 py-2 text-xs text-amber-100">
-          这场备考还没有解析出运行配置。选好岗位包后点「确认」，系统会解析依赖并激活配置。
+          这场备考还没有解析出运行配置。选好岗位包就会自动解析依赖并激活配置。
         </p>
       )}
 
@@ -294,26 +363,20 @@ export function RolePluginPanel({ campaignId }: { campaignId: string }): React.J
         />
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          disabled={saveTask.running || !draft.rolePackId || !dirty}
-          onClick={confirm}
-          className="rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm text-white disabled:opacity-40"
-        >
-          {saveTask.running ? '解析中…' : '确认岗位'}
-        </button>
-        {!dirty && !saveTask.running && (
-          <span className="text-xs text-[var(--color-muted)]">与当前生效配置一致</span>
-        )}
-      </div>
+      <p className="text-xs text-[var(--color-muted)]">
+        {saveTask.running
+          ? '解析中…'
+          : dirty
+            ? '改动待落库…'
+            : '当前选择已生效'}
+      </p>
 
       {saveTask.error && <p className="text-sm text-red-400">{saveTask.error}</p>}
 
       {showFeedback && (
         <div className="space-y-1 rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2">
           <p className="text-xs text-emerald-400">
-            已确认，配置版本 v{runtime?.revision}
+            已应用当前选择，配置版本 v{runtime?.revision}
             {showFeedback.notices.length > 0 ? '；以下几项与你的勾选不同：' : ''}
           </p>
           {showFeedback.notices.map((notice) => (

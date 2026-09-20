@@ -25,6 +25,9 @@ vi.mock('./package/trustedKeys', () => ({
 const paths = { userData: '', pluginsDir: '' };
 vi.mock('../paths', () => ({ getAppPaths: () => paths }));
 
+// bootstrap 装载后会广播 plugin:inventory-changed；bridge 会拉起 electron，测试环境没有它
+vi.mock('../ipc/bridge', () => ({ emit: () => undefined }));
+
 import { selectPlatformAssets } from '@core/plugins/package/contract';
 import { signPackageFiles, encodeBundle } from './bundle';
 import { installPluginBundle } from './install';

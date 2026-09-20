@@ -155,6 +155,11 @@ export default function App(): React.JSX.Element {
   // 手机端同步把变更落库后，数据页需要重拉：任何同步完成都全局 bump 数据版本
   useEffect(() => onEvent('sync:finished', () => bumpDataVersion()), []);
 
+  // 装 / 卸插件会改变本机安装清单：导航页签、战役的岗位面板这类数据页据此重算，
+  // 与同步完成同样处理。列出插件的具体组件也会各自订阅该事件直接重拉（见 RolePluginPanel /
+  // PluginsPanel）；主进程只发、渲染层只听，不会来回 ping-pong。
+  useEffect(() => onEvent('plugin:inventory-changed', () => bumpDataVersion()), []);
+
   const selectTab = (key: Tab): void => {
     setTab(key);
     setMountedTabs((prev) => new Set(prev).add(key));

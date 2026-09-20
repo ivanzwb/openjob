@@ -25,6 +25,10 @@ vi.mock('../db', () => ({
   },
 }));
 
+// bootstrap 在扫描/安装/卸载后广播 plugin:inventory-changed；bridge 会拉起 electron，
+// 测试环境没有 electron 运行时，这里把它换成一个可断言的桩。
+vi.mock('../ipc/bridge', () => ({ emit: vi.fn() }));
+
 import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
 import {
   PACKAGE_MANIFEST_FILE,
@@ -32,7 +36,9 @@ import {
   type PluginPackageFiles,
 } from '@core/plugins/package/contract';
 import type { RolePack } from '@core/plugins/types';
+import { emit } from '../ipc/bridge';
 import { signPackageFiles, encodeBundle } from './bundle';
+import { loadExternalPlugins } from './bootstrap';
 import { installPluginBundle, parseBundle, removeRejectedPluginDir, uninstallPlugin } from './install';
 import { setExternalPlugins } from './runtime';
 
@@ -376,5 +382,57 @@ describe('removeRejectedPluginDir', () => {
     for (const bad of ['', '.', '..', '../elsewhere', 'a/b', 'a\\b']) {
       expect(() => removeRejectedPluginDir(bad), bad).toThrow('不合法的插件目录名');
     }
+  });
+});
+
+/**
+ * 覆盖清单变化的广播。
+ *
+ * 安装、卸载、删目录都经 loadExternalPlugins 重新装载，事件从那里统一发出，所以这里
+ * 断言的是「真正落了盘、清单确实变了」才广播；装不进去（早退）时一次都不该发。
+ */
+describe('plugin:inventory-changed 广播', () => {
+  const emitMock = vi.mocked(emit);
+
+  beforeEach(() => {
+    emitMock.mockClear();
+  });
+
+  it('装上第一个包后广播一次，带上装了几个包', () => {
+    expect(installPluginBundle(bundle())).toMatchObject({ ok: true });
+
+    expect(emitMock).toHaveBeenCalledWith('plugin:inventory-changed', { count: 1 });
+  });
+
+  it('卸载后广播清单变化', () => {
+    installPluginBundle(bundle());
+    emitMock.mockClear();
+
+    uninstallPlugin('demo.role', '2.0.0');
+
+    expect(emitMock).toHaveBeenCalledWith('plugin:inventory-changed', { count: 0 });
+  });
+
+  it('删掉一个没通过扫描的目录后广播清单变化', () => {
+    mkdirSync(join(paths.pluginsDir, 'rogue@1.0.0'), { recursive: true });
+    emitMock.mockClear();
+
+    removeRejectedPluginDir('rogue@1.0.0');
+
+    expect(emitMock).toHaveBeenCalledWith('plugin:inventory-changed', { count: 0 });
+  });
+
+  it('安装失败时不广播：装不进去就没有清单变化', () => {
+    const broken = { ...rolePackFiles(), [PACKAGE_PACK_FILE]: '{"competencyTemplates":[]}' };
+
+    expect(installPluginBundle(bundle(broken))).toMatchObject({ code: 'invalid-package' });
+
+    expect(emitMock).not.toHaveBeenCalled();
+  });
+
+  it('启动扫描装载完成后也广播一次', () => {
+    loadExternalPlugins();
+
+    expect(emitMock).toHaveBeenCalledWith('plugin:inventory-changed', { count: 0 });
   });
 });

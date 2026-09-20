@@ -1487,6 +1487,13 @@ export interface IpcEventMap {
   'campaign:attached': { campaignId: string };
   /** 代码插件事件：能力启停变化 */
   'campaign:capability-changed': { campaignId: string };
+  /**
+   * 外置插件清单变化：安装成功、卸载、删掉扫描拒掉的目录、以及启动扫描装载完成都会推一次。
+   *
+   * 列出「本机装了哪些插件」的界面（设置页插件面板、战役里的岗位与能力面板、导航页签）
+   * 靠它就地重拉，而不是等用户离开再回到那一页。载荷只报装了几个包，不含任何岗位词汇。
+   */
+  'plugin:inventory-changed': { count: number };
   /** 代码插件事件：一次练习评分完成 */
   'practice:completed': { campaignId: string; formatId: string; totalScore: number };
   'update:status': UpdateStatus;
@@ -1705,6 +1712,7 @@ export const IPC_EVENT_CHANNELS = [
   'job:progress',
   'campaign:attached',
   'campaign:capability-changed',
+  'plugin:inventory-changed',
   'practice:completed',
   'update:status',
   'sync:paired',
