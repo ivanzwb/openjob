@@ -69,7 +69,7 @@ function bridgeMethod(
   }
 }
 
-function PluginRuntimeView({ plugin }: { plugin: MobilePluginRuntime }): React.JSX.Element {
+export function PluginRuntimeView({ plugin }: { plugin: MobilePluginRuntime }): React.JSX.Element {
   const theme = useTheme();
   const webRef = useRef<WebView>(null);
   const [declared, setDeclared] = useState<readonly string[]>([]);
@@ -199,7 +199,7 @@ export function PluginRuntimesScreen(): React.JSX.Element {
   return (
     <View style={{ flex: 1, padding: 16, gap: 8, backgroundColor: theme.bg }}>
       <Text style={{ color: theme.muted, fontSize: 12, marginBottom: 4 }}>
-        已随岗位包启用的代码插件。功能与本机能力对齐：不支持的调用会显式报错。
+        岗位包自带的页面（软件工程包的「源码」页就在这里）。功能与本机能力对齐：不支持的调用会显式报错。
       </Text>
       {(plugins ?? []).map((plugin) => (
         <Pressable
@@ -220,7 +220,9 @@ export function PluginRuntimesScreen(): React.JSX.Element {
         </Pressable>
       ))}
       {plugins !== null && plugins.length === 0 && (
-        <Text style={{ color: theme.muted, fontSize: 12 }}>还没有随岗位包启用的代码插件。</Text>
+        <Text style={{ color: theme.muted, fontSize: 12 }}>
+          还没有同步到岗位包页面。先与桌面端同步一次。
+        </Text>
       )}
     </View>
   );

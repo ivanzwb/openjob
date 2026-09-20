@@ -15,12 +15,11 @@ const MORE_ITEMS: {
   route: keyof RootTabParamList;
 }[] = [
   {
-    title: '插件',
-    subtitle: '随岗位包启用的代码插件',
-    icon: 'layers-outline',
+    title: '源码',
+    subtitle: '项目源码摘要、文件索引和代码问答',
+    icon: 'code-slash',
     route: 'Plugins',
   },
-
   {
     title: '话术',
     subtitle: '面试时可直接复用的回答片段',

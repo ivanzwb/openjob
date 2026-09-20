@@ -100,6 +100,11 @@ async function chatCompletion(
   };
 }
 
+/** 结构化输出的固定尾注：registry prompt 与调用方自带的 system 正文都要带。 */
+const JSON_OUTPUT_SUFFIX =
+  '\n\n只输出合法 JSON，不要 markdown 代码块，不要任何解释文字。' +
+  '字符串值里的双引号必须写成 \\"，换行必须写成 \\n。';
+
 export async function completeJson<T>(
   role: LlmRole,
   promptId: string,
@@ -107,12 +112,37 @@ export async function completeJson<T>(
   signal?: AbortSignal,
   params?: Record<string, string | undefined>,
 ): Promise<T> {
-  const { baseUrl, model, apiKey, temperature } = await resolveLlmRole(role);
   const resolved = resolvePrompt(promptId, params);
-  const systemContent =
-    resolved.text +
-    '\n\n只输出合法 JSON，不要 markdown 代码块，不要任何解释文字。' +
-    '字符串值里的双引号必须写成 \\"，换行必须写成 \\n。';
+  return runJson<T>(role, resolved.text, user, signal, {
+    salvageTruncated: SALVAGE_TRUNCATED_PROMPTS.has(promptId),
+  });
+}
+
+/**
+ * 与 completeJson 同一条重试与解析链路，只是 system 正文由调用方给。
+ *
+ * 练习引擎的 Prompt 由 core 的组合器拼出来（岗位包片段 + 题型协议 + 量规锚点），
+ * 不是 registry 里的某个 promptId，所以需要这条入口。出题与评分都要求完整输出，
+ * 不走截断抢救——半截 JSON 拼出来的分数会直接改写掌握度。
+ */
+export async function completeJsonWithSystem<T>(
+  role: LlmRole,
+  systemContent: string,
+  user: string,
+  signal?: AbortSignal,
+): Promise<T> {
+  return runJson<T>(role, systemContent, user, signal, { salvageTruncated: false });
+}
+
+async function runJson<T>(
+  role: LlmRole,
+  systemText: string,
+  user: string,
+  signal: AbortSignal | undefined,
+  parseOptions: { salvageTruncated: boolean },
+): Promise<T> {
+  const { baseUrl, model, apiKey, temperature } = await resolveLlmRole(role);
+  const systemContent = systemText + JSON_OUTPUT_SUFFIX;
 
   const baseMessages = normalizeChatMessages([
     { role: 'system', content: systemContent },
@@ -134,7 +164,6 @@ export async function completeJson<T>(
   let lastError: unknown;
   let maxTokens = JSON_MAX_TOKENS;
   const attempts = buildAttempts(baseMessages);
-  const parseOptions = { salvageTruncated: SALVAGE_TRUNCATED_PROMPTS.has(promptId) };
 
   for (const attempt of attempts) {
     for (let retry = 0; retry < 2; retry++) {
