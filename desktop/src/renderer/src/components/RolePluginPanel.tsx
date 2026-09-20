@@ -7,7 +7,6 @@ import {
   draftFromRuntime,
   isDraftDirty,
   listPluginOptions,
-  pluginStatusNotice,
   toSetRoleProfileInput,
   type RoleProfileDraft,
 } from '@core/hostUi';
@@ -206,8 +205,6 @@ export function RolePluginPanel({ campaignId }: { campaignId: string }): React.J
     setDraft((prev) => (prev ? { ...prev, ...next } : prev));
   };
 
-  const rolePackNotice = pluginStatusNotice(clientView?.rolePack ?? null);
-
   // 行业差异是岗位包内的可选字段（非插件）：选项来自当前选中的岗位包，包没声明就没有这项
   const industryVariantOptions =
     rolePackOptions.find((option) => option.id === draft.rolePackId)?.industryVariants ?? [];
@@ -216,9 +213,9 @@ export function RolePluginPanel({ campaignId }: { campaignId: string }): React.J
     <section className="space-y-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h3 className="text-sm font-medium">岗位与行业包</h3>
+          <h3 className="text-sm font-medium">岗位</h3>
           <p className="mt-0.5 text-xs text-[var(--color-muted)]">
-            出题、评分和考点都按这里选定的岗位包执行；改动会自动解析依赖并生效
+            出题、评分和考点都按本机安装的岗位包执行；改动会自动解析依赖并生效
           </p>
         </div>
         {clientView?.degraded && (
@@ -230,31 +227,11 @@ export function RolePluginPanel({ campaignId }: { campaignId: string }): React.J
 
       {!runtime && (
         <p className="rounded border border-amber-900/50 bg-amber-950/20 px-3 py-2 text-xs text-amber-100">
-          这场备考还没有解析出运行配置。选好岗位包就会自动解析依赖并激活配置。
+          这场备考还没有解析出运行配置。本机装好岗位包后会自动解析依赖并激活配置。
         </p>
       )}
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className="space-y-1">
-          <span className="text-xs text-[var(--color-muted)]">岗位包</span>
-          <select
-            value={draft.rolePackId}
-            onChange={(e) => patch({ rolePackId: e.target.value })}
-            className={SELECT_CLASS}
-          >
-            {rolePackOptions.length === 0 ? (
-              <option value="">本机没有安装岗位包</option>
-            ) : (
-              rolePackOptions.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.displayName} v{option.version}
-                </option>
-              ))
-            )}
-          </select>
-          {rolePackNotice && <p className="text-[10px] text-amber-300">{rolePackNotice}</p>}
-        </label>
-
         <label className="space-y-1">
           <span className="text-xs text-[var(--color-muted)]">级别</span>
           <select
@@ -302,16 +279,6 @@ export function RolePluginPanel({ campaignId }: { campaignId: string }): React.J
               </option>
             ))}
           </select>
-        </label>
-
-        <label className="space-y-1 sm:col-span-2">
-          <span className="text-xs text-[var(--color-muted)]">城市</span>
-          <input
-            value={draft.location}
-            onChange={(e) => patch({ location: e.target.value })}
-            placeholder="影响薪资与市场类问题，可留空"
-            className={SELECT_CLASS}
-          />
         </label>
       </div>
 

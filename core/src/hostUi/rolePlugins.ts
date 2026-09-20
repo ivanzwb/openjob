@@ -37,6 +37,14 @@ export interface PluginOption {
  */
 export const ROLE_LEVEL_OPTIONS = ['实习', '初级', '中级', '高级', '资深', '专家', '管理'] as const;
 
+/**
+ * 没写过级别时的默认档位。
+ *
+ * 级别会进 prompt 影响出题与评分口径，留空等于把口径交给模型自由发挥；`中级` 是这套档位
+ * 的中位取值（也是绝大多数备考者的实际区间），对任何岗位包都成立，所以放在基础包。
+ */
+export const DEFAULT_ROLE_LEVEL = '中级';
+
 export const INTERVIEW_LANGUAGE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'zh', label: '中文' },
   { value: 'en', label: 'English' },
@@ -62,7 +70,7 @@ export function listPluginOptions(
 
 export interface RoleProfileDraft {
   rolePackId: string;
-  /** 空串表示不指定级别 */
+  /** 没写过就是默认档位；用户仍可选「不指定」把它清空 */
   level: string;
   /** 空串表示不选行业变体（岗位包没声明变体时它一直是空串） */
   industryVariantId: string;
@@ -94,7 +102,7 @@ export function draftFromRuntime(
   const descriptor = runtime?.descriptor ?? null;
   return {
     rolePackId: profile?.rolePackId ?? descriptor?.rolePack.id ?? rolePackOptions[0]?.id ?? '',
-    level: profile?.level ?? '',
+    level: profile?.level || DEFAULT_ROLE_LEVEL,
     industryVariantId: profile?.industryVariantId ?? descriptor?.industryVariantId ?? '',
     location: profile?.location ?? '',
     interviewLanguage: profile?.interviewLanguage ?? 'zh',

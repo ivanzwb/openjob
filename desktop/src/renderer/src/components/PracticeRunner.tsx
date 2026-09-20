@@ -11,7 +11,7 @@ import {
 import { normalizeDisplayText } from '@core/lib/markdownDisplay';
 import { MarkdownContent } from './MarkdownContent';
 import { VoiceInputButton } from './VoiceInputButton';
-import { invoke } from '../ipc';
+import { invoke, onEvent } from '../ipc';
 import { runTask, useTask, useTaskResult } from '../ipc/taskStore';
 
 /**
@@ -96,6 +96,10 @@ export function PracticeRunner({ campaignId }: { campaignId: string }): React.JS
     campaignId: string;
     view: CampaignRuntimeView | null;
   } | null>(null);
+  // 装 / 卸岗位包会改变题型声明：主进程广播一次，这里就地重取。首次挂载时包可能还没
+  // 装载完，只取一次的话下拉会一直是空的，直到用户换一场备考才恢复。
+  const [inventoryVersion, setInventoryVersion] = useState(0);
+  useEffect(() => onEvent('plugin:inventory-changed', () => setInventoryVersion((n) => n + 1)), []);
 
   // 选中的题型必须落在包的声明里：包还没加载、或选择已不在声明里时，退回第一个声明的
   // 题型（包没声明题型时为空串，出题按钮随之禁用）。派生而不是用 effect 写回 state。
@@ -122,7 +126,7 @@ export function PracticeRunner({ campaignId }: { campaignId: string }): React.JS
   }, []);
 
   // 出题、追问、评分都要按 descriptor 里的岗位包展开；没有它这条链路根本起不来，
-  // 与其让用户点下去再吃一个 role-pack-unavailable，不如先说清楚该去哪儿选岗位包
+  // 与其让用户点下去再吃一个 role-pack-unavailable，不如先说清楚该去哪儿装岗位包
   useEffect(() => {
     let cancelled = false;
     void invoke('campaign:getRuntimeDescriptor', { campaignId })
@@ -142,7 +146,7 @@ export function PracticeRunner({ campaignId }: { campaignId: string }): React.JS
     return () => {
       cancelled = true;
     };
-  }, [campaignId]);
+  }, [campaignId, inventoryVersion]);
 
   const loadedRuntime = runtimeState?.campaignId === campaignId ? runtimeState : null;
   const runtimeLoaded = loadedRuntime !== null;
@@ -245,8 +249,8 @@ export function PracticeRunner({ campaignId }: { campaignId: string }): React.JS
 
       {runtimeLoaded && !runtime ? (
         <p className="rounded border border-amber-900/50 bg-amber-950/20 px-3 py-2 text-xs text-amber-100">
-          这场备考还没有选择岗位包，题型与评分维度无从展开。先去「备考 →
-          岗位与证据」选好岗位包，再回来练习。
+          这场备考还没有解析出岗位包，题型与评分维度无从展开。先在「设置 → 插件」装好岗位包，
+          再回到「备考 → 岗位与证据」补上岗位信息。
         </p>
       ) : (
         <p className="text-xs text-[var(--color-muted)]">

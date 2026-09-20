@@ -6,6 +6,7 @@ import { CampaignsPanel, type CampaignView } from './pages/CampaignsPanel';
 import { Settings } from './pages/Settings';
 import { Overview } from './pages/Overview';
 import { Scripts } from './pages/Scripts';
+import { MockInterview } from './pages/MockInterview';
 import { Resumes } from './pages/Resumes';
 import { invoke, onEvent } from './ipc';
 import { bumpDataVersion } from './ipc/dataVersion';
@@ -25,6 +26,7 @@ type Tab =
   | 'overview'
   | 'resumes'
   | 'campaigns'
+  | 'practice'
   | 'scripts'
   | 'settings'
   // 插入点 A：岗位包声明的导航入口，键为 nav:<entry.id>
@@ -33,11 +35,12 @@ type Tab =
 /** 页签被能力门控藏起来时的落脚点：备考是这个应用的主线，回到它总是说得通 */
 const FALLBACK_TAB: Tab = 'campaigns';
 
-/** 宿主拥有的固定一级导航；能力页签槽位插在「备考」和「话术」之间 */
+/** 宿主拥有的固定一级导航；能力页签槽位插在「模拟面试」和「话术」之间 */
 const TABS: Array<{ key: Tab; label: string }> = [
   { key: 'overview', label: '总览' },
   { key: 'resumes', label: '简历' },
   { key: 'campaigns', label: '备考' },
+  { key: 'practice', label: '模拟面试' },
   { key: 'scripts', label: '话术' },
   { key: 'settings', label: '设置' },
 ];
@@ -185,9 +188,9 @@ export default function App(): React.JSX.Element {
             <UpdateBadge onOpenSettings={() => selectTab('settings')} />
           </div>
           <nav className="app-region-no-drag ml-4 flex gap-1">
-            {/* 能力页签槽位固定插在「备考」之后（§12.1），顺序由声明决定而非包竞争 */}
+            {/* 能力页签槽位固定插在「模拟面试」之后（§12.1），顺序由声明决定而非包竞争 */}
             {[
-              ...TABS.slice(0, 3),
+              ...TABS.slice(0, 4),
               ...navTabs.map((entry) => ({ key: `nav:${entry.id}` as Tab, label: entry.label })),
               ...pluginRuntimeTabs.flatMap((plugin) =>
                 plugin.pages.map((page) => ({
@@ -195,7 +198,7 @@ export default function App(): React.JSX.Element {
                   label: page.title,
                 })),
               ),
-              ...TABS.slice(3),
+              ...TABS.slice(4),
             ]
               .filter(({ key }) => isTabVisible(key))
               .map(({ key, label }) => (
@@ -248,6 +251,11 @@ export default function App(): React.JSX.Element {
           )}
           {mountedTabs.has('campaigns') && (
             <CampaignsPanel active={activeTab === 'campaigns'} view={view} setView={setView} />
+          )}
+          {mountedTabs.has('practice') && (
+            <TabPanel active={activeTab === 'practice'} className="overflow-y-auto">
+              <MockInterview />
+            </TabPanel>
           )}
           {/* 能力被关掉之后连挂载也撤掉：留着的话仓库索引仍在后台跑，用户却没有入口停它 */}
           {navTabs.map((entry) => {

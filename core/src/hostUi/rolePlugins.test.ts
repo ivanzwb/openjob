@@ -7,6 +7,7 @@ import {
 } from '@plugins/softwareEngineering';
 import { buildCapabilityView, buildDescriptor, buildRuntimeView, CAMPAIGN_ID } from './__fixtures__/runtime';
 import {
+  DEFAULT_ROLE_LEVEL,
   draftFromRuntime,
   isDraftDirty,
   listPluginOptions,
@@ -75,14 +76,25 @@ describe('draftFromRuntime', () => {
   });
 
   /** 留空会让用户无从把 descriptor 建起来；这个默认值由界面按「用户是否动过」决定要不要写 */
-  it('没有 descriptor 时退回本机第一个岗位包，而不是留空', () => {
+  it('没有 descriptor 时退回本机第一个岗位包与默认档位，而不是留空', () => {
     // 断言「第一个」而不是某个具体岗位包：新增内置岗位包不该让这条用例需要改写
     expect(draftFromRuntime(null, rolePackOptions)).toMatchObject({
       rolePackId: rolePackOptions[0]?.id,
-      level: '',
+      level: DEFAULT_ROLE_LEVEL,
       capabilityIds: [],
     });
     expect(rolePackOptions.length).toBeGreaterThan(1);
+  });
+
+  /** 画像里没写过级别（NULL）与空串都按默认档位显示，不留一个「不指定」的空档 */
+  it('画像没有级别时补默认档位', () => {
+    expect(draftFromRuntime(buildRuntimeView(), rolePackOptions).level).toBe(DEFAULT_ROLE_LEVEL);
+    expect(
+      draftFromRuntime(buildRuntimeView({ profile: { level: '' } }), rolePackOptions).level,
+    ).toBe(DEFAULT_ROLE_LEVEL);
+    expect(
+      draftFromRuntime(buildRuntimeView({ profile: { level: '高级' } }), rolePackOptions).level,
+    ).toBe('高级');
   });
 
   it('一个岗位包都没装时给空值，交给界面显示为不可提交', () => {
@@ -123,7 +135,9 @@ describe('toSetRoleProfileInput', () => {
 });
 
 describe('isDraftDirty', () => {
-  const runtime = buildRuntimeView();
+  // 画像已经带着默认档位：表单对没写过级别的画像会补上它，那种情况下「与生效配置一致」
+  // 指的是两边都等于默认档位（补默认值本身要落库一次，见 draftFromRuntime）
+  const runtime = buildRuntimeView({ profile: { level: DEFAULT_ROLE_LEVEL } });
   const clean = draftFromRuntime(runtime, rolePackOptions);
 
   it('与当前生效配置一致时没有待提交内容', () => {
@@ -149,12 +163,12 @@ describe('isDraftDirty', () => {
    * 未确认配置，只要表单与它一致就不该再触发写入，否则防抖写入会无休止重跑。
    */
   it('岗位未经用户确认，只要表单与它一致就不算待提交', () => {
-    const unconfirmed = buildRuntimeView({ profile: { userConfirmed: false } });
+    const unconfirmed = buildRuntimeView({ profile: { userConfirmed: false, level: DEFAULT_ROLE_LEVEL } });
     expect(isDraftDirty(draftFromRuntime(unconfirmed, rolePackOptions), unconfirmed)).toBe(false);
   });
 
   it('未确认的岗位画像改了值照样算待提交', () => {
-    const unconfirmed = buildRuntimeView({ profile: { userConfirmed: false } });
+    const unconfirmed = buildRuntimeView({ profile: { userConfirmed: false, level: DEFAULT_ROLE_LEVEL } });
     expect(
       isDraftDirty({ ...draftFromRuntime(unconfirmed, rolePackOptions), level: '资深' }, unconfirmed),
     ).toBe(true);

@@ -444,3 +444,95 @@ describe('story migration', () => {
     db.close();
   });
 });
+
+/**
+ * 0033：老库导入的两件「后半段」补课。
+ *
+ * 导入只发生一次，所以第一批导过、当时还没补的库，只能靠迁移补上：没有插件化前凭据，
+ * 启动时的岗位包回填一条也选不中（那场备考没有岗位意图、没有 descriptor，练习入口取不到
+ * 题型）；repo 行没搬进包声明的集合，「源码」页就一个仓库都没有。
+ */
+describe('legacy import follow-up migration', () => {
+  const IMPORT_MARKER = 'legacyImport:0.6.x';
+  const COMPLETED_AT = 1_700_000_000_000;
+
+  /** 导入过的库：导入标记 + 一场导入前就存在的战役 + 一场导入之后新建的战役 + 一条旧仓库 */
+  function importedDb(): DatabaseSync {
+    const db = new DatabaseSync(':memory:');
+    journal().forEach((entry) => applySql(db, sqlOf(entry.tag)));
+    db.prepare(`INSERT INTO sync_meta (key, value) VALUES (?, ?)`).run(
+      IMPORT_MARKER,
+      JSON.stringify({ kind: 'legacy-0.6.x-import', completedAt: COMPLETED_AT }),
+    );
+    const insertCampaign = `INSERT INTO campaign (
+         id, company, role_title, jd_raw, status, created_at, updated_at
+       ) VALUES (?, 'ACME', 'Engineer', 'JD', 'planning', ?, ?)`;
+    db.prepare(insertCampaign).run('beforeImport', COMPLETED_AT - 1000, COMPLETED_AT - 1000);
+    db.prepare(insertCampaign).run('afterImport', COMPLETED_AT + 1000, COMPLETED_AT + 1000);
+    db.prepare(
+      `INSERT INTO repo (id, url, local_path, languages, status)
+       VALUES ('r1', 'https://example.com/r1.git', '/tmp/r1', '[]', 'ready')`,
+    ).run();
+    return db;
+  }
+
+  it('给导入前就存在的战役补插件化前凭据，导入后新建的不动', () => {
+    const db = importedDb();
+
+    applySql(db, sqlOf('0033_legacy_import_followups'));
+
+    expect(
+      db
+        .prepare(`SELECT campaign_id FROM migration_checkpoint WHERE kind = ? ORDER BY campaign_id`)
+        .all(PRE_PLUGIN_CAMPAIGN_SCOPE_KIND),
+    ).toEqual([{ campaign_id: 'beforeImport' }]);
+    db.close();
+  });
+
+  it('把旧仓库登记表搬进包声明的 repositories 集合', () => {
+    const db = importedDb();
+
+    applySql(db, sqlOf('0033_legacy_import_followups'));
+
+    const rows = db
+      .prepare(`SELECT plugin_id, collection, key, value_json FROM plugin_data ORDER BY key`)
+      .all() as Array<{ plugin_id: string; collection: string; key: string; value_json: string }>;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      plugin_id: 'software-engineering',
+      collection: 'repositories',
+      key: 'r1',
+    });
+    expect(JSON.parse(rows[0]!.value_json)).toEqual({
+      id: 'r1',
+      label: 'https://example.com/r1.git',
+      ready: true,
+      url: 'https://example.com/r1.git',
+      status: 'ready',
+    });
+    db.close();
+  });
+
+  it('重复执行不产生第二份，且没导入过的库一条都不动', () => {
+    const db = importedDb();
+    applySql(db, sqlOf('0033_legacy_import_followups'));
+    applySql(db, sqlOf('0033_legacy_import_followups'));
+
+    expect(db.prepare(`SELECT COUNT(*) AS n FROM plugin_data`).get()).toEqual({ n: 1 });
+    expect(db.prepare(`SELECT COUNT(*) AS n FROM migration_checkpoint`).get()).toEqual({ n: 1 });
+
+    const native = new DatabaseSync(':memory:');
+    journal().forEach((entry) => applySql(native, sqlOf(entry.tag)));
+    native
+      .prepare(
+        `INSERT INTO campaign (id, company, role_title, jd_raw, status, created_at, updated_at)
+         VALUES ('c1', 'ACME', 'Engineer', 'JD', 'planning', 1, 1)`,
+      )
+      .run();
+    applySql(native, sqlOf('0033_legacy_import_followups'));
+
+    expect(native.prepare(`SELECT COUNT(*) AS n FROM migration_checkpoint`).get()).toEqual({ n: 0 });
+    db.close();
+    native.close();
+  });
+});

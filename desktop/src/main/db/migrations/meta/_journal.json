@@ -232,6 +232,13 @@
       "when": 1787670000000,
       "tag": "0032_industry_variant",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "6",
+      "when": 1787680000000,
+      "tag": "0033_legacy_import_followups",
+      "breakpoints": true
     }
   ]
 }

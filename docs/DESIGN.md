@@ -701,7 +701,7 @@ openjob/
 │   │   ├── llm/  search/  plan/  practice/  story/  evidence/
 │   ├── preload/                    # 白名单桥接，仅暴露类型化 invoke / on
 │   └── renderer/src/               # React UI，不直接碰 fs / network
-│       ├── pages/                  # 总览 / 简历 / 备考 / 话术 / 设置
+│       ├── pages/                  # 总览 / 简历 / 备考 / 模拟面试 / 话术 / 设置
 │       ├── components/
 │       ├── pluginRuntimes/         # 插件代码入口的沙箱宿主与桥
 │       └── ipc/                    # 类型安全的 IPC 客户端封装
