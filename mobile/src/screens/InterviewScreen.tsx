@@ -15,10 +15,8 @@ import {
   type PracticeFormatOption,
   type PracticeHistoryItem,
 } from '../data/practiceLocal';
-import { listMobilePluginRuntimes, type MobilePluginRuntime } from '../data/pluginRuntimeLocal';
 import { listCampaigns } from '../data/queries';
 import { getRawDb } from '../db';
-import { PluginRuntimeView } from './PluginRuntimesScreen';
 import { useTheme } from '../theme';
 
 /**
@@ -82,8 +80,6 @@ export function InterviewScreen(): React.JSX.Element {
   const [campaignId, setCampaignId] = useState<string | null>(null);
   const [formats, setFormats] = useState<PracticeFormatOption[]>([]);
   const [formatId, setFormatId] = useState<string | null>(null);
-  const [runtimes, setRuntimes] = useState<MobilePluginRuntime[]>([]);
-  const [openedRuntime, setOpenedRuntime] = useState<MobilePluginRuntime | null>(null);
   const [session, setSession] = useState<PracticeSession | null>(null);
   const [evaluation, setEvaluation] = useState<PracticeEvaluation | null>(null);
   const [history, setHistory] = useState<PracticeHistoryItem[]>([]);
@@ -101,7 +97,6 @@ export function InterviewScreen(): React.JSX.Element {
     if (!id) {
       setFormats([]);
       setFormatId(null);
-      setRuntimes([]);
       setHistory([]);
       return;
     }
@@ -115,7 +110,6 @@ export function InterviewScreen(): React.JSX.Element {
       setFormatId(null);
       setError(cause instanceof Error ? cause.message : String(cause));
     }
-    setRuntimes(listMobilePluginRuntimes(db));
     setHistory(listPracticeHistory(db, id));
   }, []);
 
@@ -138,20 +132,6 @@ export function InterviewScreen(): React.JSX.Element {
       setBusy(false);
     }
   };
-
-  if (openedRuntime) {
-    return (
-      <View style={{ flex: 1, backgroundColor: theme.bg }}>
-        <Pressable
-          onPress={() => setOpenedRuntime(null)}
-          style={{ paddingHorizontal: 16, paddingVertical: 10 }}
-        >
-          <Text style={{ color: theme.accent, fontSize: 13 }}>← 返回面试</Text>
-        </Pressable>
-        <PluginRuntimeView plugin={openedRuntime} />
-      </View>
-    );
-  }
 
   const lastTurn = session?.turns.at(-1) ?? null;
   const awaitingAnswer = session?.status === 'open' && lastTurn?.speaker === 'interviewer';
@@ -182,19 +162,6 @@ export function InterviewScreen(): React.JSX.Element {
           </Text>
         )}
       </View>
-
-      {runtimes.length > 0 && (
-        <Card>
-          <Text style={{ color: theme.text, fontSize: 12, fontWeight: '600' }}>本岗位的专属练习</Text>
-          {runtimes.map((runtime) => (
-            <Pressable key={runtime.pluginId} onPress={() => setOpenedRuntime(runtime)}>
-              <Text style={{ color: theme.accent, fontSize: 13 }}>
-                {runtime.displayName} · 打开包页面
-              </Text>
-            </Pressable>
-          ))}
-        </Card>
-      )}
 
       {formats.length > 0 && (
         <Card>

@@ -181,15 +181,23 @@ export function PluginRuntimeView({ plugin }: { plugin: MobilePluginRuntime }): 
   );
 }
 
-export function PluginRuntimesScreen(): React.JSX.Element {
+export function PluginRuntimesScreen({
+  route,
+}: {
+  route?: { params?: { pluginId?: string } };
+}): React.JSX.Element {
   const theme = useTheme();
   const [plugins, setPlugins] = useState<MobilePluginRuntime[] | null>(null);
   const [selected, setSelected] = useState<MobilePluginRuntime | null>(null);
 
   useFocusEffect(
     useCallback(() => {
-      setPlugins(listMobilePluginRuntimes(getRawDb()));
-    }, []),
+      const list = listMobilePluginRuntimes(getRawDb());
+      setPlugins(list);
+      // 从「更多」里点某个包进来时直接打开它；没带参数就停在列表
+      const wanted = route?.params?.pluginId;
+      if (wanted) setSelected(list.find((plugin) => plugin.pluginId === wanted) ?? null);
+    }, [route?.params?.pluginId]),
   );
 
   if (selected) {

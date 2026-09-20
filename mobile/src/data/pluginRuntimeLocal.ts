@@ -36,7 +36,14 @@ export interface MobilePluginRuntime {
   mainSource: string;
 }
 
-/** 从缓存里找出带移动端实现的代码插件。缺 mobile/ 那份的包在移动端不上屏，跳过不炸列表。 */
+/**
+ * 手机端「岗位包自带的页面」入口：只列**已经同步到本机**的包。
+ *
+ * 页面的 id 与标题由包的入口代码在激活时才注册（`ctx.views.registerPage`），宿主在打开之前
+ * 拿不到，所以入口名用包自己的 displayName——那是包声明的、宿主认识的东西。
+ * 关键性质是**存在性**：一个包都没同步过来时这个清单就是空的，界面上不会出现任何
+ * 「源码页」之类的入口——它们是包的内容，不是基础包自带的页面。
+ */
 export function listMobilePluginRuntimes(db: SQLiteDatabase): MobilePluginRuntime[] {
   return listCachedRolePacks(db).flatMap((pack) => {
     // 剥掉平台前缀：拿到的键是 main.js 与 ui/**，与插件源码里的 webviewPath 同构

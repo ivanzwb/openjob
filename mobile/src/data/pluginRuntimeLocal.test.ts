@@ -80,4 +80,11 @@ describe('listMobilePluginRuntimes', () => {
   it('纯声明式岗位包（无代码资产）不产生运行时', () => {
     expect(listMobilePluginRuntimes(dbWith([packWithCode({})]))).toEqual([]);
   });
+
+  /**
+   * 「源码」这类页面是包的内容：一个包都没同步过来时，手机端不存在任何包页面入口。
+   */
+  it('一个包都没同步过来时清单为空', () => {
+    expect(listMobilePluginRuntimes(dbWith([]))).toEqual([]);
+  });
 });

@@ -16,7 +16,8 @@ import { useTheme } from '../theme';
 
 export type RootTabParamList = {
   Overview: undefined;
-  Plugins: undefined;
+  /** 岗位包自带的页面宿主；带 pluginId 时直接打开那个包（见「更多」里的入口） */
+  Plugins: { pluginId?: string } | undefined;
   Campaigns: { campaignId?: string; nodeId?: string; focusKey?: number } | undefined;
   Resumes: undefined;
   Design: undefined;
