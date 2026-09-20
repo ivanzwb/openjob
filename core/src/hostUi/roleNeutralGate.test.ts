@@ -95,6 +95,15 @@ const SAME_SHAPE_FILES: readonly string[] = [
 ];
 
 /**
+ * 升级兼容代码：把 0.6.x 旧库整体搬进新结构时，必须**点名**旧列名（`repo_id`、
+ * `tech_stack_md`）才能按 RENAME 把取值映射过去。这些名字是历史数据的一部分，搬不掉，
+ * 更不是「基础包里还留着岗位簇实现」——塞进 FROZEN_OFFENDERS（搬迁进度表）只会留下
+ * 永不消失的误报，所以按文件出局。夹具（`__fixtures__/legacy06/`）是 .sql / .json，
+ * 本来就不在扫描范围内。
+ */
+const UPGRADE_COMPAT_FILES: readonly string[] = ['desktop/src/main/db/legacyImport.ts'];
+
+/**
  * 每一条判据的命中口径。正则一律带词边界或字面量形状，避免误伤普通英文词：
  * `\brepo` 不吃 `report` / `repository`，`EXAM_FORMS` 与 `REPO_STATUSES` 分开成常量名，
  * 岗位包条目 id 只认带引号的 `se.` / `pm.` / `sales.` 前缀字面量。
@@ -279,6 +288,7 @@ interface Hit {
 function collectHits(): Hit[] {
   const hits: Hit[] = [];
   for (const source of SOURCES) {
+    if (UPGRADE_COMPAT_FILES.includes(source.file)) continue;
     for (const rule of RULES) {
       if (rule.exceptFiles?.includes(source.file)) continue;
       rule.pattern.lastIndex = 0;

@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { app, BrowserWindow, shell } from 'electron';
+import { app, BrowserWindow, dialog, shell } from 'electron';
 import { ensureDirs } from './paths';
 import { registerIpcHandlers } from './ipc';
 import { emit } from './ipc/bridge';
@@ -10,6 +10,7 @@ import { startSyncServer } from './sync';
 import { applyAppIcon } from './icon';
 import { getConfig } from './config';
 import { trackWindowTheme, WINDOW_BACKGROUND } from './theme';
+import { reportStartupFailure } from './startupFailure';
 
 /**
  * 应用名决定 userData（库、插件、设置都住在那下面）。包名带上 scope（`@openjob/desktop`）之后
@@ -112,19 +113,30 @@ app.on('second-instance', () => {
 });
 
 app.whenReady().then(() => {
-  ensureDirs();
-  // 尽早建库跑迁移，让 schema 问题在启动时暴露而不是首次查询时
-  getDb();
-  // 必须在 IPC 之前：渲染层一上来就会问已安装清单，晚一步会拿到只有内置插件的那份
-  loadExternalPlugins();
-  registerIpcHandlers();
-  startSyncServer();
-  createWindow();
-  if (!SMOKE) scheduleStartupCheck();
+  try {
+    ensureDirs();
+    // 尽早建库跑迁移，让 schema 问题在启动时暴露而不是首次查询时。
+    // 从 0.6.x 升级上来的旧库会在这里走整库导入；任何一步失败都必须在这里被接住，
+    // 不能变成未处理的 Promise 拒绝，也不能带着半迁移的库继续启动。
+    getDb();
+    // 必须在 IPC 之前：渲染层一上来就会问已安装清单，晚一步会拿到只有内置插件的那份
+    loadExternalPlugins();
+    registerIpcHandlers();
+    startSyncServer();
+    createWindow();
+    if (!SMOKE) scheduleStartupCheck();
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-  });
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    });
+  } catch (error) {
+    reportStartupFailure(error, {
+      showErrorBox: (title, body) => dialog.showErrorBox(title, body),
+      log: (message) => console.error(message),
+      exit: (code) => app.exit(code),
+      smoke: SMOKE,
+    });
+  }
 });
 
 app.on('window-all-closed', () => {

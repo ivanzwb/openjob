@@ -1,0 +1,1 @@
+ALTER TABLE `message` ADD `evidence_kind` text;

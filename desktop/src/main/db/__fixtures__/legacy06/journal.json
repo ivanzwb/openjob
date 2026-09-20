@@ -1,0 +1,97 @@
+{
+  "note": "release/0.6.x src/main/db/migrations/meta/_journal.json 的 when 子集",
+  "entries": [
+    {
+      "tag": "0000_natural_mesmero",
+      "when": 1786086985766
+    },
+    {
+      "tag": "0001_narrow_christian_walker",
+      "when": 1786119229573
+    },
+    {
+      "tag": "0002_early_nehzno",
+      "when": 1786148749276
+    },
+    {
+      "tag": "0003_secret_joystick",
+      "when": 1786328851437
+    },
+    {
+      "tag": "0004_highlight_color",
+      "when": 1786410000000
+    },
+    {
+      "tag": "0005_selection_start",
+      "when": 1786490000000
+    },
+    {
+      "tag": "0006_app_setting",
+      "when": 1786570000000
+    },
+    {
+      "tag": "0007_repo_file",
+      "when": 1786650000000
+    },
+    {
+      "tag": "0008_job_target_resume_variant",
+      "when": 1786730000000
+    },
+    {
+      "tag": "0009_resume_variant_preview_style",
+      "when": 1786810000000
+    },
+    {
+      "tag": "0010_resume_preview_style",
+      "when": 1786890000000
+    },
+    {
+      "tag": "0011_resume_variant_source_optional",
+      "when": 1786970000000
+    },
+    {
+      "tag": "0012_resume_photo",
+      "when": 1787050000000
+    },
+    {
+      "tag": "0013_prompt_run",
+      "when": 1787051000000
+    },
+    {
+      "tag": "0014_design_case_cache",
+      "when": 1787051860000
+    },
+    {
+      "tag": "0015_session_node",
+      "when": 1787365800000
+    },
+    {
+      "tag": "0016_follow_up_context_summary",
+      "when": 1787367000000
+    },
+    {
+      "tag": "0017_design_case_answers",
+      "when": 1787450000000
+    },
+    {
+      "tag": "0018_sync_row_version",
+      "when": 1787530000000
+    },
+    {
+      "tag": "0019_prompt_run_repair",
+      "when": 1787540000000
+    },
+    {
+      "tag": "0020_node_quiz_cache",
+      "when": 1787550000000
+    },
+    {
+      "tag": "0021_node_quiz_answer_draft",
+      "when": 1787560000000
+    },
+    {
+      "tag": "0022_campaign_resume_backfill",
+      "when": 1787570000000
+    }
+  ]
+}

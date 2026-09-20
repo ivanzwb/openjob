@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { app } from 'electron';
 import Database from 'better-sqlite3';
@@ -8,6 +7,7 @@ import { getAppPaths } from '../paths';
 import { createBackup } from '../sync/backup';
 import { initSyncLayer } from '../sync/identity';
 import { backfillPrePluginCampaignRuntime } from './backfill/pluginRuntime';
+import { importLegacyDatabase, inspectDatabaseFile, readJournalEntries } from './legacyImport';
 import * as schema from './schema';
 
 export type Db = BetterSQLite3Database<typeof schema>;
@@ -37,16 +37,13 @@ function userTableCount(handle: Database.Database): number {
  * 这里原本拿 journal 条数减日志行数，两者只要对不上就永远算出「还有待跑的」，
  * 于是每次启动都白做一次全库 VACUUM，把真正那份升级前快照挤出保留窗口。
  */
+function journalWhens(): number[] {
+  return readJournalEntries(migrationsFolder()).map((entry) => entry.when);
+}
+
 function pendingMigrationCount(handle: Database.Database): number {
-  let whens: number[];
-  try {
-    const journal = JSON.parse(
-      readFileSync(join(migrationsFolder(), 'meta', '_journal.json'), 'utf8'),
-    ) as { entries?: { when: number }[] };
-    whens = (journal.entries ?? []).map((e) => e.when);
-  } catch {
-    return 0;
-  }
+  const whens = journalWhens();
+  if (whens.length === 0) return 0;
 
   const hasLog = handle
     .prepare(`SELECT count(*) AS n FROM sqlite_master WHERE type = 'table' AND name = '__drizzle_migrations'`)
@@ -90,16 +87,39 @@ export function getDb(): Db {
   if (db) return db;
 
   const { dbFile } = getAppPaths();
-  raw = new Database(dbFile);
+  const folder = migrationsFolder();
 
-  // WAL 让读写不互斥，长任务写入时 UI 查询不会被阻塞
-  raw.pragma('journal_mode = WAL');
-  // SQLite 默认不启用外键约束，schema 里的 onDelete 需要它才生效
-  raw.pragma('foreign_keys = ON');
+  try {
+    // 先看这份文件到底是什么：0.6.x 旧库的迁移日志属于那一条线，直接原地重放会在
+    // 已存在的表上撞车，且失败发生在迁移中途。识别出来就走整库导入（备份 → 新库 → 搬行）。
+    const inspection = inspectDatabaseFile(dbFile, journalWhens());
+    if (inspection.kind === 'legacy-0.6.x') {
+      raw = importLegacyDatabase({ dbFile, migrationsFolder: folder }).raw;
+      db = drizzle(raw, { schema });
+    } else {
+      raw = new Database(dbFile);
 
-  db = drizzle(raw, { schema });
-  backupBeforeMigrations(raw);
-  migrate(db, { migrationsFolder: migrationsFolder() });
+      // WAL 让读写不互斥，长任务写入时 UI 查询不会被阻塞
+      raw.pragma('journal_mode = WAL');
+      // SQLite 默认不启用外键约束，schema 里的 onDelete 需要它才生效
+      raw.pragma('foreign_keys = ON');
+
+      db = drizzle(raw, { schema });
+      backupBeforeMigrations(raw);
+      migrate(db, { migrationsFolder: folder });
+    }
+  } catch (error) {
+    // 打开/迁移/导入失败时不留半开的连接，也不缓存半初始化的 db：
+    // 调用方（启动链）据此统一报错退出，而不是带着残状态继续跑到首次查询才炸。
+    try {
+      raw?.close();
+    } catch {
+      // 连接可能压根没打开，或已经关掉了
+    }
+    raw = null;
+    db = null;
+    throw error;
+  }
 
   import('../jobTarget/backfill').then(({ backfillJobTargetsFromCampaigns }) => {
     backfillJobTargetsFromCampaigns();
