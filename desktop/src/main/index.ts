@@ -12,6 +12,13 @@ import { getConfig } from './config';
 import { trackWindowTheme, WINDOW_BACKGROUND } from './theme';
 
 /**
+ * 应用名决定 userData（库、插件、设置都住在那下面）。包名带上 scope（`@openjob/desktop`）之后
+ * Electron 会照包名推导目录，老用户的 `openjob` 就会被换成 `@openjob/desktop`——等于升级后看不到
+ * 原有数据。名字钉在历史的 `openjob`，且在**第一次读 userData 之前**设置。
+ */
+app.setName('openjob');
+
+/**
  * 启动冒烟模式：OPENJOB_SMOKE=1 时按真实链路启动（目录 → DB 迁移 →
  * IPC 注册 → 同步服务 → 建窗加载 renderer），全部成功打标
  * OPENJOB_SMOKE_OK 后退出。任何一步失败都会导致非零退出码，
