@@ -20,8 +20,8 @@ const keys = vi.hoisted(() => {
   };
 });
 
-// 与 install.test 并行跑时会争抢真实的 resources/plugin-keys.json（那边写完就删），
-// 这里 mock 掉密钥解析：本测试的签名者就是第一方，不依赖共享文件系统
+// 信任判定注入公钥，不读真实的 resources/plugin-keys.json：本测试的签名者就是第一方，
+// 也不该让并行的测试文件去改那份随包分发的真公钥（同 catalog.test / install.test）
 vi.mock('./package/trustedKeys', () => ({
   loadTrustedPublicKeys: () => [keys.publisherPem],
 }));

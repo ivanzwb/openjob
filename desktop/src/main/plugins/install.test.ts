@@ -3,12 +3,12 @@
  *
  * 用真实临时 userData：这一层的价值是「盘上最终留下了什么」，mock 掉文件系统就没了。
  */
-import { generateKeyPairSync } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
+import type * as nodeCrypto from 'node:crypto';
 
 const paths = { userData: '', pluginsDir: '' };
 
@@ -29,6 +29,28 @@ vi.mock('../db', () => ({
 // 测试环境没有 electron 运行时，这里把它换成一个可断言的桩。
 vi.mock('../ipc/bridge', () => ({ emit: vi.fn() }));
 
+// 信任判定直接注入公钥，不去写 resources/plugin-keys.json：那份文件是随包分发的第一方
+// 公钥，install.test 与 catalog.test 并行跑时会互相踩，而且写坏之后「本该可信的第一方
+// 签名包全被判成 unknown-signer」，症状只会出现在用户那边（同 catalog.test 的做法）。
+const keys = vi.hoisted(() => {
+  // vi.hoisted 在静态 import 求值之前执行，块内用不了顶层 import 绑定；
+  // node:crypto 是内建模块，require 是 vitest 对这种场景的标准写法。
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { generateKeyPairSync } = require('node:crypto') as typeof nodeCrypto;
+  const publisher = generateKeyPairSync('ed25519');
+  const stranger = generateKeyPairSync('ed25519');
+  return {
+    publisher,
+    stranger,
+    publisherPem: publisher.publicKey.export({ type: 'spki', format: 'pem' }).toString(),
+    strangerPem: stranger.publicKey.export({ type: 'spki', format: 'pem' }).toString(),
+  };
+});
+
+vi.mock('./package/trustedKeys', () => ({
+  loadTrustedPublicKeys: () => [keys.publisherPem],
+}));
+
 import { DISTRIBUTED_ROLE_PACKS } from '@plugins';
 import {
   PACKAGE_MANIFEST_FILE,
@@ -43,49 +65,19 @@ import { ensureBundledDefaultPlugin } from './defaultPlugin';
 import { installPluginBundle, parseBundle, removeRejectedPluginDir, uninstallPlugin } from './install';
 import { setExternalPlugins } from './runtime';
 
-const publisher = generateKeyPairSync('ed25519');
-const PUBLISHER_PEM = publisher.publicKey.export({ type: 'spki', format: 'pem' }).toString();
-const stranger = generateKeyPairSync('ed25519');
-const STRANGER_PEM = stranger.publicKey.export({ type: 'spki', format: 'pem' }).toString();
-
-/**
- * 装成第一方发布密钥。
- *
- * 位置必须跟着 trustedKeys 的解析口径走：它按 `process.cwd()/resources` 回落（开发期），
- * install.ts 里又是无参调用，没法注入目录，所以这里只能照同一条路径铺。
- * 目录按需创建——cwd 取决于在哪儿起的 vitest，工作区根下并没有 resources/。
- */
-const RESOURCES_DIR = join(process.cwd(), 'resources');
-const KEY_FILE = join(RESOURCES_DIR, 'plugin-keys.json');
-
-function writeTrustedKey(): void {
-  mkdirSync(RESOURCES_DIR, { recursive: true });
-  writeFileSync(KEY_FILE, JSON.stringify({ keys: [PUBLISHER_PEM] }));
-}
-
-let keyFileExisted = false;
-let keyFileBackup: string | null = null;
-let resourcesDirExisted = false;
+const publisher = keys.publisher;
+const PUBLISHER_PEM = keys.publisherPem;
+const stranger = keys.stranger;
+const STRANGER_PEM = keys.strangerPem;
 
 beforeEach(() => {
   const root = mkdtempSync(join(tmpdir(), 'openjob-install-'));
   paths.userData = root;
   paths.pluginsDir = join(root, 'plugins');
-  resourcesDirExisted = existsSync(RESOURCES_DIR);
-  keyFileExisted = existsSync(KEY_FILE);
-  // 仓库里那份是随包分发的第一方公钥：从 desktop/ 起 vitest 时它就在这条路径上，
-  // 覆盖后就等于把真公钥换成测试密钥，跑完必须原样还回去
-  keyFileBackup = keyFileExisted ? readFileSync(KEY_FILE, 'utf8') : null;
-  writeTrustedKey();
 });
 
 afterEach(() => {
   rmSync(paths.userData, { recursive: true, force: true });
-  if (keyFileBackup !== null) writeFileSync(KEY_FILE, keyFileBackup);
-  else if (!keyFileExisted) rmSync(KEY_FILE, { force: true });
-  keyFileBackup = null;
-  // 自己建的目录自己收拾，别在仓库里留个空 resources/
-  if (!resourcesDirExisted) rmSync(RESOURCES_DIR, { recursive: true, force: true });
   setExternalPlugins([]);
 });
 
