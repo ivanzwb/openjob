@@ -131,7 +131,7 @@ describe('pinnedRolePackRefs', () => {
 });
 
 describe('installedPluginsHere', () => {
-  it('一个岗位包都没取到时只有随应用发布的能力插件', () => {
+  it('一个岗位包都没取到时清单为空（基础包不带岗位包）', () => {
     expect(installedPluginsHere(raw).map((plugin) => plugin.id)).toEqual(
       listBuiltInPlugins().map((plugin) => plugin.id),
     );

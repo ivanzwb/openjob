@@ -428,7 +428,7 @@ function RolePackCard({
       <Text style={{ color: theme.text, fontSize: 12, fontWeight: '600' }}>岗位包</Text>
       <Text style={{ color: theme.muted, fontSize: 10, lineHeight: 15 }}>
         岗位包决定面试考什么、怎么评分，由桌面端安装，数据随同步取到手机上。
-        {'\n'}能力插件（源码、角色扮演等）一律只在桌面端执行，手机端只能查看结果。
+        {'\n'}包里的能力随包分发：需要桌面原语（工作区、远端拉取）的调用在手机端会显示不支持，其余照常可用。
       </Text>
       {rows.map((row) => (
         <View
