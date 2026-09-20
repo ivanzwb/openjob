@@ -425,6 +425,9 @@ export function PluginsPanel({
                       {TRUST_LABEL[plugin.trust]}
                     </Badge>
                   </div>
+                  {plugin.description !== '' && (
+                    <p className="text-[var(--color-muted)]">{plugin.description}</p>
+                  )}
                   {runtime !== undefined && runtime.permissions.length > 0 && (
                     <p className="text-[var(--color-muted)]">
                       {permissionSummary(runtime.permissions)}

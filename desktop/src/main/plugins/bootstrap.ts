@@ -67,6 +67,7 @@ export function pluginInventoryView(): PluginInventoryView {
       version: entry.package.manifest.version,
       type: entry.package.manifest.type,
       displayName: entry.package.manifest.displayName,
+      description: entry.package.manifest.description,
       trust: entry.trust,
       main: entry.package.manifest.main ?? null,
     })),

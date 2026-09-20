@@ -129,6 +129,7 @@ export interface PluginInventoryView {
     version: string;
     type: PluginType;
     displayName: string;
+    description: string;
     trust: PluginTrust;
     /** 代码入口；为空表示纯声明式，没有启用/停用这回事 */
     main: string | null;
