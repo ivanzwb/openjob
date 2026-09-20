@@ -24,6 +24,11 @@ import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
  * 和几处新增可空列。改名在 `RENAMED_COLUMNS` 里显式列出——这是已知的、取值不变的
  * 重命名，不是猜测；除此之外列对不上的表一律跳过并汇报，不硬塞。
  *
+ * 用户的库也未必只跟到 release/0.6.x：手动建的辅助表、第三方脚本、更早的私有分支都会
+ * 在库里留下当前 schema 没听说过的表（启动报错里那张 `app_config` 就是）。这类表一律
+ * 整表跳过并汇报：不去按旧库里的形状「认出」它、更不去写它；单张表连搬行都失败时也只
+ * 回滚它自己，不牵连其余能搬的表。
+ *
  * 有一点不属于「搬行」但必须补：0027 的「插件化之前就已存在」标记是在空表上打的，
  * 导入进来的旧战役因此缺这条凭据。导入末尾按 0027 的同一规则补一次，剩下交给
  * 既有的回填（backfillPrePluginCampaignRuntime，见 plugins/bootstrap）。
@@ -332,8 +337,12 @@ function planTableCopy(
   temp: Database.Database,
   table: string,
 ): { entry: CopyPlanEntry } | { skip: string } {
+  // 新结构的列必须显式限定成 main：pragma_table_info(?table) 不带 schema 时会连同挂进来的
+  // legacy 库一起搜（实测 SQLite 行为），于是「只在旧库里、当前 schema 从没见过」的表也会
+  // 返回一堆列——`newColumns.length === 0` 这道「新结构里没有这张表」的闸门就此落空，
+  // 给 app_config 这种表排好搬行计划，最后撞在 `no such table: main.app_config`，整次升级中止。
   const newColumns = (
-    temp.prepare(`SELECT name FROM pragma_table_info(?)`).all(table) as Array<{ name: string }>
+    temp.prepare(`SELECT name FROM pragma_table_info(?, 'main')`).all(table) as Array<{ name: string }>
   ).map((row) => row.name);
   if (newColumns.length === 0) return { skip: '当前结构里没有这张表' };
 
@@ -425,19 +434,33 @@ export function importLegacyDatabase(options: LegacyImportOptions): LegacyImport
           else skipped.push({ name: table, reason: outcome.skip });
         }
 
+        // 按表搬行放在同一个事务里；每张表再套一层 SAVEPOINT，让「某张表塞不进去」只回滚
+        // 它自己。形状看似对得上、数据却违反新结构约束的怪表，因此变成报告里的一条跳过记录，
+        // 而不是把整次升级一起带崩——单张表的问题不该让用户连能搬的数据都拿不到。
+        const copied: CopyPlanEntry[] = [];
         const copyAll = temp.transaction(() => {
           for (const entry of plan) {
             const columns = entry.targetColumns.map((column) => `"${column}"`).join(', ');
             const sources = entry.sourceColumns.map((column) => `"${column}"`).join(', ');
-            temp
-              .prepare(
-                `INSERT INTO main."${entry.name}" (${columns}) SELECT ${sources} FROM legacy."${entry.name}"`,
-              )
-              .run();
+            temp.exec('SAVEPOINT legacy_table_copy');
+            try {
+              temp
+                .prepare(
+                  `INSERT INTO main."${entry.name}" (${columns}) SELECT ${sources} FROM legacy."${entry.name}"`,
+                )
+                .run();
+              temp.exec('RELEASE legacy_table_copy');
+              copied.push(entry);
+            } catch (error) {
+              temp.exec('ROLLBACK TO legacy_table_copy');
+              temp.exec('RELEASE legacy_table_copy');
+              const message = error instanceof Error ? error.message : String(error);
+              skipped.push({ name: entry.name, reason: `复制失败，已整表跳过：${message}` });
+            }
           }
         });
         copyAll();
-        for (const entry of plan) {
+        for (const entry of copied) {
           const row = temp.prepare(`SELECT count(*) AS n FROM main."${entry.name}"`).get() as { n: number };
           tables.push({ name: entry.name, rows: row.n });
         }

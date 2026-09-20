@@ -153,6 +153,19 @@ function buildLegacyDb(path: string): void {
   db.close();
 }
 
+/**
+ * 往已经建好的旧库里再补几张「当前线 schema 从没见过」的表，模拟库在旧线上漂移过形状。
+ *
+ * 现实里这种表来自用户手动建过的辅助表、第三方脚本、或更早的私有分支——`app_config`
+ * 就是报告里那张：当前线（以及 release/0.6.x）里都没有它，可它实实在在躺在用户的库里。
+ */
+function addDriftedTables(dbFile: string, statements: string[]): void {
+  const db = new Database(dbFile);
+  db.pragma('foreign_keys = OFF');
+  for (const statement of statements) db.exec(statement);
+  db.close();
+}
+
 /** 用当前线的迁移把一份库建到最新形状（不是 0.6.x）。 */
 function buildCurrentDb(path: string): void {
   const db = new Database(path);
@@ -630,6 +643,225 @@ describe('0.6.x 旧库升级', () => {
     ).toBe(0);
     // 全新安装没有可丢的东西：既不建导入备份，也不建迁移前快照
     expect(existsSync(preMigrateSnapshotPath(dbFile))).toBe(false);
+  });
+
+  /**
+   * 报告里的那份库：多了一张当前 schema 从没听说过的 `app_config`（它只在用户自己的库里
+   * 存在）。它必须被跳过并如实汇报，而不是被误当成「待搬的表」——旧实现里
+   * `pragma_table_info(?)` 不带 schema，会把挂进来的 legacy 库也搜进去，于是给 app_config
+   * 排好了搬行计划，最后撞在 `no such table: main.app_config`，整次升级中止。
+   *
+   * 同时验证启动路径的全部既有保证：好数据到位、备份逐字节保留、一次性标记写入、再打开空转。
+   */
+  it('旧库多一张 app_config：升级照常完成，该表被跳过并记进标记，再打开仍是空转', async () => {
+    const dbFile = join(state.userData, DB_FILE);
+    buildLegacyDb(dbFile);
+    addDriftedTables(dbFile, [
+      `CREATE TABLE app_config (id text PRIMARY KEY NOT NULL, payload text NOT NULL)`,
+      `INSERT INTO app_config (id, payload) VALUES ('theme', 'dark')`,
+    ]);
+    const originalBytes = readFileSync(dbFile);
+
+    let module = await openApp();
+    module.getDb();
+    await flushAsync();
+    const raw = module.getRawDb();
+
+    // 升级没有被这张表拖垮：好数据照旧到位，新 schema 齐全
+    expect(raw.prepare(`SELECT label FROM resume WHERE id = 'legacy-resume'`).get()).toEqual({
+      label: '母版简历',
+    });
+    expect(
+      countOf(raw, `SELECT count(*) AS n FROM sqlite_master WHERE type = 'table' AND name = 'role_profile'`),
+    ).toBe(1);
+    // app_config 从未被搬进新库
+    expect(
+      countOf(raw, `SELECT count(*) AS n FROM sqlite_master WHERE type = 'table' AND name = 'app_config'`),
+    ).toBe(0);
+
+    // 标记里如实记下「跳过了 app_config」
+    const marker = JSON.parse(
+      (
+        raw.prepare(`SELECT value FROM sync_meta WHERE key = ?`).get(LEGACY_IMPORT_MARKER_KEY) as {
+          value: string;
+        }
+      ).value,
+    ) as { skipped: { name: string; reason: string }[] };
+    expect(marker.skipped.map((entry) => entry.name)).toEqual(['app_config']);
+
+    // 备份逐字节保留
+    expect(readFileSync(`${dbFile}${LEGACY_BACKUP_SUFFIX}`).equals(originalBytes)).toBe(true);
+
+    // 第二次打开空转：标记在位 → 不重复导入，app_config 也不会突然出现
+    module.closeDb();
+    module = await openApp();
+    module.getDb();
+    await flushAsync();
+    const again = module.getRawDb();
+    expect(countOf(again, `SELECT count(*) AS n FROM resume WHERE id = 'legacy-resume'`)).toBe(1);
+    expect(
+      countOf(again, `SELECT count(*) AS n FROM sync_meta WHERE key = ?`, LEGACY_IMPORT_MARKER_KEY),
+    ).toBe(1);
+  });
+});
+
+/**
+ * 库形状漂移：旧库里躺着当前线 schema 从没有过的表。整库导入必须做到——不认识就跳过并
+ * 汇报（既不去查它、更不去写它），一张怪表不能把整次升级拖垮，好数据照旧到位。
+ */
+describe('旧库里有当前 schema 不认识的表（形状漂移）', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'openjob-import-drift-'));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  });
+
+  it('多出的 app_config 表被整表跳过并写进报告，其余数据照常导入', () => {
+    const dbFile = join(dir, DB_FILE);
+    buildLegacyDb(dbFile);
+    addDriftedTables(dbFile, [
+      `CREATE TABLE app_config (id text PRIMARY KEY NOT NULL, payload text NOT NULL)`,
+      `INSERT INTO app_config (id, payload) VALUES ('theme', 'dark')`,
+    ]);
+    const originalBytes = readFileSync(dbFile);
+
+    const { raw, report } = importLegacyDatabase({ dbFile, migrationsFolder: MIGRATIONS_DIR });
+    try {
+      // 只跳过 app_config 一张，原因是「新结构里没有这张表」
+      expect(report.skipped).toEqual([
+        { name: 'app_config', reason: expect.stringContaining('没有这张表') },
+      ]);
+      // 其余 0.6.x 表照旧导入，好数据到位
+      expect(report.tables.map((table) => table.name)).toContain('resume');
+      expect(raw.prepare(`SELECT label FROM resume WHERE id = 'legacy-resume'`).get()).toEqual({
+        label: '母版简历',
+      });
+      // app_config 从没被建出来
+      expect(
+        countOf(raw, `SELECT count(*) AS n FROM sqlite_master WHERE type = 'table' AND name = 'app_config'`),
+      ).toBe(0);
+      // 标记里如实记录跳过
+      const marker = JSON.parse(
+        (
+          raw.prepare(`SELECT value FROM sync_meta WHERE key = ?`).get(LEGACY_IMPORT_MARKER_KEY) as {
+            value: string;
+          }
+        ).value,
+      ) as { skipped: { name: string; reason: string }[] };
+      expect(marker.skipped).toEqual([
+        { name: 'app_config', reason: expect.stringContaining('没有这张表') },
+      ]);
+      // 原库（已换成新结构）与备份并存，备份逐字节是升级前那份
+      expect(readFileSync(`${dbFile}${LEGACY_BACKUP_SUFFIX}`).equals(originalBytes)).toBe(true);
+    } finally {
+      raw.close();
+    }
+  });
+
+  /**
+   * 同名、却一列都对不上：当前 schema 里有 `practice_attempt`，旧库里这张同名表的列
+   * 全是外来的。它必须整表跳过并汇报原因，而不是硬塞。选它是因为它不在 PLUGIN_ERA_TABLES
+   * 里，不会把库误判成「当前线」。
+   */
+  it('与当前 schema 同名、列却完全对不上的表：跳过并汇报，导入仍完成', () => {
+    const dbFile = join(dir, DB_FILE);
+    buildLegacyDb(dbFile);
+    addDriftedTables(dbFile, [
+      `CREATE TABLE practice_attempt (alpha text, beta text)`,
+      `INSERT INTO practice_attempt (alpha, beta) VALUES ('x', 'y')`,
+    ]);
+
+    const { raw, report } = importLegacyDatabase({ dbFile, migrationsFolder: MIGRATIONS_DIR });
+    try {
+      expect(report.skipped).toEqual([
+        { name: 'practice_attempt', reason: expect.stringContaining('没有对应') },
+      ]);
+      // 其它表照旧到位，好数据在
+      expect(raw.prepare(`SELECT label FROM resume WHERE id = 'legacy-resume'`).get()).toEqual({
+        label: '母版简历',
+      });
+      // 同名异形的表没被搬进来
+      expect(countOf(raw, `SELECT count(*) AS n FROM practice_attempt`)).toBe(0);
+    } finally {
+      raw.close();
+    }
+  });
+
+  /**
+   * 形状看似对得上、数据却塞不进去的表：`practice_attempt` 只提供 `id` 一列，而新结构的
+   * `session_id` 是 NOT NULL 且无默认值，搬行必然失败。整表回滚、如实汇报即可——既不能
+   * 静默丢弃，也不能让这一张表把其它表的导入一起带崩。
+   */
+  it('单张表搬行失败：整表回滚并汇报，其它表照常导入', () => {
+    const dbFile = join(dir, DB_FILE);
+    buildLegacyDb(dbFile);
+    addDriftedTables(dbFile, [
+      `CREATE TABLE practice_attempt (id text PRIMARY KEY NOT NULL)`,
+      `INSERT INTO practice_attempt (id) VALUES ('broken-attempt')`,
+    ]);
+
+    const { raw, report } = importLegacyDatabase({ dbFile, migrationsFolder: MIGRATIONS_DIR });
+    try {
+      // 失败被如实汇报，而不是静默丢弃、更不是整库导入中止
+      expect(report.skipped).toEqual([
+        { name: 'practice_attempt', reason: expect.stringContaining('复制失败') },
+      ]);
+      // 那半行没有留下来
+      expect(countOf(raw, `SELECT count(*) AS n FROM practice_attempt`)).toBe(0);
+      // 好数据照旧到位
+      expect(raw.prepare(`SELECT label FROM resume WHERE id = 'legacy-resume'`).get()).toEqual({
+        label: '母版简历',
+      });
+    } finally {
+      raw.close();
+    }
+  });
+
+  it('多张怪表与好数据并存：好数据照旧到位，全部怪表列进报告', () => {
+    const dbFile = join(dir, DB_FILE);
+    buildLegacyDb(dbFile);
+    addDriftedTables(dbFile, [
+      // 当前 schema 完全没有的表
+      `CREATE TABLE app_config (id text PRIMARY KEY NOT NULL, payload text NOT NULL)`,
+      `INSERT INTO app_config (id, payload) VALUES ('theme', 'dark')`,
+      // 名字是真实表 task 的前缀，列全不相干
+      `CREATE TABLE task_shadow (alpha text, beta text)`,
+      `INSERT INTO task_shadow (alpha, beta) VALUES ('a', 'b')`,
+      // 一张纯外来的表，和新结构没有任何共同列
+      `CREATE TABLE user_profile_cache (nickname text, avatar text)`,
+      `INSERT INTO user_profile_cache (nickname, avatar) VALUES ('n', 'a')`,
+    ]);
+
+    const { raw, report } = importLegacyDatabase({ dbFile, migrationsFolder: MIGRATIONS_DIR });
+    try {
+      expect(report.skipped.map((entry) => entry.name).sort()).toEqual([
+        'app_config',
+        'task_shadow',
+        'user_profile_cache',
+      ]);
+      // 0.6.x 的表照旧全部导入，好数据在位（含改名过的列）
+      expect(report.tables.map((table) => table.name)).toEqual(
+        expect.arrayContaining(['resume', 'campaign', 'knowledge_node', 'task', 'speech_snippet']),
+      );
+      expect(raw.prepare(`SELECT name FROM knowledge_node WHERE id = 'legacy-node'`).get()).toEqual({
+        name: '后端基础',
+      });
+      expect(
+        raw.prepare(`SELECT material_id FROM task WHERE id = 'legacy-task-readcode'`).get(),
+      ).toEqual({ material_id: 'legacy-repo' });
+      // 怪表一张都没进新库
+      for (const name of ['app_config', 'task_shadow', 'user_profile_cache']) {
+        expect(
+          countOf(raw, `SELECT count(*) AS n FROM sqlite_master WHERE type = 'table' AND name = ?`, name),
+        ).toBe(0);
+      }
+    } finally {
+      raw.close();
+    }
   });
 });
 
