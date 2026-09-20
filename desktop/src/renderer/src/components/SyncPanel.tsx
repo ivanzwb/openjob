@@ -179,9 +179,7 @@ export function SyncPanel(): React.JSX.Element {
               </span>
               <span>
                 配对：
-                <span className={status.pairingActive ? 'text-amber-300' : 'text-[var(--color-muted)]'}>
-                  {status.pairingActive ? '等待扫码' : '未开启'}
-                </span>
+                {pairingBadge(status)}
               </span>
             </div>
             {status.peers.length > 0 && (
@@ -333,6 +331,21 @@ export function SyncPanel(): React.JSX.Element {
       </div>
     </section>
   );
+}
+
+/**
+ * 「配对」显示的到底是哪一件事。
+ *
+ * `pairingActive` 只是当下这一场 5 分钟的扫码会话（主进程里的内存变量，
+ * 见 sync/pairing.ts 的 getActivePairing），重启/升级后必然归零——拿它当
+ * 「有没有配对」用，从 0.6.x 升级上来的用户一开面板就会看到「未开启」，
+ * 哪怕手机其实还好端端地配对在 `sync_peer` 里（升级导入会把这张表原样搬过来）。
+ * 所以这里按持久状态判：有对端行就是「已配对」，会话在跑时优先显示「等待扫码」。
+ */
+function pairingBadge(status: SyncStatus): React.JSX.Element {
+  if (status.pairingActive) return <span className="text-amber-300">等待扫码</span>;
+  if (status.peers.length > 0) return <span className="text-emerald-400">已配对</span>;
+  return <span className="text-[var(--color-muted)]">未开启</span>;
 }
 
 function formatSize(bytes: number): string {

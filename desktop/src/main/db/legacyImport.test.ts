@@ -154,6 +154,31 @@ function buildLegacyDb(path: string): void {
 }
 
 /**
+ * 往已经建好的旧库里补一台「已配对」的手机，以及本机的同步身份。
+ *
+ * 0.6.x 的配对落在两处：`sync_peer` 一行（对端 deviceId + 配对时交换的共享密钥）
+ * 与本机自己的身份 `sync_meta.deviceId`（对端用它来认这台桌面端）。两者缺一，
+ * 升级后这台手机就再认不出桌面端（或反过来），配对等于丢了。
+ */
+function addPairedDevice(
+  dbFile: string,
+  peer: { deviceId: string; sharedKey: string; displayName: string },
+  identity: { deviceId: string; displayName: string },
+): void {
+  const db = new Database(dbFile);
+  const t = 1_700_000_000_000;
+  db.prepare(
+    `INSERT INTO sync_peer
+       (device_id, display_name, platform, shared_key, last_address, last_local_seq, last_remote_seq, last_sync_at, paired_at)
+     VALUES (?, ?, 'android', ?, '192.168.1.23', 0, 0, NULL, ?)`,
+  ).run(peer.deviceId, peer.displayName, peer.sharedKey, t);
+  const meta = db.prepare(`INSERT INTO sync_meta (key, value) VALUES (?, ?)`);
+  meta.run('deviceId', identity.deviceId);
+  meta.run('displayName', identity.displayName);
+  db.close();
+}
+
+/**
  * 往已经建好的旧库里再补几张「当前线 schema 从没见过」的表，模拟库在旧线上漂移过形状。
  *
  * 现实里这种表来自用户手动建过的辅助表、第三方脚本、或更早的私有分支——`app_config`
@@ -541,6 +566,67 @@ describe('0.6.x 旧库升级', () => {
     const backup = `${dbFile}${LEGACY_BACKUP_SUFFIX}`;
     expect(existsSync(backup)).toBe(true);
     expect(readFileSync(backup).equals(originalBytes)).toBe(true);
+  });
+
+  it('配对随升级保留：sync_peer 与其共享密钥原样到新库、本机身份不变，面板能报出这台手机', async () => {
+    const dbFile = join(state.userData, DB_FILE);
+    buildLegacyDb(dbFile);
+    addPairedDevice(
+      dbFile,
+      { deviceId: 'phone-0.6.x', sharedKey: 'shared-key-0.6.x', displayName: '我的手机' },
+      { deviceId: 'desktop-0.6.x', displayName: '台式机' },
+    );
+
+    const module = await openApp();
+    module.getDb();
+    await flushAsync();
+    const raw = module.getRawDb();
+
+    // 配对行连同共享密钥原样搬进新库
+    expect(
+      raw
+        .prepare(`SELECT display_name, platform, shared_key FROM sync_peer WHERE device_id = 'phone-0.6.x'`)
+        .get(),
+    ).toEqual({ display_name: '我的手机', platform: 'android', shared_key: 'shared-key-0.6.x' });
+    // 本机身份不能被重新生成：换了 deviceId 等于变成一台新设备，对端再也认不出
+    expect(raw.prepare(`SELECT value FROM sync_meta WHERE key = 'deviceId'`).get()).toEqual({
+      value: 'desktop-0.6.x',
+    });
+
+    // 面板刷新的那条查询（sync:status → getSyncStatus → listPeers）必须报出这台手机
+    const { listPeers } = await import('../sync/pairing');
+    expect(listPeers().map((p) => p.deviceId)).toEqual(['phone-0.6.x']);
+    const { getSyncStatus } = await import('../sync/server');
+    const status = getSyncStatus();
+    expect(status.peers.map((p) => p.deviceId)).toEqual(['phone-0.6.x']);
+    // 配对是持久的，不在那一场 5 分钟的扫码会话里——会话一过 pairingActive 就是 false
+    expect(status.pairingActive).toBe(false);
+  });
+
+  it('配对在第二次打开时是空转：不重复、不丢失', async () => {
+    const dbFile = join(state.userData, DB_FILE);
+    buildLegacyDb(dbFile);
+    addPairedDevice(
+      dbFile,
+      { deviceId: 'phone-0.6.x', sharedKey: 'shared-key-0.6.x', displayName: '我的手机' },
+      { deviceId: 'desktop-0.6.x', displayName: '台式机' },
+    );
+
+    let module = await openApp();
+    module.getDb();
+    await flushAsync();
+    const firstRaw = module.getRawDb();
+    expect(countOf(firstRaw, `SELECT count(*) AS n FROM sync_peer`)).toBe(1);
+    module.closeDb();
+
+    module = await openApp();
+    module.getDb();
+    await flushAsync();
+    const again = module.getRawDb();
+    expect(countOf(again, `SELECT count(*) AS n FROM sync_peer`)).toBe(1);
+    expect(again.prepare(`SELECT value FROM sync_meta WHERE key = 'deviceId'`).get()).toEqual({
+      value: 'desktop-0.6.x',
+    });
   });
 
   it('导入的旧战役带上 prePlugin 标记，既有的插件运行时回填仍能选中它', async () => {
