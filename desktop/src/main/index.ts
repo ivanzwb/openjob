@@ -5,6 +5,7 @@ import { registerIpcHandlers } from './ipc';
 import { emit } from './ipc/bridge';
 import { closeDb, getDb } from './db';
 import { loadExternalPlugins } from './plugins/bootstrap';
+import { ensureBundledDefaultPlugin } from './plugins/defaultPlugin';
 import { scheduleStartupCheck } from './updater';
 import { startSyncServer } from './sync';
 import { applyAppIcon } from './icon';
@@ -119,7 +120,9 @@ app.whenReady().then(() => {
     // 从 0.6.x 升级上来的旧库会在这里走整库导入；任何一步失败都必须在这里被接住，
     // 不能变成未处理的 Promise 拒绝，也不能带着半迁移的库继续启动。
     getDb();
-    // 必须在 IPC 之前：渲染层一上来就会问已安装清单，晚一步会拿到只有内置插件的那份
+    // 默认插件（软件工程包）随安装包分发，先装再扫；装不上只记 warn，不拦启动
+    ensureBundledDefaultPlugin();
+    // 必须在 IPC 之前：渲染层一上来就会问已安装清单，晚一步会拿到还没装默认插件的那份
     loadExternalPlugins();
     registerIpcHandlers();
     startSyncServer();

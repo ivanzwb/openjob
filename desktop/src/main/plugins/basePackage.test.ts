@@ -5,6 +5,11 @@
  * 是它不报错：谁在 `src/` 里 import 一下 `@plugins`，三个岗位包就被静态编译进基础包，
  * 而所有用例照样全绿，表现只是「装机就莫名带着三个岗位」。
  *
+ * 安装包会随附**一份**岗位包的签名 bundle（`resources/default-plugins/`，启动时经正常安装
+ * 路径装进 userData/plugins，可卸载）——那是数据，不是 import：这条关卡管的是「源码里不许
+ * 出现岗位簇的名字」，所以默认插件那条路径由 `defaultPlugin.ts` 按 bundle 文件名取包身份，
+ * 基础包里依旧没有 `software-engineering` 这类字面量（另见 hostUi/roleNeutralGate）。
+ *
  * 两条保证互补：
  * - 物理：`desktop/electron.vite.config.ts` 的 main/preload/renderer 三个目标都不登记
  *   `@plugins` 别名，应用代码一旦引用，构建当场就断；

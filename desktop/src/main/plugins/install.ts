@@ -20,6 +20,7 @@ import { isPrePluginRolePack } from '@core/planner/contributions';
 import { scanPluginSources } from '@core/plugins/pluginRuntime/scan';
 import { getAppPaths } from '../paths';
 import { loadExternalPlugins } from './bootstrap';
+import { dismissPlugin } from './dismissedPlugins';
 import { exactKeyOf } from './inventory';
 import { classifyPackageTrust, type PackageTrust } from './package/signature';
 import { loadTrustedPublicKeys } from './package/trustedKeys';
@@ -262,6 +263,9 @@ export function uninstallPlugin(id: string, version: string): { removed: boolean
   const target = join(getAppPaths().pluginsDir, key);
   const existed = existsSync(target);
   rmSync(target, { recursive: true, force: true });
+  // 卸载过的包记一笔：随安装包分发的默认插件靠它才「删得掉」——否则下次启动会装回来。
+  // 不区分是哪个包：基础包不认识任何岗位，这条规则对任何默认插件都成立
+  dismissPlugin(id);
   loadExternalPlugins();
   return { removed: existed };
 }

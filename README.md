@@ -192,7 +192,7 @@ openJob/
 │   ├── src/renderer/  #   React UI
 │   ├── scripts/       #   构建、图标、NSIS 工具链等桌面专用脚本
 │   └── electron-builder.yml
-├── plugins/           # 岗位包子项目（软件工程 / 产品经理 / 销售与客户成功），随 release 单独分发，不进基础包
+├── plugins/           # 岗位包子项目（软件工程 / 产品经理 / 销售与客户成功），随 release 单独分发，不编译进基础包；安装包里随附一份签名的软件工程包作为默认插件
 ├── mobile/            # Expo 手机端（独立 npm 装依赖，不在 pnpm workspace 里）
 ├── scripts/           # 跨包脚本（打插件包、数据诊断等）
 └── docs/DESIGN.md     # 产品与架构设计（主文档）

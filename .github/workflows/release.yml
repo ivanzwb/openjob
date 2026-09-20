@@ -92,7 +92,7 @@ jobs:
 
   package:
     name: Package (${{ matrix.os }})
-    needs: prepare-release
+    needs: [prepare-release, package-plugins]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -217,6 +217,18 @@ jobs:
 
       - name: Typecheck
         run: pnpm run typecheck
+
+      # 默认岗位包：直接用 package-plugins 那次打好的产物（同一把第一方私钥签的），
+      # 铺进 desktop/resources/default-plugins/ 随安装包分发。不在这里重打，是为了让
+      # 「签名」「验签」「装进安装包」三处的字节完全一致。
+      - name: Download plugin bundles
+        uses: actions/download-artifact@v4
+        with:
+          name: openjob-plugins
+          path: dist-plugins
+
+      - name: Prepare default plugins
+        run: node desktop/scripts/prepare-default-plugins.mjs
 
       # 显式传 --publish always（pnpm run dist -- args 会在脚本后多插一个 -- 导致参数丢失，
       # 且 electron-builder v27 起 CI 隐式发布将被移除，显式声明更稳健）

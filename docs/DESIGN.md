@@ -704,7 +704,7 @@ openjob/
 │       ├── pluginRuntimes/         # 插件代码入口的沙箱宿主与桥
 │       └── ipc/                    # 类型安全的 IPC 客户端封装
 ├── mobile/src/                     # Expo + React Native + expo-sqlite
-├── plugins/                        # 岗位包（随 release 单独分发，不进基础包）
+├── plugins/                        # 岗位包（随 release 单独分发，不编译进基础包；安装包随附一份签名的软件工程包作为默认插件）
 └── scripts/                        # 打包、迁移与校验脚本
 ```
 

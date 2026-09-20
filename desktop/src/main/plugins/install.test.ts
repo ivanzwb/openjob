@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gzipSync, gunzipSync } from 'node:zlib';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 const paths = { userData: '', pluginsDir: '' };
 
@@ -39,6 +39,7 @@ import type { RolePack } from '@core/plugins/types';
 import { emit } from '../ipc/bridge';
 import { signPackageFiles, encodeBundle } from './bundle';
 import { loadExternalPlugins } from './bootstrap';
+import { ensureBundledDefaultPlugin } from './defaultPlugin';
 import { installPluginBundle, parseBundle, removeRejectedPluginDir, uninstallPlugin } from './install';
 import { setExternalPlugins } from './runtime';
 
@@ -382,6 +383,103 @@ describe('removeRejectedPluginDir', () => {
     for (const bad of ['', '.', '..', '../elsewhere', 'a/b', 'a\\b']) {
       expect(() => removeRejectedPluginDir(bad), bad).toThrow('不合法的插件目录名');
     }
+  });
+});
+
+/**
+ * 默认插件：随安装包分发的软件工程岗位包。
+ *
+ * 老战役都挂在它上面，装不上就只剩只读；这一组用例守住「升级上来开箱就有」以及
+ * 「它没有特殊身份——用户选了别的包就不该再回来」。
+ */
+describe('默认插件（软件工程岗位包）', () => {
+  const SWE = DISTRIBUTED_ROLE_PACKS.find((pack) => pack.manifest.id === 'software-engineering')!;
+  const INSTALLED = `software-engineering@${SWE.manifest.version}`;
+
+  let bundleDir: string;
+  let warn: MockInstance;
+
+  beforeEach(() => {
+    bundleDir = mkdtempSync(join(tmpdir(), 'openjob-default-plugin-'));
+    // 装不上只记 warn：断言里要看它报的是哪一条原因，所以这里换成可捕获的桩
+    warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    warn.mockRestore();
+    rmSync(bundleDir, { recursive: true, force: true });
+  });
+
+  /** 随包分发的那份 bundle，命名与 pack-plugins.mjs 的产物一致。 */
+  function writeBundledPack(raw: Buffer = bundle(rolePackFiles(SWE.manifest.id, SWE.manifest.version, SWE))): void {
+    writeFileSync(join(bundleDir, `${INSTALLED}.ojb`), raw);
+  }
+
+  it('本机没装任何岗位包时，把随包分发的那个装上', () => {
+    writeBundledPack();
+
+    ensureBundledDefaultPlugin([bundleDir]);
+
+    expect(installedDirs()).toEqual([INSTALLED]);
+  });
+
+  it('已经装着这个 id 时不再动它，也不覆盖', () => {
+    writeBundledPack();
+    installPluginBundle(bundle(rolePackFiles(SWE.manifest.id, SWE.manifest.version, SWE)));
+    const before = installedDirs();
+
+    ensureBundledDefaultPlugin([bundleDir]);
+
+    expect(installedDirs()).toEqual(before);
+  });
+
+  it('用户已经装了别的岗位包时不抢位置：装不进去，但不抛错', () => {
+    writeBundledPack();
+    installPluginBundle(bundle(rolePackFiles('product-manager', '1.0.0')));
+
+    expect(() => ensureBundledDefaultPlugin([bundleDir])).not.toThrow();
+
+    expect(installedDirs()).toEqual(['product-manager@1.0.0']);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('one-plugin-limit'));
+  });
+
+  it('没有随包分发的 bundle 时什么都不做（开发期没打包）', () => {
+    ensureBundledDefaultPlugin([bundleDir]);
+
+    expect(installedDirs()).toEqual([]);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('不是第一方签名的默认包不装：来源不可信就不该在启动路径上静默放行', () => {
+    writeBundledPack(
+      bundle(rolePackFiles(SWE.manifest.id, SWE.manifest.version, SWE), stranger, STRANGER_PEM),
+    );
+
+    ensureBundledDefaultPlugin([bundleDir]);
+
+    expect(installedDirs()).toEqual([]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('untrusted-signer'));
+  });
+
+  it('卸载之后不再装回来：默认不等于删不掉', () => {
+    writeBundledPack();
+    ensureBundledDefaultPlugin([bundleDir]);
+    expect(installedDirs()).toEqual([INSTALLED]);
+
+    uninstallPlugin(SWE.manifest.id, SWE.manifest.version);
+    ensureBundledDefaultPlugin([bundleDir]);
+
+    expect(installedDirs()).toEqual([]);
+  });
+
+  it('卸载的是别的包时不影响默认插件', () => {
+    writeBundledPack();
+    installPluginBundle(bundle(rolePackFiles('product-manager', '1.0.0')));
+    uninstallPlugin('product-manager', '1.0.0');
+
+    ensureBundledDefaultPlugin([bundleDir]);
+
+    expect(installedDirs()).toEqual([INSTALLED]);
   });
 });
 

@@ -13,6 +13,9 @@ mobile/node_modules/
 # tree-sitter 语法文件由 desktop/scripts/sync-grammars.mjs 从 node_modules 复制而来，约 17MB，不入库
 desktop/resources/tree-sitter/*.wasm
 
+# 默认岗位包由 desktop/scripts/prepare-default-plugins.mjs 在出包前从 dist-plugins/ 铺进来
+desktop/resources/default-plugins/
+
 # 本地配置与密钥绝不入库（运行时实际落在 userData，此处防止误放）
 config.json
 secrets.json
@@ -27,5 +30,5 @@ Thumbs.db
 .env.*
 .omo/
 
-# ���ع���״̬��Ȩ�������б���ѧϰ����ƫ�ã��������汾����
+# ���ع���״̬��Ȩ�������б���ѧϰ����ƫ�ã��������汾����
 .commandcode/

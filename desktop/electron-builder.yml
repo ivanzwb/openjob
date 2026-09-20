@@ -11,7 +11,9 @@ files:
   - package.json
 
 # tree-sitter 的 .wasm 语法文件不参与打包，放在 resources 下按需读取；
-# Drizzle 迁移必须随包分发，首次启动要靠它建表
+# Drizzle 迁移必须随包分发，首次启动要靠它建表；
+# default-plugins/ 里是默认岗位包（software-engineering）的签名 bundle，启动时由
+# src/main/plugins/defaultPlugin.ts 装进 userData/plugins
 extraResources:
   - from: resources
     to: .
