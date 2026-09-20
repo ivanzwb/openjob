@@ -39,7 +39,8 @@ function packBundles() {
 }
 
 const bundles = bundlesFor(DEFAULT_PLUGIN_ID);
-if (bundles.length === 0) packBundles();
+const packedHere = bundles.length === 0;
+if (packedHere) packBundles();
 const found = bundlesFor(DEFAULT_PLUGIN_ID);
 if (found.length === 0) {
   console.error(`没有产出 ${DEFAULT_PLUGIN_ID} 的包，安装包里将不带默认岗位包`);
@@ -56,7 +57,9 @@ for (const name of found) {
   console.log(`默认插件 → resources/default-plugins/${name}（${size} 字节）`);
 }
 
-if (!process.env.OPENJOB_PLUGIN_PRIVATE_KEY) {
+// 只在「这里刚打的包」上提醒签名来源：CI 里用的是 package-plugins 打好的第一方产物，
+// 那条路径与私钥无关，无差别地警告只会让日志说谎
+if (packedHere && !process.env.OPENJOB_PLUGIN_PRIVATE_KEY) {
   console.warn(
     '未设置 OPENJOB_PLUGIN_PRIVATE_KEY：上面的包不是第一方签名，启动时的自动安装会拒收它。',
   );
