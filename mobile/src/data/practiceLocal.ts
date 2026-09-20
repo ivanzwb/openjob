@@ -20,6 +20,7 @@ import type {
   NodeStatus,
 } from '@core/enums';
 import { formatIdForExamForm } from '@core/plugins/examForms';
+import { BASELINE_INTERVIEW_FORMATS } from '@core/practice';
 import type { CampaignRuntimeDescriptor, RolePack } from '@core/plugins/types';
 import {
   PracticeError,
@@ -131,10 +132,19 @@ export interface PracticeFormatOption {
   label: string;
 }
 
-/** 这场战役能练的题型：全部来自岗位包的 `interviewFormats` 声明。 */
+/**
+ * 这场战役能练的题型：基础包基线在前，岗位包声明在后（与桌面端下拉同一顺序）。
+ *
+ * 基线（自我介绍）不属任何岗位包——三个官方包的 golden 明确不许出现自我介绍类词条，
+ * 它是跨岗位的通用能力，正文与量规都在基础包里。
+ */
 export function practiceFormatOptions(db: SQLiteDatabase, campaignId: string): PracticeFormatOption[] {
   const { rolePack } = resolveCampaignPracticeRuntime(db, campaignId);
-  return rolePack.interviewFormats.map((format) => ({ id: format.id, label: format.label }));
+  const declared = new Set(rolePack.interviewFormats.map((format) => format.id));
+  return [
+    ...BASELINE_INTERVIEW_FORMATS.filter((format) => !declared.has(format.id)),
+    ...rolePack.interviewFormats,
+  ].map((format) => ({ id: format.id, label: format.label }));
 }
 
 // ---------------------------------------------------------------------------

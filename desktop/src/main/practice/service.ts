@@ -22,6 +22,7 @@ import {
   PracticeError,
   groundDimensionScores,
   needsRePractice as needsRePracticeFor,
+  practiceFormatIdForExamForm,
   practiceQuestionRequest,
   practiceScoreRepairRequest,
   practiceScoreRequest,
@@ -39,7 +40,6 @@ import {
   type PracticeTurnInput,
 } from '@core/practice';
 import { toPromptEvidenceList } from '@core/evidence/promptEvidence';
-import { formatIdForExamForm } from '@core/plugins/examForms';
 import { composePrompt, type ComposedPrompt, type PromptEvidence } from '@core/prompts/composer';
 import type { RolePack } from '@core/plugins/types';
 import { listConfirmedEvidence } from '../evidence/repository';
@@ -144,11 +144,14 @@ export function createPracticeService(deps: PracticeServiceDeps): PracticeServic
 
   async function createSession(input: PracticeSessionInput): Promise<PracticeSession> {
     // 先解岗位包再翻译题型：题型 id → formatId 的映射归岗位包所有（examForms），
-    // 缺包时 resolveCampaignPracticeRuntime 直接报 role-pack-unavailable
+    // 基线题型（自我介绍）由基础包兜底，缺包时 resolveCampaignPracticeRuntime 直接报
+    // role-pack-unavailable
     const runtime = resolveCampaignPracticeRuntime(raw, input.campaignId);
     const formatId =
       input.formatId ??
-      (input.examForm ? formatIdForExamForm(runtime.rolePack, input.examForm) : undefined);
+      (input.examForm
+        ? practiceFormatIdForExamForm(runtime.rolePack, input.examForm)
+        : undefined);
     if (!formatId) {
       throw new PracticeError(
         'unknown-format',

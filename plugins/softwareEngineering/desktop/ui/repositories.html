@@ -246,9 +246,6 @@
           <input id="url" placeholder="https://github.com/org/repo.git" />
           <button id="link" class="btn-accent">链接仓库</button>
         </div>
-        <p class="muted">
-          仓库拉进本包自己的工作区：只放行公开的 https 地址（深度 1、不带凭据）；重复链接同一地址即为更新。
-        </p>
         <p id="msg" class="muted status"></p>
 
         <ul id="repos" class="repo-list"></ul>
@@ -770,8 +767,12 @@
             meta.textContent =
               `${entry.branch || 'detached'}@${entry.commit.slice(0, 7)} · ${entry.fileCount ?? 0} 文件` +
               (when ? ` · ${when}` : '');
+          } else if (entry.dir) {
+            // 升级带上来的检出：目录在，但还没跟远端对过账，没有 commit 可显示
+            const when = entry.fetchedAt ? new Date(entry.fetchedAt).toLocaleString() : '';
+            meta.textContent = `本机已检出${when ? ` · ${when}` : ''}`;
           } else {
-            // 迁移过来的登记行还没有本机检出（本机路径不跨设备）：如实写明，按钮不假装能点
+            // 登记行还没有本机检出（本机路径不跨设备）：如实写明，按钮不假装能点
             meta.textContent = entry.ready ? '已登记，本机还没有检出' : '尚未就绪';
           }
 

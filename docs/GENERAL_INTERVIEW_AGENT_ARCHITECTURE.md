@@ -612,7 +612,12 @@ export function activate(ctx: PluginRuntimeContext) {
 
 当自动识别结果置信度不足时，应让用户确认，不允许同时加载多个主岗位包并把所有题型混在一起。
 
-“通用面试能力基线”属于基础 Agent，不是 Role Pack。它提供自我介绍、简历深挖、行为题、求职动机和反问等跨岗位能力。因此产品经理 Campaign 仍然只加载一个 `product-manager` 主岗位包。
+“通用面试能力基线”属于基础 Agent，不是 Role Pack。其中**自我介绍已经落地在基础包**：题型、面试形式
+（`core.self-intro`，协议 presentation）、量规（`core.self-intro-rubric`）在 `core/src/practice/baseline.ts`，
+出题 / 评分 / 参考答案三段 Prompt 片段在 `core/src/practice/baselineFragments.ts`。练习页题型下拉把基线排
+在岗位包声明的题型之前（`practiceExamForms`），包声明了同名题型时以包为准；岗位包没装时只剩基线，也不
+是空下拉。简历深挖、行为题、求职动机和反问目前仍落在岗位包的题型里（`scenario` 等），尚未做成基线。
+因此产品经理 Campaign 仍然只加载一个 `product-manager` 主岗位包。
 
 ### 8.3 冲突处理
 

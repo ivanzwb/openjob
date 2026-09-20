@@ -18,6 +18,7 @@ import {
   type PracticeAnswerCitation,
   type PracticeDimensionScore,
 } from './types';
+import { resolveBaselineFormat } from './baseline';
 
 /** 模型给回的一条维度评分，字段名与 practicePrompts 里要求的一致 */
 export interface RawDimensionScore {
@@ -38,6 +39,9 @@ export function resolvePracticeFormat(
 ): ResolvedPracticeFormat {
   const format = rolePack.interviewFormats.find((item) => item.id === formatId);
   if (!format) {
+    // 基线题型（自我介绍）的面试形式归基础包，岗位包里本来就没有
+    const baseline = resolveBaselineFormat(formatId);
+    if (baseline) return baseline;
     throw new PracticeError(
       'unknown-format',
       `岗位包 ${rolePack.manifest.id} 没有面试形式 ${formatId}`,

@@ -40,6 +40,8 @@ import {
   type PromptExperiment,
   type PromptSlot,
 } from './registry';
+import { baselineFragment } from '../practice/baselineFragments';
+import { resolveBaselineFormat } from '../practice/baseline';
 
 /**
  * 组合层次。顺序即优先级：越靠前越不可被后面的内容改写。
@@ -249,7 +251,10 @@ function resolveFragment(input: PromptCompositionInput): PromptFragment {
       );
     }
   }
-  const fragment = resolveRolePackFragment(input.rolePack, slot, formatId);
+  // 基线题型（自我介绍）的片段归基础包：岗位包里本来就没有这个 formatId
+  const fragment =
+    resolveRolePackFragment(input.rolePack, slot, formatId) ??
+    (formatId ? baselineFragment(slot, formatId) : undefined);
   if (!fragment) {
     throw new PromptCompositionError(
       'missing-fragment',
@@ -304,6 +309,9 @@ function resolveFormat(
   if (!input.formatId) return {};
   const format = input.rolePack.interviewFormats.find((item) => item.id === input.formatId);
   if (!format) {
+    // 基线题型（自我介绍）的面试形式归基础包，岗位包里本来就没有
+    const baseline = resolveBaselineFormat(input.formatId);
+    if (baseline) return baseline;
     throw new PromptCompositionError(
       'unknown-format',
       `岗位包 ${input.rolePack.manifest.id} 没有面试形式 ${input.formatId}`,

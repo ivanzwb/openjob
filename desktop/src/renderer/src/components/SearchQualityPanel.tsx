@@ -109,11 +109,6 @@ export function SearchQualityPanel({
         <p className="mt-1 text-xs text-[var(--color-muted)]">
           可信度 0 的域名直接丢弃，不进上下文。路由规则按顺序匹配，命中即用。
         </p>
-        <p className="mt-1 text-xs text-[var(--color-muted)]">
-          {pack
-            ? `下面是生效值：标着「岗位包」的那些来自 ${pack.id} v${pack.version}，你改过的地方以你的为准。`
-            : '下面是生效值：本机没装岗位包，按这里的通用默认值执行；装上岗位包后它会补上自己的来源权重与时效口径。'}
-        </p>
       </div>
 
       <div className="space-y-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">

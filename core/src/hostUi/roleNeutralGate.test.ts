@@ -101,7 +101,11 @@ const SAME_SHAPE_FILES: readonly string[] = [
  * 永不消失的误报，所以按文件出局。夹具（`__fixtures__/legacy06/`）是 .sql / .json，
  * 本来就不在扫描范围内。
  */
-const UPGRADE_COMPAT_FILES: readonly string[] = ['desktop/src/main/db/legacyImport.ts'];
+const UPGRADE_COMPAT_FILES: readonly string[] = [
+  'desktop/src/main/db/legacyImport.ts',
+  // 补齐旧仓库登记行的本机检出：要按旧表名取 local_path，再按包工作区改名搬过去
+  'desktop/src/main/db/backfill/legacyRepoCheckouts.ts',
+];
 
 /**
  * 每一条判据的命中口径。正则一律带词边界或字面量形状，避免误伤普通英文词：

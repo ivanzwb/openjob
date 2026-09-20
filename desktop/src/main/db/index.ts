@@ -7,6 +7,8 @@ import { getAppPaths } from '../paths';
 import { createBackup } from '../sync/backup';
 import { initSyncLayer } from '../sync/identity';
 import { backfillPrePluginCampaignRuntime } from './backfill/pluginRuntime';
+import { backfillLegacyRepoCheckouts } from './backfill/legacyRepoCheckouts';
+import { pluginWorkspaceRoot } from '../plugins/pluginWorkspace';
 import {
   discardPreMigrateSnapshot,
   importLegacyDatabase,
@@ -171,6 +173,13 @@ export function getDb(): Db {
   const pluginBackfill = backfillPrePluginCampaignRuntime(raw);
   if (pluginBackfill.failures.length > 0) {
     console.warn('部分旧 Campaign 插件运行时回填失败，将在下次启动重试', pluginBackfill.failures);
+  }
+
+  // 0029 迁移没搬 local_path，旧检出因此停在「已登记，本机还没有检出」；这里把本机确实
+  // 存在的那份搬进包工作区并补上 dir，升级上来就能直接用
+  const checkouts = backfillLegacyRepoCheckouts(raw, pluginWorkspaceRoot);
+  if (checkouts.adopted > 0) {
+    console.log(`[legacy-import] 旧仓库检出搬进包工作区：${checkouts.adopted} 个`);
   }
 
   import('../config/syncMirror').then(({ ensureAppSettingsMirrored }) => ensureAppSettingsMirrored()).catch(() => {});

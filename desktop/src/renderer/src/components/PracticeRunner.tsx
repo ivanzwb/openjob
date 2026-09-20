@@ -9,6 +9,7 @@ import {
   summarizeEvaluation,
 } from '@core/hostUi';
 import { normalizeDisplayText } from '@core/lib/markdownDisplay';
+import { practiceExamForms } from '@core/practice';
 import { MarkdownContent } from './MarkdownContent';
 import { VoiceInputButton } from './VoiceInputButton';
 import { invoke, onEvent } from '../ipc';
@@ -133,12 +134,14 @@ export function PracticeRunner({ campaignId }: { campaignId: string }): React.JS
       .then(async (view) => {
         if (cancelled) return;
         setRuntimeState({ campaignId, view });
+        // 基线题型（自我介绍）不依赖岗位包，先摆上；包声明的题型取回来再合并
+        setExamForms(practiceExamForms(null));
         const ref = view?.descriptor.rolePack;
         if (!ref) return;
         // 题型声明随岗位包分发：按 descriptor pin 的精确版本取一份，界面只当不透明声明用
         const pack = await invoke('plugin:getRolePack', { id: ref.id, version: ref.version });
         if (cancelled || !pack) return;
-        setExamForms(pack.examForms ?? []);
+        setExamForms(practiceExamForms(pack));
       })
       .catch(() => {
         if (!cancelled) setRuntimeState({ campaignId, view: null });
@@ -222,7 +225,7 @@ export function PracticeRunner({ campaignId }: { campaignId: string }): React.JS
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
-        <label className="space-y-1">
+        <label className="flex shrink-0 items-center gap-2 whitespace-nowrap">
           <span className="text-xs text-[var(--color-muted)]">题型</span>
           <select
             value={examForm}
@@ -247,15 +250,10 @@ export function PracticeRunner({ campaignId }: { campaignId: string }): React.JS
         </button>
       </div>
 
-      {runtimeLoaded && !runtime ? (
+      {runtimeLoaded && !runtime && (
         <p className="rounded border border-amber-900/50 bg-amber-950/20 px-3 py-2 text-xs text-amber-100">
           这场备考还没有解析出岗位包，题型与评分维度无从展开。先在「设置 → 插件」装好岗位包，
           再回到「备考 → 岗位与证据」补上岗位信息。
-        </p>
-      ) : (
-        <p className="text-xs text-[var(--color-muted)]">
-          题型交给岗位包映射成它自己声明的面试形式，追问轮数与评分维度也由岗位包决定。
-          评分会逐维度给出量规锚点和它引用的你的原话。
         </p>
       )}
 

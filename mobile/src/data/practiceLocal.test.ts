@@ -56,6 +56,7 @@ vi.mock('./rolePackLocal', async () => {
 });
 
 const { completeJsonWithSystem } = await import('../llm/json');
+const { BASELINE_INTERVIEW_FORMATS, CORE_SELF_INTRO_RUBRIC_ID } = await import('@core/practice');
 const {
   answerPracticeTurn,
   evaluatePractice,
@@ -218,10 +219,24 @@ describe('resolveCampaignPracticeRuntime', () => {
 });
 
 describe('practiceFormatOptions', () => {
-  it('可选题型全部来自岗位包声明', () => {
-    expect(practiceFormatOptions(db, CAMPAIGN_ID).map((option) => option.id)).toEqual(
-      PACK.interviewFormats.map((format) => format.id),
-    );
+  it('基线题型在前，岗位包声明的题型在后', () => {
+    expect(practiceFormatOptions(db, CAMPAIGN_ID).map((option) => option.id)).toEqual([
+      ...BASELINE_INTERVIEW_FORMATS.map((format) => format.id),
+      ...PACK.interviewFormats.map((format) => format.id),
+    ]);
+  });
+
+  it('基线题型能在本机开出会话并解析出量规', async () => {
+    mockModel();
+
+    const session = await startPracticeSession(db, {
+      campaignId: CAMPAIGN_ID,
+      formatId: BASELINE_INTERVIEW_FORMATS[0].id,
+      nodeId: NODE_ID,
+    });
+
+    expect(session.rubricId).toBe(CORE_SELF_INTRO_RUBRIC_ID);
+    expect(session.protocol).toBe('presentation');
   });
 });
 

@@ -308,6 +308,10 @@ export const capabilities: CapabilityDeclaration[] = [
 **题型 `examForms`**：本包声明的题型词汇。`id` 会写进 `knowledge_node.exam_forms`，练习、历史与界面都
 按它取值——宿主只当不透明字符串，不认识任何一个取值。
 
+**自我介绍不归岗位包**：它是基础包的基线题型（`core/src/practice/baseline.ts`：题型、面试形式、量规）
+与基线 Prompt 片段（`baselineFragments.ts`）。练习页下拉里基线排在包声明的题型前面，包若声明了同名
+题型则以包为准；三个官方包的 golden 里还有一条禁令，专门挡「岗位包再写一份自我介绍」。
+
 ```ts
 import type { ExamFormDefinition } from '@core/plugins/types';
 

@@ -8,7 +8,11 @@
 
 import type { Database } from 'better-sqlite3';
 import { describe, expect, it } from 'vitest';
-import { PracticeError } from '@core/practice';
+import {
+  CORE_SELF_INTRO_FORMAT_ID,
+  CORE_SELF_INTRO_RUBRIC_ID,
+  PracticeError,
+} from '@core/practice';
 import { softwareEngineeringRolePack } from '@plugins/softwareEngineering';
 import type { ComposedPrompt } from '@core/prompts/composer';
 import {
@@ -195,6 +199,33 @@ describe('createSession', () => {
     });
 
     expect(session.formatId).toBe(KNOWLEDGE_FORMAT_ID);
+  });
+
+  /**
+   * 基线题型不靠岗位包声明，这条链路必须自己走得通：题型 → 基线面试形式 → 基线量规，
+   * 连 Prompt 组合器都得认这个 formatId（它原先只在岗位包里找形式）。
+   */
+  it('基线题型（自我介绍）在岗位包没有它的情况下也能开一场', async () => {
+    const h = harness({ questions: [{ question: '用 60 秒做个自我介绍' }] });
+
+    const session = await h.service.createSession({
+      campaignId: CAMPAIGN_ID,
+      examForm: 'selfIntro',
+    });
+
+    expect(session.formatId).toBe(CORE_SELF_INTRO_FORMAT_ID);
+    expect(session.rubricId).toBe(CORE_SELF_INTRO_RUBRIC_ID);
+    expect(session.protocol).toBe('presentation');
+    expect(softwareEngineeringRolePack.interviewFormats.some((f) => f.id === session.formatId)).toBe(
+      false,
+    );
+
+    // 形式段与片段正文都得来自基础包：岗位包里的同类片段是按 se.* 分片的，缺了这段
+    // 组合器会直接以 missing-fragment 失败
+    const systemPrompt = h.calls[0].prompt.systemPrompt;
+    expect(h.calls[0].prompt.provenance).toMatchObject({ formatId: CORE_SELF_INTRO_FORMAT_ID });
+    expect(systemPrompt).toContain('core.self-intro');
+    expect(systemPrompt).toContain('时长要求（如 60-90 秒）');
   });
 });
 
