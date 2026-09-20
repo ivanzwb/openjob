@@ -7,7 +7,15 @@ import { getAppPaths } from '../paths';
 import { createBackup } from '../sync/backup';
 import { initSyncLayer } from '../sync/identity';
 import { backfillPrePluginCampaignRuntime } from './backfill/pluginRuntime';
-import { importLegacyDatabase, inspectDatabaseFile, readJournalEntries } from './legacyImport';
+import {
+  discardPreMigrateSnapshot,
+  importLegacyDatabase,
+  inspectDatabaseFile,
+  readJournalEntries,
+  restorePreMigrateSnapshot,
+  snapshotBeforeMigrate,
+  upToDateWith,
+} from './legacyImport';
 import * as schema from './schema';
 
 export type Db = BetterSQLite3Database<typeof schema>;
@@ -88,11 +96,15 @@ export function getDb(): Db {
 
   const { dbFile } = getAppPaths();
   const folder = migrationsFolder();
+  const whens = journalWhens();
 
   try {
+    // 清掉上一次异常退出可能留下的临时快照。它只服务于单次迁移尝试，跨启动毫无意义。
+    discardPreMigrateSnapshot(dbFile);
+
     // 先看这份文件到底是什么：0.6.x 旧库的迁移日志属于那一条线，直接原地重放会在
     // 已存在的表上撞车，且失败发生在迁移中途。识别出来就走整库导入（备份 → 新库 → 搬行）。
-    const inspection = inspectDatabaseFile(dbFile, journalWhens());
+    const inspection = inspectDatabaseFile(dbFile, whens);
     if (inspection.kind === 'legacy-0.6.x') {
       raw = importLegacyDatabase({ dbFile, migrationsFolder: folder }).raw;
       db = drizzle(raw, { schema });
@@ -106,7 +118,35 @@ export function getDb(): Db {
 
       db = drizzle(raw, { schema });
       backupBeforeMigrations(raw);
-      migrate(db, { migrationsFolder: folder });
+
+      // 「已经装了用户数据、又落后于当前 journal」的库才需要在迁移前留一份可回滚的临时快照：
+      // 全新安装没有可丢的东西，已经最新的库迁移是空转，二者都不该多拷一份整库。
+      const behind = inspection.kind === 'current' && !upToDateWith(inspection.appliedWhens, whens);
+      if (!behind) {
+        migrate(db, { migrationsFolder: folder });
+      } else {
+        snapshotBeforeMigrate(dbFile, raw);
+        try {
+          migrate(db, { migrationsFolder: folder });
+          discardPreMigrateSnapshot(dbFile);
+        } catch (migrateError) {
+          // 迁移把库改坏了（半迁移的库会在这里撞上已存在的表）。先把连接关掉、把原库恢复成
+          // 迁移尝试之前的字节，再走整库导入：备份 → 全新当前 schema → 按列形状搬行 → 写标记。
+          // 导入若也失败，就抛 LegacyImportError，启动链照旧按「打开失败」处理并保留备份。
+          const message = migrateError instanceof Error ? migrateError.message : String(migrateError);
+          console.warn(`[startup] 数据库迁移没跑通，改用整库导入恢复：${message}`);
+          try {
+            raw?.close();
+          } catch {
+            // 连接可能已经不可用
+          }
+          raw = null;
+          db = null;
+          restorePreMigrateSnapshot(dbFile);
+          raw = importLegacyDatabase({ dbFile, migrationsFolder: folder }).raw;
+          db = drizzle(raw, { schema });
+        }
+      }
     }
   } catch (error) {
     // 打开/迁移/导入失败时不留半开的连接，也不缓存半初始化的 db：

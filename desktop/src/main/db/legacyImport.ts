@@ -27,6 +27,13 @@ import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
  * 有一点不属于「搬行」但必须补：0027 的「插件化之前就已存在」标记是在空表上打的，
  * 导入进来的旧战役因此缺这条凭据。导入末尾按 0027 的同一规则补一次，剩下交给
  * 既有的回填（backfillPrePluginCampaignRuntime，见 plugins/bootstrap）。
+ *
+ * 还有一类库不能只靠「看一眼迁移日志」认出来：跑了一半的半迁移库（早先一次失败的
+ * 迁移已经建了 role_profile 之类的表，却没把对应记录写进 __drizzle_migrations）。
+ * 它的迁移日志看起来像「我们的线、只是落后」，于是会走正常迁移——然后在已经存在的
+ * 表上撞车。所以迁移路径上加了一层兜底（见 getDb）：只要不是最新，迁移前先拷一份
+ * 临时快照；迁移撞车就把原库恢复成快照字节，再退回上面这条整库导入。原始数据在任何
+ * 情况下都不会被这次尝试改掉。
  */
 
 /** 旧库备份文件名后缀，紧挨着原库放，升级后保留不删。 */
@@ -167,10 +174,20 @@ function appliedWhensOf(handle: Database.Database): number[] {
  * 判定一个已经打开的库属于哪一类（内容判定，不依赖文件名）。
  *
  * - 一个用户表都没有 → fresh：正常建库跑迁移。
- * - __drizzle_migrations 已经记到当前 journal 的最后一条 → current：正常迁移（多半是空转）。
- * - 有用户表但没跑到当前线（缺最后一条记录），且一张插件化之后的表都没有 → legacy-0.6.x：
- *   走整库导入。少一张插件表都不算，避免把「当前线但落后几条」的库误当成旧库重建。
- * - 其余（跑过 0023+ 但落后几条）→ current：正常迁移补齐。
+ * - 已经整库导入过一次（`sync_meta` 里的一次性标记在位）→ current：标记本身就是「已经是当前线」的凭据。
+ * - 迁移日志已经记到当前 journal 的最后一条 → current：本就已经最新，正常迁移（多半空转）。
+ * - 有插件化之后的表、且迁移日志的 when 全部落在当前 journal 的 when 集合里 → current：
+ *   认得出是我们这条线、只是落后几条，交给正常迁移补齐（迁移前会留一份临时快照兜底）。
+ * - 其余 → legacy-0.6.x：走整库导入。包括
+ *     · 纯 0.6.x 旧库：用户表在，但没有插件化之后的表；
+ *     · 迁移日志的 when 有当前 journal 里根本没有的取值（来自别的线）；
+ *     · 有插件化之后的表，但迁移日志对不上（跑了一半、表建了却没记上账的半迁移库）。
+ *
+ * 关键的一点：「库里出现插件化之后的表」不再等于「它就是当前线」。半迁移库同样有
+ * `role_profile`，可它的迁移日志并不能证明这些表是被记过账的——所以还要看迁移日志是不是
+ * 我们这条线。反过来也不能只看「when 是当前 journal 的子集」：纯 0.6.x 的 when 恰好与
+ * 当前线前 23 条重合、同样落在子集里；真正把这两者分开的是「有没有插件化之后的表」，
+ * 而不是迁移日志。两条都满足才算「认得出是我们这条线、只是落后」。
  */
 export function inspectDatabase(handle: Database.Database, journalWhens: number[]): DatabaseInspection {
   const tables = userTablesOf(handle);
@@ -179,16 +196,30 @@ export function inspectDatabase(handle: Database.Database, journalWhens: number[
 
   if (tables.length === 0) return { kind: 'fresh', ...base };
 
+  // 已经导入过一次：标记在位就直接当 current，「跑一次」由它兜底，不依赖下面那条水位推断。
+  if (readImportMarker(handle) !== null) return { kind: 'current', ...base };
+
+  // 已经记到当前 journal 的最后一条 → 就是最新。
   const newest = journalWhens.length > 0 ? Math.max(...journalWhens) : 0;
   if (newest > 0 && appliedWhens.includes(newest)) return { kind: 'current', ...base };
 
-  // 已经导入过一次：标记在位就直接当 current，「跑一次」由它兜底，不依赖上面那条水位推断。
-  if (readImportMarker(handle) !== null) return { kind: 'current', ...base };
+  // 迁移日志里的 when 是不是都认得出（落在当前 journal 的 when 集合里）。
+  const journalSet = new Set(journalWhens);
+  const recordsAreOurs =
+    appliedWhens.length > 0 && appliedWhens.every((when) => journalSet.has(when));
 
+  // 有没有插件化之后的表：这是「本仓库当前线」的物理证据，与迁移日志互相印证。
   const pluginEra = PLUGIN_ERA_TABLES.some((table) => tables.includes(table));
-  if (!pluginEra) return { kind: 'legacy-0.6.x', ...base };
 
-  return { kind: 'current', ...base };
+  if (pluginEra && recordsAreOurs) return { kind: 'current', ...base };
+
+  return { kind: 'legacy-0.6.x', ...base };
+}
+
+/** 迁移日志是否已经包含当前 journal 里最新那条（也就是「没有待跑的迁移」）。 */
+export function upToDateWith(appliedWhens: number[], journalWhens: number[]): boolean {
+  if (journalWhens.length === 0) return false;
+  return appliedWhens.includes(Math.max(...journalWhens));
 }
 
 /** 打开文件做一次内容判定；文件缺失/为空视为 fresh，读不动则交给正常路径去报错。 */
@@ -226,6 +257,69 @@ export function readImportMarker(handle: Database.Database): unknown | null {
   } catch {
     return row.value;
   }
+}
+
+/**
+ * 迁移前临时快照的后缀，紧挨着原库放。
+ *
+ * 与 `LEGACY_BACKUP_SUFFIX`（永久保留的 0.6.x 备份）不同：这份快照只服务于「万一迁移跑挂」——
+ * 迁移成功即删。它的价值在于把「迁移尝试」变成可回滚的动作：半迁移或异线的库会让 Drizzle
+ * 在已经存在的表上撞车，撞了也不怕，恢复回原字节后改走整库导入。
+ */
+export const PRE_MIGRATE_SNAPSHOT_SUFFIX = '.premigrate.tmp';
+
+/** 迁移前临时快照的路径。 */
+export function preMigrateSnapshotPath(dbFile: string): string {
+  return `${dbFile}${PRE_MIGRATE_SNAPSHOT_SUFFIX}`;
+}
+
+/**
+ * 在迁移之前把整库拷成一份临时的、可回滚的现场快照，返回快照路径。
+ *
+ * 先把 WAL 折回主文件（非 WAL 库上是空转），再整字节拷贝，保证快照自洽、能被原样恢复。
+ * 传 handle 是用它来做 checkpoint，避免再开连接（此刻 getDb 正在初始化中途）。
+ */
+export function snapshotBeforeMigrate(dbFile: string, handle?: Database.Database): string {
+  if (handle) {
+    handle.pragma('wal_checkpoint(TRUNCATE)');
+  } else {
+    const temp = new Database(dbFile);
+    try {
+      temp.pragma('wal_checkpoint(TRUNCATE)');
+    } finally {
+      temp.close();
+    }
+  }
+
+  const snapshot = preMigrateSnapshotPath(dbFile);
+  for (const suffix of ['', '-wal', '-shm']) rmSync(`${snapshot}${suffix}`, { force: true });
+  copyFileSync(dbFile, snapshot);
+  return snapshot;
+}
+
+/** 迁移成功后删掉临时快照；没有就什么都不做。 */
+export function discardPreMigrateSnapshot(dbFile: string): void {
+  for (const suffix of ['', '-wal', '-shm']) {
+    rmSync(`${preMigrateSnapshotPath(dbFile)}${suffix}`, { force: true });
+  }
+}
+
+/**
+ * 迁移失败后，用临时快照把原库恢复成「迁移尝试之前」的字节。
+ *
+ * 调用前必须先关掉所有指向 dbFile 的连接（Windows 上打开着的文件没法被覆盖）。
+ * 迁移过程可能留下 -wal/-shm，它们属于「迁移后」那个状态，覆盖前先清掉，否则 SQLite
+ * 会试图把不属于恢复后文件的事务重放进来。恢复完就把快照删掉——之后走整库导入时会另留
+ * 一份永久的 `.legacy-0.6.x.bak`。
+ */
+export function restorePreMigrateSnapshot(dbFile: string): void {
+  const snapshot = preMigrateSnapshotPath(dbFile);
+  if (!existsSync(snapshot)) {
+    throw new Error(`迁移前的临时快照不存在，无法恢复原库：${snapshot}`);
+  }
+  for (const suffix of ['-wal', '-shm']) rmSync(`${dbFile}${suffix}`, { force: true });
+  copyFileSync(snapshot, dbFile);
+  discardPreMigrateSnapshot(dbFile);
 }
 
 interface CopyPlanEntry {

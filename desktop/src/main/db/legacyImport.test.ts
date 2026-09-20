@@ -22,8 +22,13 @@ import {
   LEGACY_IMPORT_CHECKPOINT_KIND,
   LEGACY_IMPORT_MARKER_KEY,
   LegacyImportError,
+  PRE_MIGRATE_SNAPSHOT_SUFFIX,
   importLegacyDatabase,
   inspectDatabase,
+  preMigrateSnapshotPath,
+  restorePreMigrateSnapshot,
+  snapshotBeforeMigrate,
+  upToDateWith,
 } from './legacyImport';
 
 const DESKTOP_DIR = join(__dirname, '..', '..', '..');
@@ -155,6 +160,63 @@ function buildCurrentDb(path: string): void {
   db.close();
 }
 
+interface JournalEntryRow {
+  tag: string;
+  when: number;
+}
+
+function currentJournal(): JournalEntryRow[] {
+  const raw = readFileSync(join(MIGRATIONS_DIR, 'meta', '_journal.json'), 'utf8');
+  return (JSON.parse(raw) as { entries: JournalEntryRow[] }).entries;
+}
+
+/** 往当前 schema 里播一小组真实用户数据：整库导入后必须原样找回。 */
+function seedCurrentUserData(db: Database.Database): void {
+  const t = 1_700_000_000_000;
+  db.prepare(
+    `INSERT INTO resume (id, label, raw_text, parsed, created_at, updated_at)
+     VALUES ('half-resume', '半迁移简历', '十年后端经验', ?, ?, ?)`,
+  ).run(JSON.stringify({ summary: '后端' }), t, t);
+  db.prepare(
+    `INSERT INTO campaign (id, company, role_title, jd_raw, resume_id, status, created_at, updated_at)
+     VALUES ('half-campaign', '半迁移科技', '后端工程师', '熟悉 MySQL', 'half-resume', 'planning', ?, ?)`,
+  ).run(t, t);
+  db.prepare(
+    `INSERT INTO knowledge_node (id, campaign_id, name, kind, coverage_type, created_at)
+     VALUES ('half-node', 'half-campaign', '后端基础', 'domain', 'deepDive', ?)`,
+  ).run(t);
+}
+
+/**
+ * 建一个「表跑到最新、迁移账却没记全」的半迁移库，模拟早先一次失败的迁移：
+ * 表建出来了，对应的记录却没写进 __drizzle_migrations。（先把当前迁移跑齐、播好数据，
+ * 再删掉 keepThrough 之后的迁移记录。）
+ */
+function buildHalfMigratedDb(path: string, keepThroughTag: string): void {
+  const db = new Database(path);
+  db.pragma('foreign_keys = OFF');
+  migrate(drizzle(db), { migrationsFolder: MIGRATIONS_DIR });
+  seedCurrentUserData(db);
+
+  const entries = currentJournal();
+  const cutoff = entries.findIndex((entry) => entry.tag === keepThroughTag);
+  if (cutoff < 0) throw new Error(`journal 里没有 ${keepThroughTag}`);
+  const dropped = entries.slice(cutoff + 1).map((entry) => entry.when);
+  db.prepare(
+    `DELETE FROM __drizzle_migrations WHERE created_at IN (${dropped.map(() => '?').join(', ')})`,
+  ).run(...dropped);
+  db.close();
+}
+
+/** 复刻 getDb 打开库时对主文件做的归一（WAL + checkpoint），拿到「迁移尝试前」的字节。 */
+function normalizedBytes(dbFile: string): Buffer {
+  const db = new Database(dbFile);
+  db.pragma('journal_mode = WAL');
+  db.pragma('wal_checkpoint(TRUNCATE)');
+  db.close();
+  return readFileSync(dbFile);
+}
+
 async function flushAsync(): Promise<void> {
   for (let i = 0; i < 6; i += 1) await new Promise((resolve) => setTimeout(resolve, 0));
 }
@@ -205,6 +267,184 @@ describe('旧库识别', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  /**
+   * 纯 0.6.x 的 when 恰好与当前线前 23 条重合、同样落在子集里。它之所以还得判 legacy，
+   * 靠的是「一张插件化之后的表都没有」；只要承认「有插件表 = 是当前线」就会把它错判。
+   */
+  it('纯 0.6.x 的迁移日志是当前 journal 的子集，但因为没有插件表仍判 legacy', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'openjob-detect-'));
+    try {
+      const legacyPath = join(dir, 'legacy.db');
+      buildLegacyDb(legacyPath);
+      const legacy = new Database(legacyPath);
+      const whens = journalWhens();
+      const applied = (
+        legacy.prepare(`SELECT created_at FROM __drizzle_migrations`).all() as {
+          created_at: number;
+        }[]
+      ).map((row) => Number(row.created_at));
+      // 前提：它的 when 确实全是当前 journal 的取值（子集），不是异线
+      expect(applied.every((when) => whens.includes(when))).toBe(true);
+      expect(inspectDatabase(legacy, whens).kind).toBe('legacy-0.6.x');
+      legacy.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('有插件表但迁移日志不是子集（异线）→ legacy', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'openjob-detect-'));
+    try {
+      const path = join(dir, 'foreign.db');
+      buildCurrentDb(path);
+      const db = new Database(path);
+      // 把其中一条记录改成一个当前 journal 里根本没有的 when：日志对不上了
+      db.prepare(`UPDATE __drizzle_migrations SET created_at = 1 WHERE created_at = ?`).run(
+        Math.max(...journalWhens()),
+      );
+      expect(inspectDatabase(db, journalWhens()).kind).toBe('legacy-0.6.x');
+      db.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('我们的线、只是落后几条（有插件表 + 日志是子集）→ current', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'openjob-detect-'));
+    try {
+      const path = join(dir, 'behind.db');
+      buildHalfMigratedDb(path, '0026_story');
+      const db = new Database(path);
+      const whens = journalWhens();
+      expect(inspectDatabase(db, whens).kind).toBe('current');
+      // 但它确实还没到最新（没记上最新那条），所以 getDb 会补上兜底快照
+      expect(upToDateWith(inspectDatabase(db, whens).appliedWhens, whens)).toBe(false);
+      db.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('半迁移库（表跑到最新、迁移账没记全）', () => {
+  beforeEach(() => {
+    state.userData = mkdtempSync(join(tmpdir(), 'openjob-halfmigrated-'));
+    loaded = null;
+  });
+
+  afterEach(async () => {
+    await flushAsync();
+    loaded?.closeDb();
+    loaded = null;
+    vi.resetModules();
+    rmSync(state.userData, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  });
+
+  /**
+   * 复现报告里的场景：文件里有 role_profile，但 __drizzle_migrations 没记上那条。
+   * 正常迁移会在已存在的表上撞车；兜底把它恢复成迁移前的字节，再走整库导入救回来。
+   */
+  it('迁移撞车后回退到整库导入：数据 intact、schema 齐、写标记、无残留快照', async () => {
+    const dbFile = join(state.userData, DB_FILE);
+    buildHalfMigratedDb(dbFile, '0026_story');
+    // getDb 会在迁移前把主文件归一（WAL + checkpoint）再拷快照，复刻它才拿得到同一份字节
+    const preAttemptBytes = normalizedBytes(dbFile);
+
+    const module = await openApp();
+    module.getDb();
+    await flushAsync();
+    const raw = module.getRawDb();
+
+    // 用户数据原样找回
+    expect(raw.prepare(`SELECT label FROM resume WHERE id = 'half-resume'`).get()).toEqual({
+      label: '半迁移简历',
+    });
+    expect(raw.prepare(`SELECT company FROM campaign WHERE id = 'half-campaign'`).get()).toEqual({
+      company: '半迁移科技',
+    });
+    expect(raw.prepare(`SELECT name FROM knowledge_node WHERE id = 'half-node'`).get()).toEqual({
+      name: '后端基础',
+    });
+
+    // 迁移日志记到当前线最后一条、schema 齐全、一次性标记写入
+    const newest = Math.max(...journalWhens());
+    expect(
+      countOf(raw, `SELECT count(*) AS n FROM __drizzle_migrations WHERE created_at = ?`, newest),
+    ).toBe(1);
+    for (const table of ['role_profile', 'plugin_data', 'practice_session', 'story']) {
+      expect(
+        countOf(raw, `SELECT count(*) AS n FROM sqlite_master WHERE type = 'table' AND name = ?`, table),
+      ).toBe(1);
+    }
+    expect(
+      countOf(raw, `SELECT count(*) AS n FROM sync_meta WHERE key = ?`, LEGACY_IMPORT_MARKER_KEY),
+    ).toBe(1);
+
+    // 兜底用的临时快照必须清干净；永久备份保留，且是「迁移尝试之前」的那份字节
+    expect(existsSync(preMigrateSnapshotPath(dbFile))).toBe(false);
+    expect(existsSync(`${dbFile}${PRE_MIGRATE_SNAPSHOT_SUFFIX}-wal`)).toBe(false);
+    expect(existsSync(`${dbFile}${PRE_MIGRATE_SNAPSHOT_SUFFIX}-shm`)).toBe(false);
+    expect(existsSync(`${dbFile}${LEGACY_BACKUP_SUFFIX}`)).toBe(true);
+    expect(readFileSync(`${dbFile}${LEGACY_BACKUP_SUFFIX}`).equals(preAttemptBytes)).toBe(true);
+  });
+
+  /**
+   * 报告里的那一份：有 role_profile，但记录只到 0022——正常迁移重放的第一条就是
+   * `CREATE TABLE role_profile`，正好在已存在的表上撞车。兜底恢复后走整库导入。
+   */
+  it('记录只到 0022、却已经有 role_profile：迁移在第一条 CREATE TABLE 上撞车后回退导入', async () => {
+    const dbFile = join(state.userData, DB_FILE);
+    buildHalfMigratedDb(dbFile, '0022_campaign_resume_backfill');
+
+    const module = await openApp();
+    module.getDb();
+    await flushAsync();
+    const raw = module.getRawDb();
+
+    // 数据还在，schema 齐全，迁移日志补齐到最新
+    expect(raw.prepare(`SELECT label FROM resume WHERE id = 'half-resume'`).get()).toEqual({
+      label: '半迁移简历',
+    });
+    const newest = Math.max(...journalWhens());
+    expect(
+      countOf(raw, `SELECT count(*) AS n FROM __drizzle_migrations WHERE created_at = ?`, newest),
+    ).toBe(1);
+    expect(
+      countOf(raw, `SELECT count(*) AS n FROM sqlite_master WHERE type = 'table' AND name = 'role_profile'`),
+    ).toBe(1);
+    // 不留兜底快照，永久备份是迁移尝试之前那份字节
+    expect(existsSync(preMigrateSnapshotPath(dbFile))).toBe(false);
+    expect(existsSync(`${dbFile}${LEGACY_BACKUP_SUFFIX}`)).toBe(true);
+  });
+
+  it('半迁移库导入后再打开是空转：不重复导入、不重复写标记', async () => {
+    const dbFile = join(state.userData, DB_FILE);
+    buildHalfMigratedDb(dbFile, '0026_story');
+
+    let module = await openApp();
+    module.getDb();
+    await flushAsync();
+    const raw = module.getRawDb();
+    const counts = {
+      campaign: countOf(raw, `SELECT count(*) AS n FROM campaign`),
+      node: countOf(raw, `SELECT count(*) AS n FROM knowledge_node`),
+      marker: countOf(raw, `SELECT count(*) AS n FROM sync_meta WHERE key = ?`, LEGACY_IMPORT_MARKER_KEY),
+    };
+    expect(counts).toEqual({ campaign: 1, node: 1, marker: 1 });
+    module.closeDb();
+
+    module = await openApp();
+    module.getDb();
+    await flushAsync();
+    const again = module.getRawDb();
+    expect(countOf(again, `SELECT count(*) AS n FROM campaign`)).toBe(counts.campaign);
+    expect(countOf(again, `SELECT count(*) AS n FROM knowledge_node`)).toBe(counts.node);
+    expect(
+      countOf(again, `SELECT count(*) AS n FROM sync_meta WHERE key = ?`, LEGACY_IMPORT_MARKER_KEY),
+    ).toBe(1);
+    expect(existsSync(preMigrateSnapshotPath(dbFile))).toBe(false);
   });
 });
 
@@ -368,6 +608,8 @@ describe('0.6.x 旧库升级', () => {
       countOf(raw, `SELECT count(*) AS n FROM sync_meta WHERE key = ?`, LEGACY_IMPORT_MARKER_KEY),
     ).toBe(0);
     expect(countOf(raw, `SELECT count(*) AS n FROM __drizzle_migrations`)).toBe(journalWhens().length);
+    // 已是最新：不重建、也不留迁移前快照
+    expect(existsSync(preMigrateSnapshotPath(dbFile))).toBe(false);
   });
 
   it('全新安装走正常路径：建齐 schema，不建备份、不写导入标记', async () => {
@@ -386,6 +628,8 @@ describe('0.6.x 旧库升级', () => {
     expect(
       countOf(raw, `SELECT count(*) AS n FROM sync_meta WHERE key = ?`, LEGACY_IMPORT_MARKER_KEY),
     ).toBe(0);
+    // 全新安装没有可丢的东西：既不建导入备份，也不建迁移前快照
+    expect(existsSync(preMigrateSnapshotPath(dbFile))).toBe(false);
   });
 });
 
@@ -426,5 +670,76 @@ describe('旧库导入失败', () => {
       importLegacyDatabase({ dbFile, migrationsFolder: join(dir, 'no-such-migrations') }),
     ).toThrow(LegacyImportError);
     expect(statSync(dbFile).size).toBe(sizeBefore);
+  });
+});
+
+describe('迁移失败兜底：恢复迁移前的字节', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'openjob-premigrate-'));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  /**
+   * 快照 → 库里被写坏（模拟一次跑了一半的迁移）→ 恢复：字节要回到尝试之前，快照清掉。
+   * 这是兜底能救回半迁移库的前提——getDb 在 importLegacyDatabase 之前做的正是这一步。
+   */
+  it('快照能把原库恢复成迁移尝试之前的字节，并把临时快照清掉', () => {
+    const dbFile = join(dir, DB_FILE);
+    buildHalfMigratedDb(dbFile, '0026_story');
+    const before = readFileSync(dbFile);
+
+    const snapshot = snapshotBeforeMigrate(dbFile);
+    expect(snapshot).toBe(preMigrateSnapshotPath(dbFile));
+    expect(existsSync(snapshot)).toBe(true);
+    expect(readFileSync(snapshot).equals(before)).toBe(true);
+
+    // 模拟一次失败的迁移在库里留下的改动
+    const mutated = new Database(dbFile);
+    mutated.exec(`CREATE TABLE half_attempted (id text PRIMARY KEY)`);
+    mutated.close();
+    expect(readFileSync(dbFile).equals(before)).toBe(false);
+
+    restorePreMigrateSnapshot(dbFile);
+    // 逐字节回到尝试之前；快照（含可能的 -wal/-shm）都清掉了
+    expect(readFileSync(dbFile).equals(before)).toBe(true);
+    expect(existsSync(preMigrateSnapshotPath(dbFile))).toBe(false);
+    expect(existsSync(`${preMigrateSnapshotPath(dbFile)}-wal`)).toBe(false);
+    expect(existsSync(`${preMigrateSnapshotPath(dbFile)}-shm`)).toBe(false);
+  });
+
+  it('快照丢失时恢复会抛错，而不是返回一个半调子的文件', () => {
+    const dbFile = join(dir, DB_FILE);
+    buildHalfMigratedDb(dbFile, '0026_story');
+    expect(() => restorePreMigrateSnapshot(dbFile)).toThrow(/快照不存在/);
+  });
+
+  /**
+   * 兜底在导入这一步也失败时：启动链照旧按「打开失败」处理，但磁盘上必须留着
+   * 原始文件（已恢复到迁移前的字节）和永久备份，用户据此能找回数据。
+   */
+  it('恢复之后整库导入也失败：原库仍是迁移前的字节、备份已在', () => {
+    const dbFile = join(dir, DB_FILE);
+    buildHalfMigratedDb(dbFile, '0026_story');
+    const before = readFileSync(dbFile);
+
+    // 先按 getDb 的顺序走一遍：快照 → 迁移把库写坏 → 恢复
+    snapshotBeforeMigrate(dbFile);
+    const mutated = new Database(dbFile);
+    mutated.exec(`CREATE TABLE half_attempted (id text PRIMARY KEY)`);
+    mutated.close();
+    restorePreMigrateSnapshot(dbFile);
+
+    // 导入指向不存在的迁移目录 → LegacyImportError
+    expect(() =>
+      importLegacyDatabase({ dbFile, migrationsFolder: join(dir, 'no-such-migrations') }),
+    ).toThrow(LegacyImportError);
+
+    expect(readFileSync(dbFile).equals(before)).toBe(true);
+    expect(existsSync(`${dbFile}${LEGACY_BACKUP_SUFFIX}`)).toBe(true);
   });
 });
