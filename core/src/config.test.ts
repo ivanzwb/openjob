@@ -74,8 +74,10 @@ describe('dropLegacySearchDefaults', () => {
 describe('mergeAppConfig', () => {
   it('v1 的配置合并后落到中立默认值，并写成当前版本', () => {
     const merged = mergeAppConfig({
+      ...structuredClone(DEFAULT_CONFIG),
       version: 1,
       search: {
+        ...structuredClone(DEFAULT_CONFIG.search),
         domainCredibility: { ...V1_SEARCH_DEFAULTS.domainCredibility },
         cacheTtlDays: { companyIntel: 7, interviewReports: 3, techDocs: 30 },
         techDocStaleDays: V1_SEARCH_DEFAULTS.techDocStaleDays,
