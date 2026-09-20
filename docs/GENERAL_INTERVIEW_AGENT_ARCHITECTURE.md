@@ -616,8 +616,11 @@ export function activate(ctx: PluginRuntimeContext) {
 （`core.self-intro`，协议 presentation）、量规（`core.self-intro-rubric`）在 `core/src/practice/baseline.ts`，
 出题 / 评分 / 参考答案三段 Prompt 片段在 `core/src/practice/baselineFragments.ts`。练习页题型下拉把基线排
 在岗位包声明的题型之前（`practiceExamForms`），包声明了同名题型时以包为准；岗位包没装时只剩基线，也不
-是空下拉。简历深挖、行为题、求职动机和反问目前仍落在岗位包的题型里（`scenario` 等），尚未做成基线。
-因此产品经理 Campaign 仍然只加载一个 `product-manager` 主岗位包。
+是空下拉。自我介绍旁边还有一条**面试语言**（中文面试 / 英文面试，取值 zh / en），与 0.6.x 同一套口径：
+只有这个题型吃它（`examFormTakesLanguage` / `formatTakesInterviewLanguage` 共用一份名单），语言不改正文，
+只在问模型时追加一句指令（`core/src/practice/language.ts`）；界面没选时落到岗位意图里的
+`role_profile.interview_language`。简历深挖、行为题、求职动机和反问目前仍落在岗位包的题型里
+（`scenario` 等），尚未做成基线。因此产品经理 Campaign 仍然只加载一个 `product-manager` 主岗位包。
 
 ### 8.3 冲突处理
 

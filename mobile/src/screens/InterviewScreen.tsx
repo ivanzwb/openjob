@@ -3,6 +3,11 @@ import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 
 import { useFocusEffect } from '@react-navigation/native';
 import type { CampaignSummary } from '@core/ipc';
 import type { PracticeEvaluation, PracticeSession } from '@core/practice';
+import {
+  DEFAULT_INTERVIEW_LANGUAGE,
+  INTERVIEW_LANGUAGE_CHOICES,
+  formatTakesInterviewLanguage,
+} from '@core/practice';
 import { MarkdownPreview } from '../components/MarkdownPreview';
 import { VoiceInputButton } from '../components/VoiceInputButton';
 import {
@@ -80,6 +85,8 @@ export function InterviewScreen(): React.JSX.Element {
   const [campaignId, setCampaignId] = useState<string | null>(null);
   const [formats, setFormats] = useState<PracticeFormatOption[]>([]);
   const [formatId, setFormatId] = useState<string | null>(null);
+  // 面试语言：默认中文，用户在带语言选择的题型（自我介绍）上改过就按这场备考记住
+  const [language, setLanguage] = useState<string>(DEFAULT_INTERVIEW_LANGUAGE);
   const [session, setSession] = useState<PracticeSession | null>(null);
   const [evaluation, setEvaluation] = useState<PracticeEvaluation | null>(null);
   const [history, setHistory] = useState<PracticeHistoryItem[]>([]);
@@ -176,6 +183,22 @@ export function InterviewScreen(): React.JSX.Element {
               />
             ))}
           </View>
+          {/* 面试语言：0.6.x 只给自我介绍（别的题型按包的中文正文走），跟着题型出现 */}
+          {formatTakesInterviewLanguage(formatId ?? '') && (
+            <>
+              <Text style={{ color: theme.text, fontSize: 12, fontWeight: '600' }}>面试语言</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                {INTERVIEW_LANGUAGE_CHOICES.map((choice) => (
+                  <Chip
+                    key={choice.value}
+                    label={choice.label}
+                    active={choice.value === language}
+                    onPress={() => setLanguage(choice.value)}
+                  />
+                ))}
+              </View>
+            </>
+          )}
           <Pressable
             disabled={busy || !formatId || session?.status === 'open'}
             onPress={() =>
@@ -183,6 +206,7 @@ export function InterviewScreen(): React.JSX.Element {
                 const started = await startPracticeSession(getRawDb(), {
                   campaignId: campaignId!,
                   formatId: formatId!,
+                  language,
                 });
                 setSession(started);
                 setEvaluation(null);
@@ -244,7 +268,10 @@ export function InterviewScreen(): React.JSX.Element {
               onPress={() =>
                 void run(async () => {
                   if (readyToEvaluate) {
-                    const result = await evaluatePractice(getRawDb(), { sessionId: session.id });
+                    const result = await evaluatePractice(getRawDb(), {
+                      sessionId: session.id,
+                      language,
+                    });
                     setEvaluation(result);
                     setSession(null);
                     if (campaignId) setHistory(listPracticeHistory(getRawDb(), campaignId));
@@ -253,6 +280,7 @@ export function InterviewScreen(): React.JSX.Element {
                   const turn = await answerPracticeTurn(getRawDb(), {
                     sessionId: session.id,
                     answerMd: answer.trim(),
+                    language,
                   });
                   setAnswer('');
                   setSession({ ...session, turns: [...session.turns, turn] });

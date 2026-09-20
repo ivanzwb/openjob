@@ -310,7 +310,9 @@ export const capabilities: CapabilityDeclaration[] = [
 
 **自我介绍不归岗位包**：它是基础包的基线题型（`core/src/practice/baseline.ts`：题型、面试形式、量规）
 与基线 Prompt 片段（`baselineFragments.ts`）。练习页下拉里基线排在包声明的题型前面，包若声明了同名
-题型则以包为准；三个官方包的 golden 里还有一条禁令，专门挡「岗位包再写一份自我介绍」。
+题型则以包为准；三个官方包的 golden 里还有一条禁令，专门挡「岗位包再写一份自我介绍」。它旁边那条
+**面试语言**（中文面试 / 英文面试）同样是基线的：包不需要声明语言，也不需要为英文准备一份正文——
+基础包会在问模型时追加一句语言指令。
 
 ```ts
 import type { ExamFormDefinition } from '@core/plugins/types';

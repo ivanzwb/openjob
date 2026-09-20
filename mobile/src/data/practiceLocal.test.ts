@@ -238,6 +238,36 @@ describe('practiceFormatOptions', () => {
     expect(session.rubricId).toBe(CORE_SELF_INTRO_RUBRIC_ID);
     expect(session.protocol).toBe('presentation');
   });
+
+  /** 面试语言只给带语言选择的题型（0.6.x 只给自我介绍）。 */
+  it('自我介绍的面试语言进 prompt，别的题型一个字都不多', async () => {
+    const users: string[] = [];
+    vi.mocked(completeJsonWithSystem).mockImplementation(async (_role, _system, user) => {
+      users.push(user);
+      return { questionMd: 'Introduce yourself in 60 seconds.' };
+    });
+
+    await startPracticeSession(db, {
+      campaignId: CAMPAIGN_ID,
+      formatId: BASELINE_INTERVIEW_FORMATS[0].id,
+      nodeId: NODE_ID,
+      language: 'en',
+    });
+
+    expect(users[0]).toContain('请用英文模拟真实面试');
+
+    users.length = 0;
+
+    await startPracticeSession(db, {
+      campaignId: CAMPAIGN_ID,
+      formatId: FORMAT_ID,
+      nodeId: NODE_ID,
+      language: 'en',
+    });
+
+    expect(users[0]).not.toContain('请用英文模拟真实面试');
+    expect(users[0]).not.toContain('请用中文模拟真实面试');
+  });
 });
 
 describe('一次完整练习', () => {

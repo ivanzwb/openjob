@@ -9,7 +9,13 @@ import {
   summarizeEvaluation,
 } from '@core/hostUi';
 import { normalizeDisplayText } from '@core/lib/markdownDisplay';
-import { practiceExamForms } from '@core/practice';
+import {
+  DEFAULT_INTERVIEW_LANGUAGE,
+  INTERVIEW_LANGUAGE_CHOICES,
+  examFormTakesLanguage,
+  normalizeInterviewLanguage,
+  practiceExamForms,
+} from '@core/practice';
 import { MarkdownContent } from './MarkdownContent';
 import { VoiceInputButton } from './VoiceInputButton';
 import { invoke, onEvent } from '../ipc';
@@ -88,6 +94,8 @@ function DimensionScoreCard({
 export function PracticeRunner({ campaignId }: { campaignId: string }): React.JSX.Element {
   const [examForms, setExamForms] = useState<ExamFormDefinition[]>([]);
   const [examFormChoice, setExamFormChoice] = useState('');
+  // 已选语言；空串表示「还没选过」，落到岗位意图里的面试语言
+  const [languageChoice, setLanguageChoice] = useState('');
   const [session, setSession] = useState<PracticeSession | null>(null);
   const [answer, setAnswer] = useState('');
   const [evaluation, setEvaluation] = useState<PracticeEvaluation | null>(null);
@@ -109,6 +117,7 @@ export function PracticeRunner({ campaignId }: { campaignId: string }): React.JS
     : (examForms[0]?.id ?? '');
 
   const storageKey = `openjob:practice:${campaignId}:${examForm}`;
+  const languageKey = `openjob:practice:language:${campaignId}:${examForm}`;
   const [scope, setScope] = useState(storageKey);
   const createKey = `practice:create:${campaignId}:${examForm}`;
   const sessionId = session?.id ?? 'none';
@@ -163,6 +172,8 @@ export function PracticeRunner({ campaignId }: { campaignId: string }): React.JS
     setAnswer('');
     setEvaluation(null);
     setScoredAnswer('');
+    // 面试语言按 (备考, 题型) 记：换一场备考不该继承上一场的语言选择
+    setLanguageChoice(window.localStorage.getItem(languageKey) ?? '');
   }
 
   useEffect(() => {
@@ -196,14 +207,14 @@ export function PracticeRunner({ campaignId }: { campaignId: string }): React.JS
   const start = (): void => {
     if (!examForm) return;
     void runTask(createKey, () =>
-      invoke('practice:createSession', { campaignId, examForm }),
+      invoke('practice:createSession', { campaignId, examForm, language }),
     ).catch(() => undefined);
   };
 
   const followUp = (): void => {
     if (!session || !answer.trim()) return;
     void runTask(turnKey, () =>
-      invoke('practice:nextTurn', { sessionId: session.id, answerMd: answer.trim() }),
+      invoke('practice:nextTurn', { sessionId: session.id, answerMd: answer.trim(), language }),
     ).catch(() => undefined);
   };
 
@@ -212,8 +223,18 @@ export function PracticeRunner({ campaignId }: { campaignId: string }): React.JS
     const submitted = answer.trim();
     setScoredAnswer(submitted);
     void runTask(evaluateKey, () =>
-      invoke('practice:evaluate', { sessionId: session.id, answerMd: submitted }),
+      invoke('practice:evaluate', { sessionId: session.id, answerMd: submitted, language }),
     ).catch(() => undefined);
+  };
+
+  // 面试语言：默认取岗位意图里的面试语言（岗位面板里设的那条），用户在这里改过就以
+  // (备考, 题型) 为准。会话不记语言，出题 / 追问 / 评分每次都带上当前值。
+  const language = normalizeInterviewLanguage(
+    languageChoice || runtime?.roleProfile?.interviewLanguage || DEFAULT_INTERVIEW_LANGUAGE,
+  );
+  const setLanguage = (value: string): void => {
+    setLanguageChoice(value);
+    window.localStorage.setItem(languageKey, value);
   };
 
   const latestAnswerTurn = view?.turns.filter((turn) => turn.speaker === 'candidate').at(-1);
@@ -240,6 +261,23 @@ export function PracticeRunner({ campaignId }: { campaignId: string }): React.JS
             ))}
           </select>
         </label>
+        {/* 面试语言：0.6.x 只给自我介绍（别的题型按包的中文正文走），所以跟着题型出现 */}
+        {examFormTakesLanguage(examForm) && (
+          <label className="flex shrink-0 items-center gap-2 whitespace-nowrap">
+            <span className="text-xs text-[var(--color-muted)]">面试语言</span>
+            <select
+              value={language}
+              onChange={(e) => setLanguage(e.target.value)}
+              className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm"
+            >
+              {INTERVIEW_LANGUAGE_CHOICES.map((choice) => (
+                <option key={choice.value} value={choice.value}>
+                  {choice.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <button
           type="button"
           disabled={!campaignId || !examForm || busy || !runtime}

@@ -20,7 +20,11 @@ import type {
   NodeStatus,
 } from '@core/enums';
 import { formatIdForExamForm } from '@core/plugins/examForms';
-import { BASELINE_INTERVIEW_FORMATS } from '@core/practice';
+import {
+  BASELINE_INTERVIEW_FORMATS,
+  formatTakesInterviewLanguage,
+  normalizeInterviewLanguage,
+} from '@core/practice';
 import type { CampaignRuntimeDescriptor, RolePack } from '@core/plugins/types';
 import {
   PracticeError,
@@ -309,6 +313,20 @@ function candidateContextText(db: SQLiteDatabase, campaignId: string): string {
   }
 }
 
+/**
+ * 这次调用用哪种语言：只有带语言选择的题型吃它（0.6.x 只给自我介绍，别的题型按包的
+ * 中文正文走），界面没带就用岗位意图里的面试语言，真取不到才落到中文。
+ */
+function languageFor(
+  formatId: string,
+  requested: string | undefined,
+  campaignLanguage: string,
+): string | undefined {
+  return formatTakesInterviewLanguage(formatId)
+    ? normalizeInterviewLanguage(requested ?? campaignLanguage)
+    : undefined;
+}
+
 export async function startPracticeSession(
   db: SQLiteDatabase,
   input: PracticeSessionInput,
@@ -322,13 +340,18 @@ export async function startPracticeSession(
   }
 
   const { format, rubric } = resolvePracticeFormat(runtime.rolePack, formatId);
+  const language = languageFor(formatId, input.language, runtime.interviewLanguage);
   const prompt = composePrompt({
     runtime: runtime.descriptor,
     rolePack: runtime.rolePack,
     slot: 'questionGeneration',
     formatId,
     evidence: [],
-    userRequest: practiceQuestionRequest({ format, userRequest: input.userRequest }),
+    userRequest: practiceQuestionRequest({
+      format,
+      userRequest: input.userRequest,
+      language,
+    }),
   });
   const context = candidateContextText(db, input.campaignId);
 
@@ -336,7 +359,7 @@ export async function startPracticeSession(
     await completeJsonWithSystem<unknown>(
       PRACTICE_ROLE,
       prompt.systemPrompt,
-      [practiceQuestionRequest({ format, userRequest: input.userRequest }), context]
+      [practiceQuestionRequest({ format, userRequest: input.userRequest, language }), context]
         .filter(Boolean)
         .join('\n\n'),
     ),
@@ -423,7 +446,8 @@ export async function answerPracticeTurn(
 
   const runtime = resolveCampaignPracticeRuntime(db, session.campaignId);
   const { format } = resolvePracticeFormat(runtime.rolePack, session.formatId);
-  const request = practiceQuestionRequest({ format, followUpRound: asked + 1 });
+  const language = languageFor(session.formatId, input.language, runtime.interviewLanguage);
+  const request = practiceQuestionRequest({ format, followUpRound: asked + 1, language });
   const prompt = composePrompt({
     runtime: runtime.descriptor,
     rolePack: runtime.rolePack,
@@ -562,6 +586,7 @@ export async function evaluatePractice(
 
   const runtime = resolveCampaignPracticeRuntime(db, session.campaignId);
   const { rubric } = resolvePracticeFormat(runtime.rolePack, session.formatId);
+  const language = languageFor(session.formatId, input.language, runtime.interviewLanguage);
   const questionMd = session.turns.find((turn) => turn.kind === 'question')?.contentMd ?? '';
   const transcriptMd = session.turns
     .map((turn) => `**${turn.speaker === 'interviewer' ? '面试官' : '候选人'}**：${turn.contentMd}`)
@@ -573,7 +598,7 @@ export async function evaluatePractice(
     slot: 'scoring',
     formatId: session.formatId,
     evidence: [],
-    userRequest: practiceScoreRequest(rubric),
+    userRequest: practiceScoreRequest(rubric, language),
   });
 
   const userBase = [
@@ -593,7 +618,7 @@ export async function evaluatePractice(
       await completeJsonWithSystem<unknown>(
         PRACTICE_ROLE,
         prompt.systemPrompt,
-        `${userBase}\n\n${practiceScoreRepairRequest(grounded.failure)}`,
+        `${userBase}\n\n${practiceScoreRepairRequest(grounded.failure, language)}`,
       ),
     );
     grounded = groundDimensionScores({ rubric, answerMd, raw: generated.dimensions });

@@ -150,3 +150,22 @@ export function practiceExamForms(rolePack: RolePack | null): ExamFormDefinition
   const declared = new Set(packForms.map((form) => form.id));
   return [...BASELINE_EXAM_FORMS.filter((form) => !declared.has(form.id)), ...packForms];
 }
+
+/**
+ * 带「面试语言」选择的题型：0.6.x 只给自我介绍，别的题型一律按包的中文正文走。
+ *
+ * 界面用 `examFormTakesLanguage` 决定显不显示那个下拉，服务端用
+ * `formatTakesInterviewLanguage` 决定要不要把语言指令拼进 prompt——同一份名单，
+ * 两处判断因此不会各说各话。
+ */
+const LANGUAGE_SCOPED_EXAM_FORMS = new Set<string>([SELF_INTRO_EXAM_FORM_ID]);
+
+export function examFormTakesLanguage(examFormId: string): boolean {
+  return LANGUAGE_SCOPED_EXAM_FORMS.has(examFormId);
+}
+
+export function formatTakesInterviewLanguage(formatId: string): boolean {
+  return BASELINE_EXAM_FORMS.some(
+    (form) => form.formatId === formatId && LANGUAGE_SCOPED_EXAM_FORMS.has(form.id),
+  );
+}

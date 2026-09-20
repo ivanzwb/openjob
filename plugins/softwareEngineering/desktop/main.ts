@@ -17,7 +17,6 @@ import type { PluginRuntimeContext } from '@core/plugins/pluginRuntime/host';
 const BRIDGE_METHODS = [
   'workspace.fetch',
   'workspace.delete',
-  'workspace.glob',
   // 代码查看器：列目录 + 按行区间读取（都只是通用工作区原语，不含岗位专属通道）
   'workspace.list',
   'workspace.read',

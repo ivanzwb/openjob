@@ -227,6 +227,41 @@ describe('createSession', () => {
     expect(systemPrompt).toContain('core.self-intro');
     expect(systemPrompt).toContain('时长要求（如 60-90 秒）');
   });
+
+  /**
+   * 面试语言只给带语言选择的题型（0.6.x 只给自我介绍）。判定在服务里做，所以这里从
+   * 出题的 user message 上看：选了英文就得有那句英文指令，别的题型一个字都不多。
+   */
+  it('自我介绍按选的面试语言出题，别的题型不吃这个参数', async () => {
+    const english = harness({ questions: [{ question: 'Introduce yourself' }] });
+
+    await english.service.createSession({
+      campaignId: CAMPAIGN_ID,
+      examForm: 'selfIntro',
+      language: 'en',
+    });
+
+    expect(english.calls[0].user).toContain('请用英文模拟真实面试');
+    expect(english.calls[0].user).not.toContain('请用中文模拟真实面试');
+
+    const chinese = harness({});
+
+    await chinese.service.createSession({ campaignId: CAMPAIGN_ID, examForm: 'selfIntro' });
+
+    // 没给就落到岗位意图里的面试语言，夹具是中文
+    expect(chinese.calls[0].user).toContain('请用中文模拟真实面试');
+
+    const quiz = harness({});
+
+    await quiz.service.createSession({
+      campaignId: CAMPAIGN_ID,
+      examForm: 'concept',
+      language: 'en',
+    });
+
+    expect(quiz.calls[0].user).not.toContain('请用英文模拟真实面试');
+    expect(quiz.calls[0].user).not.toContain('请用中文模拟真实面试');
+  });
 });
 
 describe('nextTurn', () => {

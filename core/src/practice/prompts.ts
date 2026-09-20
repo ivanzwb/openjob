@@ -11,6 +11,7 @@
 
 import type { InterviewFormatDefinition, RubricDefinition } from '../plugins/types';
 import type { GroundingFailure, RawDimensionScore } from './rubric';
+import { interviewLanguageInstruction } from './language';
 import { PracticeError } from './types';
 
 export interface PracticeQuestionRequestInput {
@@ -18,10 +19,13 @@ export interface PracticeQuestionRequestInput {
   /** 第几轮追问，从 1 开始；省略表示出首题 */
   followUpRound?: number;
   userRequest?: string;
+  /** 面试语言（zh/en）；只有带语言选择的题型会传，省略时不追加任何指令 */
+  language?: string;
 }
 
 export function practiceQuestionRequest(input: PracticeQuestionRequestInput): string {
   const lines: string[] = [];
+  if (input.language) lines.push(interviewLanguageInstruction(input.language));
   if (input.followUpRound === undefined) {
     lines.push('本次只出一道题，输出结构沿用上面片段里要求的 JSON，不要额外加字段。');
   } else {
@@ -41,9 +45,10 @@ export function practiceQuestionRequest(input: PracticeQuestionRequestInput): st
  * 「必须逐字照抄」这条不写模型就会改写引文——改写过的句子在原回答里定位不到，
  * 评分引擎会整条打回，用户看到的是一次失败的评分而不是一次不可复核的评分。
  */
-export function practiceScoreRequest(rubric: RubricDefinition): string {
+export function practiceScoreRequest(rubric: RubricDefinition, language?: string): string {
   const ids = rubric.dimensions.map((dimension) => dimension.id).join('、');
   return [
+    ...(language ? [interviewLanguageInstruction(language)] : []),
     '除片段已经要求的字段外，本次还要输出 dimensions 数组，逐维度对照上面的评分量规打分：',
     '"dimensions": [{ "dimensionId": "维度 ID", "score": 1-5, "answerQuote": "候选人回答里的原句", "rationale": "为什么落在这一档" }]',
     `- 量规里的每个维度都要给一条，一条不能少：${ids}；`,
@@ -53,8 +58,12 @@ export function practiceScoreRequest(rubric: RubricDefinition): string {
   ].join('\n');
 }
 
-export function practiceScoreRepairRequest(failure: GroundingFailure): string {
+export function practiceScoreRepairRequest(
+  failure: GroundingFailure,
+  language?: string,
+): string {
   const lines = ['上一次输出没通过校验，请按同样的 JSON 结构重新输出一次完整结果：'];
+  if (language) lines.unshift(interviewLanguageInstruction(language));
   if (failure.missing.length > 0) {
     lines.push(`- 这些维度缺分或分数不合法：${failure.missing.join('、')}；`);
   }

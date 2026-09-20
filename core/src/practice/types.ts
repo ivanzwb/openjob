@@ -116,18 +116,24 @@ export interface PracticeSessionInput {
   previousAttemptId?: string | null;
   /** 用户本次明确要求，优先级最低 */
   userRequest?: string;
+  /** 面试语言（zh/en）；只有带语言选择的题型吃它，省略时用岗位意图里的面试语言 */
+  language?: string;
 }
 
 export interface PracticeTurnInput {
   sessionId: string;
   /** 候选人本轮作答；引擎先落这一轮，再决定追问还是收束 */
   answerMd: string;
+  /** 同 PracticeSessionInput.language：会话不记语言，每次调用都由界面带上 */
+  language?: string;
 }
 
 export interface PracticeEvaluationInput {
   sessionId: string;
   /** 提交评分的完整作答；省略时取会话里最后一次候选人发言 */
   answerMd?: string;
+  /** 同 PracticeSessionInput.language：评分反馈与改进稿按它出语言 */
+  language?: string;
 }
 
 // ---------------------------------------------------------------------------

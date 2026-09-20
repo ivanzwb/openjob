@@ -20,8 +20,10 @@ import type { Database } from 'better-sqlite3';
 import type { LlmRole } from '@core/enums';
 import {
   PracticeError,
+  formatTakesInterviewLanguage,
   groundDimensionScores,
   needsRePractice as needsRePracticeFor,
+  normalizeInterviewLanguage,
   practiceFormatIdForExamForm,
   practiceQuestionRequest,
   practiceScoreRepairRequest,
@@ -121,12 +123,27 @@ export function createPracticeService(deps: PracticeServiceDeps): PracticeServic
     return resolve(session.campaignId, session.formatId);
   }
 
+  /**
+   * 这次调用用哪种语言：只有带语言选择的题型吃它（0.6.x 只给自我介绍，别的题型按包的
+   * 中文正文走），界面没带就用岗位意图里的面试语言，真取不到才落到中文。
+   */
+  function languageFor(
+    formatId: string,
+    requested: string | undefined,
+    campaignLanguage: string,
+  ): string | undefined {
+    return formatTakesInterviewLanguage(formatId)
+      ? normalizeInterviewLanguage(requested ?? campaignLanguage)
+      : undefined;
+  }
+
   function questionPrompt(
     resolved: Resolved,
     rolePack: RolePack,
     campaignId: string,
     followUpRound: number | undefined,
     userRequest: string | undefined,
+    language: string | undefined,
   ): ComposedPrompt {
     return composePrompt({
       runtime: resolved.descriptor,
@@ -138,6 +155,7 @@ export function createPracticeService(deps: PracticeServiceDeps): PracticeServic
         format: resolved.format,
         followUpRound,
         userRequest,
+        language,
       }),
     });
   }
@@ -160,12 +178,14 @@ export function createPracticeService(deps: PracticeServiceDeps): PracticeServic
     }
 
     const resolved = resolveWith(runtime, formatId);
+    const language = languageFor(formatId, input.language, runtime.interviewLanguage);
     const prompt = questionPrompt(
       resolved,
       resolved.rolePack,
       input.campaignId,
       undefined,
       input.userRequest,
+      language,
     );
 
     const generated = readGeneratedQuestion(
@@ -175,6 +195,7 @@ export function createPracticeService(deps: PracticeServiceDeps): PracticeServic
         user: practiceQuestionRequest({
           format: resolved.format,
           userRequest: input.userRequest,
+          language,
         }),
       }),
     );
@@ -245,9 +266,15 @@ export function createPracticeService(deps: PracticeServiceDeps): PracticeServic
     }
 
     const resolved = resolveForSession(session);
+    const language = languageFor(
+      resolved.formatId,
+      input.language,
+      resolved.interviewLanguage,
+    );
     const request = practiceQuestionRequest({
       format: resolved.format,
       followUpRound: asked + 1,
+      language,
     });
     const generated = readGeneratedQuestion(
       await deps.completeJson<unknown>({
@@ -258,6 +285,7 @@ export function createPracticeService(deps: PracticeServiceDeps): PracticeServic
           session.campaignId,
           asked + 1,
           undefined,
+          language,
         ),
         user: `${request}\n\n候选人上一轮作答：\n${input.answerMd}`,
       }),
@@ -284,6 +312,11 @@ export function createPracticeService(deps: PracticeServiceDeps): PracticeServic
     }
 
     const resolved = resolveForSession(session);
+    const language = languageFor(
+      resolved.formatId,
+      input.language,
+      resolved.interviewLanguage,
+    );
     const questionMd = session.turns.find((turn) => turn.kind === 'question')?.contentMd ?? '';
     const transcriptMd = session.turns
       .map(
@@ -298,7 +331,7 @@ export function createPracticeService(deps: PracticeServiceDeps): PracticeServic
       slot: 'scoring',
       formatId: session.formatId,
       evidence: evidenceFor(raw, session.campaignId),
-      userRequest: practiceScoreRequest(resolved.rubric),
+      userRequest: practiceScoreRequest(resolved.rubric, language),
     });
 
     const userBase = [
@@ -318,7 +351,7 @@ export function createPracticeService(deps: PracticeServiceDeps): PracticeServic
 
     // 一次带诊断的重试：告诉模型缺了哪几维、哪几条引文对不上，让它按同一结构重来
     if (!grounded.ok) {
-      const repair = practiceScoreRepairRequest(grounded.failure);
+      const repair = practiceScoreRepairRequest(grounded.failure, language);
       generated = readGeneratedEvaluation(
         await deps.completeJson<unknown>({
           role: PRACTICE_ROLE,

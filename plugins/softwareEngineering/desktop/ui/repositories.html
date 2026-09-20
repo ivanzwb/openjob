@@ -356,8 +356,13 @@
       const HISTORY_COLLECTION = 'qa-history';
       const INDEX_COLLECTION = 'repository-indexes';
       const SOURCE_EXTENSIONS = /\.(c|cc|cpp|cs|go|h|hpp|java|js|jsx|kt|php|py|rb|rs|scala|swift|ts|tsx|vue)$/i;
-      // 单次 glob 有结果数上限：整仓一次撞上限时退到逐扩展名试，清单与 SOURCE_EXTENSIONS 对齐
-      const SOURCE_EXT_LIST = ['c', 'cc', 'cpp', 'cs', 'go', 'h', 'hpp', 'java', 'js', 'jsx', 'kt', 'php', 'py', 'rb', 'rs', 'scala', 'swift', 'ts', 'tsx', 'vue'];
+      // 逐目录枚举的文件数上限：到这个数就停下并如实记「清单不完整」，不是默默截断
+      const WALK_FILE_LIMIT = 4000;
+      // 生成物与依赖目录：不是人写的源码，走进去只会把清单挤满、把符号预算烧光
+      const SKIP_DIR_NAMES = new Set([
+        '.git', 'node_modules', 'dist', 'build', 'out', 'target', 'vendor', 'coverage',
+        '.next', '.cache', '__pycache__', '.venv', 'venv',
+      ]);
       // 建索引的上限：符号提取与喂给模型的文件条目都收窄，避免一次把整仓塞进去
       const INDEX_SYMBOL_FILES = 300;
       const INDEX_DIGEST_LINES = 150;
@@ -953,26 +958,43 @@
         renderIndex(entry);
       }
 
-      /** 列举检出里的文件。整仓 glob 有结果数上限，撞上限就退到逐扩展名；如实记不完整。 */
+      /**
+       * 列举检出里的文件：按目录逐层走（`workspace.list` 一次列一个目录），不走整仓 glob。
+       *
+       * 整仓 glob 有 200 条的结果上限：凡是文件多于 200 的仓库都只能退到「逐扩展名再试」，
+       * 那几次照样撞上限，宿主侧每次都记一条错误，而清单仍然是不完整的。逐目录走不吃这个
+       * 上限（单次列的是一个目录的条目，上限 1000），仓多大都能走完，还能顺手跳过
+       * `.git` / `node_modules` / `dist` 这类目录：摘要与仓库地图要的是人写的源码，这些目录
+       * 只会把清单挤满、把符号预算烧光。
+       */
       async function enumerateRepo(dir) {
-        let list;
+        const files = [];
+        const queue = [dir];
         let partial = false;
-        try {
-          list = await call('workspace.glob', { pattern: dir + '/**/*' });
-        } catch {
-          partial = true;
-          const seen = new Set();
-          for (const ext of SOURCE_EXT_LIST) {
-            try {
-              const hits = await call('workspace.glob', { pattern: `${dir}/**/*.${ext}` });
-              for (const hit of hits) seen.add(hit);
-            } catch {
-              partial = true;
+        while (queue.length > 0) {
+          if (files.length >= WALK_FILE_LIMIT) {
+            partial = true;
+            break;
+          }
+          const current = queue.shift();
+          let entries;
+          try {
+            entries = await call('workspace.list', { path: current });
+          } catch {
+            // 单个目录读不动（权限、条目超过单次上限）不该拖垮整次枚举，如实记不完整
+            partial = true;
+            continue;
+          }
+          for (const entry of entries) {
+            if (entry.type === 'dir') {
+              const name = entry.path.split('/').pop().toLowerCase();
+              if (!SKIP_DIR_NAMES.has(name)) queue.push(entry.path);
+            } else {
+              files.push(entry.path);
             }
           }
-          list = [...seen];
         }
-        return { list, partial };
+        return { list: files, partial };
       }
 
       /**

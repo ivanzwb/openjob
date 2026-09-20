@@ -122,7 +122,6 @@ describe('softwareEngineeringRolePack contract', () => {
     expect(desktop.bridgeMethods).toEqual([
       'workspace.fetch',
       'workspace.delete',
-      'workspace.glob',
       'workspace.list',
       'workspace.read',
       'workspace.grep',
