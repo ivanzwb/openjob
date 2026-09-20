@@ -125,7 +125,7 @@ import {
 } from '../plan/edit';
 import { getPracticeService, listPracticeAttempts, listPracticeScores } from '../practice';
 import { generateQuizAnswer, generateQuizQuestion, getQuizDraft, submitQuizAnswer, updateQuizDraft } from '../quiz';
-import { clearCache, fetchUrl, search } from '../search';
+import { clearCache, effectiveSearchPolicy, fetchUrl, search } from '../search';
 import {
   deleteSpeechSnippet,
   exportSpeechSnippets,
@@ -243,6 +243,7 @@ export function registerIpcHandlers(): void {
   handle('search:query', (req) => search(req));
   handle('search:fetchUrl', (req) => fetchUrl(req));
   handle('search:clearCache', () => ({ removed: clearCache() }));
+  handle('search:effectivePolicy', () => effectiveSearchPolicy());
 
   handle('db:health', () => dbHealth());
 

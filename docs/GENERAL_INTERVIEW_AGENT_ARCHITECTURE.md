@@ -321,7 +321,7 @@ backlog 中的能力缺席时只降级为 disabled，不让岗位解析失败，
 |---|---|---|---|---|
 | A 导航入口 | `navigation[]` | 主导航能力页签槽位 | 不显示对应页签 | 已接线 |
 | B 角色 Prompts | `prompts/` 片段文件（见 9.2） | 诊断 / 讲解 / 出题 / 评分 / 辅导 / 复盘 | 使用基础默认 Prompt | 已交付（内联形式，待文件化） |
-| C 检索策略 | `sourcePolicy` | 搜索 config 组装（`SearchRequest.campaignId`）、设置页“岗位包检索策略”段 | 使用全局默认策略 | 已接线 |
+| C 检索策略 | `sourcePolicy` | 搜索 config 组装（`SearchRequest.campaignId`）、设置页「检索质量与路由」卡片 | 使用通用默认策略（基础包不含岗位域名权重） | 已接线 |
 | D 简历模块 | `resumeModules[]` | 简历解析 Prompt、简历页模块卡 | 只解析通用字段 | 已接线 |
 | E 内嵌能力 | `capabilities[]` | 工具注册、交互渲染、artifact 解析、权限网关；实现随包走代码通道（§7.8 / §7.9） | 对应能力 disabled | 已接线（声明内嵌，按能力 id 引用） |
 | F 领域模型 | 能力 / 题型 / 量规 / 任务模板 | 能力图谱、排程、评分 | — | 已交付 |
@@ -603,6 +603,8 @@ export function activate(ctx: PluginRuntimeContext) {
 ```
 
 设置页里对检索质量与路由的手工修改属于“用户全局设置”，可以覆盖岗位包 `sourcePolicy` 提供的默认值。安全规则、事实来源规则和插件权限不参与覆盖。
+
+设置页那张卡片显示的是**生效值**（`search:effectivePolicy`：core 默认 < 岗位包 < 用户显式修改），来自岗位包的行标着「岗位包」并可看不可删——基础包不再内置任何岗位域名权重，所以卸包/换包时这些行会随之消失或更换。判定「用户改过没有」仍是按值比对，所以老配置里等于当初默认值的那批项要按没动过迁移（`CONFIG_VERSION = 2`，见 `dropLegacySearchDefaults`），否则它们会被当成用户自己的选择，岗位包的策略永远覆盖不进来。
 
 ### 8.2 主岗位包
 

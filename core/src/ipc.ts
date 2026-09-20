@@ -9,6 +9,7 @@
  */
 
 import type { AppConfig, UiTheme } from './config';
+import type { EffectiveSearchPolicy } from './search/policy';
 import type { LlmRoleView } from './llm/roles';
 import type {
   EvidenceKind,
@@ -1059,6 +1060,13 @@ export interface IpcInvokeMap {
   'search:query': { req: SearchRequest; res: SearchResponse };
   'search:fetchUrl': { req: FetchUrlRequest; res: FetchUrlResponse };
   'search:clearCache': { req: void; res: { removed: number } };
+  /**
+   * 生效中的检索策略：core 默认 < 岗位包 sourcePolicy < 用户显式修改的结果。
+   *
+   * 设置页要显示的是「现在到底按什么在检索」——岗位包参与的那部分必须看得见，
+   * 否则用户换了/卸了岗位包，界面上的域名可信度与缓存策略一动不动，像是没生效。
+   */
+  'search:effectivePolicy': { req: void; res: EffectiveSearchPolicy };
 
   'db:health': { req: void; res: { ok: boolean; tables: number; path: string } };
 
@@ -1547,6 +1555,7 @@ export const IPC_INVOKE_CHANNELS = [
   'search:query',
   'search:fetchUrl',
   'search:clearCache',
+  'search:effectivePolicy',
   'db:health',
   'plugin:listInstalled',
   'plugin:inventory',

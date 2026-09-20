@@ -1,7 +1,12 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { app } from 'electron';
-import { CONFIG_VERSION, DEFAULT_CONFIG, type AppConfig } from '@core/config';
+import {
+  CONFIG_VERSION,
+  DEFAULT_CONFIG,
+  dropLegacySearchDefaults,
+  type AppConfig,
+} from '@core/config';
 import type { LlmRole, LlmTier } from '@core/enums';
 
 let cache: AppConfig | null = null;
@@ -46,6 +51,9 @@ function firstPreTierMainRole(roles: PreTierRoleSlice | null): PreTierRoleConfig
 function mergeDefaults(loaded: Partial<AppConfig>): AppConfig {
   const base = structuredClone(DEFAULT_CONFIG);
   const llmLoaded = loaded.llm;
+  // v1 的检索默认值里混着岗位专属的那份（域名可信度表、过时阈值）：等于旧默认值的项按
+  // 没动过处理，交给新的中立默认值与岗位包 sourcePolicy。用户改过的不等于旧默认值，保留。
+  const search = dropLegacySearchDefaults(loaded.search, loaded.version);
   const preTierRoles = isPreTierRoles(llmLoaded?.roles) ? (llmLoaded!.roles as unknown as PreTierRoleSlice) : null;
 
   // 旧版把模型配置放在角色对象里：outline 是主力档的默认来源，explain 是便宜档的来源，
@@ -98,17 +106,17 @@ function mergeDefaults(loaded: Partial<AppConfig>): AppConfig {
     },
     search: {
       providers: {
-        bocha: { ...base.search.providers.bocha, ...loaded.search?.providers?.bocha },
-        tavily: { ...base.search.providers.tavily, ...loaded.search?.providers?.tavily },
+        bocha: { ...base.search.providers.bocha, ...search?.providers?.bocha },
+        tavily: { ...base.search.providers.tavily, ...search?.providers?.tavily },
       },
-      routing: loaded.search?.routing?.length ? loaded.search.routing : base.search.routing,
-      defaultProvider: loaded.search?.defaultProvider ?? base.search.defaultProvider,
+      routing: search?.routing?.length ? search.routing : base.search.routing,
+      defaultProvider: search?.defaultProvider ?? base.search.defaultProvider,
       domainCredibility: {
         ...base.search.domainCredibility,
-        ...loaded.search?.domainCredibility,
+        ...search?.domainCredibility,
       },
-      cacheTtlDays: { ...base.search.cacheTtlDays, ...loaded.search?.cacheTtlDays },
-      techDocStaleDays: loaded.search?.techDocStaleDays ?? base.search.techDocStaleDays,
+      cacheTtlDays: { ...base.search.cacheTtlDays, ...search?.cacheTtlDays },
+      techDocStaleDays: search?.techDocStaleDays ?? base.search.techDocStaleDays,
     },
     priority: {
       ...base.priority,

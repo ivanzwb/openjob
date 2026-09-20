@@ -22,6 +22,7 @@ import {
 } from '@core/diagnosis/coverage';
 import { completeJson } from '../llm/json';
 import { getCampaign, getResume } from './campaignLocal';
+import { listCachedRolePacks } from './rolePackLocal';
 import {
   applyHistoricalPrior,
   clearCampaignNodes,
@@ -169,7 +170,12 @@ export async function diagnoseFetchIntel(db: SQLiteDatabase, campaignId: string)
   const campaign = getCampaign(db, campaignId);
   const query = `${campaign.company} ${campaign.roleTitle} 面试 面经 流程`;
 
-  const searchRes = await searchWeb(query, { freshness: 'oneYear', count: 8 });
+  // 岗位专属的来源权重随包同步过来，检索时按生效策略合并（core 默认 < 岗位包 < 用户修改）
+  const searchRes = await searchWeb(
+    query,
+    { freshness: 'oneYear', count: 8 },
+    listCachedRolePacks(db),
+  );
   const context = searchRes.results
     .map((r, i) => `[${i + 1}] ${r.title}\n${r.snippet}\n${(r.contentMd ?? '').slice(0, 800)}`)
     .join('\n\n---\n\n');

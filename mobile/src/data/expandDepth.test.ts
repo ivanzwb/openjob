@@ -18,6 +18,7 @@ vi.mock('../llm/json', () => ({ completeJson }));
 // 被测路径一步都走不到这些，但它们在模块顶层就把 react-native 拉进来，vitest 解析不了
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'generated-id' }));
 vi.mock('expo-secure-store', () => ({}));
+vi.mock('expo-application', () => ({ nativeApplicationVersion: '1.0.0' }));
 vi.mock('../search', () => ({ searchWeb: vi.fn() }));
 
 const { diagnoseExpandNode } = await import('./diagnosisLocal');

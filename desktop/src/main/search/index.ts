@@ -12,7 +12,7 @@ import type { SourcePolicy } from '@core/plugins/types';
 import { resolveSearchPolicy, type EffectiveSearchPolicy } from '@core/search/policy';
 import { getConfig, getSecret } from '../config';
 import { getDb, getRawDb, schema } from '../db';
-import { findInstalledRolePack, getCampaignRuntime } from '../plugins/runtime';
+import { findInstalledRolePack, getCampaignRuntime, listInstalledRolePacks } from '../plugins/runtime';
 import { bochaSearch } from './bocha';
 import { tavilyExtract, tavilySearch } from './tavily';
 import { credibilityOf, extractDomain, pickProvider } from './routing';
@@ -95,6 +95,24 @@ function persistSources(items: SearchResultItem[], provider: string): void {
       .run();
     item.sourceId = id;
   }
+}
+
+/**
+ * 设置页展示用的生效检索策略。
+ *
+ * 与 search() 里那条同一套合并规则（core 默认 < 岗位包 sourcePolicy < 用户显式修改），
+ * 区别只是这里没有战役：取本机装着的那个岗位包，而 declaration 缺失的包不算数——
+ * 包对检索没意见时 source 为 null，设置页据此不显示岗位包那一段。
+ */
+export function effectiveSearchPolicy(): EffectiveSearchPolicy {
+  const pack = listInstalledRolePacks().find((candidate) => candidate.sourcePolicy);
+  return resolveSearchPolicy(
+    DEFAULT_CONFIG.search,
+    getConfig().search,
+    pack?.sourcePolicy
+      ? { ...pack.sourcePolicy, id: pack.manifest.id, version: pack.manifest.version }
+      : null,
+  );
 }
 
 export async function search(req: SearchRequest, signal?: AbortSignal): Promise<SearchResponse> {
@@ -184,7 +202,9 @@ export async function fetchUrl(
       domain,
       title: res.title,
       provider: 'tavily',
-        credibility: credibilityOf(domain, config.search.domainCredibility),
+      // 抓下来的页面也要按**生效**的可信度表打分：基础包那张表已经中立（岗位专属的
+      // 域名权重来自岗位包），用 config 里那张会把这些来源一律打成中性分
+      credibility: credibilityOf(domain, effectiveSearchPolicy().domainCredibility),
       publishedAt: null,
       fetchedAt: res.fetchedAt,
       contentMd: res.contentMd,

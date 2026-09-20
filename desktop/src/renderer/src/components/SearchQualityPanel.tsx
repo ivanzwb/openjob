@@ -2,11 +2,16 @@ import { useState } from 'react';
 import type { SearchConfig, SearchRoutingRule } from '@core/config';
 import { DEFAULT_CONFIG } from '@core/config';
 import type { SearchProviderName } from '@core/enums';
+import type { EffectiveSearchPolicy } from '@core/search/policy';
 
 /**
  * 域名可信度分级是内容质量控制的主要手段：面经里洗稿、旧内容、
  * 标题党占比很高，不分级的话搜回来的可能比模型编的还差。
  * 所以这张表必须能在界面上改，而不是只躺在 config.json 里。
+ *
+ * 显示的必须是**生效值**（core 默认 < 岗位包 sourcePolicy < 用户显式修改），
+ * 而不是 config.json 里那张表：岗位专属的来源权重在岗位包里，只看 config 的话
+ * 换了、卸了岗位包这里都一动不动，看着像没生效。
  */
 
 const CREDIBILITY_HINT: Record<number, string> = {
@@ -33,15 +38,34 @@ function ruleSummary(rule: SearchRoutingRule): string {
 
 export function SearchQualityPanel({
   value,
+  policy,
   onChange,
 }: {
   value: SearchConfig;
+  /** 生效策略（含岗位包那段）；取不到时退回用户自己的配置 */
+  policy?: EffectiveSearchPolicy | null;
   onChange: (patch: Partial<SearchConfig>) => void;
 }): React.JSX.Element {
   const [newDomain, setNewDomain] = useState('');
   const [newScore, setNewScore] = useState(3);
 
-  const domains = Object.entries(value.domainCredibility).sort(
+  const effective = policy ?? null;
+  const pack = effective?.source ?? null;
+  const effectiveCredibility = effective?.domainCredibility ?? value.domainCredibility;
+  const effectiveTtl = effective?.cacheTtlDays ?? value.cacheTtlDays;
+  const effectiveStaleDays = effective?.techDocStaleDays ?? value.techDocStaleDays;
+
+  /**
+   * 岗位包提供、而用户自己那份配置里没有的域名。
+   *
+   * 这些行不给删：删掉的是用户配置里根本没有的键，删完它还是从包来。要让它消失只能
+   * 卸包或换包——所以这里只标出来，让「这一条是谁给的」一目了然。
+   */
+  const fromPack = new Set(
+    pack ? Object.keys(effectiveCredibility).filter((d) => !(d in value.domainCredibility)) : [],
+  );
+
+  const domains = Object.entries(effectiveCredibility).sort(
     (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
   );
 
@@ -85,6 +109,11 @@ export function SearchQualityPanel({
         <p className="mt-1 text-xs text-[var(--color-muted)]">
           可信度 0 的域名直接丢弃，不进上下文。路由规则按顺序匹配，命中即用。
         </p>
+        <p className="mt-1 text-xs text-[var(--color-muted)]">
+          {pack
+            ? `下面是生效值：标着「岗位包」的那些来自 ${pack.id} v${pack.version}，你改过的地方以你的为准。`
+            : '下面是生效值：本机没装岗位包，按这里的通用默认值执行；装上岗位包后它会补上自己的来源权重与时效口径。'}
+        </p>
       </div>
 
       <div className="space-y-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
@@ -96,6 +125,9 @@ export function SearchQualityPanel({
                 <span className={`flex-1 truncate ${score === 0 ? 'text-red-400 line-through' : ''}`}>
                   {domain}
                 </span>
+                {fromPack.has(domain) && (
+                  <span className="shrink-0 text-[10px] text-[var(--color-accent)]">岗位包</span>
+                )}
                 <select
                   value={score}
                   onChange={(e) => setDomain(domain, Number(e.target.value))}
@@ -110,8 +142,9 @@ export function SearchQualityPanel({
                 <button
                   type="button"
                   onClick={() => removeDomain(domain)}
-                  className="px-1 text-[var(--color-muted)] hover:text-red-400"
-                  title="移除"
+                  disabled={fromPack.has(domain)}
+                  className="px-1 text-[var(--color-muted)] hover:text-red-400 disabled:opacity-25 disabled:hover:text-[var(--color-muted)]"
+                  title={fromPack.has(domain) ? '由岗位包提供，换包或卸包才会消失' : '移除'}
                 >
                   ×
                 </button>
@@ -155,12 +188,17 @@ export function SearchQualityPanel({
           <div className="grid grid-cols-3 gap-3">
             {(Object.keys(TTL_LABEL) as Array<keyof SearchConfig['cacheTtlDays']>).map((key) => (
               <label key={key} className="space-y-1">
-                <span className="block text-[11px]">{TTL_LABEL[key]}</span>
+                <span className="block text-[11px]">
+                  {TTL_LABEL[key]}
+                  {effectiveTtl[key] !== value.cacheTtlDays[key] && (
+                    <span className="ml-1 text-[10px] text-[var(--color-accent)]">岗位包</span>
+                  )}
+                </span>
                 <input
                   type="number"
                   min={0}
                   max={365}
-                  value={value.cacheTtlDays[key]}
+                  value={effectiveTtl[key]}
                   onChange={(e) =>
                     onChange({
                       cacheTtlDays: { ...value.cacheTtlDays, [key]: Number(e.target.value) },
@@ -175,12 +213,17 @@ export function SearchQualityPanel({
 
         <div className="grid grid-cols-2 gap-3 border-t border-[var(--color-border)] pt-4">
           <label className="space-y-1">
-            <span className="block text-xs text-[var(--color-muted)]">技术文档过时阈值（天）</span>
+            <span className="block text-xs text-[var(--color-muted)]">
+              技术文档过时阈值（天）
+              {effectiveStaleDays !== value.techDocStaleDays && (
+                <span className="ml-1 text-[10px] text-[var(--color-accent)]">岗位包</span>
+              )}
+            </span>
             <input
               type="number"
               min={0}
               max={3650}
-              value={value.techDocStaleDays}
+              value={effectiveStaleDays}
               onChange={(e) => onChange({ techDocStaleDays: Number(e.target.value) })}
               className="w-full rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1 text-xs"
             />

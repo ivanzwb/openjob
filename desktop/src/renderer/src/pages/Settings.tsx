@@ -8,6 +8,7 @@ import { invoke } from '../ipc';
 import { runTask, useTask, useTaskResult } from '../ipc/taskStore';
 import { SecretField } from '../components/SecretField';
 import { SearchQualityPanel } from '../components/SearchQualityPanel';
+import type { EffectiveSearchPolicy } from '@core/search/policy';
 import { PluginsPanel } from '../components/PluginsPanel';
 import { UpdatePanel } from '../components/UpdatePanel';
 import { SyncPanel } from '../components/SyncPanel';
@@ -132,17 +133,30 @@ export function Settings(): React.JSX.Element {
   const [llmRoles, setLlmRoles] = useState<LlmRoleView[]>([]);
   const [saved, setSaved] = useState(false);
   const [dbInfo, setDbInfo] = useState<{ ok: boolean; tables: number; path: string } | null>(null);
+  const [searchPolicy, setSearchPolicy] = useState<EffectiveSearchPolicy | null>(null);
 
-  /** 角色清单跟着已装岗位包走，所以装/卸插件之后要重拉（见 PluginsPanel 的回调） */
-  const loadLlmRoles = useCallback((): void => {
+  /**
+   * 跟着「本机装了哪些岗位包」走的那两份数据。
+   *
+   * 角色清单来自岗位包声明的角色，检索策略里岗位包那一段来自它的 sourcePolicy：
+   * 装/卸插件之后必须重拉，否则用户要重开设置页才能看到变化。
+   */
+  const loadPackDerived = useCallback((): void => {
     void invoke('config:listLlmRoles', undefined).then(setLlmRoles);
+    void invoke('search:effectivePolicy', undefined).then(setSearchPolicy);
   }, []);
+
+  /** 装/卸插件之后：配置本身（角色映射会被裁剪）与上面两份一起重拉 */
+  const reloadAfterPluginChange = useCallback((): void => {
+    void invoke('config:get', undefined).then(setConfig);
+    loadPackDerived();
+  }, [loadPackDerived]);
 
   useEffect(() => {
     void invoke('config:get', undefined).then(setConfig);
     void invoke('db:health', undefined).then(setDbInfo);
-    loadLlmRoles();
-  }, [loadLlmRoles]);
+    loadPackDerived();
+  }, [loadPackDerived]);
 
   if (!config) return <p className="p-6 text-sm text-[var(--color-muted)]">加载配置…</p>;
 
@@ -345,7 +359,7 @@ const updateEmbedding = (patch: Partial<AppConfig['llm']['embedding']>): void =>
         </div>
       </section>
 
-      <SearchQualityPanel value={config.search} onChange={updateSearch} />
+      <SearchQualityPanel value={config.search} policy={searchPolicy} onChange={updateSearch} />
 
       <section className="space-y-4">
         <div>
@@ -432,7 +446,7 @@ const updateEmbedding = (patch: Partial<AppConfig['llm']['embedding']>): void =>
         </div>
       </section>
 
-      <PluginsPanel onPluginsChanged={loadLlmRoles} />
+      <PluginsPanel onPluginsChanged={reloadAfterPluginChange} />
 
       <UpdatePanel value={config.update} onChange={updateUpdater} />
 

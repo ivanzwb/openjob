@@ -132,7 +132,13 @@ export interface AppConfig {
   ui: UiConfig;
 }
 
-export const CONFIG_VERSION = 1;
+/**
+ * 配置结构版本。
+ *
+ * v2：检索质量与路由里岗位专属的那部分（域名可信度表、领域知识过时阈值）移出基础包，
+ * 改由岗位包的 `sourcePolicy` 提供（插入点 C）。见 dropLegacySearchDefaults。
+ */
+export const CONFIG_VERSION = 2;
 
 export const DEFAULT_PRIORITY_WEIGHTS: PriorityWeights = {
   probExp: 1,
@@ -183,22 +189,20 @@ export const DEFAULT_CONFIG: AppConfig = {
       { match: { lang: 'en' }, provider: 'tavily' },
     ],
     defaultProvider: 'bocha',
-    domainCredibility: {
-      'github.com': 5,
-      'stackoverflow.com': 4,
-      'nowcoder.com': 3,
-      'juejin.cn': 3,
-      'zhihu.com': 3,
-      '1point3acres.com': 3,
-      'cnblogs.com': 2,
-      'csdn.net': 1,
-    },
+    /**
+     * 基础包对域名可信度**没有意见**：github.com / nowcoder.com / csdn.net 这一类的
+     * 权重是岗位自己的判断（软件工程岗位看重面经站与代码站，产品、销售岗位看重的完全
+     * 是另一批），所以由岗位包的 sourcePolicy 提供（插入点 C），这里留空。
+     * 没有岗位包时未知域名一律按中性分处理，用户也可以自己加。
+     */
+    domainCredibility: {},
     cacheTtlDays: {
       companyIntel: 7,
       interviewReports: 3,
       techDocs: 30,
     },
-    techDocStaleDays: 540,
+    /** 通用口径：一年前的技术/领域文档算旧。岗位包按自己的领域给值（工程 540 天、销售 730 天） */
+    techDocStaleDays: 365,
   },
   priority: DEFAULT_PRIORITY_WEIGHTS,
   update: {
@@ -210,12 +214,56 @@ export const DEFAULT_CONFIG: AppConfig = {
   },
 };
 
+/**
+ * v1 的基础检索默认值：那一整套其实是软件工程岗位的策略（八个域名及其可信度、540 天的
+ * 领域知识过时阈值），岗位包出现后它们由包的 `sourcePolicy` 提供，基础包改成中立。
+ */
+export const V1_SEARCH_DEFAULTS = {
+  domainCredibility: {
+    'github.com': 5,
+    'stackoverflow.com': 4,
+    'nowcoder.com': 3,
+    'juejin.cn': 3,
+    'zhihu.com': 3,
+    '1point3acres.com': 3,
+    'cnblogs.com': 2,
+    'csdn.net': 1,
+  } as Record<string, number>,
+  techDocStaleDays: 540,
+};
+
+/**
+ * v1 → v2 的检索配置迁移：把**恰好等于旧默认值**的项当成没动过删掉。
+ *
+ * 为什么要删：合并顺序是「core 默认 < 岗位包 < 用户显式修改」，而判定「用户改过没有」
+ * 靠按值比对。老 config.json 里这些键写着的是当年的默认值，不删就会被认成用户自己的
+ * 选择，岗位包的策略反而永远盖不进去（表现就是：换了/卸了岗位包，这几个字段纹丝不动）。
+ * 用户真改过的不等于旧默认值，原样保留。
+ */
+export function dropLegacySearchDefaults(
+  search: Partial<SearchConfig> | undefined,
+  version: number | undefined,
+): Partial<SearchConfig> | undefined {
+  if (!search) return search;
+  if ((version ?? 1) >= CONFIG_VERSION) return search;
+
+  const domainCredibility: Record<string, number> = {};
+  for (const [domain, score] of Object.entries(search.domainCredibility ?? {})) {
+    if (V1_SEARCH_DEFAULTS.domainCredibility[domain] !== score) domainCredibility[domain] = score;
+  }
+
+  const next: Partial<SearchConfig> = { ...search, domainCredibility };
+  if (next.techDocStaleDays === V1_SEARCH_DEFAULTS.techDocStaleDays) delete next.techDocStaleDays;
+  return next;
+}
+
 /** 与磁盘/同步 JSON 合并默认值（不含桌面旧版配置迁移逻辑） */
 export function mergeAppConfig(loaded: Partial<AppConfig> | null | undefined): AppConfig {
   const base = structuredClone(DEFAULT_CONFIG);
   if (!loaded) return base;
+  const loadedSearch = dropLegacySearchDefaults(loaded.search, loaded.version);
   return {
-    version: loaded.version ?? base.version,
+    version: CONFIG_VERSION,
     llm: {
       providers: loaded.llm?.providers?.length ? loaded.llm.providers : base.llm.providers,
       tiers: {
@@ -227,17 +275,17 @@ export function mergeAppConfig(loaded: Partial<AppConfig> | null | undefined): A
     },
     search: {
       providers: {
-        bocha: { ...base.search.providers.bocha, ...loaded.search?.providers?.bocha },
-        tavily: { ...base.search.providers.tavily, ...loaded.search?.providers?.tavily },
+        bocha: { ...base.search.providers.bocha, ...loadedSearch?.providers?.bocha },
+        tavily: { ...base.search.providers.tavily, ...loadedSearch?.providers?.tavily },
       },
-      routing: loaded.search?.routing?.length ? loaded.search.routing : base.search.routing,
-      defaultProvider: loaded.search?.defaultProvider ?? base.search.defaultProvider,
+      routing: loadedSearch?.routing?.length ? loadedSearch.routing : base.search.routing,
+      defaultProvider: loadedSearch?.defaultProvider ?? base.search.defaultProvider,
       domainCredibility: {
         ...base.search.domainCredibility,
-        ...loaded.search?.domainCredibility,
+        ...loadedSearch?.domainCredibility,
       },
-      cacheTtlDays: { ...base.search.cacheTtlDays, ...loaded.search?.cacheTtlDays },
-      techDocStaleDays: loaded.search?.techDocStaleDays ?? base.search.techDocStaleDays,
+      cacheTtlDays: { ...base.search.cacheTtlDays, ...loadedSearch?.cacheTtlDays },
+      techDocStaleDays: loadedSearch?.techDocStaleDays ?? base.search.techDocStaleDays,
     },
     priority: {
       ...base.priority,

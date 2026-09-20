@@ -633,22 +633,24 @@ interface SearchConfig {
   }>;
   defaultProvider: 'bocha' | 'tavily';
 
-  // 域名可信度分级，0 = 黑名单直接过滤
+  // 域名可信度分级，0 = 黑名单直接过滤。
+  // 基础默认值是**空表**：哪些域名值多少分是岗位的判断（软件工程看重面经站与代码站，
+  // 产品、销售看重的是另一批），由岗位包 `sourcePolicy` 提供，见 5.3.1
   domainCredibility: Record<string, number>;
 
   cacheTtlDays: {
-    companyIntel: number;      // 建议 7
-    interviewReports: number;  // 建议 3
-    techDocs: number;          // 建议 30
+    companyIntel: number;      // 通用默认 7
+    interviewReports: number;  // 通用默认 3
+    techDocs: number;          // 通用默认 30（岗位包对 techDocs 缓存没有意见）
   };
-  /** 技术文档超过这个天数标记为过时，默认 540；0 = 关闭 */
+  /** 技术文档超过这个天数标记为过时，通用默认 365；0 = 关闭。岗位可按领域给值（工程 540、销售 730） */
   techDocStaleDays: number;
 }
 ```
 
 默认路由规则：中文查询 → 博查；`github.com` / `docs.*` / `*.io` 等英文文档域名 → Tavily；兜底 → 博查。
 
-默认可信度分级：官方文档域名与 `github.com` 为 5；`nowcoder.com`、`juejin.cn`、`zhihu.com`、`1point3acres.com` 等社区为 3；内容农场为 1；黑名单为 0。
+**基础包的检索默认值保持岗位中立**（`CONFIG_VERSION = 2` 起）：域名权重表与领域知识过时阈值都由岗位包的 `sourcePolicy` 提供（插入点 C），基础包只留与岗位无关的通用口径。老 `config.json` 里那套「等于当初默认值」的项在升级时按没动过处理（`dropLegacySearchDefaults`），否则按值比对会把它们认成用户自己的选择，岗位包的策略永远盖不进去。
 
 ### 5.4 Agent 共享工具箱
 

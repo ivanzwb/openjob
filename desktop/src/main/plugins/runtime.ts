@@ -179,6 +179,17 @@ export function findLatestRolePack(id: string): RolePack | null {
   return registry.get(id);
 }
 
+/**
+ * 本机装着的岗位包（各自带着声明的检索策略等）。
+ *
+ * 设置页展示生效策略时用：一台设备只装一个岗位包，所以不需要先选战役。与按战役取自
+ * descriptor 的那条路并存——那边回答「这场备考用什么策略」，这边回答「本机现在的岗位
+ * 是什么策略」，而设置页问的正是后者。
+ */
+export function listInstalledRolePacks(): RolePack[] {
+  return externalEntries.flatMap((entry) => (entry.package.rolePack ? [entry.package.rolePack] : []));
+}
+
 export function listExternalPlugins(): readonly PluginInventoryEntry[] {
   return externalEntries;
 }

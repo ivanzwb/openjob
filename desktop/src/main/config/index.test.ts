@@ -8,7 +8,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AppConfig } from '@core/config';
+import { CONFIG_VERSION, DEFAULT_CONFIG, V1_SEARCH_DEFAULTS, type AppConfig } from '@core/config';
 import type { LlmRole, LlmTier } from '@core/enums';
 
 /** 只声明用得到的两个出口：动态 import 的模块类型不许写成 typeof import(...) */
@@ -95,6 +95,41 @@ describe('旧版配置迁移', () => {
     const { getConfig } = await loadConfig({ llm: { roles: { explain: 'main' } } });
 
     expect(getConfig().llm.roles).toEqual({ explain: 'main' });
+  });
+});
+
+/**
+ * 检索默认值的 v1 → v2 迁移：老 config.json 里那套岗位专属的检索策略（域名可信度、
+ * 540 天过时阈值）是当初的默认值，按没动过处理让岗位包接管；用户真改过的留着。
+ */
+describe('检索默认值迁移', () => {
+  it('磁盘上那份 v1 配置里等于旧默认值的项被清掉', async () => {
+    const { getConfig } = await loadConfig({
+      version: 1,
+      search: {
+        domainCredibility: { ...V1_SEARCH_DEFAULTS.domainCredibility },
+        techDocStaleDays: V1_SEARCH_DEFAULTS.techDocStaleDays,
+      },
+    });
+
+    const config = getConfig();
+    expect(config.version).toBe(CONFIG_VERSION);
+    expect(config.search.domainCredibility).toEqual({});
+    expect(config.search.techDocStaleDays).toBe(DEFAULT_CONFIG.search.techDocStaleDays);
+  });
+
+  it('用户改过的那几条留下：按值比对，不比旧默认值就不算默认', async () => {
+    const { getConfig } = await loadConfig({
+      version: 1,
+      search: {
+        domainCredibility: { 'github.com': 2, 'csdn.net': 1, 'my.example': 4 },
+        techDocStaleDays: 30,
+      },
+    });
+
+    const config = getConfig();
+    expect(config.search.domainCredibility).toEqual({ 'github.com': 2, 'my.example': 4 });
+    expect(config.search.techDocStaleDays).toBe(30);
   });
 });
 

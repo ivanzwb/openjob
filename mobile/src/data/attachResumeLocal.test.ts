@@ -21,6 +21,7 @@ vi.mock('expo-crypto', () => ({
   },
 }));
 vi.mock('expo-secure-store', () => ({}));
+vi.mock('expo-application', () => ({ nativeApplicationVersion: '1.0.0' }));
 vi.mock('../sync/identity', () => ({
   getDeviceIdentity: () => Promise.resolve({ deviceId: 'phone-1' }),
 }));
