@@ -484,6 +484,27 @@ export function importLegacyDatabase(options: LegacyImportOptions): LegacyImport
         )
         .run(PRE_PLUGIN_CAMPAIGN_SCOPE_KIND, PRE_PLUGIN_CAMPAIGN_SCOPE_KIND, completedAt);
 
+      // 0029 的同一种情况：那条迁移把旧的仓库登记表搬进软件工程包声明的 repositories 集合，
+      // 可它也是在空库上跑的——导入进来的 repo 行当时一行都不在，于是「源码」页里一个仓库
+      // 都没有。这里按同一条规则补一次，时点挪到数据到位之后；INSERT OR IGNORE 保证重跑安全
+      // （包那一侧用 (plugin_id, collection, key) 取数，key 就是旧 repo.id）。
+      temp.exec(`
+        INSERT OR IGNORE INTO plugin_data (id, plugin_id, collection, key, value_json, updated_at)
+        SELECT 'software-engineering' || char(31) || 'repositories' || char(31) || r.id,
+               'software-engineering',
+               'repositories',
+               r.id,
+               json_object(
+                 'id', r.id,
+                 'label', r.url,
+                 'ready', CASE WHEN r.status = 'ready' THEN json('true') ELSE json('false') END,
+                 'url', r.url,
+                 'status', r.status
+               ),
+               ${completedAt}
+        FROM repo r
+      `);
+
       const marker = {
         kind: LEGACY_IMPORT_CHECKPOINT_KIND,
         completedAt,

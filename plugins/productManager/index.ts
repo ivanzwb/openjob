@@ -62,6 +62,8 @@ export const productManagerRolePack: RolePack = defineRolePack({
     main: 'desktop/main.js',
     mobile: 'mobile/main.js',
     api: '^1.0',
+    // 页面由入口代码注册；这份声明让各端在激活之前就知道它的 id 与入口名
+    pages: [{ id: 'case-practice', title: '案例训练' }],
     // 本包自己的数据集合：案例（题目 / 作答 / 评分）存在这里，宿主按名字归档与取用，
     // 内容对它不透明；手机端只读同一份数据
     dataCollections: [{ name: 'cases', schemaVersion: 1 }],

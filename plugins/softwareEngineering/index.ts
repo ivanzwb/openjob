@@ -90,6 +90,9 @@ export const softwareEngineeringRolePack: RolePack = defineRolePack({
     main: 'desktop/main.js',
     mobile: 'mobile/main.js',
     api: '^1.0',
+    // 本包在各端提供的 Webview 页面：页面由入口代码注册，这份声明让各端在激活之前就知道
+    // 它的 id 与入口名（手机端「更多」里那一项「源码」就是按它渲染的）。
+    pages: [{ id: 'source-repository', title: '源码' }],
     dependencies: [],
     // 标记目标路由（插入点 F）：本包页面把代码位置标记写进宿主标记汇总时用的 targetKind 是
     // code-mark（宿主不认识），这里声明它由本包的「源码」页承接。宿主据此把汇总里的这类行

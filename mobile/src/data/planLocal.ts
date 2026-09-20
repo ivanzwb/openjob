@@ -81,7 +81,7 @@ function isPrePluginScopedCampaign(db: SQLiteDatabase, campaignId: string): bool
  * `PRE_PLUGIN_CAMPAIGN_SCOPE_KIND` 凭据）在桌面回填并同步过来之前继续走工程岗位包
  * 默认值，两端排程结果不跳变；新建的、还没选岗位的战役返回 null，不排插件任务。
  */
-function loadRuntimeDescriptor(
+export function loadRuntimeDescriptor(
   db: SQLiteDatabase,
   campaignId: string,
 ): CampaignRuntimeDescriptor | null {

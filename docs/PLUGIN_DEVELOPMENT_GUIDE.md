@@ -387,6 +387,7 @@ export function activate(ctx: PluginRuntimeContext): () => void {
 要点：
 
 - 入口文件写 `main.ts`（推荐）或 `main.js`，分别放在 `desktop/` 与 `mobile/` 下；**信封里的产物是 `desktop/main.js` 与 `mobile/main.js`**——签名、隔离扫描、两端执行的都是各自那份编译产物，「签的 = 扫的 = 跑的」；
+- 注册的页面要在 `manifest.pages` 里同步声明一份（`pages: [{ id: 'board', title: '作品集看板' }]`，id 与 `registerPage` 一致）。页面是激活时才注册的，宿主在那之前拿不到 id 与标题；手机端的页面入口（「更多」里那一项）就是按这份声明渲染并按 `<pluginId>:<pageId>` 打开的，不声明就只剩包名可用、也点不进指定页面；
 - `import type` 在编译时擦除，宿主模块不会进入插件产物；普通的 `import`/`require` 会在运行时被 require shim 拒绝；
 - `ui/` 下的 `.ts` 在打包期由 esbuild 编译为 CJS（与入口同一条规则：签的 = 扫的 = 跑的），页面直接加载编译产物。
 

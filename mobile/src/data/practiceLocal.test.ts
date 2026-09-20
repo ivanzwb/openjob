@@ -11,6 +11,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MIGRATIONS } from '../db/migrations/bundle';
 import { ensureCriticalSchema } from '../db/schemaEnsure';
+import { PRE_PLUGIN_CAMPAIGN_SCOPE_KIND } from '@core/planner/contributions';
 
 const ids = vi.hoisted(() => ({ next: 0 }));
 
@@ -50,6 +51,7 @@ vi.mock('./rolePackLocal', async () => {
       version === softwareEngineeringRolePack.manifest.version
         ? softwareEngineeringRolePack
         : null,
+    listCachedRolePacks: () => (state.cached ? [softwareEngineeringRolePack] : []),
   };
 });
 
@@ -85,7 +87,10 @@ function adapt(db: DatabaseSync): SQLiteDatabase {
 }
 
 /** 这场战役：有画像、有 descriptor、本机缓存了岗位包，并绑了一个考点。 */
-function seed(db: SQLiteDatabase, options: { cached?: boolean } = {}): void {
+function seed(
+  db: SQLiteDatabase,
+  options: { cached?: boolean; descriptor?: boolean; prePlugin?: boolean } = {},
+): void {
   db.runSync(
     `INSERT INTO role_profile (id, role_family, role_pack_id, level, industry_variant_id, location,
        interview_language, confidence, user_confirmed)
@@ -95,17 +100,28 @@ function seed(db: SQLiteDatabase, options: { cached?: boolean } = {}): void {
   );
   db.runSync(
     `INSERT INTO campaign (id, company, role_title, jd_raw, status, role_profile_id, created_at, updated_at)
-     VALUES (?, 'ACME', '后端工程师', 'jd', 'planning', 'rp-1', 1, 1)`,
+     VALUES (?, 'ACME', '后端工程师', 'jd', 'planning', ?, 1, 1)`,
     CAMPAIGN_ID,
+    options.prePlugin ? null : 'rp-1',
   );
-  db.runSync(
-    `INSERT INTO campaign_runtime_descriptor (id, campaign_id, revision, core_version, role_pack,
-       industry_variant_id, capabilities, competency_baseline_version, config_snapshot_hash, resolved_at)
-     VALUES ('d-1', ?, 1, '1.0.0', ?, NULL, '[]', ?, 'hash-1', 1)`,
-    CAMPAIGN_ID,
-    JSON.stringify({ id: PACK.manifest.id, version: PACK.manifest.version }),
-    PACK.manifest.version,
-  );
+  if (options.descriptor !== false) {
+    db.runSync(
+      `INSERT INTO campaign_runtime_descriptor (id, campaign_id, revision, core_version, role_pack,
+         industry_variant_id, capabilities, competency_baseline_version, config_snapshot_hash, resolved_at)
+       VALUES ('d-1', ?, 1, '1.0.0', ?, NULL, '[]', ?, 'hash-1', 1)`,
+      CAMPAIGN_ID,
+      JSON.stringify({ id: PACK.manifest.id, version: PACK.manifest.version }),
+      PACK.manifest.version,
+    );
+  }
+  if (options.prePlugin) {
+    db.runSync(
+      `INSERT INTO migration_checkpoint (id, campaign_id, kind, completed_at) VALUES (?, ?, ?, 1)`,
+      `prePlugin:${CAMPAIGN_ID}`,
+      CAMPAIGN_ID,
+      PRE_PLUGIN_CAMPAIGN_SCOPE_KIND,
+    );
+  }
   if (options.cached !== false) {
     db.runSync(
       `INSERT INTO role_pack_cache (id, version, pack_json, fetched_at) VALUES (?, ?, ?, 1)`,
@@ -124,7 +140,9 @@ function seed(db: SQLiteDatabase, options: { cached?: boolean } = {}): void {
   );
 }
 
-function freshDb(options: { cached?: boolean } = {}): SQLiteDatabase {
+function freshDb(
+  options: { cached?: boolean; descriptor?: boolean; prePlugin?: boolean } = {},
+): SQLiteDatabase {
   const db = adapt(new DatabaseSync(':memory:'));
   db.execSync('PRAGMA foreign_keys = ON');
   for (const sql of MIGRATIONS) {
@@ -183,6 +201,19 @@ describe('resolveCampaignPracticeRuntime', () => {
     const bare = freshDb({ cached: false });
 
     expect(() => resolveCampaignPracticeRuntime(bare, CAMPAIGN_ID)).toThrow(/岗位包/);
+  });
+
+  /**
+   * 插件化之前的旧战役没有 descriptor：排程那条路径按本机缓存的岗位包补一份，
+   * 练习共用同一个取法，所以老战役在手机端照样练得了，不会被「没有运行配置」挡住。
+   */
+  it('插件化之前的旧战役没有 descriptor 时，按本机缓存的岗位包补一份', () => {
+    const legacy = freshDb({ descriptor: false, prePlugin: true });
+
+    const runtime = resolveCampaignPracticeRuntime(legacy, CAMPAIGN_ID);
+
+    expect(runtime.rolePack.manifest.id).toBe(PACK.manifest.id);
+    expect(runtime.descriptor.rolePack.version).toBe(PACK.manifest.version);
   });
 });
 

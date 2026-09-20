@@ -1,5 +1,5 @@
 export const SALES_CUSTOMER_SUCCESS_ROLE_PACK_ID = 'sales-customer-success';
-export const SALES_CUSTOMER_SUCCESS_ROLE_PACK_VERSION = '1.3.0';
+export const SALES_CUSTOMER_SUCCESS_ROLE_PACK_VERSION = '1.0.0';
 
 /**
  * 可选能力：装了才有实时角色扮演，没装时对话轮退回文本行为题。

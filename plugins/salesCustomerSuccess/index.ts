@@ -57,6 +57,8 @@ export const salesCustomerSuccessRolePack: RolePack = defineRolePack({
     main: 'desktop/main.js',
     mobile: 'mobile/main.js',
     api: '^1.0',
+    // 页面由入口代码注册；这份声明让各端在激活之前就知道它的 id 与入口名
+    pages: [{ id: 'role-play', title: '客户对话模拟' }],
     // 本包自己的数据集合：对练会话（场景、对话记录、意图标注）存在这里，宿主按名字归档与
     // 取用，内容对它不透明；手机端只读同一份数据
     dataCollections: [{ name: 'role-play-sessions', schemaVersion: 1 }],

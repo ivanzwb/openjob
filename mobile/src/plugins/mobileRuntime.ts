@@ -28,10 +28,13 @@ export function replyScript(reqId: number, result: unknown, error: string | null
  * 结构：openjob 门面（postMessage 桥）→ CommonJS 装配 main.js → 收集注册的
  * 页面 → 渲染第一个页面（iframe srcDoc 内嵌 ui 资产，二层桥直通 RN）。
  */
-export function buildMobileRuntimeHtml(plugin: MobilePluginRuntime): string {
+export function buildMobileRuntimeHtml(plugin: MobilePluginRuntime, targetPageId?: string): string {
   const mainSource = JSON.stringify(plugin.mainSource);
   const uiAssets = JSON.stringify(plugin.uiAssets);
   const pluginId = JSON.stringify(plugin.pluginId);
+  // 宿主给了页面 id 时直接渲染那一页（手机端「更多」里的「源码」= source-repository）；
+  // 没给或对不上就回落第一页，与「一个包目前只有一页」的现状一致
+  const targetPage = JSON.stringify(targetPageId ?? '');
   return `<!doctype html>
 <html>
 <head>
@@ -48,6 +51,7 @@ export function buildMobileRuntimeHtml(plugin: MobilePluginRuntime): string {
 (function () {
   'use strict';
   var pluginId = ${pluginId};
+  var targetPage = ${targetPage};
   var uiAssets = ${uiAssets};
   var mainSource = ${mainSource};
   var reqSeq = 0;
@@ -215,8 +219,14 @@ export function buildMobileRuntimeHtml(plugin: MobilePluginRuntime): string {
   }
 
   function renderFirst() {
-    if (pages.length > 0) renderPage(pages[0]);
-    else postToRn({ openjobNoPages: true });
+    if (pages.length === 0) { postToRn({ openjobNoPages: true }); return; }
+    var wanted = null;
+    if (targetPage) {
+      for (var i = 0; i < pages.length; i++) {
+        if (pages[i].id === pluginId + ':' + targetPage) { wanted = pages[i]; break; }
+      }
+    }
+    renderPage(wanted || pages[0]);
   }
 
   // ui 资产的二层桥：iframe 内 postMessage → 这里转发给 RN

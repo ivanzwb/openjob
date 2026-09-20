@@ -94,7 +94,7 @@ describe('productManagerRolePack contract', () => {
   it('执行权限全部来自内嵌能力，「案例训练」页随包分发，能力插件只作为可选依赖', () => {
     expect(productManagerRolePack.manifest).toMatchObject({
       id: 'product-manager',
-      version: '1.3.0',
+      version: '1.0.0',
       type: 'role-pack',
       compatibility: { core: '^1.0.0', schema: 23 },
       // 解析器要 artifact:read，案例页的 LLM 流程要 llm:complete——两项都由内嵌的

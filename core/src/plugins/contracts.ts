@@ -307,6 +307,22 @@ export function validatePluginManifest(manifest: PluginManifest): PluginContract
     }
   }
 
+  // 页面声明：宿主在激活之前靠它给入口起名（手机端的「源码」这类入口），
+  // 所以只校验形状——id 稳定且包内唯一、标题非空。
+  const declaredPages = manifest.pages;
+  if (declaredPages !== undefined) {
+    if (!Array.isArray(declaredPages) || declaredPages.length === 0) {
+      issue(issues, 'manifest.pages', 'invalid-value', 'pages 必须是非空数组');
+    } else {
+      validateUniqueIds(declaredPages, 'manifest.pages', issues);
+      declaredPages.forEach((page, index) => {
+        if (!isNonEmpty(page?.title)) {
+          issue(issues, `manifest.pages[${index}].title`, 'invalid-value', '页面标题不能为空');
+        }
+      });
+    }
+  }
+
   return issues;
 }
 

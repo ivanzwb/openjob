@@ -69,12 +69,19 @@ function bridgeMethod(
   }
 }
 
-export function PluginRuntimeView({ plugin }: { plugin: MobilePluginRuntime }): React.JSX.Element {
+export function PluginRuntimeView({
+  plugin,
+  pageId,
+}: {
+  plugin: MobilePluginRuntime;
+  /** 包声明的页面 id；给定时运行时直接渲染那一页 */
+  pageId?: string;
+}): React.JSX.Element {
   const theme = useTheme();
   const webRef = useRef<WebView>(null);
   const [declared, setDeclared] = useState<readonly string[]>([]);
 
-  const html = buildMobileRuntimeHtml(plugin);
+  const html = buildMobileRuntimeHtml(plugin, pageId);
   // 配对桌面回传的宿主事件（stream:*）：落到 state，下一次渲染后经 effect 推给页面。
   // 拉一帧的顺序保证「回复」先注入、页面拿到 streamId，再按 id 过滤增量，不会把增量丢掉。
   const [pendingEvents, setPendingEvents] = useState<SyncRpcResponse['events']>([]);
@@ -184,7 +191,7 @@ export function PluginRuntimeView({ plugin }: { plugin: MobilePluginRuntime }): 
 export function PluginRuntimesScreen({
   route,
 }: {
-  route?: { params?: { pluginId?: string } };
+  route?: { params?: { pluginId?: string; pageId?: string } };
 }): React.JSX.Element {
   const theme = useTheme();
   const [plugins, setPlugins] = useState<MobilePluginRuntime[] | null>(null);
@@ -201,7 +208,7 @@ export function PluginRuntimesScreen({
   );
 
   if (selected) {
-    return <PluginRuntimeView plugin={selected} />;
+    return <PluginRuntimeView plugin={selected} pageId={route?.params?.pageId} />;
   }
 
   return (

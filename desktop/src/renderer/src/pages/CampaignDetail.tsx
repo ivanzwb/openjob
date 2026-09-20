@@ -23,6 +23,7 @@ import { KnowledgeGraph } from '../components/KnowledgeGraph';
 import { KnowledgeTree, type NodePatch } from '../components/KnowledgeTree';
 import { NodeFollowUpChat } from '../components/NodeFollowUpChat';
 import { NudgePanel } from '../components/NudgePanel';
+import { PracticeRunner } from '../components/PracticeRunner';
 import { QuizPanel } from '../components/QuizPanel';
 import { ReportSourceList } from '../components/ReportSourceList';
 import { TaskStudyPanel } from '../components/TaskStudyPanel';
@@ -69,7 +70,9 @@ export function CampaignDetail({
   const [reports, setReports] = useState<InterviewReportView[]>([]);
   const [showReports, setShowReports] = useState(false);
   const [annotations, setAnnotations] = useState<AnnotationView[]>([]);
-  const [pageTab, setPageTab] = useState<'intel' | 'study' | 'materials' | 'role'>('intel');
+  const [pageTab, setPageTab] = useState<'intel' | 'study' | 'materials' | 'practice' | 'role'>(
+    'intel',
+  );
   const [calendarFilterDate, setCalendarFilterDate] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<NodeStatus | 'all'>('all');
   const [markFilter, setMarkFilter] = useState<'all' | 'bookmarked' | 'marked' | 'last'>('all');
@@ -549,11 +552,8 @@ export function CampaignDetail({
               [
                 { id: 'intel' as const, label: '情报与面经' },
                 { id: 'study' as const, label: '学习' },
-                {
-                  id: 'materials' as const,
-                  label: '资料与标记',
-                  badge: markCount + bookmarkCount > 0 ? markCount + bookmarkCount : undefined,
-                },
+                { id: 'materials' as const, label: '资料与标记', badge: markCount + bookmarkCount > 0 ? markCount + bookmarkCount : undefined },
+                { id: 'practice' as const, label: '模拟面试' },
                 { id: 'role' as const, label: '岗位与证据' },
               ] as const
             ).map((tab) => (
@@ -1107,6 +1107,12 @@ export function CampaignDetail({
                 </ul>
               </section>
             )}
+          </div>
+        )}
+
+        {pageTab === 'practice' && (
+          <div className="h-full space-y-4 overflow-y-auto pr-1">
+            <PracticeRunner campaignId={id} />
           </div>
         )}
 

@@ -423,14 +423,56 @@ describe('默认插件（软件工程岗位包）', () => {
     expect(installedDirs()).toEqual([INSTALLED]);
   });
 
-  it('已经装着这个 id 时不再动它，也不覆盖', () => {
+  /**
+   * 包版本号不跟着包内容走（包内容迭代时不一定抬版本），所以同版本也要比内容：
+   * 本机装着的是同版本的另一份内容时，用安装包里那份换上去。
+   */
+  it('同版本但本机那份内容不是安装包里那份时换上去', () => {
     writeBundledPack();
-    installPluginBundle(bundle(rolePackFiles(SWE.manifest.id, SWE.manifest.version, SWE)));
-    const before = installedDirs();
+    installPluginBundle(
+      bundle({
+        ...rolePackFiles(SWE.manifest.id, SWE.manifest.version, SWE),
+        'extra.txt': '来自别处的那一份',
+      }),
+    );
 
     ensureBundledDefaultPlugin([bundleDir]);
 
-    expect(installedDirs()).toEqual(before);
+    expect(installedDirs()).toEqual([INSTALLED]);
+    expect(existsSync(join(paths.pluginsDir, INSTALLED, 'extra.txt'))).toBe(false);
+  });
+
+  it('换过一次之后不再重写：内容没变就不动盘', () => {
+    writeBundledPack();
+    ensureBundledDefaultPlugin([bundleDir]);
+    // 已装目录里放个标记：真被重写（先删目录再整体落盘）标记就不会还在
+    writeFileSync(join(paths.pluginsDir, INSTALLED, 'marker.txt'), 'x');
+
+    ensureBundledDefaultPlugin([bundleDir]);
+
+    expect(existsSync(join(paths.pluginsDir, INSTALLED, 'marker.txt'))).toBe(true);
+  });
+
+  /**
+   * 包内容是随包迭代的（页面声明、题型、量规、片段都写在包里），只装不升等于修好的东西永远
+   * 送不到老用户手上：装着更老的版本时要升上去。
+   */
+  it('本机装着更老的版本时升上去，旧版本目录留着（老战役还 pin 着它）', () => {
+    writeBundledPack();
+    installPluginBundle(bundle(rolePackFiles(SWE.manifest.id, '0.9.0', SWE)));
+
+    ensureBundledDefaultPlugin([bundleDir]);
+
+    expect(installedDirs()).toEqual([`${SWE.manifest.id}@0.9.0`, INSTALLED].sort());
+  });
+
+  it('本机装着更新的版本时不倒着覆盖', () => {
+    writeBundledPack();
+    installPluginBundle(bundle(rolePackFiles(SWE.manifest.id, '2.0.0', SWE)));
+
+    ensureBundledDefaultPlugin([bundleDir]);
+
+    expect(installedDirs()).toEqual([`${SWE.manifest.id}@2.0.0`]);
   });
 
   it('用户已经装了别的岗位包时不抢位置：装不进去，但不抛错', () => {

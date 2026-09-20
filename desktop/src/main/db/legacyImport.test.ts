@@ -377,7 +377,7 @@ describe('半迁移库（表跑到最新、迁移账没记全）', () => {
     loaded?.closeDb();
     loaded = null;
     vi.resetModules();
-    rmSync(state.userData, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    rmSync(state.userData, { recursive: true, force: true, maxRetries: 40, retryDelay: 100 });
   });
 
   /**
@@ -498,7 +498,7 @@ describe('0.6.x 旧库升级', () => {
     loaded = null;
     vi.resetModules();
     // Windows 上文件句柄回收有延迟，重试几次再删，避免用例因清理 EPERM 误报
-    rmSync(state.userData, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    rmSync(state.userData, { recursive: true, force: true, maxRetries: 40, retryDelay: 100 });
   });
 
   it('整库导入：数据到位、新 schema 齐全、写标记、备份逐字节保留', async () => {
@@ -526,6 +526,23 @@ describe('0.6.x 旧库升级', () => {
     expect(
       raw.prepare(`SELECT material_id, kind FROM task WHERE id = 'legacy-task-readcode'`).get(),
     ).toEqual({ material_id: 'legacy-repo', kind: 'readCode' });
+    // 旧仓库登记表要跟着导进「软件工程」包声明的 repositories 集合：0029 那条迁移是在空库上
+    // 跑的，看不到导入进来的 repo 行（与 0027 的处境一样），导入之后必须补搬一次，
+    // 否则升级上来的用户打开「源码」页一个仓库都没有
+    const repoRow = raw
+      .prepare(
+        `SELECT value_json FROM plugin_data
+         WHERE plugin_id = 'software-engineering' AND collection = 'repositories' AND key = ?`,
+      )
+      .get('legacy-repo') as { value_json: string } | undefined;
+    expect(repoRow).toBeDefined();
+    expect(JSON.parse(repoRow!.value_json)).toEqual({
+      id: 'legacy-repo',
+      label: 'https://example.com/x.git',
+      ready: true,
+      url: 'https://example.com/x.git',
+      status: 'ready',
+    });
     expect(
       raw.prepare(`SELECT content_md FROM speech_snippet WHERE id = 'legacy-speech'`).get(),
     ).toEqual({ content_md: '先说结论再展开' });
@@ -803,7 +820,7 @@ describe('旧库里有当前 schema 不认识的表（形状漂移）', () => {
   });
 
   afterEach(() => {
-    rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    rmSync(dir, { recursive: true, force: true, maxRetries: 40, retryDelay: 100 });
   });
 
   it('多出的 app_config 表被整表跳过并写进报告，其余数据照常导入', () => {

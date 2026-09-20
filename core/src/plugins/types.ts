@@ -97,6 +97,22 @@ export interface PluginManifest {
    * 里只作为信息行展示，不提供跳转。
    */
   annotationTargets?: ReadonlyArray<AnnotationTargetDeclaration>;
+  /**
+   * 本包在各端提供的 Webview 页面（`ctx.views.registerPage` 的那些）。
+   *
+   * 页面由包的入口代码在激活时注册，宿主在那之前拿不到它们的 id 与标题——手机端要给
+   * 「源码」这类入口起名、并按 id 打开指定页面，就需要这份声明。声明必须与入口实际注册的
+   * 页面一致（id 相同）；两处不一致时以注册结果为准，声明只用于「激活之前」。
+   */
+  pages?: ReadonlyArray<PluginPageDeclaration>;
+}
+
+/** 包声明的 Webview 页面：id 与入口标题，webviewPath 由入口代码注册时给。 */
+export interface PluginPageDeclaration {
+  /** 包内唯一，与 `ctx.views.registerPage({ id })` 一致 */
+  id: string;
+  /** 入口上显示的名字，例如「源码」 */
+  title: string;
 }
 
 export interface RoleMatcher {

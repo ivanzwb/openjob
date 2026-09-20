@@ -1,5 +1,5 @@
 export const PRODUCT_MANAGER_ROLE_PACK_ID = 'product-manager';
-export const PRODUCT_MANAGER_ROLE_PACK_VERSION = '1.3.0';
+export const PRODUCT_MANAGER_ROLE_PACK_VERSION = '1.0.0';
 
 /** 本包内嵌的能力 id。能力不是独立的包——它与题型、量规一样，都是本包的内容。 */
 export const ANALYTICS_CASE_CAPABILITY_ID = 'analytics-case';

@@ -87,4 +87,31 @@ describe('listMobilePluginRuntimes', () => {
   it('一个包都没同步过来时清单为空', () => {
     expect(listMobilePluginRuntimes(dbWith([]))).toEqual([]);
   });
+
+  /**
+   * 入口名与页面 id 来自包自己的声明：手机端在激活之前就能把「源码」这一项渲染出来，
+   * 并按 id 打开指定页面（页面本身由入口代码注册，声明与它同 id）。
+   */
+  it('包声明的页面随清单出来，入口名用包给的标题', () => {
+    const pack = packWithCode({
+      mobile: 'mobile/main.js',
+      codeAssets: { 'mobile/main.js': 'exports.activate = () => {};' },
+    });
+    pack.manifest.pages = [{ id: 'source-repository', title: '源码' }];
+
+    const [runtime] = listMobilePluginRuntimes(dbWith([pack]));
+
+    expect(runtime!.pages).toEqual([
+      { pluginId: 'demo-code', fullId: 'demo-code:source-repository', id: 'source-repository', title: '源码' },
+    ]);
+  });
+
+  it('没声明页面的包不产页面条目', () => {
+    const pack = packWithCode({
+      mobile: 'mobile/main.js',
+      codeAssets: { 'mobile/main.js': 'exports.activate = () => {};' },
+    });
+
+    expect(listMobilePluginRuntimes(dbWith([pack]))[0]!.pages).toEqual([]);
+  });
 });

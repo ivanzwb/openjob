@@ -41,6 +41,17 @@ describe('buildMobileRuntimeHtml', () => {
     expect(html).toContain('只允许');
   });
 
+  it('给了页面 id 就渲染那一页，没给就回落第一页', () => {
+    // 「更多」里的「源码」入口带着包声明的页面 id 进来，运行时按 <pluginId>:<pageId> 定位
+    const targeted = buildMobileRuntimeHtml(plugin, 'board');
+    expect(targeted).toContain('var targetPage = "board";');
+    expect(targeted).toContain("pages[i].id === pluginId + ':' + targetPage");
+
+    // 没带 id（列表进来）或 id 对不上（包改过页面）时都落在第一页，不会白屏
+    expect(buildMobileRuntimeHtml(plugin)).toContain('var targetPage = "";');
+    expect(targeted).toContain('renderPage(wanted || pages[0])');
+  });
+
   it('激活入口（与桌面同构）并把桥方法声明回传 RN（§11.2 桥自注册）', () => {
     const html = buildMobileRuntimeHtml({
       ...plugin,

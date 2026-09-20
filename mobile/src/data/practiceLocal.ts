@@ -47,6 +47,7 @@ import { computePriority } from '@core/priority';
 import { getMobileConfig } from '../config/settings';
 import { completeJsonWithSystem } from '../llm/json';
 import { loadCandidateContextInput } from './candidateContextLocal';
+import { loadRuntimeDescriptor } from './planLocal';
 import { getCachedRolePack } from './rolePackLocal';
 import { getDeviceIdentity } from '../sync/identity';
 import { writingAs } from '../sync/triggers';
@@ -65,16 +66,6 @@ export interface MobilePracticeRuntime {
   descriptor: CampaignRuntimeDescriptor;
   rolePack: RolePack;
   interviewLanguage: string;
-}
-
-interface DescriptorRow {
-  core_version: string;
-  role_pack: string;
-  industry_variant_id: string | null;
-  capabilities: string;
-  competency_baseline_version: string;
-  config_snapshot_hash: string;
-  resolved_at: number;
 }
 
 /**
@@ -100,24 +91,20 @@ function cachedPack(db: SQLiteDatabase, id: string, version: string): RolePack |
 /**
  * 取这场战役当时那一套岗位包。
  *
- * 与桌面同理：pin 的精确版本优先（复核旧评分要当时的量规），本机没有就退到同 id 的缓存版本；
- * 一个都没有才报 role-pack-unavailable——手机上「还没同步到包」是常态，界面要显示得出来。
+ * descriptor 的取法与排程共用同一份（`planLocal.loadRuntimeDescriptor`）：插件化之前就存在的
+ * 旧战役在那里会按本机缓存的岗位包补出一份，所以老战役在手机端也练得了，不会因为
+ * 「没有运行配置」被挡在门外。真正取不到包（一个都没同步过来）时才报 role-pack-unavailable。
  */
 export function resolveCampaignPracticeRuntime(
   db: SQLiteDatabase,
   campaignId: string,
 ): MobilePracticeRuntime {
-  const row = db.getFirstSync<DescriptorRow>(
-    `SELECT core_version, role_pack, industry_variant_id, capabilities,
-            competency_baseline_version, config_snapshot_hash, resolved_at
-     FROM campaign_runtime_descriptor WHERE campaign_id = ? ORDER BY revision DESC LIMIT 1`,
-    campaignId,
-  );
-  if (!row) {
-    throw new PracticeError('campaign-not-found', `这场备考还没有运行配置，先同步一次`);
+  const descriptor = loadRuntimeDescriptor(db, campaignId);
+  if (!descriptor) {
+    throw new PracticeError('campaign-not-found', '这场备考还没有岗位配置，先与桌面端同步一次');
   }
 
-  const ref = JSON.parse(row.role_pack) as { id: string; version: string };
+  const ref = descriptor.rolePack;
   const rolePack = cachedPack(db, ref.id, ref.version);
   if (!rolePack) {
     throw new PracticeError(
@@ -133,16 +120,7 @@ export function resolveCampaignPracticeRuntime(
   );
 
   return {
-    descriptor: {
-      campaignId,
-      coreVersion: row.core_version,
-      rolePack: ref,
-      industryVariantId: row.industry_variant_id ?? undefined,
-      capabilities: JSON.parse(row.capabilities) as CampaignRuntimeDescriptor['capabilities'],
-      competencyBaselineVersion: row.competency_baseline_version,
-      configSnapshotHash: row.config_snapshot_hash,
-      resolvedAt: row.resolved_at,
-    },
+    descriptor,
     rolePack,
     interviewLanguage: language?.interview_language ?? 'zh',
   };

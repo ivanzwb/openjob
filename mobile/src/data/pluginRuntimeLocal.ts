@@ -20,10 +20,10 @@ import { listCachedRolePacks } from './rolePackLocal';
 
 export interface MobilePluginRuntimePage {
   pluginId: string;
+  /** `<pluginId>:<pageId>`，与宿主页签键同一形状 */
   fullId: string;
   id: string;
   title: string;
-  webviewPath: string;
 }
 
 export interface MobilePluginRuntime {
@@ -37,12 +37,13 @@ export interface MobilePluginRuntime {
 }
 
 /**
- * 手机端「岗位包自带的页面」入口：只列**已经同步到本机**的包。
+ * 手机端「岗位包自带的页面」：只列**已经同步到本机**的包。
  *
- * 页面的 id 与标题由包的入口代码在激活时才注册（`ctx.views.registerPage`），宿主在打开之前
- * 拿不到，所以入口名用包自己的 displayName——那是包声明的、宿主认识的东西。
- * 关键性质是**存在性**：一个包都没同步过来时这个清单就是空的，界面上不会出现任何
- * 「源码页」之类的入口——它们是包的内容，不是基础包自带的页面。
+ * 页面名与 id 来自包自己声明的 `manifest.pages`（「源码」「案例训练」这些名字归包所有），
+ * 宿主在激活之前就能据此渲染入口，并按 id 打开指定页面。
+ *
+ * 关键性质是**存在性**：一个包都没同步过来时这个清单就是空的，界面上不会出现任何「源码页」
+ * 之类的入口——它们是包的内容，不是基础包自带的页面。
  */
 export function listMobilePluginRuntimes(db: SQLiteDatabase): MobilePluginRuntime[] {
   return listCachedRolePacks(db).flatMap((pack) => {
@@ -56,7 +57,12 @@ export function listMobilePluginRuntimes(db: SQLiteDatabase): MobilePluginRuntim
         version: manifest.version,
         displayName: manifest.displayName,
         permissions: [...manifest.permissions],
-        pages: [] as MobilePluginRuntimePage[],
+        pages: (manifest.pages ?? []).map((page) => ({
+          pluginId: manifest.id,
+          fullId: `${manifest.id}:${page.id}`,
+          id: page.id,
+          title: page.title,
+        })),
         uiAssets: platformAssets.uiAssets,
         mainSource: platformAssets.source,
       },

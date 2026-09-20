@@ -396,6 +396,29 @@ describe('plugin contracts', () => {
     expect(validatePluginManifest(manifest)).toEqual([]);
   });
 
+  /**
+   * 页面声明是给「激活之前」用的：手机端据此给「源码」这类入口起名、按 id 打开指定页面，
+   * 所以只校验形状——id 稳定且包内唯一、标题非空。
+   */
+  it('接受形状合法的页面声明，且页面 id 包内不得重名', () => {
+    const manifest = validCapabilityManifest();
+    manifest.pages = [{ id: 'source-repository', title: '源码' }];
+    expect(validatePluginManifest(manifest)).toEqual([]);
+
+    manifest.pages = [
+      { id: 'source-repository', title: '源码' },
+      { id: 'source-repository', title: '又一次源码' },
+      { id: 'case-practice', title: '  ' },
+    ];
+    const issues = validatePluginManifest(manifest);
+    expect(issues).toContainEqual(
+      expect.objectContaining({ path: 'manifest.pages[1].id', code: 'duplicate-id' }),
+    );
+    expect(issues).toContainEqual(
+      expect.objectContaining({ path: 'manifest.pages[2].title', code: 'invalid-value' }),
+    );
+  });
+
   it('标记目标类型不得占用宿主已知取值，且包内不得重名', () => {
     const manifest = validCapabilityManifest();
     manifest.annotationTargets = [
