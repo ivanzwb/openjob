@@ -32,6 +32,9 @@ export default tseslint.config(
       // plugins/softwareEngineering/desktop/ui/prism.vendored.js）：不按本仓风格改，
       // 也不参与 lint，与 dist / out 同类。
       '**/ui/*.vendored.js',
+      // 端到端用例的隔离 userData 副本：里面有为了让用例长起来而生成的假文件
+      // （超长文本、几百个 .ts），它们是被测数据不是源码，不参与 lint
+      'e2e/.runs/**',
     ],
   },
 

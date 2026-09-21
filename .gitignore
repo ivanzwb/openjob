@@ -23,6 +23,9 @@ secrets.json
 *.db-wal
 *.db-shm
 
+# 端到端测试的隔离 userData 副本（每例一份，跑完留着复盘，不入库）
+e2e/.runs/
+
 .DS_Store
 Thumbs.db
 *.log

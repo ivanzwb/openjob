@@ -8,6 +8,7 @@
   "scripts": {
     "typecheck": "pnpm -r --stream typecheck",
     "test": "vitest run",
+    "test:e2e": "vitest run -c e2e/vitest.config.ts",
     "lint": "eslint .",
     "dev": "pnpm --filter @openjob/desktop dev",
     "build": "pnpm --filter @openjob/desktop build",
