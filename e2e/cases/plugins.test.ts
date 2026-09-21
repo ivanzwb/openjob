@@ -17,10 +17,21 @@ import { LlmStub } from '../harness/stub';
 
 const PLUGIN = SOFTWARE_ENGINEERING;
 const ROLE_PLAY = 'sales-customer-success';
+const PRODUCT = 'product-manager';
+
+/** 案例训练要的那张表：三列，够它做列/行/局限说明 */
+const DATASET_CSV = [
+  'region,revenue,orders',
+  '华东,120000,320',
+  '华北,90000,240',
+  '华南,150000,410',
+  '西南,60000,150',
+].join('\n');
 
 let app: AppInstance;
 let env: Env;
 let stub: LlmStub;
+let datasetPath = '';
 
 const workspace = (pluginId = PLUGIN): string =>
   join(env.userData, 'plugin-workspace', pluginId);
@@ -59,10 +70,17 @@ beforeAll(async () => {
     plugins: [
       { id: SOFTWARE_ENGINEERING, version: '1.0.0' },
       { id: ROLE_PLAY, version: '1.0.0' },
-      { id: 'product-manager', version: '1.0.0' },
+      { id: PRODUCT, version: '1.0.0' },
     ],
   });
-  app = await launchApp({ userData: env.userData });
+  datasetPath = join(env.userData, 'dataset.csv');
+  writeFileSync(datasetPath, DATASET_CSV, 'utf8');
+  app = await launchApp({
+    userData: env.userData,
+    // artifact 原语的选择器只在真人操作时返回，CDP 驱动不了它；
+    // 宿主留了环境变量注入点（见 ipc/index.ts 的 e2eArtifactSelect）
+    env: { OPENJOB_E2E_ARTIFACT: datasetPath },
+  });
 }, 240_000);
 
 afterAll(async () => {
@@ -370,17 +388,42 @@ describe('E122–E126 客户对话模拟（销售包）', () => {
 });
 
 describe('E117–E121 案例训练（产品经理包）', () => {
+  it('E117 选表：artifact 原语按注入的文件读出内容', async () => {
+    // 选择器只在真人操作时返回，用例走宿主留的注入点（见 ipc/index.ts 的 e2eArtifactSelect）
+    const artifact = await app.page.invoke<{
+      name: string;
+      format: string;
+      text: string;
+      rows: string[][];
+    }>('pluginRuntime:artifact.read', { pluginId: PRODUCT });
+
+    expect(artifact.name).toBe('dataset.csv');
+    expect(artifact.format).toBe('delimited');
+    expect(artifact.rows[0]).toEqual(['region', 'revenue', 'orders']);
+    expect(artifact.rows).toHaveLength(5);
+  }, 120_000);
+
   /**
-   * 已知缺口：这一页的第一步是 `artifact.read`——它在主进程弹原生文件选择器，渲染层与插件页
-   * 都传不了路径，CDP 驱动不了。没有数据集时后面四步（出题 / 评分 / 推荐答案 / 案例历史）
-   * 也一并卡住：实测点「出题」在无数据集时不会发模型调用、也不会写 cases（页面静态文案里有
-   * 「题目」二字，容易误判成已经出题）。要覆盖这一组，得在宿主侧留一个「测试期直接给一份
-   * 数据集」的接缝，或者允许用例预置 artifact。
+   * **被产品缺陷挡住，不是测试台的问题。** 接缝已经通了（上面那条用例证明文件读得进来），
+   * 但页面自己在这一步就炸了：
+   *
+   *   caseData.parseDelimitedText is not a function
+   *
+   * 原因是 `practice.html` 的资产装配：它先建 CJS shim（`module.exports = {}`），再依次加载
+   * `case-data.js` 与 `case-analysis.js`；两个编译产物都以 `module.exports = __toCommonJS(...)`
+   * 结尾，**后加载的那个把前一个的导出整个覆盖掉**。页面接着 `const caseData = module.exports`
+   * 拿到的其实是 case-analysis 的导出，所以 `parseDelimitedText` / `buildTabularDataset` /
+   * `describeDataset` 全都不在，而 `validateAnalyticsCaseAnalysis` 在（它在被覆盖后的那份里）。
+   *
+   * 修法在包这边（加载完第一份就把导出挂到 window，再重建 module 给第二份用），改完重打
+   * product-manager 包即可。下面五步在那之前跑不通。
    */
-  it.skip('E117–E121 选表 → 出题 → 作答 → 评分 → 推荐答案 → 案例历史', async () => {
+  it.skip('E118–E121 出题 → 作答 → 评分 → 推荐答案 → 案例历史（待包侧修资产装配）', async () => {
     const frame = await openCasePractice();
-    await frameClick(frame, '#pick');
+    await frameClick(frame, '#gen');
   });
+
+  it.skip('E117b 坏样本：重复列名与残缺行被逐条报出来（同上，卡在选表之后）', () => undefined);
 });
 
 /** 切到案例训练页并连上它的 iframe */
@@ -435,7 +478,9 @@ async function waitForText(
   for (;;) {
     const text = await frameText(frame);
     if (pattern.test(text)) return text;
-    if (Date.now() > deadline) throw new Error(`插件页等待超时：${label}；当前正文 = ${text.slice(0, 200)}`);
+    if (Date.now() > deadline) {
+      throw new Error(`插件页等待超时：${label}；当前正文 = ${text.slice(0, 700)}`);
+    }
     await sleep(300);
   }
 }

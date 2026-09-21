@@ -94,7 +94,14 @@ describe('E04–E05 进程与目录', () => {
 });
 
 describe('E06–E08 随包分发的默认插件', () => {
-  it('E06 本机没有时把它装上，并记下内容哈希', async () => {
+  /**
+   * 这一簇每条都要起 1–2 个实例，而 boot 文件前面已经起了十来个 Electron 进程。
+   * 全量跑时偶发「等 CDP target / 等渲染挂载」超时，单跑必过——是资源压力不是逻辑问题。
+   * 给它一次重试：重试在同一份 userData 上重跑，不影响断言的含义。
+   */
+  const RETRY = { retry: 1 } as const;
+
+  it('E06 本机没有时把它装上，并记下内容哈希', RETRY, async () => {
     const env = makeEnv('boot-install', { plugins: [], dismissBundled: false });
     app = await launchApp({ userData: env.userData });
 
@@ -106,7 +113,7 @@ describe('E06–E08 随包分发的默认插件', () => {
     expect(state.installed[0]!.sha256).toMatch(/^[a-f0-9]{64}$/);
   }, 180_000);
 
-  it('E07 同版本但盘上那份内容变了就换掉；内容没变则不动盘', async () => {
+  it('E07 同版本但盘上那份内容变了就换掉；内容没变则不动盘', RETRY, async () => {
     const env = makeEnv('boot-replace'); // 预置的是随包那份，但还没有「上次装的是哪份」的记录
     const packJson = join(packDir(env), 'pack.json');
     const original = JSON.parse(readFileSync(packJson, 'utf8')) as Record<string, unknown>;
@@ -125,7 +132,7 @@ describe('E06–E08 随包分发的默认插件', () => {
     expect(kept._stale).toBe(true);
   }, 240_000);
 
-  it('E08 用户卸载过就不再装回来', async () => {
+  it('E08 用户卸载过就不再装回来', RETRY, async () => {
     const env = makeEnv('boot-dismissed', { plugins: [], dismissBundled: true });
     app = await launchApp({ userData: env.userData });
     expect(existsSync(packDir(env))).toBe(false);

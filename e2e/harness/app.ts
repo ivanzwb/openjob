@@ -58,10 +58,25 @@ export class CdpSession {
   static async connect(wsUrl: string): Promise<CdpSession> {
     const ws = new WebSocket(wsUrl);
     await new Promise<void>((resolve, reject) => {
-      ws.addEventListener('open', () => resolve(), { once: true });
-      ws.addEventListener('error', () => reject(new Error(`CDP 连接失败：${wsUrl}`)), {
-        once: true,
-      });
+      // 连接阶段必须有超时：没有它，一次卡住的握手会让整个用例挂到 vitest 的 240s 上限，
+      // 报出来只有一句「Test timed out」，看不出卡在哪
+      const timer = setTimeout(() => reject(new Error(`CDP 连接超时（10s）：${wsUrl}`)), 10_000);
+      ws.addEventListener(
+        'open',
+        () => {
+          clearTimeout(timer);
+          resolve();
+        },
+        { once: true },
+      );
+      ws.addEventListener(
+        'error',
+        () => {
+          clearTimeout(timer);
+          reject(new Error(`CDP 连接失败：${wsUrl}`));
+        },
+        { once: true },
+      );
     });
     const session = new CdpSession(ws);
     await session.send('Runtime.enable');

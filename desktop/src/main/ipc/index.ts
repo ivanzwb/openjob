@@ -194,6 +194,22 @@ function pruneLlmRoles(config: AppConfig): AppConfig {
   return { ...config, llm: { ...config.llm, roles } };
 }
 
+/**
+ * 端到端用例往 artifact 原语里注入一份文件的入口。
+ *
+ * 为什么需要一个口子：这条原语的语义就是「用户在主进程的选择器里挑一个文件」，选择器只在
+ * 真人操作时才返回——自动化用例驱动不了它，于是「选表 → 出题 → 评分 → 推荐答案」整条链路
+ * 都测不到。`artifactRead` 本来就留了 `select` 这个测试接缝，这里把它接到环境变量上。
+ *
+ * 边界刻意守住：变量只在**宿主进程**读，不是 IPC 契约的一部分，渲染层与插件页依旧传不了
+ * 路径；变量没设时行为与以前一字不差。它也不给攻击者任何新能力——能设这台机器环境变量的人
+ * 本来就能让主进程读任意文件。
+ */
+function e2eArtifactSelect(): ((pluginId: string) => string | null) | undefined {
+  const injected = process.env['OPENJOB_E2E_ARTIFACT'];
+  return injected ? () => injected : undefined;
+}
+
 export function registerIpcHandlers(): void {
   handle('app:getPaths', () => getAppPaths());
   handle('app:getVersion', () => app.getVersion());
@@ -356,7 +372,7 @@ export function registerIpcHandlers(): void {
   // artifact 原语（分发计划 §11.2）：请求里没有路径——选择器弹在主进程，
   // 渲染层拿不到也就传不了本机路径；每次调用都经 permissionGateway 校验 artifact:read
   handle('pluginRuntime:artifact.read', ({ pluginId }) =>
-    artifactRead(pluginId, { permissionGateway }),
+    artifactRead(pluginId, { permissionGateway, select: e2eArtifactSelect() }),
   );
   // 话术库原语（library:write）：把包页的一段文字存进用户的话术库，并按包自己起的
   // sourceKind 取回。授权来自包自己的 manifest 声明（pluginLibrary 里统一判），

@@ -19,19 +19,24 @@
 | 模拟面试（E70–E78） | `practice.test.ts` | ✅ 9/9 |
 | 话术（E80–E84） | `speech.test.ts` | ✅ 5/5（三种导出归手工） |
 | 设置（E90–E99） | `settings.test.ts` | ✅ 10/10 |
-| 能力页（E110–E126） | `plugins.test.ts` | ✅ 8/8 + 1 跳过 |
+| 能力页（E110–E126） | `plugins.test.ts` | ✅ 9/9 + 2 跳过 |
 | 跨端（E130–E134） | `sync.test.ts` | ✅ 6/6（含真实配对与一次完整交换）+ 3 跳过 |
 | 语音（E140–E141） | `voice.test.ts` | ✅ 1/1 + 2 跳过 |
 | 边界（E150–E156） | `errors.test.ts` | ✅ 7/7 |
 
-### 0.2 跳过的 6 条与原因
+### 0.2 跳过的 7 条与原因
 
 | 用例 | 原因 |
 |---|---|
-| E117–E121 案例训练 | 第一步 `artifact.read` 弹原生文件选择器，CDP 驱动不了；实测无数据集时「出题」也不发模型调用、不写 `cases`，四步一并卡住。要覆盖需在宿主侧留「测试期直接给一份数据集」的接缝 |
+| E118–E121 案例训练五步、E117b 坏样本 | **包侧缺陷**：`practice.html` 先建 CJS shim 再依次加载 `case-data.js` 与 `case-analysis.js`，两个编译产物都以 `module.exports = __toCommonJS(...)` 结尾，**后加载的把前一个的导出整个覆盖**；页面 `const caseData = module.exports` 拿到的是 case-analysis 的那份，于是 `parseDelimitedText` / `buildDataset` / `describeDataset` 全不在（`validateAnalyticsCaseAnalysis` 在）。E117（artifact 原语读文件）已通过，说明不是测试台的问题 |
 | E132 / E133 手机端页面 | 那是 React Native 应用，不属于这套桌面 CDP 驱动；要覆盖得给手机端配一套自己的驱动（模拟器 + Maestro/Detox 之类）。桌面这一半已由 E130/E131 覆盖 |
 | E134b 打包态的版本闸门 | `checkPeerVersion` 在 `app.isPackaged` 为假时**故意放行**（本地两端版本号本来就不同）；真正的闸门只有在打包产物上才验得到，那是另一套运行方式 |
 | E140b / E141 转写 | 要预置 STT 模型（首次运行会联网下载） |
+
+**artifact 原语怎么自动化**：它的语义就是「用户在主进程的选择器里挑一个文件」，选择器只在真人
+操作时才返回。宿主留了 `OPENJOB_E2E_ARTIFACT` 注入点（见 `ipc/index.ts` 的 `e2eArtifactSelect`）：
+变量只在**宿主进程**读，不是 IPC 契约的一部分，渲染层与插件页依旧传不了路径，变量没设时行为
+与以前一字不差。E117 靠它验到「读进来的表被解析成 5 行 3 列」。
 
 **配对是怎么跑通的**：发起方是手机（桌面只出二维码），桌面端因此没有「加入」入口。测试台
 自己按协议来——`/sync/ping` 问版本 → `/sync/pair` 提交配对码换共享密钥 → `/sync/exchange`
