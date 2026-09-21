@@ -1,7 +1,7 @@
 # OpenJob 端到端测试方案
 
-> 状态：**测试台与全部 11 组用例都已落地**。`pnpm test:e2e` → 11 个文件 / **92 通过 /
-> 6 跳过 / 0 失败**；跳过项全部在代码里 `it.skip` 并写明原因（汇总见 §0.2）。
+> 状态：**测试台与全部 11 组用例都已落地**。`pnpm test:e2e` → 11 个文件 / **95 通过 /
+> 5 跳过 / 0 失败**；跳过项全部在代码里 `it.skip` 并写明原因（汇总见 §0.2）。
 > 跑法见 [e2e/README.md](../e2e/README.md)。
 > 上游：[GENERAL_INTERVIEW_AGENT_ARCHITECTURE.md](./GENERAL_INTERVIEW_AGENT_ARCHITECTURE.md) §18（单元 / Contract / Golden / Cross-client / Isolation）
 > 本文补的是 §18 没覆盖的那一层：**在真实 Electron 应用上，按用户能看见的动作走完整链路**。
@@ -19,16 +19,15 @@
 | 模拟面试（E70–E78） | `practice.test.ts` | ✅ 9/9 |
 | 话术（E80–E84） | `speech.test.ts` | ✅ 5/5（三种导出归手工） |
 | 设置（E90–E99） | `settings.test.ts` | ✅ 10/10 |
-| 能力页（E110–E126） | `plugins.test.ts` | ✅ 9/9 + 2 跳过 |
+| 能力页（E110–E126） | `plugins.test.ts` | ✅ 11/11（含案例训练全链路） |
 | 跨端（E130–E134） | `sync.test.ts` | ✅ 6/6（含真实配对与一次完整交换）+ 3 跳过 |
 | 语音（E140–E141） | `voice.test.ts` | ✅ 1/1 + 2 跳过 |
 | 边界（E150–E156） | `errors.test.ts` | ✅ 7/7 |
 
-### 0.2 跳过的 7 条与原因
+### 0.2 跳过的 5 条与原因
 
 | 用例 | 原因 |
 |---|---|
-| E118–E121 案例训练五步、E117b 坏样本 | **包侧缺陷**：`practice.html` 先建 CJS shim 再依次加载 `case-data.js` 与 `case-analysis.js`，两个编译产物都以 `module.exports = __toCommonJS(...)` 结尾，**后加载的把前一个的导出整个覆盖**；页面 `const caseData = module.exports` 拿到的是 case-analysis 的那份，于是 `parseDelimitedText` / `buildDataset` / `describeDataset` 全不在（`validateAnalyticsCaseAnalysis` 在）。E117（artifact 原语读文件）已通过，说明不是测试台的问题 |
 | E132 / E133 手机端页面 | 那是 React Native 应用，不属于这套桌面 CDP 驱动；要覆盖得给手机端配一套自己的驱动（模拟器 + Maestro/Detox 之类）。桌面这一半已由 E130/E131 覆盖 |
 | E134b 打包态的版本闸门 | `checkPeerVersion` 在 `app.isPackaged` 为假时**故意放行**（本地两端版本号本来就不同）；真正的闸门只有在打包产物上才验得到，那是另一套运行方式 |
 | E140b / E141 转写 | 要预置 STT 模型（首次运行会联网下载） |

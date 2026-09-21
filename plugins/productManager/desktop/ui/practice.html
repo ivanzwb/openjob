@@ -52,13 +52,30 @@
     <ul id="cases"></ul>
 
     <!-- 页面资产是 CJS：先预备 module/exports，随后的 case-data.js / case-analysis.js
-         由宿主把包内同名 .ts 编译后内联进这里，模块即挂在这个对象上。 -->
+         由宿主把包内同名 .ts 编译后内联进这里，模块即挂在这个对象上。
+
+         两个编译产物都以 `module.exports = __toCommonJS(...)` 结尾，也就是**整体替换**
+         module.exports——直接顺序加载的话，后加载的那份会把前一份的导出整个覆盖掉。
+         页面用到的两半正好分在两边（表格解析在 case-data：parseDelimitedText /
+         buildTabularDataset；分析与校验在 case-analysis：describeDataset /
+         datasetLimitations / validateAnalyticsCaseAnalysis），所以每加载完一份就先把导出
+         存下来，再重建一个干净的 module 交给下一份。 -->
     <script>
       var module = { exports: {} };
       var exports = module.exports;
     </script>
     <script src="case-data.js"></script>
+    <script>
+      var caseDataExports = module.exports;
+      module = { exports: {} };
+      exports = module.exports;
+    </script>
     <script src="case-analysis.js"></script>
+    <script>
+      var caseAnalysisExports = module.exports;
+      module = { exports: {} };
+      exports = module.exports;
+    </script>
     <script>
       // 受控桥：只能调本包声明过的方法（见 desktop/main.ts），未声明的调用落到「未开放的桥方法」。
       function call(method, params) {
@@ -76,7 +93,8 @@
         });
       }
 
-      const caseData = module.exports;
+      // 两半合起来才是页面用到的那套（见文件头 asset 注释）
+      const caseData = Object.assign({}, caseDataExports, caseAnalysisExports);
       const COLLECTION = 'cases';
 
       // ── 提示词：正文归本包所有，宿主只负责端点与审计 ──────────────────────

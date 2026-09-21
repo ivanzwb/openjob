@@ -27,6 +27,8 @@ const DATASET_CSV = [
   '华南,150000,410',
   '西南,60000,150',
 ].join('\n');
+/** 坏样本：重复列名 + 某行少一列 */
+const BAD_DATASET_CSV = ['a,b,b', '1,2,3', '4,5'].join('\n');
 
 let app: AppInstance;
 let env: Env;
@@ -403,27 +405,99 @@ describe('E117–E121 案例训练（产品经理包）', () => {
     expect(artifact.rows).toHaveLength(5);
   }, 120_000);
 
-  /**
-   * **被产品缺陷挡住，不是测试台的问题。** 接缝已经通了（上面那条用例证明文件读得进来），
-   * 但页面自己在这一步就炸了：
-   *
-   *   caseData.parseDelimitedText is not a function
-   *
-   * 原因是 `practice.html` 的资产装配：它先建 CJS shim（`module.exports = {}`），再依次加载
-   * `case-data.js` 与 `case-analysis.js`；两个编译产物都以 `module.exports = __toCommonJS(...)`
-   * 结尾，**后加载的那个把前一个的导出整个覆盖掉**。页面接着 `const caseData = module.exports`
-   * 拿到的其实是 case-analysis 的导出，所以 `parseDelimitedText` / `buildTabularDataset` /
-   * `describeDataset` 全都不在，而 `validateAnalyticsCaseAnalysis` 在（它在被覆盖后的那份里）。
-   *
-   * 修法在包这边（加载完第一份就把导出挂到 window，再重建 module 给第二份用），改完重打
-   * product-manager 包即可。下面五步在那之前跑不通。
-   */
-  it.skip('E118–E121 出题 → 作答 → 评分 → 推荐答案 → 案例历史（待包侧修资产装配）', async () => {
+  it('E118–E121 出题 → 作答 → 评分 → 推荐答案 → 案例历史', async () => {
     const frame = await openCasePractice();
-    await frameClick(frame, '#gen');
-  });
+    // 先选表：后面几步都要数据集当输入
+    expect(await frameClick(frame, '#pick')).toBe(true);
+    await waitForText(frame, /region|华东/, '数据集概览落屏', 60_000);
 
-  it.skip('E117b 坏样本：重复列名与残缺行被逐条报出来（同上，卡在选表之后）', () => undefined);
+    stub.clear();
+    expect(await frameClick(frame, '#gen')).toBe(true);
+    await waitForText(frame, /E2E 短标题|情景|场景/, '出题结果落屏', 60_000);
+
+    const casesAfterGen = await app.page.invoke<Array<{ value: string }>>(
+      'pluginRuntime:data.list',
+      { pluginId: PRODUCT, collection: 'cases' },
+    );
+    expect(casesAfterGen.length).toBeGreaterThan(0);
+    expect(stub.requests.length).toBeGreaterThan(0);
+
+    // 作答 + 评分
+    await frame.evaluate(`(() => {
+      const answer = document.querySelector('#answer');
+      if (!answer) return;
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+      setter.call(answer, 'E2E 的作答：先看 revenue 与 orders 的关系，再给假设与验证方式，最后给建议与风险。');
+      answer.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`);
+    expect(await frameClick(frame, '#score')).toBe(true);
+    await waitForText(frame, /反馈|分/, '评分结果落屏', 60_000);
+
+    // 推荐答案
+    expect(await frameClick(frame, '#rec')).toBe(true);
+    // 页面静态文案里也有「答案」二字，所以等的是**落库**而不是文案；
+    // 字段名是页面自己的 recommendedAnswerMd（不是 llm 返回的 answerMd）
+    await app.page.waitUntil(
+      async () => {
+        const list = await app.page.invoke<Array<{ value: string }>>('pluginRuntime:data.list', {
+          pluginId: PRODUCT,
+          collection: 'cases',
+        });
+        const withAnswer = list.filter(
+          (item) =>
+            typeof (JSON.parse(item.value) as { recommendedAnswerMd?: string })
+              .recommendedAnswerMd === 'string',
+        );
+        return withAnswer.length > 0 ? list : '';
+      },
+      '推荐答案落库',
+      60_000,
+    );
+
+    // 历史里能回看：评分与答案都写进了本包的 cases 集合
+    const stored = (
+      await app.page.invoke<Array<{ value: string }>>('pluginRuntime:data.list', {
+        pluginId: PRODUCT,
+        collection: 'cases',
+      })
+    ).map(
+      (item) => JSON.parse(item.value) as { score?: number; recommendedAnswerMd?: string },
+    );
+    expect(stored.some((item) => typeof item.score === 'number')).toBe(true);
+    expect(stored.some((item) => typeof item.recommendedAnswerMd === 'string')).toBe(true);
+  }, 300_000);
+
+  it('E117b 坏样本：重复列名与残缺行被报出来，而不是照单全收', async () => {
+    const badPath = join(env.userData, 'bad-dataset.csv');
+    writeFileSync(badPath, BAD_DATASET_CSV, 'utf8');
+
+    // 注入点读的是环境变量，换一份坏样本要另起实例；而同一份 userData 上单实例锁只允许一个，
+    // 所以先把主实例停掉（本用例是该文件最后一条）
+    await app.stop();
+    const badApp = await launchApp({
+      userData: env.userData,
+      env: { OPENJOB_E2E_ARTIFACT: badPath },
+    });
+    try {
+      await badApp.page.evaluate(`(() => {
+        const button = [...document.querySelectorAll('header nav button')]
+          .find((b) => b.textContent.trim() === '案例训练');
+        button?.click();
+      })()`);
+      await sleep(900);
+      const badFrame = await badApp.frameFor('案例训练');
+      await frameClick(badFrame, '#pick');
+      const text = await waitForText(
+        badFrame,
+        /重复|列名|列数|不一致|无法/,
+        '坏样本报错落屏',
+        60_000,
+      );
+      expect(text).toMatch(/重复|列名|列数|不一致/);
+    } finally {
+      await badApp.stop();
+    }
+  }, 240_000);
 });
 
 /** 切到案例训练页并连上它的 iframe */
