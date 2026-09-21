@@ -91,7 +91,14 @@ function DimensionScoreCard({
  * 会话 ID 落 localStorage：出题、追问、评分都是分钟级的模型调用，中途切页面回来时
  * 让用户重新出题等于把刚才那几分钟连同作答一起丢掉。
  */
-export function PracticeRunner({ campaignId }: { campaignId: string }): React.JSX.Element {
+export function PracticeRunner({
+  campaignId,
+  leading,
+}: {
+  campaignId: string;
+  /** 工具行最前面的一项（页面级的「关联备考」这类选择）；不传时这一行只有练习自己的那几项 */
+  leading?: React.ReactNode;
+}): React.JSX.Element {
   const [examForms, setExamForms] = useState<ExamFormDefinition[]>([]);
   const [examFormChoice, setExamFormChoice] = useState('');
   // 已选语言；空串表示「还没选过」，落到岗位意图里的面试语言
@@ -246,6 +253,7 @@ export function PracticeRunner({ campaignId }: { campaignId: string }): React.JS
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
+        {leading}
         <label className="flex shrink-0 items-center gap-2 whitespace-nowrap">
           <span className="text-xs text-[var(--color-muted)]">题型</span>
           <select

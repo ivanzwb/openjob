@@ -32,6 +32,29 @@ export function MockInterview(): React.JSX.Element {
 
   useDataRefresh(refresh);
 
+  // 关联备考与题型 / 面试语言 / 开始练习 同一条工具行：标签与选择并排（不是上下），选择
+  // 吃掉剩余宽度，链接窄时随 flex-wrap 整项换行
+  const campaignPicker = (
+    <label className="flex min-w-0 max-w-md flex-1 items-center gap-2 whitespace-nowrap">
+      <span className="text-xs text-[var(--color-muted)]">关联备考</span>
+      <select
+        value={campaignId}
+        onChange={(e) => setCampaignId(e.target.value)}
+        className={SELECT_CLASS}
+      >
+        {campaigns.length === 0 ? (
+          <option value="">还没有备考</option>
+        ) : (
+          campaigns.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.company} · {item.roleTitle}
+            </option>
+          ))
+        )}
+      </select>
+    </label>
+  );
+
   return (
     <PageShell className="space-y-6">
       <header>
@@ -41,31 +64,15 @@ export function MockInterview(): React.JSX.Element {
         </p>
       </header>
 
-      <label className="block max-w-md space-y-1">
-        <span className="text-xs text-[var(--color-muted)]">关联备考</span>
-        <select
-          value={campaignId}
-          onChange={(e) => setCampaignId(e.target.value)}
-          className={SELECT_CLASS}
-        >
-          {campaigns.length === 0 ? (
-            <option value="">还没有备考</option>
-          ) : (
-            campaigns.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.company} · {item.roleTitle}
-              </option>
-            ))
-          )}
-        </select>
-      </label>
-
       {campaignId ? (
-        <PracticeRunner campaignId={campaignId} />
+        <PracticeRunner campaignId={campaignId} leading={campaignPicker} />
       ) : (
-        <p className="text-sm text-[var(--color-muted)]">
-          先去「备考」创建一场备考，这里才能出题。
-        </p>
+        <>
+          <div className="flex flex-wrap items-end gap-3">{campaignPicker}</div>
+          <p className="text-sm text-[var(--color-muted)]">
+            先去「备考」创建一场备考，这里才能出题。
+          </p>
+        </>
       )}
     </PageShell>
   );
