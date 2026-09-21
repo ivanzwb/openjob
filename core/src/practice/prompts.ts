@@ -23,16 +23,30 @@ export interface PracticeQuestionRequestInput {
   language?: string;
 }
 
+/**
+ * 出题的 JSON 结构。
+ *
+ * 片段只写「这一题型考什么」，结构归练习协议：字段名同时是读回端
+ * （readGeneratedQuestion）认的那几个，声明与读回放在同一处才不会各说各话。
+ * 基线题型（自我介绍）与产品 / 销售的片段都不复述结构（见 baselineFragments.ts），
+ * 缺了这一段模型会自己发挥 JSON，读回端只能报「模型返回的题目为空」。
+ * 字段名沿用 0.6.x 的 design.case（title + scenarioMd），软件工程包片段里写的也是这一组。
+ */
+const QUESTION_OUTPUT_SCHEMA = `输出 JSON：
+{
+  "title": "短标题",
+  "scenarioMd": "markdown 题目正文"
+}`;
+
 export function practiceQuestionRequest(input: PracticeQuestionRequestInput): string {
   const lines: string[] = [];
   if (input.language) lines.push(interviewLanguageInstruction(input.language));
   if (input.followUpRound === undefined) {
-    lines.push('本次只出一道题，输出结构沿用上面片段里要求的 JSON，不要额外加字段。');
+    lines.push(`本次只出一道题，不要额外加字段。\n${QUESTION_OUTPUT_SCHEMA}`);
   } else {
     lines.push(
       `这是第 ${input.followUpRound} 轮追问（上限 ${input.format.followUpPolicy.maxRounds} 轮）：` +
-        '不要换新题，就着候选人刚才的作答往下追问一层，' +
-        '输出结构仍沿用上面片段里要求的 JSON，把追问写进题干字段。',
+        `不要换新题，就着候选人刚才的作答往下追问一层，把追问写进题干字段。\n${QUESTION_OUTPUT_SCHEMA}`,
     );
   }
   if (input.userRequest?.trim()) lines.push(input.userRequest.trim());
@@ -44,13 +58,23 @@ export function practiceQuestionRequest(input: PracticeQuestionRequestInput): st
  *
  * 「必须逐字照抄」这条不写模型就会改写引文——改写过的句子在原回答里定位不到，
  * 评分引擎会整条打回，用户看到的是一次失败的评分而不是一次不可复核的评分。
+ *
+ * 反馈与改进稿的字段名也在这里声明，理由与出题同：片段只写评分侧重，
+ * 基线（自我介绍）与产品 / 销售的片段不给结构，少声明了模型就只交 dimensions，
+ * 界面上的「整体反馈」与「改进稿」会是空的。
  */
+const SCORE_OUTPUT_SCHEMA = `输出 JSON：
+{
+  "feedbackMd": "逐点反馈",
+  "improvedOutlineMd": "改进后的答题稿 / 大纲",
+  "dimensions": [{ "dimensionId": "维度 ID", "score": 1-5, "answerQuote": "候选人回答里的原句", "rationale": "为什么落在这一档" }]
+}`;
+
 export function practiceScoreRequest(rubric: RubricDefinition, language?: string): string {
   const ids = rubric.dimensions.map((dimension) => dimension.id).join('、');
   return [
     ...(language ? [interviewLanguageInstruction(language)] : []),
-    '除片段已经要求的字段外，本次还要输出 dimensions 数组，逐维度对照上面的评分量规打分：',
-    '"dimensions": [{ "dimensionId": "维度 ID", "score": 1-5, "answerQuote": "候选人回答里的原句", "rationale": "为什么落在这一档" }]',
+    `逐维度对照上面的评分量规打分，按下面的结构输出 JSON，不要额外加字段：\n${SCORE_OUTPUT_SCHEMA}`,
     `- 量规里的每个维度都要给一条，一条不能少：${ids}；`,
     '- dimensionId 只能用上面列出的 ID，不要自己造；',
     '- answerQuote 必须是候选人回答里真实存在的一段连续文字，逐字照抄，不要改写、不要翻译、不要把两处拼在一起；',

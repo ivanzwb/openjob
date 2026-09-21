@@ -47,7 +47,22 @@ describe('practiceQuestionRequest', () => {
 
   it('用户要求为空白时不留空行', () => {
     const text = practiceQuestionRequest({ format: FORMAT, userRequest: '   ' });
-    expect(text).not.toContain('\n');
+    expect(text).not.toContain('\n\n');
+    expect(text.trimEnd()).toBe(text);
+  });
+
+  /**
+   * 结构由协议声明，片段只写「这一题型考什么」：基线（自我介绍）与产品 / 销售的片段
+   * 都不复述结构，缺了这一段模型自己发挥 JSON，读回端只能报「模型返回的题目为空」。
+   */
+  it('无论首题还是追问都带上出题 JSON 结构', () => {
+    for (const text of [
+      practiceQuestionRequest({ format: FORMAT }),
+      practiceQuestionRequest({ format: FORMAT, followUpRound: 1 }),
+    ]) {
+      expect(text).toContain('"title"');
+      expect(text).toContain('"scenarioMd"');
+    }
   });
 });
 
@@ -63,6 +78,14 @@ describe('practiceScoreRequest', () => {
 
   it('明确要求「没展开也要给分并引用原话」，堵住替候选人补话', () => {
     expect(practiceScoreRequest(TEST_RUBRIC)).toContain('不要替他补一句');
+  });
+
+  /** 反馈与改进稿的字段名同样归协议声明，否则界面上的「整体反馈」「改进稿」是空的。 */
+  it('声明反馈与改进稿字段', () => {
+    const text = practiceScoreRequest(TEST_RUBRIC);
+    expect(text).toContain('"feedbackMd"');
+    expect(text).toContain('"improvedOutlineMd"');
+    expect(text).toContain('"dimensions"');
   });
 });
 
