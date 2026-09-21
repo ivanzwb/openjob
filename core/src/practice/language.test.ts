@@ -51,7 +51,7 @@ describe('哪些题型带面试语言选择', () => {
     expect(examFormTakesLanguage(SELF_INTRO_EXAM_FORM_ID)).toBe(true);
     expect(formatTakesInterviewLanguage(CORE_SELF_INTRO_FORMAT_ID)).toBe(true);
 
-    for (const form of softwareEngineeringRolePack.examForms) {
+    for (const form of softwareEngineeringRolePack.examForms ?? []) {
       expect(examFormTakesLanguage(form.id)).toBe(false);
     }
     expect(formatTakesInterviewLanguage(SOFTWARE_ENGINEERING_FORMAT_IDS.knowledge)).toBe(false);
