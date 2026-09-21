@@ -1,6 +1,6 @@
 # OpenJob 端到端测试方案
 
-> 状态：**测试台与全部 11 组用例都已落地**。`pnpm test:e2e` → 11 个文件 / **91 通过 /
+> 状态：**测试台与全部 11 组用例都已落地**。`pnpm test:e2e` → 11 个文件 / **92 通过 /
 > 6 跳过 / 0 失败**；跳过项全部在代码里 `it.skip` 并写明原因（汇总见 §0.2）。
 > 跑法见 [e2e/README.md](../e2e/README.md)。
 > 上游：[GENERAL_INTERVIEW_AGENT_ARCHITECTURE.md](./GENERAL_INTERVIEW_AGENT_ARCHITECTURE.md) §18（单元 / Contract / Golden / Cross-client / Isolation）
@@ -20,7 +20,7 @@
 | 话术（E80–E84） | `speech.test.ts` | ✅ 5/5（三种导出归手工） |
 | 设置（E90–E99） | `settings.test.ts` | ✅ 10/10 |
 | 能力页（E110–E126） | `plugins.test.ts` | ✅ 8/8 + 1 跳过 |
-| 跨端（E130–E134） | `sync.test.ts` | ✅ 3/3（桌面侧）+ 3 跳过 |
+| 跨端（E130–E134） | `sync.test.ts` | ✅ 6/6（含真实配对与一次完整交换）+ 3 跳过 |
 | 语音（E140–E141） | `voice.test.ts` | ✅ 1/1 + 2 跳过 |
 | 边界（E150–E156） | `errors.test.ts` | ✅ 7/7 |
 
@@ -29,9 +29,15 @@
 | 用例 | 原因 |
 |---|---|
 | E117–E121 案例训练 | 第一步 `artifact.read` 弹原生文件选择器，CDP 驱动不了；实测无数据集时「出题」也不发模型调用、不写 `cases`，四步一并卡住。要覆盖需在宿主侧留「测试期直接给一份数据集」的接缝 |
-| E130b 完整双向配对 | 配对由**手机侧发起**，桌面端没有「加入」入口；要自动化得写一个直接说同步协议的客户端 |
-| E132 / E133 手机端页面 | 那是 React Native 应用，不属于这套桌面 CDP 驱动 |
+| E132 / E133 手机端页面 | 那是 React Native 应用，不属于这套桌面 CDP 驱动；要覆盖得给手机端配一套自己的驱动（模拟器 + Maestro/Detox 之类）。桌面这一半已由 E130/E131 覆盖 |
+| E134b 打包态的版本闸门 | `checkPeerVersion` 在 `app.isPackaged` 为假时**故意放行**（本地两端版本号本来就不同）；真正的闸门只有在打包产物上才验得到，那是另一套运行方式 |
 | E140b / E141 转写 | 要预置 STT 模型（首次运行会联网下载） |
+
+**配对是怎么跑通的**：发起方是手机（桌面只出二维码），桌面端因此没有「加入」入口。测试台
+自己按协议来——`/sync/ping` 问版本 → `/sync/pair` 提交配对码换共享密钥 → `/sync/exchange`
+带 `HMAC-SHA256(sharedKey, "deviceId|timestamp|METHOD|path|body")` 签名交换数据
+（见 `e2e/harness/peer.ts`）。E131 因此能断言「桌面写一条 → 对端一次交换拿到它」，以及
+「换一把密钥的请求被 401 挡掉」。
 
 ### 0.3 被真实约束推翻、已改写的设计
 
