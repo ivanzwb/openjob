@@ -96,19 +96,23 @@ describe('E40–E45 备考与诊断', () => {
     );
   }, 180_000);
 
-  /**
-   * 已知缺口：`diagnosis:ingestReport` 里那条「模型抽面经问题」的返回结构还没在桩里复刻
-   * （真实请求体拿到之前只能猜，猜错会撞上 SQL 参数个数不匹配）。面经的读路径
-   * （listReports / 复盘）由 E45 覆盖。补桩后把它打开。
-   */
-  it.skip('E44 导入面经（粘贴）→ 面经落库', async () => {
-    await app.page.invoke('diagnosis:ingestReport', {
+  it('E44 导入面经（粘贴）：两道模型调用之后面经落库，问题数与桩返回一致', async () => {
+    stub.clear();
+    const result = await app.page.invoke<{
+      report: { id: string };
+      questionsExtracted: number;
+    }>('diagnosis:ingestReport', {
       campaignId: seeded.campaignId,
       rawText: '一面问：JVM 内存模型是怎么划分的？二面是系统设计，设计一个短链服务。',
       sourceType: 'pasted',
     });
+
+    expect(result.report.id).toBeTruthy();
+    expect(result.questionsExtracted).toBe(2);
     expect(db.count('interview_report', 'campaign_id = ?', seeded.campaignId)).toBeGreaterThan(0);
-  });
+    // 抽取 + 匹配是两次模型调用，缺哪一次都走不完
+    expect(stub.requests.length).toBeGreaterThanOrEqual(2);
+  }, 180_000);
 
   it('E45 面经：能列出来，空的时候也不抛错', async () => {
     const reports = await app.page.invoke<Array<{ id: string }>>('diagnosis:listReports', {
@@ -486,45 +490,86 @@ describe('E57–E58 证据与故事', () => {
     expect(stories.some((s) => s.id === story.id)).toBe(false);
   }, 180_000);
 
-  /**
-   * 已知缺口：`story:createDelivery` 在装配口述版时要读一条能力/证据的 label，本用例的故事
-   * 只挂了证据、没挂能力，那条读取取到 undefined。等确认它期望的是哪一条（补能力还是放宽
-   * 读取）再打开。
-   */
-  it.skip('E58b 口述版本：同一个故事生成 30/60/120 秒版', async () => {
-    const stories = await app.page.invoke<Array<{ id: string }>>('story:list', {
+  it('E58b 口述版本：同一份事实集合生成 30 / 60 / 120 秒三版', async () => {
+    const evidence = await app.page.invoke<Array<{ id: string }>>('evidence:listConfirmed', {
       campaignId: seeded.campaignId,
     });
-    const delivery = await app.page.invoke<{ id: string }>('story:createDelivery', {
-      id: stories[0]!.id,
-      label: '60 秒版',
-      seconds: 60,
+    const story = await app.page.invoke<{ id: string }>('story:create', {
+      campaignId: seeded.campaignId,
+      title: 'E2E 故事：口述版本',
+      situationMd: '老系统是 C/S。',
+      taskMd: '要迁到 B/S。',
+      actionMd: '抽象统一后端接口。',
+      resultMd: '模块复用率 70%。',
+      reflectionMd: '抽象先行。',
+      evidenceIds: [evidence[0]!.id],
+      competencyIds: [],
     });
-    expect(delivery.id).toBeTruthy();
-  });
+
+    for (const duration of [30, 60, 120] as const) {
+      const delivery = await app.page.invoke<{ id: string; contentMd?: string }>(
+        'story:createDelivery',
+        { id: story.id, duration },
+      );
+      expect(delivery.id).toBeTruthy();
+    }
+
+    const deliveries = await app.page.invoke<
+      Array<{ durationSeconds: number; factSetHash: string; snippetId: string }>
+    >('story:listDeliveries', { id: story.id });
+    expect(deliveries).toHaveLength(3);
+    expect(new Set(deliveries.map((item) => item.durationSeconds))).toEqual(new Set([30, 60, 120]));
+    // 三档共用同一份事实集合：指纹必须一致，否则「同一个故事」就是假的
+    expect(new Set(deliveries.map((item) => item.factSetHash)).size).toBe(1);
+    // 每档都真的存进话术库了
+    expect(new Set(deliveries.map((item) => item.snippetId)).size).toBe(3);
+
+    await app.page.invoke('story:delete', { id: story.id });
+  }, 300_000);
 });
 
 describe('界面呈现', () => {
-  /**
-   * 已知缺口：备考页在应用启动时就挂载了，而用例是通过 IPC 从外部建备考的——外部写入
-   * 不会 bump 渲染层的数据版本，列表因此停在挂载时的空态（界面上显示「还没有备考战役」）。
-   * 走界面新建一场备考再打开详情就能绕过，但那要先驱动新建表单。
-   */
-  it.skip('备考详情四个子页签都能打开，学习页带着诊断出来的考点', async () => {
+  it('在界面里新建一场备考并打开详情：四个子页签都能进，学习页带着诊断出来的考点', async () => {
     await clickNav(app, '备考');
     await waitActiveText(app, '备考战役|新建', '备考列表');
 
-    const listed = await app.page.evaluate<{ ok: boolean; texts: string[] }>(`(() => {
+    // 点「新建」进创建表单（外部 IPC 造的数据不会 bump 渲染层数据版本，
+    // 所以这一条必须走界面自己的创建路径，列表才会刷新）
+    const formOpened = await app.page.evaluate<{ ok: boolean; buttons: string[] }>(`(() => {
       const panel = document.querySelector('main > div:not(.hidden)') ?? document.querySelector('main');
-      const buttons = [...panel.querySelectorAll('button')].filter((b) => b.getBoundingClientRect().height > 0);
-      const row = buttons.find((b) => b.textContent.includes('E2E 公司'));
-      const text = panel.innerText.replace(/\\s+/g, ' ').trim().slice(0, 160);
-      if (!row) return { ok: false, texts: [...buttons.map((b) => b.textContent.trim().slice(0, 24)), '正文：' + text] };
-      row.click();
-      return { ok: true, texts: [] };
+      const visible = (selector) => [...panel.querySelectorAll(selector)]
+        .filter((n) => n.getBoundingClientRect().height > 0);
+      const create = visible('button').find((b) => b.textContent.trim() === '新建');
+      if (!create) return { ok: false, buttons: visible('button').map((b) => b.textContent.trim().slice(0, 16)) };
+      create.click();
+      return { ok: true, buttons: [] };
     })()`);
-    expect(listed.ok, `列表里找不到刚建的备考；可见按钮 = ${listed.texts.join(' , ')}`).toBe(true);
-    await sleep(800);
+    expect(formOpened.ok, `找不到「新建」；可见按钮 = ${formOpened.buttons.join(' , ')}`).toBe(true);
+    await sleep(600);
+
+    const submitted = await app.page.evaluate<{ ok: boolean; detail: string }>(`(() => {
+      const panel = document.querySelector('main > div:not(.hidden)') ?? document.querySelector('main');
+      const visible = (selector) => [...panel.querySelectorAll(selector)]
+        .filter((n) => n.getBoundingClientRect().height > 0);
+      const setSelect = (labelText, index) => {
+        const select = visible('select').find((s) => s.closest('label')?.textContent.includes(labelText));
+        if (!select || select.options.length === 0) return false;
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set;
+        setter.call(select, select.options[index]?.value ?? select.options[0].value);
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;
+      };
+      const job = setSelect('目标岗位', 0);
+      setSelect('简历', 0);
+      const submit = visible('button').find((b) => /新建备考|创建|保存/.test(b.textContent));
+      if (!submit) {
+        return { ok: false, detail: '目标岗位=' + job + '；可见按钮=' + visible('button').map((b) => b.textContent.trim().slice(0, 14)).join(' , ') };
+      }
+      submit.click();
+      return { ok: true, detail: '' };
+    })()`);
+    expect(submitted.ok, submitted.detail).toBe(true);
+    await sleep(1200);
 
     for (const tab of ['情报与面经', '学习', '资料与标记', '岗位与证据']) {
       const clicked = await app.page.evaluate<boolean>(`(() => {
@@ -542,5 +587,5 @@ describe('界面呈现', () => {
     }
 
     expect(await activeText(app)).toMatch(/JVM|考点|能力|岗位/);
-  }, 180_000);
+  }, 240_000);
 });

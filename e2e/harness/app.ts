@@ -143,10 +143,12 @@ export interface AppInstance {
   readonly userData: string;
   /** 主页面（渲染层） */
   readonly page: CdpSession;
-  /** 插件页的沙箱 iframe；页签没挂载过时为 null，用 frameTarget() 等它出现 */
+  /** 插件页的沙箱 iframe；页签没挂载过时为 null */
   frame(): CdpSession | null;
-  /** 等插件页 iframe 出现并连上 */
+  /** 等插件页 iframe 出现并连上（只认第一个） */
   waitForFrame(): Promise<CdpSession>;
+  /** 按页面内容找插件页：多个代码插件同时在场时用它 */
+  frameFor(marker: string): Promise<CdpSession>;
   targets(): Promise<Array<{ type: string; url: string }>>;
   /** 应用启动期间主进程的输出，断言启动失败时用 */
   output(): string;
@@ -189,34 +191,62 @@ export async function launchApp(options: {
   });
 
   let frameSession: CdpSession | null = null;
+  const frames = new Map<string, CdpSession>();
+
+  /** 连到内容包含 marker 的那个插件页。多个代码插件各有自己的 iframe target，不能只认第一个 */
+  const frameFor = async (marker: string): Promise<CdpSession> => {
+    const deadline = Date.now() + 60_000;
+    for (;;) {
+      const iframes = (await fetchTargets(port)).filter((target) => target.type === 'iframe');
+      for (const target of iframes) {
+        const session =
+          frames.get(target.id) ?? (await CdpSession.connect(target.webSocketDebuggerUrl));
+        frames.set(target.id, session);
+        const text = await session.evaluate<string>('document.body.innerText').catch(() => '');
+        if (text.includes(marker)) {
+          frameSession = session;
+          return session;
+        }
+      }
+      if (Date.now() > deadline) {
+        throw new Error(`没有内容包含「${marker}」的插件页（已连 ${frames.size} 个 target）`);
+      }
+      await sleep(300);
+    }
+  };
 
   return {
     userData: options.userData ?? '',
     page,
     frame: () => frameSession,
-    waitForFrame: async () => {
-      if (frameSession) return frameSession;
-      const target = await waitForTarget(port, (t) => t.type === 'iframe', 60_000, child, () => output);
-      frameSession = await CdpSession.connect(target.webSocketDebuggerUrl);
-      return frameSession;
-    },
-    targets: async () => {
-      const list = await fetchTargets(port);
-      return list.map((t) => ({ type: t.type, url: t.url }));
-    },
-    output: () => output,
-    stop: async () => {
-      page.close();
-      frameSession?.close();
-      killTree(child);
-      // 等进程真的退出再放行：下一例常常用同一个 userData 起新实例，
-      // 上一个还没退干净时单实例锁会把新的顶掉，报出来是「实例提前退出」这种假故障
-      const deadline = Date.now() + 15_000;
-      while (child.exitCode === null && child.signalCode === null && Date.now() < deadline) {
-        await sleep(200);
-      }
-      await sleep(300);
-    },
+    /** 等插件页 iframe 出现并连上（只认第一个） */
+  waitForFrame: async () => {
+    if (frameSession) return frameSession;
+    const target = await waitForTarget(port, (t) => t.type === 'iframe', 60_000, child, () => output);
+    frameSession = await CdpSession.connect(target.webSocketDebuggerUrl);
+    frames.set(target.id, frameSession);
+    return frameSession;
+  },
+  /** 按页面内容找插件页：多个代码插件同时在场时用它，别赌「第一个」 */
+  frameFor,
+  targets: async () => {
+    const list = await fetchTargets(port);
+    return list.map((t) => ({ type: t.type, url: t.url }));
+  },
+  output: () => output,
+  stop: async () => {
+    page.close();
+    for (const session of frames.values()) session.close();
+    frameSession = null;
+    killTree(child);
+    // 等进程真的退出再放行：下一例常常用同一个 userData 起新实例，
+    // 上一个还没退干净时单实例锁会把新的顶掉，报出来是「实例提前退出」这种假故障
+    const deadline = Date.now() + 15_000;
+    while (child.exitCode === null && child.signalCode === null && Date.now() < deadline) {
+      await sleep(200);
+    }
+    await sleep(300);
+  },
   };
 }
 

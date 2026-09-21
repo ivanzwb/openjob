@@ -1,7 +1,7 @@
 # OpenJob 端到端测试方案
 
-> 状态：**测试台与全部 11 组用例都已落地**。`pnpm test:e2e` → 11 个文件 / **87 通过 /
-> 10 跳过 / 0 失败**；跳过项全部在代码里 `it.skip` 并写明原因（汇总见 §0.2）。
+> 状态：**测试台与全部 11 组用例都已落地**。`pnpm test:e2e` → 11 个文件 / **91 通过 /
+> 6 跳过 / 0 失败**；跳过项全部在代码里 `it.skip` 并写明原因（汇总见 §0.2）。
 > 跑法见 [e2e/README.md](../e2e/README.md)。
 > 上游：[GENERAL_INTERVIEW_AGENT_ARCHITECTURE.md](./GENERAL_INTERVIEW_AGENT_ARCHITECTURE.md) §18（单元 / Contract / Golden / Cross-client / Isolation）
 > 本文补的是 §18 没覆盖的那一层：**在真实 Electron 应用上，按用户能看见的动作走完整链路**。
@@ -15,25 +15,21 @@
 | 启动与宿主（E01–E08） | `boot.test.ts` | ✅ 8/8 |
 | 总览（E10–E15） | `overview.test.ts` | ✅ 6/6 |
 | 简历与岗位（E20–E31） | `resume.test.ts` | ✅ 9/9（导出 PDF 与选文件导入归手工） |
-| 备考（E40–E59） | `campaign.test.ts` | ✅ 16/16 + 2 跳过 |
+| 备考（E40–E59） | `campaign.test.ts` | ✅ 21/21 |
 | 模拟面试（E70–E78） | `practice.test.ts` | ✅ 9/9 |
 | 话术（E80–E84） | `speech.test.ts` | ✅ 5/5（三种导出归手工） |
 | 设置（E90–E99） | `settings.test.ts` | ✅ 10/10 |
-| 能力页（E110–E126） | `plugins.test.ts` | ✅ 7/7 + 2 跳过 |
+| 能力页（E110–E126） | `plugins.test.ts` | ✅ 8/8 + 1 跳过 |
 | 跨端（E130–E134） | `sync.test.ts` | ✅ 3/3（桌面侧）+ 3 跳过 |
 | 语音（E140–E141） | `voice.test.ts` | ✅ 1/1 + 2 跳过 |
 | 边界（E150–E156） | `errors.test.ts` | ✅ 7/7 |
 
-### 0.2 跳过的 10 条与原因
+### 0.2 跳过的 6 条与原因
 
 | 用例 | 原因 |
 |---|---|
-| E44 导入面经（粘贴） | 那条「模型抽面经问题」的返回结构还没在桩里复刻（猜错会撞 SQL 参数个数不匹配） |
-| E58b 口述版本 | `story:createDelivery` 装配时要读一条能力/证据的 label，只挂证据时取到 undefined，待确认期望哪一条 |
-| 备考详情四个子页签 | 应用启动时就挂载了，外部 IPC 写入不 bump 渲染层数据版本，列表停在空态；走界面新建再打开即可绕过 |
-| E114 源码页问答 | `agent.ask` 是流式回答，桩还没实现 SSE |
-| E117–E121 案例训练 | 第一步 `artifact.read` 弹原生文件选择器，CDP 驱动不了，没有数据集后面几步也失去输入 |
-| E130b 完整双向配对 | 配对由**手机侧发起**，桌面端没有「加入」入口 |
+| E117–E121 案例训练 | 第一步 `artifact.read` 弹原生文件选择器，CDP 驱动不了；实测无数据集时「出题」也不发模型调用、不写 `cases`，四步一并卡住。要覆盖需在宿主侧留「测试期直接给一份数据集」的接缝 |
+| E130b 完整双向配对 | 配对由**手机侧发起**，桌面端没有「加入」入口；要自动化得写一个直接说同步协议的客户端 |
 | E132 / E133 手机端页面 | 那是 React Native 应用，不属于这套桌面 CDP 驱动 |
 | E140b / E141 转写 | 要预置 STT 模型（首次运行会联网下载） |
 
@@ -44,7 +40,7 @@
    E110 因此只留「拒绝路径」，真实 clone 归手工。
 2. **Tavily 不可桩化**——`https://api.tavily.com` 是硬编码的，没有可配 endpoint；
    检索桩只能盖博查（它的 endpoint 在 config 里）。
-3. **四类入口受原生对话框限制**，CDP 到不了：`plugin:install`（选包）、
+3. **五个入口受原生对话框限制**，CDP 到不了：`plugin:install`（选包）、
    `pluginRuntime:artifact.read`（选表格）、`resume:importFile`（选简历文件）、
    `resume:exportPdf` / `speech:export`（选保存位置）。要自动化它们，得在主进程留一个
    「测试期自动选路径」的接缝——那是应用侧的改动，不在测试台范围内。

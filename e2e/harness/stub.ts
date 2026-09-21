@@ -116,11 +116,47 @@ export class LlmStub {
     }
 
     if ((req.url ?? '').includes('/search')) return this.sendSearch(res);
+
+    const streaming = (body as { stream?: unknown } | null)?.stream === true;
+    if (streaming) return this.sendStream(res);
     return this.sendCompletion(
       res,
       JSON.stringify(pickResponse(text, this.answerMd, this.ungroundedQuote)),
       false,
     );
+  }
+
+  /**
+   * 流式回答：插件页的问答（`agent.ask`）走的是 SSE，宿主把 delta 逐条转给页面。
+   * 切成小段发，为的是让用例真的看到「多次 delta」而不是一次性的整段文本。
+   */
+  private sendStream(res: ServerResponse): void {
+    const answer = 'E2E 桩回答：入口在 scripts/build.ts 的 main()，构建逻辑在 build() 里。';
+    res.writeHead(200, {
+      'content-type': 'text/event-stream',
+      'cache-control': 'no-cache',
+      connection: 'keep-alive',
+    });
+    for (const chunk of answer.match(/.{1,12}/gu) ?? [answer]) {
+      res.write(
+        `data: ${JSON.stringify({
+          id: 'stub-stream',
+          object: 'chat.completion.chunk',
+          model: 'e2e-model',
+          choices: [{ index: 0, delta: { content: chunk }, finish_reason: null }],
+        })}\n\n`,
+      );
+    }
+    res.write(
+      `data: ${JSON.stringify({
+        id: 'stub-stream',
+        object: 'chat.completion.chunk',
+        model: 'e2e-model',
+        choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+      })}\n\n`,
+    );
+    res.write('data: [DONE]\n\n');
+    res.end();
   }
 
   private sendSearch(res: ServerResponse): void {
@@ -239,10 +275,15 @@ export function pickResponse(
   if (text.includes('"reply"')) return { reply: 'E2E 桩：客户回应——那你们的价格比现在高多少？' };
   if (text.includes('"markdown"')) return { markdown: '## E2E 桩讲解\n\n这是讲解正文。' };
   if (text.includes('"questions"')) {
+    // 面经 ingest 第一步：只要一个字符串数组，不是对象数组
+    return { questions: ['JVM 内存模型是怎么划分的？', '设计一个短链服务。'] };
+  }
+  if (text.includes('"matches"')) {
+    // 面经 ingest 第二步：把每题匹配到考点；匹配不上的给一个建议考点名
     return {
-      questions: [
-        { text: 'JVM 内存模型是怎么划分的？', nodeName: '内存模型', kind: 'knowledge' },
-        { text: '设计一个短链服务。', nodeName: '一致性', kind: 'design' },
+      matches: [
+        { questionIndex: 0, nodeName: 'JVM', confidence: 0.9, suggestedName: null },
+        { questionIndex: 1, nodeName: null, confidence: 0.4, suggestedName: '短链服务设计' },
       ],
     };
   }

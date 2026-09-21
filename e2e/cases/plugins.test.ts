@@ -266,14 +266,49 @@ describe('E110–E116 源码页（软件工程包）', () => {
     expect(after.some((item) => item.id === mark.id)).toBe(false);
   });
 
-  /**
-   * 已知缺口：问答走 `agent.ask` 的流式回答（openjobEvent 的 stream:delta / done），
-   * 桩服务器还没实现 SSE。补上之后打开。
-   */
-  it.skip('E114 问答：流式回答 + 引用跳转 + 历史', async () => {
-    const frame = await app.waitForFrame();
-    await frameClick(frame, '#ask');
-  });
+  it('E114 问答：问一句，流式回答逐段落屏，并存进问答历史', async () => {
+    // 问答要选中一个仓库；登记一行再重载插件页，让它读得到
+    await app.page.invoke('pluginRuntime:data.put', {
+      pluginId: PLUGIN,
+      collection: 'repositories',
+      key: 'big-repo',
+      value: JSON.stringify({
+        id: 'big-repo',
+        label: 'https://example.com/big-repo.git',
+        ready: true,
+        dir: 'big-repo',
+      }),
+    });
+    const before = await openSourceTab();
+    await before.evaluate('location.reload()');
+    await sleep(1200);
+    const frame = await app.frameFor('源码仓库');
+
+    const asked = await frame.evaluate<{ ok: boolean; why?: string }>(`(() => {
+      const qa = [...document.querySelectorAll('button,a,div')].find((n) => n.textContent.trim() === '问答');
+      if (qa) qa.click();
+      const input = document.querySelector('#question');
+      const ask = document.querySelector('#ask');
+      if (!input || !ask) return { ok: false, why: '问答区没渲染出来' };
+      input.value = '这个仓库的构建入口在哪？';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      ask.click();
+      return { ok: true };
+    })()`);
+    expect(asked.ok, asked.why ?? '').toBe(true);
+
+    stub.clear();
+    const answer = await waitForText(frame, /桩回答|scripts\/build\.ts/, '流式回答落屏', 90_000);
+    expect(answer).toContain('scripts/build.ts');
+    expect(stub.requests.length).toBeGreaterThan(0);
+
+    // 问答历史落进插件数据集合
+    const history = await app.page.invoke<Array<{ key: string }>>('pluginRuntime:data.list', {
+      pluginId: PLUGIN,
+      collection: 'qa-history',
+    });
+    expect(Array.isArray(history)).toBe(true);
+  }, 240_000);
 });
 
 describe('E122–E126 客户对话模拟（销售包）', () => {
@@ -336,15 +371,45 @@ describe('E122–E126 客户对话模拟（销售包）', () => {
 
 describe('E117–E121 案例训练（产品经理包）', () => {
   /**
-   * 已知缺口：这一页的第一步是 `artifact.read`——它在主进程弹原生文件选择器，
-   * 渲染层/插件页都传不了路径，CDP 驱动不了。没有数据集时后面几步（出题/评分/推荐答案）
-   * 也失去了输入。等宿主给一个可注入的 artifact 来源（或允许用例预置一份数据集）再打开。
+   * 已知缺口：这一页的第一步是 `artifact.read`——它在主进程弹原生文件选择器，渲染层与插件页
+   * 都传不了路径，CDP 驱动不了。没有数据集时后面四步（出题 / 评分 / 推荐答案 / 案例历史）
+   * 也一并卡住：实测点「出题」在无数据集时不会发模型调用、也不会写 cases（页面静态文案里有
+   * 「题目」二字，容易误判成已经出题）。要覆盖这一组，得在宿主侧留一个「测试期直接给一份
+   * 数据集」的接缝，或者允许用例预置 artifact。
    */
-  it.skip('E117–E121 选表 → 出题 → 评分 → 推荐答案 → 历史', async () => {
-    const frame = await app.waitForFrame();
+  it.skip('E117–E121 选表 → 出题 → 作答 → 评分 → 推荐答案 → 案例历史', async () => {
+    const frame = await openCasePractice();
     await frameClick(frame, '#pick');
   });
 });
+
+/** 切到案例训练页并连上它的 iframe */
+async function openCasePractice(): Promise<CdpSession> {
+  const opened = await app.page.evaluate<boolean>(`(() => {
+    const button = [...document.querySelectorAll('header nav button')]
+      .find((b) => b.textContent.trim() === '案例训练');
+    if (!button) return false;
+    button.click();
+    return true;
+  })()`);
+  expect(opened, '导航里没有「案例训练」').toBe(true);
+  await sleep(800);
+  return app.frameFor('案例训练');
+}
+
+/** 切到源码页并连上它的 iframe */
+async function openSourceTab(): Promise<CdpSession> {
+  const opened = await app.page.evaluate<boolean>(`(() => {
+    const button = [...document.querySelectorAll('header nav button')]
+      .find((b) => b.textContent.trim() === '源码');
+    if (!button) return false;
+    button.click();
+    return true;
+  })()`);
+  expect(opened, '导航里没有「源码」').toBe(true);
+  await sleep(800);
+  return app.frameFor('源码仓库');
+}
 
 /** 切到销售页并连上它的 iframe */
 async function waitForRolePlay(): Promise<CdpSession> {
@@ -357,7 +422,7 @@ async function waitForRolePlay(): Promise<CdpSession> {
   })()`);
   expect(opened, '导航里没有「客户对话模拟」').toBe(true);
   await sleep(800);
-  return app.waitForFrame();
+  return app.frameFor('客户对话模拟');
 }
 
 async function waitForText(
