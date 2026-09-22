@@ -176,14 +176,20 @@ export async function launchApp(options: {
    * openjob」这类用例用的，配合 env.APPDATA 照样隔离，只是走应用自己的命名推导。
    */
   userData?: string;
+  /**
+   * 改起某个**打包产物**（如 `desktop/dist/win-unpacked/OpenJob.exe`）。
+   * 打包态下 `app.isPackaged` 为真，`checkPeerVersion` 那条版本闸门才会真的生效。
+   */
+  executable?: string;
   port?: number;
   env?: Record<string, string>;
 }): Promise<AppInstance> {
   const port = options.port ?? 9400 + Math.floor(Math.random() * 400);
   const child = spawn(
-    ELECTRON,
+    options.executable ?? ELECTRON,
     [
-      DESKTOP_DIR,
+      // 打包产物自己知道应用在哪；开发态才需要 `electron <项目目录>`
+      ...(options.executable ? [] : [DESKTOP_DIR]),
       ...(options.userData ? [`--user-data-dir=${options.userData}`] : []),
       `--remote-debugging-port=${port}`,
     ],

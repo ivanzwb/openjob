@@ -12,7 +12,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { join } from 'node:path';
 import { launchApp, sleep, type AppInstance } from '../harness/app';
 import { AppDb } from '../harness/db';
-import { makeEnv, type Env } from '../harness/env';
+import { makeEnv, packagedExecutable, type Env } from '../harness/env';
 import { FakePeer } from '../harness/peer';
 
 let app: AppInstance;
@@ -171,11 +171,35 @@ describe('E134 版本闸门', () => {
 });
 
 /**
- * 已知缺口：打包态的版本闸门（`checkPeerVersion` 里 `app.isPackaged` 那一支）在开发态
- * 走不到——它要求一份打包构建。要覆盖得让用例跑在 `electron-builder --dir` 的产物上，
- * 那是另一套运行方式（见方案 §9 的「不自动化清单」）。
+ * 打包态的版本闸门。开发态验不到（`checkPeerVersion` 在 `app.isPackaged` 为假时故意放行），
+ * 所以这条要起**打包产物**：`desktop/dist/win-unpacked/` 存在就跑，不存在就自跳
+ * （本机出一次 `pnpm package` 就有了；CI 的发布流水线本来就会出包）。
  */
-it.skip('E134b 打包态：两端版本不兼容时连配对都不建立', () => undefined);
+it('E134b 打包态：两端版本不兼容时连配对都不建立', async (ctx) => {
+  const executable = packagedExecutable();
+  if (!executable) ctx.skip();
+
+  const packed = makeEnv('sync-packaged', { plugins: [] });
+  const packedApp = await launchApp({ userData: packed.userData, executable });
+  try {
+    const started = await packedApp.page.invoke<{ port: number; payload: { code: string } }>(
+      'sync:beginPairing',
+      null,
+    );
+    const mismatch = await new FakePeer(started.port)
+      .pairWithVersion(started.payload.code, '0.0.1-dev')
+      .then(
+        () => '',
+        (error: Error) => error.message,
+      );
+    expect(mismatch).not.toBe('');
+
+    const peers = await packedApp.page.invoke<unknown[]>('sync:listPeers', null);
+    expect(peers).toHaveLength(0);
+  } finally {
+    await packedApp.stop();
+  }
+}, 240_000);
 
 /**
  * 已知缺口：手机端两个页面（E132 只读页、E133 桌面不可达降级）是 React Native 应用，

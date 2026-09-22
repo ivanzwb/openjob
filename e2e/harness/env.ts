@@ -4,7 +4,15 @@
  * 每个用例/文件一份，放在 `e2e/.runs/<name>` 下（已 gitignore）。构造时**不启动应用**，
  * 所以断言失败时可以把这份目录留着复盘。
  */
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { join } from 'node:path';
 import { DESKTOP_DIR, REPO_ROOT } from './app';
@@ -127,6 +135,21 @@ export function installBundledPlugin(pluginsDir: string, id: string, version: st
 
 /** 真实 userData：只读它取一些体积大、公共的资源（如 STT 模型），绝不写 */
 export const REAL_USER_DATA = join(process.env['APPDATA'] ?? '', 'openjob');
+
+/**
+ * 有没有可用的**打包产物**（`desktop/dist/win-unpacked/`）。
+ *
+ * 打包态下 `app.isPackaged` 为真，几处刻意只在发布态生效的判定（如 `checkPeerVersion`
+ * 的版本闸门）才会真的起作用。本机没出过包时返回 null，用例据此自跳。
+ */
+export function packagedExecutable(): string | null {
+  const dir = join(DESKTOP_DIR, 'dist', 'win-unpacked');
+  if (!existsSync(dir)) return null;
+  const candidates = readdirSync(dir).filter(
+    (name) => name.endsWith('.exe') && name.toLowerCase() !== 'electron.exe',
+  );
+  return candidates[0] ? join(dir, candidates[0]) : null;
+}
 
 /**
  * 把本机已缓存的 STT 模型搬进隔离副本（`stt-models/Xenova/whisper-base`）。

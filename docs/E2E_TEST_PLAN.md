@@ -29,7 +29,7 @@
 | 用例 | 原因 |
 |---|---|
 | E132 / E133 手机端页面 | 那是 React Native 应用，不属于这套桌面 CDP 驱动；要覆盖得给手机端配一套自己的驱动（模拟器 + Maestro/Detox 之类）。桌面这一半已由 E130/E131 覆盖 |
-| E134b 打包态的版本闸门 | `checkPeerVersion` 在 `app.isPackaged` 为假时**故意放行**（本地两端版本号本来就不同）；真正的闸门只有在打包产物上才验得到，那是另一套运行方式 |
+| E134b 打包态的版本闸门 | `checkPeerVersion` 在 `app.isPackaged` 为假时**故意放行**（本地两端版本号本来就不同），所以这条要起**打包产物**。用例已实现并**自跳**：`desktop/dist/win-unpacked/` 在就跑，不在就 `ctx.skip()`——本机跑一次 `pnpm package`、或 CI 的发布流水线出包之后，它会自动点亮 |
 
 **STT 怎么自动化**：转写要加载 `Xenova/whisper-base`（约 73MB），CI 上不可能现下。用例复用
 **本机已经缓存好的那一份**——把它搬进隔离副本的 `stt-models/`（transformers.js 先查
