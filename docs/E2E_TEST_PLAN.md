@@ -24,12 +24,13 @@
 | 语音（E140–E141） | `voice.test.ts` | ✅ 2/2（含真实转写通路） |
 | 边界（E150–E156） | `errors.test.ts` | ✅ 7/7 |
 | 真实模型契约冒烟（R1–R3） | `live.test.ts` | ✅ 3/3（要 `E2E_LIVE=1`，平时整组自跳） |
+| 手机端（E132–E133） | `mobile.test.ts` | ⏸ 驱动已可用（adb），应用卡在首次建库；要 `E2E_MOBILE=1` |
 
-### 0.2 跳过的 3 条与原因
+### 0.2 跳过项与原因
 
 | 用例 | 原因 |
 |---|---|
-| E132 / E133 手机端页面 | 那是 React Native 应用，不属于这套桌面 CDP 驱动；要覆盖得给手机端配一套自己的驱动（模拟器 + Maestro/Detox 之类）。桌面这一半已由 E130/E131 覆盖 |
+| E132 / E133 手机端 | **驱动这一层已经打通**：无头模拟器（`-gpu swiftshader_indirect -no-window`，这个组合下 SystemUI 才不会冷启动就 ANR）、`adb install` release 包（自带 JS bundle，不需要 Metro）、启动后 `topResumedActivity` 就是 `MainActivity`、`uiautomator dump` + `input tap` 抓得到点得动。**卡在应用自己**：起来之后一直停在「正在初始化本地数据库…」，180 秒里界面树一动不动（同一份 4073 字节的 dump）。下一步是在卡住的那一刻抓 logcat，看是迁移慢、迁移抛错，还是这一版 release 包本身有问题。用例按 opt-in 收在 `E2E_MOBILE=1` 后面 |
 | E134b 打包态的版本闸门 | `checkPeerVersion` 在 `app.isPackaged` 为假时**故意放行**（本地两端版本号本来就不同），所以这条要起**打包产物**。用例已实现并**自跳**：`desktop/dist/win-unpacked/` 在就跑，不在就 `ctx.skip()`——本机跑一次 `pnpm package`、或 CI 的发布流水线出包之后，它会自动点亮 |
 
 **STT 怎么自动化**：转写要加载 `Xenova/whisper-base`（约 73MB），CI 上不可能现下。用例复用
