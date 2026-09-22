@@ -125,6 +125,23 @@ export function installBundledPlugin(pluginsDir: string, id: string, version: st
   }
 }
 
+/** 真实 userData：只读它取一些体积大、公共的资源（如 STT 模型），绝不写 */
+export const REAL_USER_DATA = join(process.env['APPDATA'] ?? '', 'openjob');
+
+/**
+ * 把本机已缓存的 STT 模型搬进隔离副本（`stt-models/Xenova/whisper-base`）。
+ *
+ * 模型约 73MB，首次运行由应用自己从 HuggingFace 下——CI 上不可能现下，所以这里复用本机
+ * 已经缓存好的那份（transformers.js 先查 `env.cacheDir`，离线可用）。
+ * 本机没有缓存时返回 false，用例据此跳过而不是失败。
+ */
+export function copySttModel(env: Env): boolean {
+  const source = join(REAL_USER_DATA, 'stt-models');
+  if (!existsSync(join(source, 'Xenova', 'whisper-base', 'config.json'))) return false;
+  cpSync(source, join(env.userData, 'stt-models'), { recursive: true });
+  return true;
+}
+
 /** 把随包分发的产物读成「包内文件 → 内容」，用于篡改后再布下去 */
 export function readBundleFiles(bundlePath: string): Record<string, string> {
   const parsed = JSON.parse(gunzipSync(readFileSync(bundlePath)).toString('utf8')) as {

@@ -1,48 +1,61 @@
 /**
  * E140–E141 语音输入。
  *
- * **为什么只覆盖状态**：转写要真的加载 STT 模型（transformers.js 首次运行会从 HuggingFace
- * 下载几十 MB），离线 / CI 环境拉不到；而且 `stt:transcribe` 要的是浮点采样数组，
- * 得先有一段真实录音。这里的价值是「模型不在时应用给出的是明确状态，而不是假装能用」。
+ * 转写要真的加载 STT 模型（`Xenova/whisper-base`，约 73MB）。用例复用**本机已经缓存好的
+ * 那一份**：把它搬进隔离副本的 `stt-models/`（transformers.js 先查 `env.cacheDir`，离线可用）。
+ * 本机没有缓存就跳过——CI 上不可能现下，这也是这条用例唯一的环境依赖。
+ *
+ * 断言的是**通路**而不是识别质量：模型能加载、状态会从「缺模型」走到「就绪」、一段采样喂进去
+ * 能拿回文本而不是抛错。识别得准不准是模型的事，不是这条用例的事。
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { launchApp, type AppInstance } from '../harness/app';
-import { makeEnv, type Env } from '../harness/env';
+import { copySttModel, makeEnv, type Env } from '../harness/env';
 
 let app: AppInstance;
 let env: Env;
+let modelReady = false;
 
 beforeAll(async () => {
   env = makeEnv('voice', { plugins: [] });
+  modelReady = copySttModel(env);
   app = await launchApp({ userData: env.userData });
-}, 180_000);
+}, 300_000);
 
 afterAll(async () => {
   await app?.stop();
 });
 
 describe('E140–E141 语音', () => {
-  it('E140 状态可读：没下模型时报「缺模型」这类明确状态，不抛错', async () => {
-    const status = await app.page.invoke<{ state?: string; phase?: string; ready?: boolean }>(
-      'stt:status',
-      null,
-    );
+  it('E140 状态可读：没加载时报「缺模型」这类明确状态，不抛错', async () => {
+    const status = await app.page.invoke<{ state?: string; ready?: boolean }>('stt:status', null);
     expect(status).toBeTruthy();
-    // 首次进入时模型一定不在（用例环境不联网下载），此时 ready 必须是明确的是 / 否
-    expect(typeof status.ready === 'boolean' || typeof status.state === 'string').toBe(true);
+    expect(typeof status.state === 'string' || typeof status.ready === 'boolean').toBe(true);
   });
 
-  /**
-   * 已知缺口：转写要真的加载 STT 模型。模型不在时 `stt:transcribe` 会返回空文本——
-   * 这本身不算错（没有模型就没有识别结果），所以「静默空结果」在这里不构成缺陷断言；
-   * 要真正验证转写就得预置模型，见 E141。
-   */
-  it.skip('E140b 模型就绪之前调用转写被明确拒绝', () => undefined);
-});
+  it(
+    'E141 转写通路：一份采样喂进去，模型加载完成并拿回文本（不主张识别质量）',
+    async (ctx) => {
+      // 注意不能用 it.skipIf：它在**收集阶段**求值，那时 beforeAll 还没跑、modelReady 还是初值
+      if (!modelReady) ctx.skip();
 
-/**
- * 已知缺口：真实转写要么预置一份 STT 模型到 `userData/stt-models`，要么给测试台留一个
- * 「离线模型目录」的注入点。两者都是测试台之外的决定（预置体积 / 应用侧接缝），
- * 定了之后这条用例就是把一段 wav 采样喂进去、断言文本进作答框。
- */
-it.skip('E141 转写：一段录音变成文本并落到作答框', () => undefined);
+      // 1 秒静音采样。Float32Array 必须在页面里构造——桥那一层是结构化克隆，
+      // 从测试进程用 JSON 传过去只会变成普通对象。
+      const result = await app.page.evaluate<{ text: string }>(`(async () => {
+        return await window.api.invoke('stt:transcribe', { audio: new Float32Array(16000) });
+      })()`);
+      expect(typeof result.text).toBe('string');
+
+      // 模型加载之后状态应当是「就绪」——这条同时钉住了「模型确实加载成功」
+      await app.page.waitUntil(
+        async () => {
+          const status = await app.page.invoke<{ state?: string }>('stt:status', null);
+          return status.state === 'ready' ? status : '';
+        },
+        '模型进入就绪态',
+        60_000,
+      );
+    },
+    300_000,
+  );
+});
