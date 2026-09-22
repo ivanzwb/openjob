@@ -24,14 +24,24 @@
 | 语音（E140–E141） | `voice.test.ts` | ✅ 2/2（含真实转写通路） |
 | 边界（E150–E156） | `errors.test.ts` | ✅ 7/7 |
 | 真实模型契约冒烟（R1–R3） | `live.test.ts` | ✅ 3/3（要 `E2E_LIVE=1`，平时整组自跳） |
-| 手机端（E132–E133） | `mobile.test.ts` | ⏸ 驱动已可用（adb），应用卡在首次建库；要 `E2E_MOBILE=1` |
+| 手机端（E132） | `mobile.test.ts` | ✅ 2/2（要 `E2E_MOBILE=1`，adb 驱动） |
 
 ### 0.2 跳过项与原因
 
 | 用例 | 原因 |
 |---|---|
-| E132 / E133 手机端 | **驱动这一层已经打通**：无头模拟器（`-gpu swiftshader_indirect -no-window`，这个组合下 SystemUI 才不会冷启动就 ANR）、`adb install` release 包（自带 JS bundle，不需要 Metro）、启动后 `topResumedActivity` 就是 `MainActivity`、`uiautomator dump` + `input tap` 抓得到点得动。**卡在应用自己**：起来之后一直停在「正在初始化本地数据库…」，180 秒里界面树一动不动（同一份 4073 字节的 dump）。下一步是在卡住的那一刻抓 logcat，看是迁移慢、迁移抛错，还是这一版 release 包本身有问题。用例按 opt-in 收在 `E2E_MOBILE=1` 后面 |
+| E133 手机端「配对过但对端不可达」的降级 | 要一条真实的 peer 行，而手机端的库在应用私有目录里（release 包不可 `run-as`），得先解决「怎么给手机端种一条已配对状态」——要么真跑一次配对，要么让包可调试。E132 那两条（应用能起来、更多页只有本机入口且无写入口）已经覆盖 |
 | E134b 打包态的版本闸门 | `checkPeerVersion` 在 `app.isPackaged` 为假时**故意放行**（本地两端版本号本来就不同），所以这条要起**打包产物**。用例已实现并**自跳**：`desktop/dist/win-unpacked/` 在就跑，不在就 `ctx.skip()`——本机跑一次 `pnpm package`、或 CI 的发布流水线出包之后，它会自动点亮 |
+
+**手机端这一套怎么跑通的**：纯 adb，不需要 Maestro/Detox——`uiautomator dump` 抓界面树 →
+解析 `text=` / `bounds` → `input tap`。三个坑写在 `e2e/harness/mobile.ts` 文件头：模拟器必须
+`-gpu swiftshader_indirect -no-window`（否则 SystemUI 冷启动就 ANR）；dump 要 `adb pull` 回来读；
+adb 的 stderr 每次都会打「1 file pulled…」，得吞掉。
+
+**一个值得单独说的坑**：仓库里 `mobile/dist/OpenJob-1.0.0.apk` 是 **8/14 的产物**，装上去应用
+永远停在「正在初始化本地数据库…」（等 4 分钟界面树一字不变，logcat 里也干净：JS 跑起来了、
+expo-sqlite 加载了、没有任何异常）。换成 `gradlew assembleRelease` 当次打出来的包，5 秒就过。
+所以手机端的用例要用 `E2E_MOBILE_APK` 指向当次构建的产物，别拿仓库里那份历史包当基准。
 
 **STT 怎么自动化**：转写要加载 `Xenova/whisper-base`（约 73MB），CI 上不可能现下。用例复用
 **本机已经缓存好的那一份**——把它搬进隔离副本的 `stt-models/`（transformers.js 先查

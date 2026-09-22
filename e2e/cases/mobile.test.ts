@@ -14,11 +14,14 @@
  * release 包是上一次构建的快照（`mobile/dist/OpenJob-1.0.0.apk`，自带 JS bundle 不需要
  * Metro）。
  *
- * **默认不跑**（`E2E_MOBILE=1` 才跑）：现在这一版跑下去会卡住——应用起来之后一直停在
- * 「正在初始化本地数据库…」，180 秒里界面树一动不动（同一份 4073 字节的 dump）。这不是驱动
- * 的问题（模拟器健康、装包成功、`topResumedActivity` 就是 `MainActivity`），得在卡住的那一刻
- * 抓 logcat 才知道是迁移慢、迁移抛错，还是这一版 release 包本身有问题。在那之前把它放进
- * 默认套件只会得到两条红的，所以按 opt-in 收起来，跟 live 组一个处理方式。
+ * **默认不跑**（`E2E_MOBILE=1` 才跑）：它要起模拟器、装一个 126MB 的包，代价远高于其余各组，
+ * 而且依赖本机有 AVD。现在这两条是绿的（见下），opt-in 只是成本考虑，不是「跑不通」。
+ *
+ * **踩过的坑：必须用当前源码重打的包。** 一开始我测的是仓库里 `mobile/dist/OpenJob-1.0.0.apk`，
+ * 它是 8/14 的产物（109.5MB），装上去应用永远停在「正在初始化本地数据库…」——等 4 分钟界面树
+ * 一字不变，logcat 里也干净（JS 跑起来了、expo-sqlite 加载了、没有任何异常）。换成
+ * `gradlew assembleRelease` 刚打出来的（125.9MB）之后，5 秒就过掉初始化。用 `E2E_MOBILE_APK`
+ * 指向要测的那个包。
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MobileDevice, mobileAvailable } from '../harness/mobile';
@@ -47,15 +50,19 @@ describe.skipIf(!enabled || !available)('E132 / E133 手机端', () => {
     expect(texts.join(' | ')).toMatch(/备考|总览|简历|面试|更多/);
   }, 300_000);
 
-  it('E132b 插件页是只读的：没有同步过数据时给引导，且没有任何写入口', async () => {
-    // 「更多」里才有源码 / 话术（同步客户端定位：这些页面由桌面端同步过来）
+  it('E132b 更多页：只有本机已有的入口，插件页要桌面端同步过来才出现；且没有任何写入口', async () => {
     device.tapText('更多');
-    await device.waitForText('源码', 60_000);
+    await device.waitForText('同步', 60_000);
 
     const dump = device.dump();
-    const texts = device.texts();
-    // 引导态：要么说先去桌面端，要么说还没同步到
-    expect(texts.join(' | ')).toMatch(/桌面端|同步|还没有/);
+    const texts = device.texts().join(' | ');
+
+    // 「同步」是手机端的定位：数据从桌面端来
+    expect(texts).toContain('同步');
+    expect(texts).toContain('话术');
+
+    // 还没同步过岗位包，所以插件页（源码）整块不该渲染——不是给个空壳，是不出现
+    expect(texts).not.toContain('源码');
 
     // 「没有写入口」是这条的重点：界面树里不该出现发消息、存话术、出题这类控件
     const writeControls = ['发送', '存为话术', '出题', '新建', '开始练习', '标记本页行区间'];

@@ -23,8 +23,13 @@ export const ADB = join(SDK, 'platform-tools', 'adb.exe');
 const EMULATOR = join(SDK, 'emulator', 'emulator.exe');
 
 export const MOBILE_PACKAGE = 'com.openjob.mobile';
-/** release 包自带 JS bundle，不需要 Metro；`mobile/dist` 下由打包脚本产出 */
-export const MOBILE_APK = join(DESKTOP_DIR, '..', 'mobile', 'dist', 'OpenJob-1.0.0.apk');
+/**
+ * 用哪个 APK。默认取 `mobile/dist` 下那份历史产物（release，自带 JS bundle，不需要 Metro）；
+ * 想试刚打出来的包就把它指过去——例如 `gradlew assembleRelease` 的产出：
+ * `E2E_MOBILE_APK=mobile/android/app/build/outputs/apk/release/app-release.apk`
+ */
+export const MOBILE_APK =
+  process.env['E2E_MOBILE_APK'] ?? join(DESKTOP_DIR, '..', 'mobile', 'dist', 'OpenJob-1.0.0.apk');
 
 export function mobileAvailable(): boolean {
   return existsSync(ADB) && existsSync(EMULATOR) && existsSync(MOBILE_APK);
