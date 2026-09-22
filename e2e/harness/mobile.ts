@@ -5,14 +5,14 @@
  * AVD，而 RN 的调试构建要连着 Metro 才能跑——release 包自带 JS bundle，装上去就能用。
  * 驱动只需要三件事：抓界面树（`uiautomator dump`）→ 从 XML 里读文本与坐标 → 点。
  *
- * 三个踩过的坑：
- * 1. **必须 `-gpu swiftshader_indirect`（配 `-no-window`）**：默认 GPU 模式下模拟器冷启动
- *    还没进桌面，SystemUI 自己就 ANR 了，App 永远上不了前台；
- * 2. `uiautomator dump` 在界面切换的瞬间会 `Timeout while connecting UiAutomation`——重试即可；
- * 3. dump 出来的文件要 `adb pull` 回来读，`adb shell cat` 会 permission denied。
+ * 前置与约定：
+ * 1. 模拟器以 `-gpu swiftshader_indirect -no-window` 启动：默认 GPU 模式下 SystemUI 会 ANR，
+ *    App 上不了前台；
+ * 2. `uiautomator dump` 在界面切换的瞬间会连不上 UiAutomation，驱动内部重试；
+ * 3. dump 出来的文件用 `adb pull` 读回（`adb shell cat` 会 permission denied）。
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DESKTOP_DIR, sleep } from '../harness/app';
@@ -23,13 +23,30 @@ export const ADB = join(SDK, 'platform-tools', 'adb.exe');
 const EMULATOR = join(SDK, 'emulator', 'emulator.exe');
 
 export const MOBILE_PACKAGE = 'com.openjob.mobile';
+
 /**
- * 用哪个 APK。默认取 `mobile/dist` 下那份历史产物（release，自带 JS bundle，不需要 Metro）；
- * 想试刚打出来的包就把它指过去——例如 `gradlew assembleRelease` 的产出：
- * `E2E_MOBILE_APK=mobile/android/app/build/outputs/apk/release/app-release.apk`
+ * 用哪个 APK。
+ *
+ * `mobile/dist/OpenJob-<版本>.apk` 是 CI 与手工发布落包的地方（见 `.github/workflows/
+ * build-android.yml`），但它是 `.gitignore` 的，本地不会有人持续刷新——旧包的症状是应用
+ * 永远停在「正在初始化本地数据库…」且 logcat 无异常，看着像应用起不来。
+ *
+ * 所以候选按**新旧**挑，而不是信「路径看起来权威」；要指定就设 `E2E_MOBILE_APK`。
  */
-export const MOBILE_APK =
-  process.env['E2E_MOBILE_APK'] ?? join(DESKTOP_DIR, '..', 'mobile', 'dist', 'OpenJob-1.0.0.apk');
+function resolveMobileApk(): string {
+  const explicit = process.env['E2E_MOBILE_APK'];
+  if (explicit) return explicit;
+  const candidates = [
+    join(DESKTOP_DIR, '..', 'mobile', 'android', 'app', 'build', 'outputs', 'apk', 'release', 'app-release.apk'),
+    join(DESKTOP_DIR, '..', 'mobile', 'dist', 'OpenJob-1.0.0.apk'),
+  ].filter((path) => existsSync(path));
+  if (candidates.length === 0) return '';
+  return candidates.reduce((newest, path) =>
+    statSync(path).mtimeMs > statSync(newest).mtimeMs ? path : newest,
+  );
+}
+
+export const MOBILE_APK = resolveMobileApk();
 
 export function mobileAvailable(): boolean {
   return existsSync(ADB) && existsSync(EMULATOR) && existsSync(MOBILE_APK);

@@ -1,7 +1,6 @@
 # OpenJob 端到端测试方案
 
-> 状态：**测试台与全部 11 组用例都已落地**。`pnpm test:e2e` → 11 个文件 / **96 通过 /
-> 3 跳过 / 0 失败**；跳过项全部在代码里写明原因（汇总见 §0.2）。
+> 状态：11 组用例已落地。`pnpm test:e2e` → 13 个文件 / **96 通过 / 8 跳过 / 0 失败**。
 > 跑法见 [e2e/README.md](../e2e/README.md)。
 > 上游：[GENERAL_INTERVIEW_AGENT_ARCHITECTURE.md](./GENERAL_INTERVIEW_AGENT_ARCHITECTURE.md) §18（单元 / Contract / Golden / Cross-client / Isolation）
 > 本文补的是 §18 没覆盖的那一层：**在真实 Electron 应用上，按用户能看见的动作走完整链路**。
@@ -26,51 +25,24 @@
 | 真实模型契约冒烟（R1–R3） | `live.test.ts` | ✅ 3/3（要 `E2E_LIVE=1`，平时整组自跳） |
 | 手机端（E132） | `mobile.test.ts` | ✅ 3/3（要 `E2E_MOBILE=1`，adb 驱动） |
 
-### 0.2 跳过项与原因
+### 0.2 未覆盖
 
 | 用例 | 原因 |
 |---|---|
-| E133 手机端「配对过但对端不可达」的降级 | **两条路都已试过并封死**：①「预置库」——`adb root` 被拒（`adbd cannot run as root in production builds`），加上 release 包不可调试，`/data/data/com.openjob.mobile` 读不到；②「真配对」——手机端同步页只有「扫描二维码配对」，**没有手动输入框**（探针实测），模拟器没摄像头。<br>剩下的唯一走法是出一个**可调试**的包（`debuggable true` 或 assembleDebug + Metro），再像桌面那样预置一条 peer 行——那是应用侧的构建决定，不在测试台范围内。未配对状态本身已由 E132c 覆盖 |
-| E134b 打包态的版本闸门 | `checkPeerVersion` 在 `app.isPackaged` 为假时**故意放行**（本地两端版本号本来就不同），所以这条要起**打包产物**。用例已实现并**自跳**：`desktop/dist/win-unpacked/` 在就跑，不在就 `ctx.skip()`——本机跑一次 `pnpm package`、或 CI 的发布流水线出包之后，它会自动点亮 |
+| E133 手机端「配对过但对端不可达」 | 需要手机端先有一条已配对状态：`adb root` 在 production 镜像上不可用、release 包不可调试，而手机端配对入口只有扫码（模拟器无摄像头）。要覆盖得先出一个可调试的包 |
+| E134b 打包态版本闸门 | 需要 `desktop/dist/win-unpacked/`（`pnpm package` 或 CI 出包）。产物在时用例自动生效，不在则 `ctx.skip()` |
 
-**手机端这一套怎么跑通的**：纯 adb，不需要 Maestro/Detox——`uiautomator dump` 抓界面树 →
-解析 `text=` / `bounds` → `input tap`。三个坑写在 `e2e/harness/mobile.ts` 文件头：模拟器必须
-`-gpu swiftshader_indirect -no-window`（否则 SystemUI 冷启动就 ANR）；dump 要 `adb pull` 回来读；
-adb 的 stderr 每次都会打「1 file pulled…」，得吞掉。
+### 0.3 测试台之外
 
-**一个值得单独说的坑**：仓库里 `mobile/dist/OpenJob-1.0.0.apk` 是 **8/14 的产物**，装上去应用
-永远停在「正在初始化本地数据库…」（等 4 分钟界面树一字不变，logcat 里也干净：JS 跑起来了、
-expo-sqlite 加载了、没有任何异常）。换成 `gradlew assembleRelease` 当次打出来的包，5 秒就过。
-所以手机端的用例要用 `E2E_MOBILE_APK` 指向当次构建的产物，别拿仓库里那份历史包当基准。
-
-**STT 怎么自动化**：转写要加载 `Xenova/whisper-base`（约 73MB），CI 上不可能现下。用例复用
-**本机已经缓存好的那一份**——把它搬进隔离副本的 `stt-models/`（transformers.js 先查
-`env.cacheDir`，离线可用），本机没有缓存就 `ctx.skip()`。断言的是**通路**：模型能加载、状态
-从「缺模型」走到「就绪」、一段采样喂进去拿回文本而不是抛错；识别得准不准是模型的事。
-（注意不能用 `it.skipIf`：它在收集阶段求值，那时 `beforeAll` 还没跑。）
-
-**artifact 原语怎么自动化**：它的语义就是「用户在主进程的选择器里挑一个文件」，选择器只在真人
-操作时才返回。宿主留了 `OPENJOB_E2E_ARTIFACT` 注入点（见 `ipc/index.ts` 的 `e2eArtifactSelect`）：
-变量只在**宿主进程**读，不是 IPC 契约的一部分，渲染层与插件页依旧传不了路径，变量没设时行为
-与以前一字不差。E117 靠它验到「读进来的表被解析成 5 行 3 列」。
-
-**配对是怎么跑通的**：发起方是手机（桌面只出二维码），桌面端因此没有「加入」入口。测试台
-自己按协议来——`/sync/ping` 问版本 → `/sync/pair` 提交配对码换共享密钥 → `/sync/exchange`
-带 `HMAC-SHA256(sharedKey, "deviceId|timestamp|METHOD|path|body")` 签名交换数据
-（见 `e2e/harness/peer.ts`）。E131 因此能断言「桌面写一条 → 对端一次交换拿到它」，以及
-「换一把密钥的请求被 401 挡掉」。
-
-### 0.3 被真实约束推翻、已改写的设计
-
-1. **链接仓库不能拿本地仓库当夹具**——`workspace.fetch` 只放行公网 https，回环 / 内网 /
-   `file://` 一律拒（SSRF 防线，见 `desktop/src/main/plugins/pluginWorkspace.ts`）。
-   E110 因此只留「拒绝路径」，真实 clone 归手工。
-2. **Tavily 不可桩化**——`https://api.tavily.com` 是硬编码的，没有可配 endpoint；
-   检索桩只能盖博查（它的 endpoint 在 config 里）。
-3. **五个入口受原生对话框限制**，CDP 到不了：`plugin:install`（选包）、
-   `pluginRuntime:artifact.read`（选表格）、`resume:importFile`（选简历文件）、
-   `resume:exportPdf` / `speech:export`（选保存位置）。要自动化它们，得在主进程留一个
-   「测试期自动选路径」的接缝——那是应用侧的改动，不在测试台范围内。
+| 项 | 约束 |
+|---|---|
+| 原生对话框入口 | `plugin:install` / `pluginRuntime:artifact.read` / `resume:importFile` / `resume:exportPdf` / `speech:export` 的选择器弹在主进程，CDP 驱动不了 |
+| `artifact.read` | 宿主提供 `OPENJOB_E2E_ARTIFACT` 注入点（只在宿主进程读，不是 IPC 契约的一部分，未设时行为不变），E117 靠它覆盖 |
+| 链接仓库 | `workspace.fetch` 只放行公网 https，回环 / 内网 / `file://` 一律拒（SSRF 防线）；只覆盖拒绝路径，真实 clone 归手工 |
+| 检索 | 博查 endpoint 可配、可桩化；Tavily 的 URL 硬编码，不覆盖 |
+| 手机端 | 无 CDP，走 adb（`uiautomator dump` + `input tap`）；模拟器要以 `-gpu swiftshader_indirect -no-window` 启动 |
+| STT | 转写要 `Xenova/whisper-base` 模型；用例复用本机 `stt-models` 缓存，没有则跳过 |
+| 配对协议 | 由手机侧发起，桌面端没有「加入」入口；测试台按协议实现对端（`e2e/harness/peer.ts`） |
 
 ---
 

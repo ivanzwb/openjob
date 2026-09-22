@@ -14,14 +14,12 @@
  * release 包是上一次构建的快照（`mobile/dist/OpenJob-1.0.0.apk`，自带 JS bundle 不需要
  * Metro）。
  *
- * **默认不跑**（`E2E_MOBILE=1` 才跑）：它要起模拟器、装一个 126MB 的包，代价远高于其余各组，
- * 而且依赖本机有 AVD。现在这两条是绿的（见下），opt-in 只是成本考虑，不是「跑不通」。
+ * **默认不跑**（`E2E_MOBILE=1` 才跑）：要起模拟器、装 126MB 的包，代价远高于其余各组，
+ * 且依赖本机有 AVD。
  *
- * **踩过的坑：必须用当前源码重打的包。** 一开始我测的是仓库里 `mobile/dist/OpenJob-1.0.0.apk`，
- * 它是 8/14 的产物（109.5MB），装上去应用永远停在「正在初始化本地数据库…」——等 4 分钟界面树
- * 一字不变，logcat 里也干净（JS 跑起来了、expo-sqlite 加载了、没有任何异常）。换成
- * `gradlew assembleRelease` 刚打出来的（125.9MB）之后，5 秒就过掉初始化。用 `E2E_MOBILE_APK`
- * 指向要测的那个包。
+ * **要用当前源码重打的包**：`mobile/dist/OpenJob-<版本>.apk` 是发布落包的地方，但它是
+ * `.gitignore` 的、本地不会有人刷新——旧包会让应用永远停在「正在初始化本地数据库…」，
+ * 看着像应用起不来。测试台按新旧挑（见 `harness/mobile.ts`），也可用 `E2E_MOBILE_APK` 指定。
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MobileDevice, mobileAvailable } from '../harness/mobile';
