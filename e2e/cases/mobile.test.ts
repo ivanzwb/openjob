@@ -70,4 +70,19 @@ describe.skipIf(!enabled || !available)('E132 / E133 手机端', () => {
       expect(dump.includes(`text="${control}"`), `不该出现写入口：${control}`).toBe(false);
     }
   }, 300_000);
+
+  it('E132c 未配对时的状态是明确的：只给扫码入口，没有手动输入', async () => {
+    device.tapText('同步');
+    const sync = await device.waitForText('未配对', 60_000);
+    const joined = sync.join(' | ');
+
+    // 状态明确说清「未配对」以及该去哪儿生成二维码
+    expect(joined).toContain('未配对');
+    expect(joined).toMatch(/桌面端|二维码/);
+
+    // 配对入口只有扫码：没有输入框——模拟器里扫不了码，这也是 E133 只能靠
+    // 「可调试包 + 预置库」而不能靠真配对的原因（见方案 §0.2）
+    const xml = device.dump();
+    expect(/class="[^"]*EditText[^"]*"/.test(xml), '同步页不该有手动输入框').toBe(false);
+  }, 300_000);
 });

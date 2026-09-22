@@ -24,13 +24,13 @@
 | 语音（E140–E141） | `voice.test.ts` | ✅ 2/2（含真实转写通路） |
 | 边界（E150–E156） | `errors.test.ts` | ✅ 7/7 |
 | 真实模型契约冒烟（R1–R3） | `live.test.ts` | ✅ 3/3（要 `E2E_LIVE=1`，平时整组自跳） |
-| 手机端（E132） | `mobile.test.ts` | ✅ 2/2（要 `E2E_MOBILE=1`，adb 驱动） |
+| 手机端（E132） | `mobile.test.ts` | ✅ 3/3（要 `E2E_MOBILE=1`，adb 驱动） |
 
 ### 0.2 跳过项与原因
 
 | 用例 | 原因 |
 |---|---|
-| E133 手机端「配对过但对端不可达」的降级 | 要一条真实的 peer 行，而手机端的库在应用私有目录里（release 包不可 `run-as`），得先解决「怎么给手机端种一条已配对状态」——要么真跑一次配对，要么让包可调试。E132 那两条（应用能起来、更多页只有本机入口且无写入口）已经覆盖 |
+| E133 手机端「配对过但对端不可达」的降级 | **两条路都已试过并封死**：①「预置库」——`adb root` 被拒（`adbd cannot run as root in production builds`），加上 release 包不可调试，`/data/data/com.openjob.mobile` 读不到；②「真配对」——手机端同步页只有「扫描二维码配对」，**没有手动输入框**（探针实测），模拟器没摄像头。<br>剩下的唯一走法是出一个**可调试**的包（`debuggable true` 或 assembleDebug + Metro），再像桌面那样预置一条 peer 行——那是应用侧的构建决定，不在测试台范围内。未配对状态本身已由 E132c 覆盖 |
 | E134b 打包态的版本闸门 | `checkPeerVersion` 在 `app.isPackaged` 为假时**故意放行**（本地两端版本号本来就不同），所以这条要起**打包产物**。用例已实现并**自跳**：`desktop/dist/win-unpacked/` 在就跑，不在就 `ctx.skip()`——本机跑一次 `pnpm package`、或 CI 的发布流水线出包之后，它会自动点亮 |
 
 **手机端这一套怎么跑通的**：纯 adb，不需要 Maestro/Detox——`uiautomator dump` 抓界面树 →
