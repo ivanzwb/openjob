@@ -17,6 +17,7 @@
       "package": "com.openjob.mobile",
       "versionCode": 10000,
       "softwareKeyboardLayoutMode": "pan",
+      "allowBackup": false,
       "permissions": [
         "CAMERA",
         "RECORD_AUDIO",
