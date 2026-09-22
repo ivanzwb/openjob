@@ -34,6 +34,14 @@ export interface EnvOptions {
    */
   dismissBundled?: boolean;
   theme?: 'light' | 'dark';
+  /**
+   * 用**本机真实的 provider 配置**（config.json + secrets.json + Local State）。
+   *
+   * 契约冒烟要打真实模型，而密钥是 safeStorage 加密的——把这三份一起搬进副本，应用自己解
+   * 得开（DPAPI + 同一份 OSCrypt 密钥都跟着走），测试进程始终不碰明文密钥。
+   * 本机没有真实配置时返回 false，用例据此自跳。
+   */
+  useRealProvider?: boolean;
   /** 附带的额外文件（相对 userData 的路径 → 内容） */
   extraFiles?: Record<string, string>;
 }
@@ -96,6 +104,8 @@ export function makeEnv(name: string, options: EnvOptions = {}): Env {
     writeFileSync(target, content, 'utf8');
   }
 
+  if (options.useRealProvider) adoptRealProvider(userData);
+
   return {
     name,
     userData,
@@ -103,6 +113,25 @@ export function makeEnv(name: string, options: EnvOptions = {}): Env {
     secretsFile: join(userData, 'secrets.json'),
     pluginsDir,
   };
+}
+
+/** 本机有没有可用的真实 provider 配置（契约冒烟用它，没有就自跳） */
+export function hasRealProvider(): boolean {
+  return (
+    existsSync(join(REAL_USER_DATA, 'config.json')) &&
+    existsSync(join(REAL_USER_DATA, 'secrets.json'))
+  );
+}
+
+/**
+ * 把本机真实的 provider 三件套搬进副本：配置、加密后的密钥、以及解密钥要用的 `Local State`
+ * （Chromium 的 OSCrypt 密钥就藏在里面，缺了它 safeStorage 解不开）。
+ */
+function adoptRealProvider(userData: string): void {
+  for (const name of ['config.json', 'secrets.json', 'Local State']) {
+    const source = join(REAL_USER_DATA, name);
+    if (existsSync(source)) cpSync(source, join(userData, name));
+  }
 }
 
 /**
