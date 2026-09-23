@@ -125,8 +125,24 @@ export class MobileDevice {
 
   /** 冷启动一次应用，并等过「正在初始化本地数据库…」那一步 */
   async launch(packageName = MOBILE_PACKAGE): Promise<void> {
-    // 关掉软键盘：`input text` 是硬件键事件，不需要 IME。否则打字后要按返回收起键盘，
-    // 而键盘没弹出时那一下正好把弹层关掉——用例会以「输入框点不到」这种假象挂掉。
+    // 手里这台模拟器必须没有输入法：`input text` 注入的字符会先经过自动纠正/联想，ASCII 会被
+    // 改写成别的词（实测发 'E2Eprobebody'，应用里成了 'E2Eprobe bodyline'；发 'E2Eresume'，
+    // 名字成了 'EE2Eresume'），而且**没提交的输入组合不会进应用的 JS 状态**——提交按钮的
+    // enabled 条件正好挂在那个文本上，于是「按下去没反应」。关掉 IME 后 `input text` 直接落到
+    // 输入框，所见即所发。逐个 disable：失败的只跳过一个，不要因为一个失败把其余的也放过。
+    try {
+      for (const line of adb('shell', 'ime', 'list', '-s').split('\n')) {
+        const ime = line.trim();
+        if (!ime) continue;
+        try {
+          adb('shell', 'ime', 'disable', ime);
+        } catch {
+          // 当前输入法可能拒绝被禁用，跳过
+        }
+      }
+    } catch {
+      // 取不到输入法列表就照旧跑：退回到「打字可能被改写」的老状态，用例会给出明确的失败
+    }
     adb('shell', 'settings', 'put', 'secure', 'show_ime_with_hard_keyboard', '0');
     adb('shell', 'am', 'force-stop', packageName);
     await sleep(500);
@@ -174,6 +190,9 @@ export class MobileDevice {
   /** 往当前焦点输入框里打字。只送 ASCII：`input text` 对中文不靠谱，用例用英文标识符 */
   typeText(value: string): void {
     adb('shell', 'input', 'text', value.replace(/ /g, '%s'));
+    // 万一还有输入法在，回车把没提交的输入组合交出去；不交出去的话应用的 onChangeText
+    // 收不到这段文本（表单的提交按钮 enabled 条件就挂在它上面，表现为「按下去没反应」）
+    adb('shell', 'input', 'keyevent', '66');
   }
 
   /** 抹掉应用数据，让每条用例都从「刚装完」的状态开始（否则上一轮造的数据会串场） */
