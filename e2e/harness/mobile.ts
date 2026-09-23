@@ -125,24 +125,10 @@ export class MobileDevice {
 
   /** 冷启动一次应用，并等过「正在初始化本地数据库…」那一步 */
   async launch(packageName = MOBILE_PACKAGE): Promise<void> {
-    // 手里这台模拟器必须没有输入法：`input text` 注入的字符会先经过自动纠正/联想，ASCII 会被
-    // 改写成别的词（实测发 'E2Eprobebody'，应用里成了 'E2Eprobe bodyline'；发 'E2Eresume'，
-    // 名字成了 'EE2Eresume'），而且**没提交的输入组合不会进应用的 JS 状态**——提交按钮的
-    // enabled 条件正好挂在那个文本上，于是「按下去没反应」。关掉 IME 后 `input text` 直接落到
-    // 输入框，所见即所发。逐个 disable：失败的只跳过一个，不要因为一个失败把其余的也放过。
-    try {
-      for (const line of adb('shell', 'ime', 'list', '-s').split('\n')) {
-        const ime = line.trim();
-        if (!ime) continue;
-        try {
-          adb('shell', 'ime', 'disable', ime);
-        } catch {
-          // 当前输入法可能拒绝被禁用，跳过
-        }
-      }
-    } catch {
-      // 取不到输入法列表就照旧跑：退回到「打字可能被改写」的老状态，用例会给出明确的失败
-    }
+    // 不要禁用输入法：`input text` 的字符要经 InputConnection 落到焦点输入框，而 InputConnection
+    // 是输入法提供的——把 IME 全禁掉之后，打字会静默失败，输入框一直显示占位符（实测）。
+    // 输入法的自动纠正/联想会改写 ASCII（发 'E2Eprobebody' 变成 'E2Eprobe bodyline'），这个由
+    // `typeText()` 里补的那个回车解决：**没提交的输入组合不会进应用的 JS 状态**，交出去才算数。
     adb('shell', 'settings', 'put', 'secure', 'show_ime_with_hard_keyboard', '0');
     adb('shell', 'am', 'force-stop', packageName);
     await sleep(500);
