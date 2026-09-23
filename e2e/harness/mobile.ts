@@ -125,6 +125,9 @@ export class MobileDevice {
 
   /** 冷启动一次应用，并等过「正在初始化本地数据库…」那一步 */
   async launch(packageName = MOBILE_PACKAGE): Promise<void> {
+    // 关掉软键盘：`input text` 是硬件键事件，不需要 IME。否则打字后要按返回收起键盘，
+    // 而键盘没弹出时那一下正好把弹层关掉——用例会以「输入框点不到」这种假象挂掉。
+    adb('shell', 'settings', 'put', 'secure', 'show_ime_with_hard_keyboard', '0');
     adb('shell', 'am', 'force-stop', packageName);
     await sleep(500);
     adb('shell', 'monkey', '-p', packageName, '-c', 'android.intent.category.LAUNCHER', '1');
@@ -153,18 +156,67 @@ export class MobileDevice {
     return readFileSync(target, 'utf8');
   }
 
+  /** 按坐标点（输入框没有 resource-id 时只能按类名取到坐标再点） */
+  tapAt(x: number, y: number): void {
+    adb('shell', 'input', 'tap', String(x), String(y));
+  }
+
   /** 按文本点一个节点（取它的 bounds 中心） */
   tapText(text: string): boolean {
-    const xml = this.dump();
-    const node = [...xml.matchAll(/<node[^>]*>/g)]
-      .map((m) => m[0])
-      .find((tag) => tag.includes(`text="${text}"`));
-    const bounds = node ? /bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/.exec(node) : null;
-    if (!bounds) return false;
-    const x = Math.round((Number(bounds[1]) + Number(bounds[3])) / 2);
-    const y = Math.round((Number(bounds[2]) + Number(bounds[4])) / 2);
+    const node = this.nodeByText(text);
+    if (!node) return false;
+    const x = Math.round((node.bounds.left + node.bounds.right) / 2);
+    const y = Math.round((node.bounds.top + node.bounds.bottom) / 2);
     adb('shell', 'input', 'tap', String(x), String(y));
     return true;
+  }
+
+  /** 往当前焦点输入框里打字。只送 ASCII：`input text` 对中文不靠谱，用例用英文标识符 */
+  typeText(value: string): void {
+    adb('shell', 'input', 'text', value.replace(/ /g, '%s'));
+  }
+
+  /** 抹掉应用数据，让每条用例都从「刚装完」的状态开始（否则上一轮造的数据会串场） */
+  clearData(): void {
+    adb('shell', 'pm', 'clear', MOBILE_PACKAGE);
+  }
+
+  /** 返回键 */
+  back(): void {
+    adb('shell', 'input', 'keyevent', '4');
+  }
+
+  /** 上下滑一屏，用于长列表 */
+  swipeUp(): void {
+    adb('shell', 'input', 'swipe', '540', '1600', '540', '600', '300');
+  }
+
+  /** 当前界面上带这段文字的节点（含坐标），点之前先确认它在、并且拿到位置 */
+  nodeByText(text: string): { bounds: { top: number; left: number; right: number; bottom: number } } | null {
+    const xml = this.dump();
+    const tag = [...xml.matchAll(/<node[^>]*>/g)]
+      .map((m) => m[0])
+      .find((candidate) => candidate.includes(`text="${text}"`));
+    if (!tag) return null;
+    const bounds = /bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/.exec(tag);
+    if (!bounds) return null;
+    return {
+      bounds: {
+        left: Number(bounds[1]),
+        top: Number(bounds[2]),
+        right: Number(bounds[3]),
+        bottom: Number(bounds[4]),
+      },
+    };
+  }
+
+  /** 屏幕上所有可点的文本（按钮/链接），用来断言「有哪些入口」 */
+  clickableTexts(): string[] {
+    const xml = this.dump();
+    return [...xml.matchAll(/<node[^>]*>/g)]
+      .filter((m) => m[0].includes('clickable="true"'))
+      .map((m) => /text="([^"]*)"/.exec(m[0])?.[1] ?? '')
+      .filter((text) => text !== '');
   }
 
   /** 等某段文本出现；返回命中时的全部文本 */
