@@ -296,6 +296,11 @@ export function PracticeRunner({
         </button>
       </div>
 
+      {/* 0.6.x 同款说明（文案随本页的实际行为改过：这里是「换一题」，会话连同作答一起自动恢复） */}
+      <p className="text-xs text-[var(--color-muted)]">
+        已生成的题目会自动保存；再次进入会直接显示上次保存的题，点击「换一题」才会生成新题，作答也会跟着会话保留。
+      </p>
+
       {runtimeLoaded && !runtime && (
         <p className="rounded border border-amber-900/50 bg-amber-950/20 px-3 py-2 text-xs text-amber-100">
           这场备考还没有解析出岗位包，题型与评分维度无从展开。先在「设置 → 插件」装好岗位包，
@@ -304,6 +309,14 @@ export function PracticeRunner({
       )}
 
       {error && <p className="text-sm text-red-400">{error}</p>}
+
+      {/* 0.6.x 同款的开练引导：还没出过题时告诉用户整条链路怎么走最顺 */}
+      {!session && (
+        <p className="text-sm text-[var(--color-muted)]">
+          选择备考和题型后点击「开始练习」。建议在备考中完成 JD 诊断、关联简历并生成公司情报，
+          题目会更贴近真实面试。
+        </p>
+      )}
 
       {view && session && (
         <section className="space-y-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">

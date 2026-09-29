@@ -289,6 +289,9 @@ const updateEmbedding = (patch: Partial<AppConfig['llm']['embedding']>): void =>
       <section className="space-y-3">
         <div>
           <h3 className="text-sm font-medium text-[var(--color-muted)]">角色映射</h3>
+          <p className="mt-1 text-xs text-[var(--color-muted)]">
+            每个角色指定走哪个档位。未列出的角色默认走「主力」档。
+          </p>
         </div>
 
         {llmRoles.map((role) => (
