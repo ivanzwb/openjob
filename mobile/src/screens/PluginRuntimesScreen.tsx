@@ -29,6 +29,7 @@ type BridgeReply = {
   openjobDeclarations?: string[];
   /** 入口 activate 抛错时的文案（不吞，显式让界面看到） */
   openjobActivationError?: string;
+  openjobNoPages?: boolean;
 };
 
 /**
@@ -80,6 +81,9 @@ export function PluginRuntimeView({
   const theme = useTheme();
   const webRef = useRef<WebView>(null);
   const [declared, setDeclared] = useState<readonly string[]>([]);
+  // shim 运行期的显式失败：activate 抛错 / 一个页面都没注册。不静默吞——
+  // 与桥调用失败同一哲学，渲染在页面里让用户（和我们）看到原因。
+  const [runtimeError, setRuntimeError] = useState<string | null>(null);
 
   const html = buildMobileRuntimeHtml(plugin, pageId);
   // 配对桌面回传的宿主事件（stream:*）：落到 state，下一次渲染后经 effect 推给页面。
@@ -138,9 +142,19 @@ export function PluginRuntimeView({
       } catch {
         return;
       }
+      // shim 的显式失败：activate 抛错 / 没注册出任何页面
+      if (parsed?.openjobActivationError) {
+        setRuntimeError(`插件入口激活失败：${parsed.openjobActivationError}`);
+        return;
+      }
+      if (parsed?.openjobNoPages) {
+        setRuntimeError('插件入口没有注册出任何页面（activate 未调用 views.registerPage）');
+        return;
+      }
       // shim 激活入口后回传声明：记下来，后续调用按声明放行
       if (parsed?.openjobDeclarations) {
         setDeclared(parsed.openjobDeclarations);
+        setRuntimeError(null);
         return;
       }
       const openjob = parsed?.openjob;
@@ -176,6 +190,11 @@ export function PluginRuntimeView({
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.bg }}>
+      {runtimeError !== null && (
+        <View style={{ padding: 10, backgroundColor: theme.danger + '22' }}>
+          <Text style={{ color: theme.danger, fontSize: 12 }}>{runtimeError}</Text>
+        </View>
+      )}
       <WebView
         ref={webRef}
         source={{ html }}
@@ -183,6 +202,9 @@ export function PluginRuntimeView({
         onMessage={onMessage}
         javaScriptEnabled
         domStorageEnabled={false}
+        // RN WebView 默认只在 debug 构建开远程调试；这里显式跟着 __DEV__ 走，
+        // release 包不留 CDP 检查面（排查插件页需要时可临时改 true）
+        webviewDebuggingEnabled={__DEV__}
       />
     </View>
   );

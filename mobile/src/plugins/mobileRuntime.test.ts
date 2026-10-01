@@ -87,4 +87,35 @@ describe('buildMobileRuntimeHtml', () => {
     // 转义是等价改写：运行时字符串还原后仍是原字面量
     expect(html).toContain('"<!doctype html><html><head><script src=\\"app.js\\"><\\/script></head><body>看板</body></html>"');
   });
+
+  /**
+   * shim 整体必须可解析：模板 cooking 曾把 \s 吃成 s、\/\/ 吃成 //（正则被截断），
+   * WebView 里的脚本从第一天起就抛 SyntaxError，插件页全白。String.raw 之后
+   * 「写什么发什么」，这里锁死「发给 WebView 的脚本能通过语法检查」。
+   */
+  it('发给 WebView 的 shim 脚本整体可解析，关键正则完好', () => {
+    const html = buildMobileRuntimeHtml({
+      ...plugin,
+      uiAssets: {
+        'ui/repositories.html':
+          '<!doctype html><html><head><script src="app.js"></scr' +
+          'ipt><link rel="stylesheet" href="app.css"></head><body><h2>源码仓库</h2></body></html>',
+      },
+      mainSource:
+        'module.exports.activate = function (ctx) { ctx.views.registerPage({ id: "source-repository", title: "源码", webviewPath: "ui/repositories.html" }); };',
+    }, 'source-repository');
+
+    const open = html.indexOf('<script>') + '<script>'.length;
+    const close = html.lastIndexOf('</script>');
+    const shim = html.slice(open, close);
+    // 语法检查：任何解析错误都会让插件页全白
+    expect(() => new Function(shim)).not.toThrow();
+    // 正则形状（cooking 的直接受害者）
+    expect(shim).toContain('/^(https?:|data:|\\/\\/)/i');
+    expect(shim).toContain('src\\s*=\\s*');
+    expect(shim).toContain('href\\s*=\\s*');
+    expect(shim).toContain('rel\\s*=\\s*');
+    // 资产替换写回的闭合必须是转义形式（shim 自己的文本也要对外层安全）
+    expect(shim).toContain("uiAssets[path] + '<\\/script>'");
+  });
 });

@@ -45,7 +45,7 @@ export function buildMobileRuntimeHtml(plugin: MobilePluginRuntime, targetPageId
   // 宿主给了页面 id 时直接渲染那一页（手机端「更多」里的「源码」= source-repository）；
   // 没给或对不上就回落第一页，与「一个包目前只有一页」的现状一致
   const targetPage = inlineJson(targetPageId ?? '');
-  return `<!doctype html>
+  return String.raw`<!doctype html>
 <html>
 <head>
 <meta charset="utf-8" />
@@ -172,7 +172,9 @@ export function buildMobileRuntimeHtml(plugin: MobilePluginRuntime, targetPageId
   // 包声明的桥方法回传 RN：宿主据此放行（声明 !== 权限，远端网关仍逐次校验）
   postToRn({ openjobDeclarations: bridgeMethods.slice() });
 
-  // 相对引用解析：与桌面共用同一规则（core pluginRuntime/assets 的 JS 等价实现）
+  // 相对引用解析：与桌面共用同一规则（core pluginRuntime/assets 的 JS 等价实现）。
+  // 本函数位于 TS 模板字面量内：源码里的每个 \ 到 shim 手里是一个 \——正则要写
+  // \b 这类双写形式，否则 cooking 会把 \s 变成 s、\/\/ 变成 //（正则被截断）。
   function isRelative(ref) {
     return !/^(https?:|data:|\/\/)/i.test(ref);
   }
@@ -196,14 +198,14 @@ export function buildMobileRuntimeHtml(plugin: MobilePluginRuntime, targetPageId
   function resolveWebviewHtml(entryPath, html) {
     // 这段代码本身就在外层脚本里：本文件模板串与 shim 里出现的脚本闭合序列必须写成
     // 反斜杠形式，否则外层脚本在正则这里就被提前闭合（「源码」页满屏 main.js 原文的
-    // 另一半原因）。正则里的 \\/ 与字符串里的 \\u002f 等价改写都不改变运行时语义。
-    var result = html.replace(/<script([^>]*?)src\\s*=\\s*("([^"]*)"|'([^']*)')([^>]*)>\\s*<\\\\/script>/gi,
+    // 另一半原因）。正则里的 \/ 与字符串里的 \u002f 等价改写都不改变运行时语义。
+    var result = html.replace(/<script([^>]*?)src\s*=\s*("([^"]*)"|'([^']*)')([^>]*)>\s*<\/script>/gi,
       function (match, before, raw, q1, q2) {
         var ref = (q1 || q2 || '').trim();
         if (!ref || !isRelative(ref)) return match;
         var path = resolvePath(entryPath, ref);
         if (path === null || uiAssets[path] === undefined) return match;
-        return '<script' + before + '>' + uiAssets[path] + '<\\/script>';
+        return '<script' + before + '>' + uiAssets[path] + '<\/script>';
       });
     result = result.replace(/<link([^>]*?)href\s*=\s*("([^"]*)"|'([^']*)')([^>]*)>/gi,
       function (match, before, raw, q1, q2) {
