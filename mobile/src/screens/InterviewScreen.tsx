@@ -85,6 +85,9 @@ export function InterviewScreen(): React.JSX.Element {
   const [campaignId, setCampaignId] = useState<string | null>(null);
   const [formats, setFormats] = useState<PracticeFormatOption[]>([]);
   const [formatId, setFormatId] = useState<string | null>(null);
+  // 岗位包没同步到本机时为 false：基线题型照常可选，但开练会被拒（与桌面端一致）
+  const [packReady, setPackReady] = useState(true);
+  const [packMessage, setPackMessage] = useState<string | null>(null);
   // 面试语言：默认中文，用户在带语言选择的题型（自我介绍）上改过就按这场备考记住
   const [language, setLanguage] = useState<string>(DEFAULT_INTERVIEW_LANGUAGE);
   const [session, setSession] = useState<PracticeSession | null>(null);
@@ -104,17 +107,23 @@ export function InterviewScreen(): React.JSX.Element {
     if (!id) {
       setFormats([]);
       setFormatId(null);
+      setPackReady(true);
+      setPackMessage(null);
       setHistory([]);
       return;
     }
     try {
-      const options = practiceFormatOptions(db, id);
-      setFormats(options);
-      setFormatId(options[0]?.id ?? null);
+      // 无岗位包时不再抛错：回退基线题型（packReady=false），界面禁用开练并给引导
+      const result = practiceFormatOptions(db, id);
+      setFormats(result.formats);
+      setFormatId(result.formats[0]?.id ?? null);
+      setPackReady(result.packReady);
+      setPackMessage(result.message);
     } catch (cause) {
-      // 还没同步到岗位包时这是常态：把原因显示出来，别让界面空着
       setFormats([]);
       setFormatId(null);
+      setPackReady(true);
+      setPackMessage(null);
       setError(cause instanceof Error ? cause.message : String(cause));
     }
     setHistory(listPracticeHistory(db, id));
@@ -200,7 +209,7 @@ export function InterviewScreen(): React.JSX.Element {
             </>
           )}
           <Pressable
-            disabled={busy || !formatId || session?.status === 'open'}
+            disabled={busy || !formatId || !packReady || session?.status === 'open'}
             onPress={() =>
               void run(async () => {
                 const started = await startPracticeSession(getRawDb(), {
@@ -216,7 +225,7 @@ export function InterviewScreen(): React.JSX.Element {
             style={{
               marginTop: 4,
               borderRadius: 10,
-              backgroundColor: busy || !formatId ? theme.border : theme.accent,
+              backgroundColor: busy || !formatId || !packReady ? theme.border : theme.accent,
               paddingVertical: 10,
               alignItems: 'center',
             }}
@@ -225,6 +234,11 @@ export function InterviewScreen(): React.JSX.Element {
               {session?.status === 'open' ? '本轮练习进行中' : '开始练习'}
             </Text>
           </Pressable>
+          {!packReady && packMessage !== null && (
+            <Text style={{ color: theme.muted, fontSize: 11 }}>
+              {packMessage}。同步前只能练基线的自我介绍；题型与量规要等岗位包同步到本机。
+            </Text>
+          )}
         </Card>
       )}
 

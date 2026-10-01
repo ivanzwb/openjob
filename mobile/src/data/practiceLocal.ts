@@ -136,19 +136,42 @@ export interface PracticeFormatOption {
   label: string;
 }
 
+export interface PracticeFormatOptionsResult {
+  /** 至少含基线（自我介绍）；packReady 时才追加岗位包声明的题型 */
+  formats: PracticeFormatOption[];
+  /** false = 岗位包还没同步到本机：开练会被拒（与桌面端一致，禁用 + 引导） */
+  packReady: boolean;
+  /** packReady = false 时给界面的原因 */
+  message: string | null;
+}
+
 /**
- * 这场战役能练的题型：基础包基线在前，岗位包声明在后（与桌面端下拉同一顺序）。
+ * 这场战役能练的题型：基础包基线在前，岗位包声明在后（与桌面端同一顺序）。
  *
  * 基线（自我介绍）不属任何岗位包——三个官方包的 golden 明确不许出现自我介绍类词条，
  * 它是跨岗位的通用能力，正文与量规都在基础包里。
+ *
+ * 岗位包没同步到本机时不抛错：把基线题型摆出来并标记 packReady=false，界面据此
+ * 禁用「开始练习」并给出引导——与桌面端对同状态的处理一致（题型可见、开练被拒），
+ * 而不是让整块题型区消失。
  */
-export function practiceFormatOptions(db: SQLiteDatabase, campaignId: string): PracticeFormatOption[] {
-  const { rolePack } = resolveCampaignPracticeRuntime(db, campaignId);
-  const declared = new Set(rolePack.interviewFormats.map((format) => format.id));
-  return [
-    ...BASELINE_INTERVIEW_FORMATS.filter((format) => !declared.has(format.id)),
-    ...rolePack.interviewFormats,
-  ].map((format) => ({ id: format.id, label: format.label }));
+export function practiceFormatOptions(db: SQLiteDatabase, campaignId: string): PracticeFormatOptionsResult {
+  const baseline = BASELINE_INTERVIEW_FORMATS.map((format) => ({ id: format.id, label: format.label }));
+  try {
+    const { rolePack } = resolveCampaignPracticeRuntime(db, campaignId);
+    const declared = new Set(rolePack.interviewFormats.map((format) => format.id));
+    return {
+      formats: [
+        ...BASELINE_INTERVIEW_FORMATS.filter((format) => !declared.has(format.id)),
+        ...rolePack.interviewFormats,
+      ].map((format) => ({ id: format.id, label: format.label })),
+      packReady: true,
+      message: null,
+    };
+  } catch (cause) {
+    if (!(cause instanceof PracticeError)) throw cause;
+    return { formats: baseline, packReady: false, message: cause.message };
+  }
 }
 
 // ---------------------------------------------------------------------------

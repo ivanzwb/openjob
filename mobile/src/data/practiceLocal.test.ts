@@ -220,10 +220,31 @@ describe('resolveCampaignPracticeRuntime', () => {
 
 describe('practiceFormatOptions', () => {
   it('基线题型在前，岗位包声明的题型在后', () => {
-    expect(practiceFormatOptions(db, CAMPAIGN_ID).map((option) => option.id)).toEqual([
+    const result = practiceFormatOptions(db, CAMPAIGN_ID);
+
+    expect(result.packReady).toBe(true);
+    expect(result.message).toBeNull();
+    expect(result.formats.map((option) => option.id)).toEqual([
       ...BASELINE_INTERVIEW_FORMATS.map((format) => format.id),
       ...PACK.interviewFormats.map((format) => format.id),
     ]);
+  });
+
+  /**
+   * 本机建的备考还没同步到岗位包（无 descriptor 也无缓存）：基线题型照样摆出来，
+   * 标记 packReady=false 并给出原因——界面据此禁用「开始练习」而不是整块消失
+   * （与桌面端对同状态的处理一致）。
+   */
+  it('还没同步到岗位包时只剩基线题型，并说明原因', () => {
+    const bare = freshDb({ descriptor: false, cached: false });
+
+    const result = practiceFormatOptions(bare, CAMPAIGN_ID);
+
+    expect(result.packReady).toBe(false);
+    expect(result.formats.map((option) => option.id)).toEqual(
+      BASELINE_INTERVIEW_FORMATS.map((format) => format.id),
+    );
+    expect(result.message).toContain('同步');
   });
 
   it('基线题型能在本机开出会话并解析出量规', async () => {
