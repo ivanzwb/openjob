@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Alert, Pressable, ScrollView, Switch, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import type { PairingPayload } from '@core/sync';
@@ -49,6 +49,9 @@ export function SyncScreen(): React.JSX.Element {
   const [scanning, setScanning] = useState(false);
   const [pairError, setPairError] = useState<string | null>(null);
   const [pairMismatch, setPairMismatch] = useState<VersionMismatch | null>(null);
+  // 相机坏掉/无相机（模拟器）时的旁路：手输 `配对码@主机:端口`，与扫二维码等价
+  const [manualPairing, setManualPairing] = useState(false);
+  const [manualCode, setManualCode] = useState('');
   // 配对与同步都可能因版本不一致被拒，提示内容一样，合成一处显示
   const mismatch = versionMismatch ?? pairMismatch;
   const [permission, requestPermission] = useCameraPermissions();
@@ -67,13 +70,29 @@ export function SyncScreen(): React.JSX.Element {
     if (scannedRef.current) return;
     scannedRef.current = true;
     try {
-      const parsed = JSON.parse(raw) as PairingPayload;
-      if (parsed.v !== 1 || !parsed.host || !parsed.port || !parsed.code) {
-        throw new Error('配对 JSON 格式不正确');
+      // 两种形态：桌面端二维码里的 JSON 原文，或手打的 `配对码@主机:端口` 简写
+      // （相机坏掉/模拟器无相机时的旁路，字符集收在 adb/键盘都打得出的范围内）。
+      let payload: PairingPayload;
+      const shorthand = /^([A-Za-z0-9._-]+)@([A-Za-z0-9.]+):(\d+)$/.exec(raw.trim());
+      if (shorthand) {
+        // 简写只带地址与配对码；对端身份由 pairDesktop 以服务端响应为准
+        payload = {
+          v: 1,
+          code: shorthand[1],
+          host: shorthand[2],
+          port: Number(shorthand[3]),
+          deviceId: '',
+          displayName: '',
+        };
+      } else {
+        payload = JSON.parse(raw) as PairingPayload;
+      }
+      if (payload.v !== 1 || !payload.host || !payload.port || !payload.code) {
+        throw new Error('配对码格式不正确（JSON 或 配对码@主机:端口）');
       }
       setPairError(null);
       setPairMismatch(null);
-      await pairDesktop(parsed);
+      await pairDesktop(payload);
       setScanning(false);
       await refresh();
       // 首次配对水位线为 0，syncNow 自己会判定走全表对账
@@ -251,16 +270,56 @@ export function SyncScreen(): React.JSX.Element {
       )}
 
       {!peerLabel && (
-        <Pressable
-          onPress={() => {
-            scannedRef.current = false;
-            setPairError(null);
-            setScanning(true);
-          }}
-          style={{ backgroundColor: theme.accent, padding: 12, borderRadius: 8, alignItems: 'center' }}
-        >
-          <Text style={{ color: '#fff' }}>扫描二维码配对</Text>
-        </Pressable>
+        <>
+          <Pressable
+            onPress={() => {
+              scannedRef.current = false;
+              setPairError(null);
+              setScanning(true);
+            }}
+            style={{ backgroundColor: theme.accent, padding: 12, borderRadius: 8, alignItems: 'center' }}
+          >
+            <Text style={{ color: '#fff' }}>扫描二维码配对</Text>
+          </Pressable>
+
+          {/* 相机不可用时的旁路：手输桌面端配对码。与扫码走同一条 pair() */}
+          <Pressable
+            onPress={() => {
+              scannedRef.current = false;
+              setPairError(null);
+              setManualPairing((v) => !v);
+            }}
+          >
+            <Text style={{ color: theme.muted, textAlign: 'center', padding: 4 }}>
+              {manualPairing ? '收起手动配对' : '手动输入配对码'}
+            </Text>
+          </Pressable>
+          {manualPairing && (
+            <View style={{ gap: 8, borderWidth: 1, borderColor: theme.border, borderRadius: 8, padding: 12, backgroundColor: theme.surface }}>
+              <Text style={{ color: theme.muted, fontSize: 12 }}>
+                在桌面端「生成配对码」后，按 配对码@主机:端口 输入（或粘贴二维码里的 JSON）
+              </Text>
+              <TextInput
+                value={manualCode}
+                onChangeText={setManualCode}
+                placeholder='CODE@192.168.1.5:19721'
+                autoCapitalize='none'
+                autoCorrect={false}
+                keyboardType='ascii-capable'
+                style={{ borderWidth: 1, borderColor: theme.border, borderRadius: 8, padding: 10, color: theme.text }}
+              />
+              <Pressable
+                onPress={() => {
+                  const raw = manualCode.trim();
+                  if (raw !== '') void pair(raw);
+                }}
+                style={{ backgroundColor: theme.accent, padding: 10, borderRadius: 8, alignItems: 'center' }}
+              >
+                <Text style={{ color: '#fff' }}>配对</Text>
+              </Pressable>
+            </View>
+          )}
+        </>
       )}
 
       {peerLabel && (

@@ -170,13 +170,14 @@ export async function pairDesktop(payload: PairingPayload): Promise<void> {
   // 手机端只保留一个对端；切换桌面时清掉旧配对与水位线
   sqlite.runSync(`DELETE FROM sync_peer`);
 
+  // 对端身份以服务端响应为准：扫码载荷/手输简写里的身份字段可能是占位
   sqlite.runSync(
     `INSERT INTO sync_peer (
       device_id, display_name, platform, shared_key, last_address,
       last_local_seq, last_remote_seq, last_sync_at, paired_at
     ) VALUES (?, ?, ?, ?, ?, 0, 0, NULL, ?)`,
-    payload.deviceId,
-    payload.displayName,
+    result.deviceId,
+    result.displayName,
     'desktop',
     result.sharedKey,
     baseUrl,
