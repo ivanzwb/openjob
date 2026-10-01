@@ -63,4 +63,28 @@ describe('buildMobileRuntimeHtml', () => {
     expect(html).toContain('openjobDeclarations');
     expect(html).toContain('bridge');
   });
+
+  /**
+   * ui 资产（HTML 自带 </script>）与入口源码以内联 JSON 进外层 <script>：
+   * 字符串里的 </script 一旦原样出现，浏览器就在那里把脚本标签提前闭合，
+   * 剩下的运行时脚本全部变成页面文本——手机端「源码」页签渲染出满屏
+   * main.js 原文就是这个（与桌面 escapeInlineBody 同一规则，已转义）。
+   */
+  it('内联 JSON 里的 </script 转义成 <\\/script，外层脚本不被提前闭合', () => {
+    const html = buildMobileRuntimeHtml({
+      ...plugin,
+      uiAssets: {
+        'ui/index.html':
+          '<!doctype html><html><head><script src="app.js"></scr' + 'ipt></head><body>看板</body></html>',
+      },
+      mainSource: "module.exports.activate = function () { return '</scr' + 'ipt>'; };",
+    });
+
+    // 外层脚本真正的闭合标签只剩文档末尾这一个；资产里的都成了 <\/script
+    const closings = html.match(/<\/script>/gi) ?? [];
+    expect(closings).toHaveLength(1);
+    expect(html).toContain('<\\/script>');
+    // 转义是等价改写：运行时字符串还原后仍是原字面量
+    expect(html).toContain('"<!doctype html><html><head><script src=\\"app.js\\"><\\/script></head><body>看板</body></html>"');
+  });
 });

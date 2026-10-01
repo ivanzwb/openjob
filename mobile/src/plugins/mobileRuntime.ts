@@ -23,18 +23,28 @@ export function replyScript(reqId: number, result: unknown, error: string | null
 }
 
 /**
+ * 内联进 <script> 的 JSON：ui 资产（HTML 自带 </script>）与入口源码里只要出现
+ * `</script`，浏览器就在那里把外层脚本标签提前闭合，剩下的脚本全部变成页面文本。
+ * 转成 `<\/script` 在 JS 与 JSON 字符串里都与原字面量等价（`\/` 就是 `/`），
+ * 与桌面端 escapeInlineBody 同一规则。
+ */
+function inlineJson(value: unknown): string {
+  return JSON.stringify(value).replace(/<\/script/gi, '<\\/script');
+}
+
+/**
  * 构造 WebView 运行时页面的 HTML。
  *
  * 结构：openjob 门面（postMessage 桥）→ CommonJS 装配 main.js → 收集注册的
  * 页面 → 渲染第一个页面（iframe srcDoc 内嵌 ui 资产，二层桥直通 RN）。
  */
 export function buildMobileRuntimeHtml(plugin: MobilePluginRuntime, targetPageId?: string): string {
-  const mainSource = JSON.stringify(plugin.mainSource);
-  const uiAssets = JSON.stringify(plugin.uiAssets);
-  const pluginId = JSON.stringify(plugin.pluginId);
+  const mainSource = inlineJson(plugin.mainSource);
+  const uiAssets = inlineJson(plugin.uiAssets);
+  const pluginId = inlineJson(plugin.pluginId);
   // 宿主给了页面 id 时直接渲染那一页（手机端「更多」里的「源码」= source-repository）；
   // 没给或对不上就回落第一页，与「一个包目前只有一页」的现状一致
-  const targetPage = JSON.stringify(targetPageId ?? '');
+  const targetPage = inlineJson(targetPageId ?? '');
   return `<!doctype html>
 <html>
 <head>
@@ -184,13 +194,16 @@ export function buildMobileRuntimeHtml(plugin: MobilePluginRuntime, targetPageId
     return out.join('/');
   }
   function resolveWebviewHtml(entryPath, html) {
-    var result = html.replace(/<script([^>]*?)src\s*=\s*("([^"]*)"|'([^']*)')([^>]*)>\s*<\/script>/gi,
+    // 这段代码本身就在外层脚本里：本文件模板串与 shim 里出现的脚本闭合序列必须写成
+    // 反斜杠形式，否则外层脚本在正则这里就被提前闭合（「源码」页满屏 main.js 原文的
+    // 另一半原因）。正则里的 \\/ 与字符串里的 \\u002f 等价改写都不改变运行时语义。
+    var result = html.replace(/<script([^>]*?)src\\s*=\\s*("([^"]*)"|'([^']*)')([^>]*)>\\s*<\\\\/script>/gi,
       function (match, before, raw, q1, q2) {
         var ref = (q1 || q2 || '').trim();
         if (!ref || !isRelative(ref)) return match;
         var path = resolvePath(entryPath, ref);
         if (path === null || uiAssets[path] === undefined) return match;
-        return '<script' + before + '>' + uiAssets[path] + '</script>';
+        return '<script' + before + '>' + uiAssets[path] + '<\\/script>';
       });
     result = result.replace(/<link([^>]*?)href\s*=\s*("([^"]*)"|'([^']*)')([^>]*)>/gi,
       function (match, before, raw, q1, q2) {
